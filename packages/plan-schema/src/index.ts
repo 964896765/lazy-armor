@@ -77,6 +77,8 @@ const sourceConfigSchemas: Record<SourceType, z.ZodTypeAny> = {
     masterContentId: z.uuid().optional(),
     targetPlatforms: z.array(shortText).max(10).optional(),
     includedSources: z.array(shortText).max(10).optional(),
+    emailConnectionId: z.uuid().optional(),
+    calendarConnectionId: z.uuid().optional(),
     lookAheadHours: z.number().int().min(1).max(24 * 14).optional(),
     includeCalendar: z.boolean().optional(),
     includeMessages: z.boolean().optional(),

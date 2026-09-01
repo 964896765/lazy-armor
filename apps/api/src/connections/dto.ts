@@ -8,6 +8,22 @@ export class CreateConnectionDto {
   @IsOptional() @IsISO8601() expiresAt?: string;
 }
 
+export class StartOAuthConnectionDto {
+  @IsString() @Length(1, 500)
+  redirectUri!: string;
+}
+
+export class CompleteOAuthConnectionDto {
+  @IsString() @Length(1, 255)
+  state!: string;
+
+  @IsString() @Length(1, 500)
+  code!: string;
+
+  @IsString() @Length(1, 500)
+  redirectUri!: string;
+}
+
 export class RotateConnectionCredentialsDto {
   @IsObject() credentials!: Record<string, string>;
   @IsOptional() @IsISO8601() expiresAt?: string;

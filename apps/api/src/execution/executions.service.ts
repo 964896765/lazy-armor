@@ -66,7 +66,15 @@ export class ExecutionsService {
         body: notifications.body, status: notifications.status, createdAt: notifications.createdAt,
       }).from(notifications).where(eq(notifications.executionId, id)).orderBy(asc(notifications.createdAt)).limit(20),
     ]);
-    return { ...rows[0], steps, events, approvals, notifications: detailNotifications };
+    const outputs = steps
+      .filter((step) => step.outputSnapshotJson !== null)
+      .map((step) => ({
+        stepOrder: step.stepOrder,
+        actionType: step.actionType,
+        status: step.status,
+        output: step.outputSnapshotJson,
+      }));
+    return { ...rows[0], steps, outputs, events, approvals, notifications: detailNotifications };
   }
 
   async cancel(userId: string, id: string) {

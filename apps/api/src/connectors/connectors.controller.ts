@@ -1,4 +1,4 @@
-import { Controller, Get, Param } from '@nestjs/common';
+import { Controller, Get, Param, Query } from '@nestjs/common';
 import { Public } from '../common/auth-context';
 import { ConnectorsService } from './connectors.service';
 
@@ -6,6 +6,6 @@ import { ConnectorsService } from './connectors.service';
 @Controller('connectors')
 export class ConnectorsController {
   constructor(private readonly connectors: ConnectorsService) {}
-  @Get() list() { return this.connectors.list(); }
-  @Get(':id') get(@Param('id') id: string) { return this.connectors.get(id); }
+  @Get() list(@Query('view') view?: 'public' | 'internal') { return this.connectors.list(view === 'internal' ? 'internal' : 'public'); }
+  @Get(':id') get(@Param('id') id: string, @Query('view') view?: 'public' | 'internal') { return this.connectors.get(id, view === 'internal' ? 'internal' : 'public'); }
 }

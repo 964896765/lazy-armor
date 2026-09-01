@@ -73,7 +73,17 @@ export const connectors = mysqlTable('connectors', {
   id: uuidBinary('id').primaryKey(),
   key: varchar('connector_key', { length: 80 }).notNull(),
   name: varchar('name', { length: 120 }).notNull(),
+  description: varchar('description', { length: 255 }).notNull().default(''),
   status: varchar('status', { length: 32 }).notNull(),
+  providerType: varchar('provider_type', { length: 32 }).notNull().default('internal'),
+  productionStatus: varchar('production_status', { length: 32 }).notNull().default('DISABLED'),
+  authenticationType: varchar('authentication_type', { length: 32 }).notNull().default('none'),
+  supportsRefresh: int('supports_refresh').notNull().default(0),
+  supportsRevoke: int('supports_revoke').notNull().default(0),
+  supportsWebhook: int('supports_webhook').notNull().default(0),
+  supportsHealthCheck: int('supports_health_check').notNull().default(1),
+  sandboxSupport: varchar('sandbox_support', { length: 32 }).notNull().default('none'),
+  rateLimitStrategy: varchar('rate_limit_strategy', { length: 32 }).notNull().default('unknown'),
   adapterVersion: varchar('adapter_version', { length: 32 }).notNull(),
   ...timestamps,
 }, (table) => [uniqueIndex('connectors_key_uq').on(table.key)]);
@@ -85,6 +95,12 @@ export const connectorCapabilities = mysqlTable('connector_capabilities', {
   name: varchar('name', { length: 120 }).notNull(),
   operation: varchar('operation', { length: 32 }).notNull(),
   riskLevel: varchar('risk_level', { length: 8 }).notNull(),
+  requiredPermission: varchar('required_permission', { length: 100 }).notNull().default(''),
+  providerAvailability: varchar('provider_availability', { length: 32 }).notNull().default('disabled'),
+  sideEffect: int('side_effect').notNull().default(0),
+  supportsIdempotencyKey: int('supports_idempotency_key').notNull().default(0),
+  supportsOperationLookup: int('supports_operation_lookup').notNull().default(0),
+  retrySafety: varchar('retry_safety', { length: 32 }).notNull().default('ambiguous'),
   createdAt: datetime('created_at', { mode: 'date', fsp: 6 }).notNull(),
 }, (table) => [uniqueIndex('connector_capabilities_connector_key_uq').on(table.connectorId, table.key)]);
 
@@ -119,6 +135,8 @@ export const connections = mysqlTable('connections', {
   connectorId: uuidBinary('connector_id').notNull().references(() => connectors.id, { onDelete: 'restrict' }),
   externalAccountName: varchar('external_account_name', { length: 255 }).notNull(),
   status: varchar('status', { length: 32 }).notNull(),
+  statusReason: varchar('status_reason', { length: 255 }),
+  lastErrorCode: varchar('last_error_code', { length: 64 }),
   credentialRefId: uuidBinary('credential_ref_id').references(() => credentialRefs.id, { onDelete: 'restrict' }),
   expiresAt: datetime('expires_at', { mode: 'date', fsp: 6 }),
   lastCheckedAt: datetime('last_checked_at', { mode: 'date', fsp: 6 }),
@@ -126,6 +144,23 @@ export const connections = mysqlTable('connections', {
 }, (table) => [
   index('connections_user_id_idx').on(table.userId),
   index('connections_connector_id_idx').on(table.connectorId),
+]);
+
+export const oauthAuthorizationStates = mysqlTable('oauth_authorization_states', {
+  id: uuidBinary('id').primaryKey(),
+  userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  providerKey: varchar('provider_key', { length: 80 }).notNull(),
+  connectionId: uuidBinary('connection_id').references(() => connections.id, { onDelete: 'restrict' }),
+  state: varchar('state', { length: 255 }).notNull(),
+  redirectUri: varchar('redirect_uri', { length: 500 }).notNull(),
+  codeVerifier: varchar('code_verifier', { length: 255 }),
+  expiresAt: datetime('expires_at', { mode: 'date', fsp: 6 }).notNull(),
+  consumedAt: datetime('consumed_at', { mode: 'date', fsp: 6 }),
+  createdAt: datetime('created_at', { mode: 'date', fsp: 6 }).notNull(),
+  updatedAt: datetime('updated_at', { mode: 'date', fsp: 6 }).notNull(),
+}, (table) => [
+  uniqueIndex('oauth_authorization_states_state_uq').on(table.state),
+  index('oauth_authorization_states_user_provider_idx').on(table.userId, table.providerKey, table.expiresAt),
 ]);
 
 export const connectionPermissions = mysqlTable('connection_permissions', {
@@ -699,6 +734,7 @@ export const schema = {
   credentialRefs,
   credentialVersions,
   connections,
+  oauthAuthorizationStates,
   connectionPermissions,
   billingRecords,
   logisticsTrackingSnapshots,

@@ -86,7 +86,10 @@ export class PermissionsService {
 
   async assertGranted(userId: string, connectionId: string, capabilityKey: string) {
     const connection = await this.assertOwnedConnection(userId, connectionId);
-    if ((connection.expiresAt && connection.expiresAt <= new Date()) || (connection.status !== 'connected' && connection.status !== 'degraded')) {
+    if (
+      (connection.expiresAt && connection.expiresAt <= new Date())
+      || (connection.status !== 'connected' && connection.status !== 'degraded' && connection.status !== 'provider_error')
+    ) {
       throw new ForbiddenException('Connection is not available');
     }
     const rows = await this.db.select({

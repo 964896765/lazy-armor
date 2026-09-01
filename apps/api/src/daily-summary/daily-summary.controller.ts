@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Post, Query } from '@nestjs/common';
 import { CurrentUser, type AuthenticatedUser } from '../common/auth-context';
-import { CreateImportantItemCandidateDto, ListImportantItemCandidatesDto } from './dto';
+import { CreateImportantItemCandidateDto, ListImportantItemCandidatesDto, SyncImportantItemSourceDto } from './dto';
 import { DailySummaryService } from './daily-summary.service';
 
 @Controller('important-item-candidates')
@@ -15,5 +15,10 @@ export class DailySummaryController {
   @Get()
   listCandidates(@CurrentUser() user: AuthenticatedUser, @Query() query: ListImportantItemCandidatesDto) {
     return this.dailySummary.listCandidates(user.id, query.sourceType);
+  }
+
+  @Post('sync')
+  syncCandidates(@CurrentUser() user: AuthenticatedUser, @Body() input: SyncImportantItemSourceDto) {
+    return this.dailySummary.syncConnectionSource(user.id, input);
   }
 }

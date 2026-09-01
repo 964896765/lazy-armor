@@ -3,6 +3,7 @@ import { importantItemCandidates } from '@lazy-armor/database';
 import { newId } from '@lazy-armor/shared';
 import { and, desc, eq } from 'drizzle-orm';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
+import { ConnectionsService } from '../connections/connections.service';
 import { IMPORTANT_ITEM_SOURCE_TYPES, type ImportantItemSourceType } from './dto';
 
 type DailySummaryContext = Record<string, unknown>;
@@ -23,7 +24,10 @@ interface ImportantItemCandidateShape {
 
 @Injectable()
 export class DailySummaryService {
-  constructor(@Inject(DATABASE) private readonly db: InjectedDatabase) {}
+  constructor(
+    @Inject(DATABASE) private readonly db: InjectedDatabase,
+    private readonly connections: ConnectionsService,
+  ) {}
 
   async createCandidate(userId: string, input: {
     sourceType: ImportantItemSourceType;
@@ -82,13 +86,19 @@ export class DailySummaryService {
   }
 
   async resolveInternal(userId: string, config: Record<string, unknown>, context: DailySummaryContext) {
+    const emailConnectionId = typeof config.emailConnectionId === 'string' ? config.emailConnectionId : null;
+    const calendarConnectionId = typeof config.calendarConnectionId === 'string' ? config.calendarConnectionId : null;
+    const remoteCandidates = [
+      ...(emailConnectionId ? await this.syncConnectionSource(userId, { connectionId: emailConnectionId, sourceType: 'email' }) : []),
+      ...(calendarConnectionId ? await this.syncConnectionSource(userId, { connectionId: calendarConnectionId, sourceType: 'calendar' }) : []),
+    ];
     const includedSources = this.readIncludedSources(config.includedSources ?? context.includedSources);
     const rows = await this.db.select().from(importantItemCandidates)
       .where(eq(importantItemCandidates.userId, userId))
       .orderBy(desc(importantItemCandidates.createdAt));
     return this.enrichContext({
       ...context,
-      importantItemCandidates: rows.map((row) => this.candidateResponse(row)).filter((row) => includedSources.length === 0 || includedSources.includes(row.sourceType)),
+      importantItemCandidates: [...remoteCandidates, ...rows.map((row) => this.candidateResponse(row))].filter((row) => includedSources.length === 0 || includedSources.includes(row.sourceType)),
       includedSources,
       lookAheadHours: typeof config.lookAheadHours === 'number' ? config.lookAheadHours : context.lookAheadHours,
       includeCalendar: typeof config.includeCalendar === 'boolean' ? config.includeCalendar : context.includeCalendar,
@@ -134,8 +144,8 @@ export class DailySummaryService {
     const lookAheadLimit = new Date(reference.getTime() + lookAheadHours * 60 * 60 * 1000);
     const filtered = candidates.filter((candidate) => {
       if (includedSources.length > 0 && !includedSources.includes(candidate.sourceType)) return false;
-      if (!includeCalendar && (candidate.sourceType === 'manual_event' || candidate.sourceType === 'test_calendar')) return false;
-      if (!includeMessages && candidate.sourceType === 'test_email') return false;
+      if (!includeCalendar && (candidate.sourceType === 'manual_event' || candidate.sourceType === 'test_calendar' || candidate.sourceType === 'calendar')) return false;
+      if (!includeMessages && (candidate.sourceType === 'test_email' || candidate.sourceType === 'email')) return false;
       return true;
     });
     const buckets = { mustHandle: [] as ImportantItemCandidateShape[], shouldHandle: [] as ImportantItemCandidateShape[], ignored: [] as ImportantItemCandidateShape[] };
@@ -177,6 +187,10 @@ export class DailySummaryService {
         return '测试邮件';
       case 'test_calendar':
         return '测试日历';
+      case 'email':
+        return '邮件';
+      case 'calendar':
+        return '日历';
       default:
         return sourceType;
     }
@@ -194,12 +208,18 @@ export class DailySummaryService {
     const markedImportant = Boolean(signals.markedImportant);
     const highPriority = Boolean(signals.highPriority);
     const needsReply = Boolean(signals.needsReply);
-    const calendarSoon = (candidate.sourceType === 'manual_event' || candidate.sourceType === 'test_calendar')
+    const calendarLike = candidate.sourceType === 'manual_event' || candidate.sourceType === 'test_calendar' || candidate.sourceType === 'calendar';
+    const calendarSoon = calendarLike
       && occurredAt >= reference
       && occurredAt.getTime() - reference.getTime() <= 4 * 60 * 60 * 1000;
-    const dueToday = dueAt !== null && dueAt <= endOfToday;
-    const dueSoon = dueAt !== null && dueAt > endOfToday && dueAt <= lookAheadLimit;
+    const calendarLaterToday = calendarLike
+      && occurredAt > reference
+      && occurredAt <= endOfToday
+      && !calendarSoon;
+    const dueToday = !calendarLike && dueAt !== null && dueAt <= endOfToday;
+    const dueSoon = !calendarLike && dueAt !== null && dueAt > endOfToday && dueAt <= lookAheadLimit;
     if (dueToday || calendarSoon) return 'mustHandle';
+    if (calendarLaterToday) return 'shouldHandle';
     if (dueSoon || markedImportant || highPriority || candidate.requiresAction) return 'shouldHandle';
     if (needsReply) return 'shouldHandle';
     return 'ignored';
@@ -258,5 +278,60 @@ export class DailySummaryService {
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
     };
+  }
+
+  async syncConnectionSource(userId: string, input: { connectionId: string; sourceType: 'email' | 'calendar'; input?: Record<string, unknown> }) {
+    try {
+      const capability = input.sourceType === 'email' ? 'READ_EMAIL' : 'READ_EVENT';
+      const result = await this.connections.invoke(userId, input.connectionId, {
+        capability,
+        requestId: `daily-summary-sync:${input.sourceType}:${Date.now()}`,
+        input: input.input ?? {},
+      });
+      if (input.sourceType === 'email') {
+        return Promise.all(((result.data.messages as Array<Record<string, unknown>> | undefined) ?? []).map((item) => this.createCandidate(userId, {
+          sourceType: 'email',
+          sourceId: String(item.messageId),
+          title: String(item.subject ?? '未命名邮件'),
+          summary: String(item.plainText ?? '邮件内容已同步'),
+          occurredAt: String(item.occurredAt),
+          senderOrOrganizer: typeof item.from === 'string' ? item.from : undefined,
+          category: '邮件',
+          importanceSignals: {
+            highPriority: Array.isArray(item.labels) && item.labels.includes('IMPORTANT'),
+            needsReply: String(item.subject ?? '').includes('请') || String(item.plainText ?? '').includes('请'),
+          },
+          requiresAction: String(item.subject ?? '').includes('确认') || String(item.plainText ?? '').includes('确认'),
+        }))).then((items) => items.filter((item): item is NonNullable<typeof item> => Boolean(item)));
+      }
+      return Promise.all(((result.data.events as Array<Record<string, unknown>> | undefined) ?? []).map((item) => this.createCandidate(userId, {
+        sourceType: 'calendar',
+        sourceId: String(item.id),
+        title: String(item.title ?? '未命名日程'),
+        summary: [item.location, item.attendeesSummary].filter((part): part is string => typeof part === 'string' && part.length > 0).join(' · ') || '日历事件已同步',
+        occurredAt: String(item.startAt),
+        dueAt: typeof item.endAt === 'string' ? item.endAt : undefined,
+        senderOrOrganizer: typeof item.organizer === 'string' ? item.organizer : undefined,
+        category: '日历',
+        importanceSignals: {
+          markedImportant: String(item.title ?? '').includes('会议') || String(item.title ?? '').includes('考试'),
+        },
+        requiresAction: String(item.title ?? '').includes('会议') || String(item.title ?? '').includes('考试'),
+      }))).then((items) => items.filter((item): item is NonNullable<typeof item> => Boolean(item)));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : `${input.sourceType} source unavailable`;
+      return [{
+        sourceType: input.sourceType,
+        sourceId: `connection-issue:${input.connectionId}`,
+        title: input.sourceType === 'email' ? '邮件需要重新连接' : '日历需要重新连接',
+        summary: message,
+        occurredAt: new Date().toISOString(),
+        dueAt: null,
+        senderOrOrganizer: null,
+        category: '连接',
+        importanceSignals: { highPriority: true },
+        requiresAction: true,
+      }];
+    }
   }
 }

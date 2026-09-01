@@ -79,12 +79,43 @@
 
 - P0 hardening status is intentionally tracked separately from P1 development completion
 
+### P2 Real Connectors
+
+- Product Development Status: `P2-0 / P2-1 / P2-2 DEVELOPMENT IN PROGRESS`
+
+- `P2-0 Provider Capability Matrix`: development complete, integration regression pass
+
+- `P2 Connection Lifecycle`: development complete, OAuth / reconnect / refresh / revoke / audit regression pass
+
+- `P2-1 Gmail`: `BETA`
+
+- `P2-2 Calendar`: `BETA`
+
+- `File / Logistics / Content`: matrix registered as `DRAFT_ONLY`, adapter execution intentionally not production-ready
+
+### P2 Regression Status
+
+- `p2-provider-capability.integration.spec.ts`: PASS
+
+- `p2-connection-lifecycle.integration.spec.ts`: PASS
+
+- `p2-gmail.integration.spec.ts`: PASS
+
+- `p2-calendar.integration.spec.ts`: PASS
+
+- Supporting package typechecks (`api`, `plan-schema`, `database`, `connector-sdk`): PASS
+
+### P2 Documentation State
+
+- `docs/P2_PROVIDER_CAPABILITY_MATRIX.md`: added
+
+- `docs/P2_CONNECTION_LIFECYCLE.md`: added
+
+- This status document now reflects real P2 runtime state instead of a pre-start placeholder
+
 ### Next Development Step
 
-- Immediate next stage: `P2-0 Provider Capability Matrix`
+- Continue with `P2 Capability UX / Mobile Connection UX`
 
-- Followed by: `P2 Connection Lifecycle`
-
-- Planned first adapters after contract freeze:
-  `Email / Gmail`, `Calendar`
+- Continue parallel `P0-H1 ~ P0-H4` hardening without pausing the P2 mainline
 

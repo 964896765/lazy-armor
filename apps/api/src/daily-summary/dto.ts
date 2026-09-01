@@ -1,6 +1,6 @@
 import { IsBoolean, IsDateString, IsIn, IsObject, IsOptional, IsString, Length, MaxLength } from 'class-validator';
 
-export const IMPORTANT_ITEM_SOURCE_TYPES = ['internal_task', 'manual_event', 'test_email', 'test_calendar'] as const;
+export const IMPORTANT_ITEM_SOURCE_TYPES = ['internal_task', 'manual_event', 'test_email', 'test_calendar', 'email', 'calendar'] as const;
 export type ImportantItemSourceType = typeof IMPORTANT_ITEM_SOURCE_TYPES[number];
 
 export class CreateImportantItemCandidateDto {
@@ -38,4 +38,15 @@ export class CreateImportantItemCandidateDto {
 export class ListImportantItemCandidatesDto {
   @IsOptional() @IsString() @IsIn(IMPORTANT_ITEM_SOURCE_TYPES)
   sourceType?: ImportantItemSourceType;
+}
+
+export class SyncImportantItemSourceDto {
+  @IsString() @Length(1, 80)
+  connectionId!: string;
+
+  @IsString() @IsIn(['email', 'calendar'])
+  sourceType!: 'email' | 'calendar';
+
+  @IsOptional() @IsObject()
+  input?: Record<string, unknown>;
 }

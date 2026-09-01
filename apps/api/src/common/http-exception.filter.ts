@@ -18,11 +18,30 @@ export class AllExceptionsFilter implements ExceptionFilter {
     response.status(status).json(safe);
   }
 
-  private toSafeBody(exception: unknown, status: number): { statusCode: number; code: string; message: string } {
+  private toSafeBody(exception: unknown, status: number): {
+    statusCode: number;
+    code: string;
+    message: string;
+    category?: string;
+    retryable?: boolean;
+    retryAfterMs?: number | null;
+    providerCode?: string | null;
+    operationState?: string | null;
+  } {
     if (exception instanceof HttpException) {
       const res = exception.getResponse();
       const message = typeof res === 'string' ? res : ((res as { message?: string | string[] }).message ?? exception.message);
-      return { statusCode: status, code: this.codeForStatus(status), message: this.firstMessage(message) };
+      const detail = typeof res === 'object' && res !== null ? res as Record<string, unknown> : null;
+      return {
+        statusCode: status,
+        code: typeof detail?.code === 'string' ? detail.code : this.codeForStatus(status),
+        message: this.firstMessage(message),
+        category: typeof detail?.category === 'string' ? detail.category : undefined,
+        retryable: typeof detail?.retryable === 'boolean' ? detail.retryable : undefined,
+        retryAfterMs: typeof detail?.retryAfterMs === 'number' ? detail.retryAfterMs : undefined,
+        providerCode: typeof detail?.providerCode === 'string' ? detail.providerCode : undefined,
+        operationState: typeof detail?.operationState === 'string' ? detail.operationState : undefined,
+      };
     }
     return { statusCode: 500, code: 'INTERNAL_ERROR', message: 'Internal server error' };
   }
