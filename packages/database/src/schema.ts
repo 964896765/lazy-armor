@@ -259,6 +259,77 @@ export const importantItemCandidates = mysqlTable('important_item_candidates', {
   index('important_item_candidates_source_idx').on(table.userId, table.sourceType, table.createdAt),
 ]);
 
+export const studyProgressProfiles = mysqlTable('study_progress_profiles', {
+  id: uuidBinary('id').primaryKey(),
+  userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  sourcePlanId: uuidBinary('source_plan_id').notNull().references(() => plans.id, { onDelete: 'restrict' }),
+  currentProgressPercent: int('current_progress_percent').notNull().default(0),
+  completedTaskCount: int('completed_task_count').notNull().default(0),
+  missedTaskCount: int('missed_task_count').notNull().default(0),
+  lastStudiedAt: datetime('last_studied_at', { mode: 'date', fsp: 6 }),
+  lastGeneratedForDate: datetime('last_generated_for_date', { mode: 'date', fsp: 6 }),
+  sourceType: varchar('source_type', { length: 32 }).notNull(),
+  metadataJson: json('metadata_json').$type<Record<string, unknown>>(),
+  ...timestamps,
+}, (table) => [
+  uniqueIndex('study_progress_profiles_user_plan_uq').on(table.userId, table.sourcePlanId),
+  index('study_progress_profiles_plan_updated_idx').on(table.sourcePlanId, table.updatedAt),
+]);
+
+export const studyTasks = mysqlTable('study_tasks', {
+  id: uuidBinary('id').primaryKey(),
+  userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  sourcePlanId: uuidBinary('source_plan_id').notNull().references(() => plans.id, { onDelete: 'restrict' }),
+  studyDate: datetime('study_date', { mode: 'date', fsp: 6 }).notNull(),
+  subject: varchar('subject', { length: 120 }).notNull(),
+  title: varchar('title', { length: 160 }).notNull(),
+  durationMinutes: int('duration_minutes').notNull(),
+  status: varchar('status', { length: 32 }).notNull(),
+  isCatchUp: int('is_catch_up').notNull().default(0),
+  dedupeKey: varchar('dedupe_key', { length: 255 }).notNull(),
+  completedAt: datetime('completed_at', { mode: 'date', fsp: 6 }),
+  metadataJson: json('metadata_json').$type<Record<string, unknown>>(),
+  ...timestamps,
+}, (table) => [
+  uniqueIndex('study_tasks_user_dedupe_uq').on(table.userId, table.dedupeKey),
+  index('study_tasks_plan_date_idx').on(table.sourcePlanId, table.studyDate, table.createdAt),
+  index('study_tasks_plan_status_idx').on(table.sourcePlanId, table.status, table.updatedAt),
+]);
+
+export const deviceProfiles = mysqlTable('device_profiles', {
+  id: uuidBinary('id').primaryKey(),
+  userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  type: varchar('type', { length: 80 }).notNull(),
+  brand: varchar('brand', { length: 120 }).notNull(),
+  model: varchar('model', { length: 120 }).notNull(),
+  purchasedAt: datetime('purchased_at', { mode: 'date', fsp: 6 }).notNull(),
+  warrantyUntil: datetime('warranty_until', { mode: 'date', fsp: 6 }),
+  maintenanceIntervalDays: int('maintenance_interval_days'),
+  sourceType: varchar('source_type', { length: 32 }).notNull(),
+  metadataJson: json('metadata_json').$type<Record<string, unknown>>(),
+  ...timestamps,
+}, (table) => [
+  index('device_profiles_user_created_idx').on(table.userId, table.createdAt),
+  index('device_profiles_user_type_idx').on(table.userId, table.type),
+]);
+
+export const deviceConsumables = mysqlTable('device_consumables', {
+  id: uuidBinary('id').primaryKey(),
+  userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  deviceProfileId: uuidBinary('device_profile_id').notNull().references(() => deviceProfiles.id, { onDelete: 'restrict' }),
+  name: varchar('name', { length: 120 }).notNull(),
+  lastReplacedAt: datetime('last_replaced_at', { mode: 'date', fsp: 6 }).notNull(),
+  replacementIntervalDays: int('replacement_interval_days').notNull(),
+  remindBeforeDays: int('remind_before_days').notNull(),
+  expectedReplaceAt: datetime('expected_replace_at', { mode: 'date', fsp: 6 }).notNull(),
+  status: varchar('status', { length: 32 }).notNull(),
+  metadataJson: json('metadata_json').$type<Record<string, unknown>>(),
+  ...timestamps,
+}, (table) => [
+  index('device_consumables_profile_replace_idx').on(table.deviceProfileId, table.expectedReplaceAt, table.createdAt),
+  index('device_consumables_user_status_idx').on(table.userId, table.status, table.updatedAt),
+]);
+
 export const webhookReceipts = mysqlTable('webhook_receipts', {
   id: uuidBinary('id').primaryKey(),
   connectionId: uuidBinary('connection_id').notNull().references(() => connections.id, { onDelete: 'restrict' }),
@@ -636,6 +707,10 @@ export const schema = {
   masterContents,
   platformVariants,
   importantItemCandidates,
+  studyProgressProfiles,
+  studyTasks,
+  deviceProfiles,
+  deviceConsumables,
   webhookReceipts,
   plans,
   planVersions,

@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Param, Post } from '@nestjs/common';
 import { CurrentUser, type AuthenticatedUser } from '../common/auth-context';
 import { TemplateConfigDto } from '../plans/dto';
-import { TemplateInstallDto } from './dto';
+import { NaturalLanguageTemplateDto, TemplateInstallDto } from './dto';
 import { TemplatesService } from './templates.service';
 
 @Controller('templates')
@@ -16,6 +16,16 @@ export class TemplatesController {
   @Get(':key')
   get(@Param('key') key: string) {
     return this.templates.get(key);
+  }
+
+  @Post('natural-language/parse')
+  parseNaturalLanguage(@Body() input: NaturalLanguageTemplateDto) {
+    return this.templates.parseNaturalLanguage(input.query);
+  }
+
+  @Post('natural-language/install')
+  installFromNaturalLanguage(@CurrentUser() user: AuthenticatedUser, @Body() input: NaturalLanguageTemplateDto) {
+    return this.templates.installFromNaturalLanguage(user.id, input.query);
   }
 
   @Post(':key/install')

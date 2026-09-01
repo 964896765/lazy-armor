@@ -33,6 +33,8 @@ import { OutboxService } from './side-effect/outbox.service';
 import { OutboxWorker } from './side-effect/outbox-worker.service';
 import { SideEffectCoordinator } from './side-effect/side-effect-coordinator.service';
 import { SideEffectOperationsService } from './side-effect/side-effect-operations.service';
+import { StudyModule } from '../study/study.module';
+import { DeviceModule } from '../device/device.module';
 
 export const EXECUTION_WORKER = 'EXECUTION_WORKER';
 export const EXECUTION_RECONCILER = 'EXECUTION_RECONCILER';
@@ -45,7 +47,7 @@ export const SIDE_EFFECT_OPERATIONS_SERVICE = 'SIDE_EFFECT_OPERATIONS_SERVICE';
 export const OUTBOX_SERVICE = 'OUTBOX_SERVICE';
 
 @Module({
-  imports: [PlansModule, ConnectorsModule, RiskModule, NotificationsModule, AuditModule, CredentialsModule, BillingModule, ContentModule, DailySummaryModule, LogisticsModule, HouseholdModule],
+  imports: [PlansModule, ConnectorsModule, RiskModule, NotificationsModule, AuditModule, CredentialsModule, BillingModule, ContentModule, DailySummaryModule, LogisticsModule, HouseholdModule, StudyModule, DeviceModule],
   controllers: [ExecutionsController],
   providers: [
     SnapshotSanitizer,

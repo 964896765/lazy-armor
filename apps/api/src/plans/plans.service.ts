@@ -499,6 +499,7 @@ export class PlansService {
   ) {
     if (!version?.templateKey) return null;
     const latestOutputs = latestExecution ? await this.latestExecutionOutputs(latestExecution.id) : [];
+    const createTaskOutput = latestOutputs.find((item) => item.actionType === 'create_task')?.output ?? {};
     const summarizeOutput = latestOutputs.find((item) => item.actionType === 'summarize')?.output ?? {};
     const preparePurchaseOutput = latestOutputs.find((item) => item.actionType === 'prepare_purchase')?.output ?? {};
     const preparePublishOutput = latestOutputs.find((item) => item.actionType === 'prepare_publish')?.output ?? {};
@@ -518,6 +519,14 @@ export class PlansService {
 
     if (version.templateKey === 'daily-important-summary') {
       return this.buildDailySummaryCenterSummary(version.templateConfig, summarizeOutput, latestExecution, nextExpectedRunAt);
+    }
+
+    if (version.templateKey === 'exam-study-plan') {
+      return this.buildStudyCenterSummary(version.templateConfig, createTaskOutput, summarizeOutput, latestExecution, nextExpectedRunAt);
+    }
+
+    if (version.templateKey === 'device-consumable-reminder') {
+      return this.buildDeviceCenterSummary(summarizeOutput, preparePurchaseOutput, latestExecution, nextExpectedRunAt);
     }
 
     return null;
@@ -656,6 +665,59 @@ export class PlansService {
       latestSummaryAt: latestExecution?.finishedAt ?? latestExecution?.createdAt ?? null,
       latestImportantCount: mustHandleCount + shouldHandleCount,
       nextSummaryAt: nextExpectedRunAt,
+    };
+  }
+
+  private buildStudyCenterSummary(
+    templateConfig: Record<string, unknown> | null,
+    createTaskOutput: Record<string, unknown>,
+    summarizeOutput: Record<string, unknown>,
+    latestExecution: Awaited<ReturnType<PlansService['latestExecutionSummary']>>,
+    nextExpectedRunAt: string | null,
+  ) {
+    const examName = typeof templateConfig?.examName === 'string' ? templateConfig.examName : '考试学习计划';
+    const weeklySummaryDay = typeof templateConfig?.weeklySummaryDay === 'string'
+      ? this.weekdayLabel(templateConfig.weeklySummaryDay)
+      : null;
+    return {
+      kind: 'study',
+      currentStatus: latestExecution?.resultSummary ?? '暂未生成今日学习任务',
+      examName,
+      examDate: typeof templateConfig?.examDate === 'string' ? templateConfig.examDate : null,
+      latestTaskCount: typeof createTaskOutput.generatedTaskCount === 'number' ? createTaskOutput.generatedTaskCount : 0,
+      currentProgressPercent: typeof createTaskOutput.currentProgressPercent === 'number'
+        ? createTaskOutput.currentProgressPercent
+        : typeof templateConfig?.currentProgress === 'number'
+          ? templateConfig.currentProgress
+          : 0,
+      weeklySummaryDay,
+      latestSummaryAt: latestExecution?.finishedAt ?? latestExecution?.createdAt ?? null,
+      nextStudyAt: nextExpectedRunAt,
+      daysUntilExam: typeof createTaskOutput.daysUntilExam === 'number'
+        ? createTaskOutput.daysUntilExam
+        : typeof summarizeOutput.daysUntilExam === 'number'
+          ? summarizeOutput.daysUntilExam
+          : null,
+    };
+  }
+
+  private buildDeviceCenterSummary(
+    summarizeOutput: Record<string, unknown>,
+    prepareOutput: Record<string, unknown>,
+    latestExecution: Awaited<ReturnType<PlansService['latestExecutionSummary']>>,
+    nextExpectedRunAt: string | null,
+  ) {
+    return {
+      kind: 'device',
+      currentStatus: latestExecution?.resultSummary ?? '暂未检查耗材状态',
+      deviceName: typeof summarizeOutput.deviceName === 'string' ? summarizeOutput.deviceName : null,
+      consumableName: typeof summarizeOutput.consumableName === 'string' ? summarizeOutput.consumableName : null,
+      expectedReplaceAt: typeof summarizeOutput.expectedReplaceAt === 'string' ? summarizeOutput.expectedReplaceAt : null,
+      remainingDays: typeof summarizeOutput.remainingDays === 'number' ? summarizeOutput.remainingDays : null,
+      nearReplacement: Boolean(summarizeOutput.nearReplacement),
+      shoppingListPrepared: Boolean(prepareOutput.shoppingListPrepared),
+      latestCheckAt: latestExecution?.finishedAt ?? latestExecution?.createdAt ?? null,
+      nextCheckAt: nextExpectedRunAt,
     };
   }
 
@@ -804,6 +866,27 @@ export class PlansService {
         return '测试日历';
       default:
         return sourceType;
+    }
+  }
+
+  private weekdayLabel(day: string) {
+    switch (day) {
+      case 'monday':
+        return '周一';
+      case 'tuesday':
+        return '周二';
+      case 'wednesday':
+        return '周三';
+      case 'thursday':
+        return '周四';
+      case 'friday':
+        return '周五';
+      case 'saturday':
+        return '周六';
+      case 'sunday':
+        return '周日';
+      default:
+        return day;
     }
   }
 

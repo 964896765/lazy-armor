@@ -1,0 +1,42 @@
+CREATE TABLE `study_progress_profiles` (
+  `id` binary(16) NOT NULL,
+  `user_id` binary(16) NOT NULL,
+  `source_plan_id` binary(16) NOT NULL,
+  `current_progress_percent` int NOT NULL DEFAULT 0,
+  `completed_task_count` int NOT NULL DEFAULT 0,
+  `missed_task_count` int NOT NULL DEFAULT 0,
+  `last_studied_at` datetime(6) NULL,
+  `last_generated_for_date` datetime(6) NULL,
+  `source_type` varchar(32) NOT NULL,
+  `metadata_json` json NULL,
+  `created_at` datetime(6) NOT NULL,
+  `updated_at` datetime(6) NOT NULL,
+  CONSTRAINT `study_progress_profiles_id_pk` PRIMARY KEY (`id`),
+  CONSTRAINT `study_progress_profiles_user_id_fk` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `study_progress_profiles_source_plan_id_fk` FOREIGN KEY (`source_plan_id`) REFERENCES `plans` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `study_progress_profiles_user_plan_uq` UNIQUE (`user_id`, `source_plan_id`),
+  INDEX `study_progress_profiles_plan_updated_idx` (`source_plan_id`, `updated_at`)
+);
+--> statement-breakpoint
+CREATE TABLE `study_tasks` (
+  `id` binary(16) NOT NULL,
+  `user_id` binary(16) NOT NULL,
+  `source_plan_id` binary(16) NOT NULL,
+  `study_date` datetime(6) NOT NULL,
+  `subject` varchar(120) NOT NULL,
+  `title` varchar(160) NOT NULL,
+  `duration_minutes` int NOT NULL,
+  `status` varchar(32) NOT NULL,
+  `is_catch_up` int NOT NULL DEFAULT 0,
+  `dedupe_key` varchar(255) NOT NULL,
+  `completed_at` datetime(6) NULL,
+  `metadata_json` json NULL,
+  `created_at` datetime(6) NOT NULL,
+  `updated_at` datetime(6) NOT NULL,
+  CONSTRAINT `study_tasks_id_pk` PRIMARY KEY (`id`),
+  CONSTRAINT `study_tasks_user_id_fk` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `study_tasks_source_plan_id_fk` FOREIGN KEY (`source_plan_id`) REFERENCES `plans` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `study_tasks_user_dedupe_uq` UNIQUE (`user_id`, `dedupe_key`),
+  INDEX `study_tasks_plan_date_idx` (`source_plan_id`, `study_date`, `created_at`),
+  INDEX `study_tasks_plan_status_idx` (`source_plan_id`, `status`, `updated_at`)
+);

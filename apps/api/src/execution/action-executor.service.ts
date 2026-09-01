@@ -4,9 +4,11 @@ import { ACTION_DEFINITIONS, type NormalizedAction, type RiskLevel } from '@lazy
 import { BillingService } from '../billing/billing.service';
 import { ContentService } from '../content/content.service';
 import { DailySummaryService } from '../daily-summary/daily-summary.service';
+import { DeviceService } from '../device/device.service';
 import { HouseholdService } from '../household/household.service';
 import { LogisticsService } from '../logistics/logistics.service';
 import { NotificationService } from '../notifications/notification.service';
+import { StudyService } from '../study/study.service';
 import { ExecutionRuntimeError, asRuntimeError } from './execution.types';
 import { RuntimeConnectionGuard } from './runtime-connection-guard.service';
 
@@ -19,11 +21,13 @@ export class ActionExecutor {
     private readonly billing: BillingService,
     private readonly content: ContentService,
     private readonly dailySummary: DailySummaryService,
+    private readonly device: DeviceService,
     private readonly logistics: LogisticsService,
     private readonly household: HouseholdService,
+    private readonly study: StudyService,
   ) {}
 
-  supports(actionType: string): boolean { return ['record', 'compare', 'update_internal_record', 'classify', 'summarize', 'notify', 'prepare_purchase', 'generate_content', 'create_draft', 'prepare_publish'].includes(actionType); }
+  supports(actionType: string): boolean { return ['record', 'compare', 'update_internal_record', 'classify', 'summarize', 'notify', 'prepare_purchase', 'generate_content', 'create_draft', 'prepare_publish', 'create_task'].includes(actionType); }
 
   async execute(userId: string, executionId: string, action: NormalizedAction, context: Record<string, unknown>, effectiveRisk: RiskLevel = action.riskLevel): Promise<Record<string, unknown>> {
     // 批准后的每一次执行都必须先重新过 Runtime Connection Guard（连接归属/状态/权限/能力/凭据），
@@ -120,12 +124,84 @@ export class ActionExecutor {
         notificationDedupeKey: `content-prepare:${typeof local.masterContentId === 'string' ? local.masterContentId : executionId}:${prepared.map((variant) => `${variant.platform}:${variant.publishStatus}`).join('|')}`,
       };
     }
+    if (action.actionType === 'create_task' && !action.connectionId) {
+      if (action.config.domain === 'study' || action.config.list === 'study_plan') {
+        const planId = typeof local.planId === 'string' ? local.planId : null;
+        if (!planId) throw new ExecutionRuntimeError('INVALID_INPUT', 'Study task generation requires planId');
+        return this.study.generateDailyTasks(userId, planId, local);
+      }
+    }
     if (action.actionType === 'summarize' && !action.connectionId) {
       const billing = this.billing.enrichContext(local);
       const content = this.content.enrichContext(local);
       const summaryItems = this.dailySummary.enrichContext(local);
+      const device = this.device.enrichContext(local);
       const logistics = this.logistics.enrichContext(local, action.config);
       const household = this.household.enrichContext(local);
+      const study = this.study.enrichContext(local);
+      if (action.config.domain === 'study') {
+        const generatedTaskCount = typeof study.generatedTaskCount === 'number'
+          ? study.generatedTaskCount
+          : typeof study.pendingStudyTaskCount === 'number'
+            ? study.pendingStudyTaskCount
+            : 0;
+        const totalStudyMinutes = typeof study.totalStudyMinutes === 'number'
+          ? study.totalStudyMinutes
+          : Array.isArray(study.studyTasks)
+            ? study.studyTasks.reduce((sum, task) => sum + (task && typeof task === 'object' && typeof (task as { durationMinutes?: unknown }).durationMinutes === 'number'
+              ? (task as { durationMinutes: number }).durationMinutes
+              : 0), 0)
+            : 0;
+        const examName = typeof study.examName === 'string' ? study.examName : '这场考试';
+        const missedTaskCount = typeof study.missedTaskCount === 'number' ? study.missedTaskCount : 0;
+        const daysUntilExam = typeof study.daysUntilExam === 'number' ? study.daysUntilExam : 0;
+        const weeklySummary = study.weeklySummary && typeof study.weeklySummary === 'object' && !Array.isArray(study.weeklySummary)
+          ? study.weeklySummary as { isSummaryDay?: unknown; completedTaskCount?: unknown; completedMinutes?: unknown }
+          : null;
+        const weeklySummaryDue = Boolean(weeklySummary?.isSummaryDay);
+        const weeklyCompletedCount = typeof weeklySummary?.completedTaskCount === 'number' ? weeklySummary.completedTaskCount : 0;
+        const weeklyCompletedMinutes = typeof weeklySummary?.completedMinutes === 'number' ? weeklySummary.completedMinutes : 0;
+        if (daysUntilExam < 0) {
+          return {
+            humanSummary: `${examName} 的考试日期已到，今天不再生成新的学习任务。`,
+            resultSummary: `${examName} 的考试日期已到，今天不再生成新的学习任务。`,
+            shouldNotify: false,
+          };
+        }
+        if (weeklySummaryDue) {
+          const humanSummary = `本周已完成 ${weeklyCompletedCount} 项学习任务，共 ${weeklyCompletedMinutes} 分钟，距离考试还有 ${Math.max(daysUntilExam, 0)} 天。`;
+          return {
+            humanSummary,
+            resultSummary: missedTaskCount > 0
+              ? `${humanSummary} 本周漏学 ${missedTaskCount} 次，后续安排已重排。`
+              : humanSummary,
+            shouldNotify: true,
+            notificationPriority: 'P1',
+            notificationEventType: 'study_weekly_summary',
+            notificationDedupeKey: `study-weekly:${typeof study.planId === 'string' ? study.planId : executionId}:${typeof study.studyReferenceDate === 'string' ? study.studyReferenceDate.slice(0, 10) : executionId}`,
+          };
+        }
+        if (missedTaskCount > 0) {
+          const humanSummary = `今天已安排 ${generatedTaskCount} 项学习任务，共 ${totalStudyMinutes} 分钟；检测到漏学，后续安排已重排。`;
+          return {
+            humanSummary,
+            resultSummary: humanSummary,
+            shouldNotify: true,
+            notificationPriority: 'P1',
+            notificationEventType: 'study_plan_adjusted',
+            notificationDedupeKey: `study-adjusted:${typeof study.planId === 'string' ? study.planId : executionId}:${typeof study.studyReferenceDate === 'string' ? study.studyReferenceDate.slice(0, 10) : executionId}`,
+          };
+        }
+        const humanSummary = `今天已安排 ${generatedTaskCount} 项学习任务，共 ${totalStudyMinutes} 分钟，距离考试还有 ${Math.max(daysUntilExam, 0)} 天。`;
+        return {
+          humanSummary,
+          resultSummary: humanSummary,
+          shouldNotify: generatedTaskCount > 0,
+          notificationPriority: 'P2',
+          notificationEventType: 'study_daily_plan',
+          notificationDedupeKey: `study-daily:${typeof study.planId === 'string' ? study.planId : executionId}:${typeof study.studyReferenceDate === 'string' ? study.studyReferenceDate.slice(0, 10) : executionId}`,
+        };
+      }
       if (action.config.domain === 'daily_summary') {
         const summary = this.dailySummary.summarize(summaryItems, action.config);
         const importantCount = summary.mustHandleCount + summary.shouldHandleCount;
@@ -233,6 +309,37 @@ export class ActionExecutor {
           notificationDedupeKey: `household:${itemName}:${estimatedRunOutAt ?? daysUntilRunOut}:reminder`,
         };
       }
+      if (action.config.domain === 'device') {
+        const consumableName = typeof device.consumableName === 'string' ? device.consumableName : '设备耗材';
+        const deviceName = `${typeof device.deviceBrand === 'string' ? device.deviceBrand : ''}${typeof device.deviceModel === 'string' ? ` ${device.deviceModel}` : ''}`.trim();
+        const remainingDays = typeof device.remainingDays === 'number' ? device.remainingDays : 0;
+        const nearReplacement = Boolean(device.nearReplacement);
+        const preparationMode = typeof device.preparationMode === 'string' ? device.preparationMode : 'shopping_list';
+        const humanSummary = nearReplacement
+          ? preparationMode === 'shopping_list'
+            ? `${deviceName ? `${deviceName}的` : ''}${consumableName}预计 ${Math.max(remainingDays, 0)} 天后需要更换，已帮你准备购买清单。`
+            : `${deviceName ? `${deviceName}的` : ''}${consumableName}预计 ${Math.max(remainingDays, 0)} 天后需要更换。`
+          : `${deviceName ? `${deviceName}的` : ''}${consumableName}预计还有 ${Math.max(remainingDays, 0)} 天需要更换。`;
+        const resultSummary = nearReplacement
+          ? preparationMode === 'shopping_list'
+            ? `${deviceName ? `${deviceName}的` : ''}${consumableName}预计 ${Math.max(remainingDays, 0)} 天后需要更换，已准备购买清单。`
+            : `${deviceName ? `${deviceName}的` : ''}${consumableName}预计 ${Math.max(remainingDays, 0)} 天后需要更换，已提醒你。`
+          : `${deviceName ? `${deviceName}的` : ''}${consumableName}预计还有 ${Math.max(remainingDays, 0)} 天需要更换。`;
+        return {
+          humanSummary,
+          resultSummary,
+          deviceName,
+          consumableName,
+          expectedReplaceAt: typeof device.expectedReplaceAt === 'string' ? device.expectedReplaceAt : null,
+          remainingDays,
+          nearReplacement,
+          preparationMode,
+          shouldNotify: nearReplacement,
+          notificationPriority: nearReplacement ? 'P1' : 'P2',
+          notificationEventType: 'device_consumable_due',
+          notificationDedupeKey: `device:${typeof local.planId === 'string' ? local.planId : executionId}:${consumableName}:${typeof device.expectedReplaceAt === 'string' ? device.expectedReplaceAt : 'unknown'}`,
+        };
+      }
       const enriched = billing;
       const total = typeof enriched.currentPeriodTotal === 'number' ? enriched.currentPeriodTotal : typeof enriched.amount === 'number' ? enriched.amount : 0;
       const previous = typeof enriched.previousPeriodTotal === 'number' ? enriched.previousPeriodTotal : 0;
@@ -252,6 +359,24 @@ export class ActionExecutor {
       };
     }
     if (action.actionType === 'prepare_purchase' && !action.connectionId) {
+      if (action.config.domain === 'device') {
+        const planId = typeof local.planId === 'string' ? local.planId : null;
+        if (!planId) throw new ExecutionRuntimeError('INVALID_INPUT', 'Device purchase preparation requires planId');
+        const enriched = this.device.enrichContext(local);
+        if (!enriched.nearReplacement || enriched.preparationMode !== 'shopping_list') {
+          return {
+            preparedShoppingItem: null,
+            shoppingListPrepared: false,
+          };
+        }
+        const prepared = await this.device.preparePurchaseItem(userId, planId, local);
+        return {
+          preparedShoppingItem: prepared,
+          shoppingListPrepared: Boolean(prepared),
+          humanSummary: `${typeof enriched.consumableName === 'string' ? enriched.consumableName : '设备耗材'}预计 ${Math.max(typeof enriched.remainingDays === 'number' ? enriched.remainingDays : 0, 0)} 天后需要更换，已经帮你准备购买清单。`,
+          resultSummary: `${typeof enriched.consumableName === 'string' ? enriched.consumableName : '设备耗材'}预计 ${Math.max(typeof enriched.remainingDays === 'number' ? enriched.remainingDays : 0, 0)} 天后需要更换，已准备购买清单。`,
+        };
+      }
       const enriched = this.household.enrichContext(local);
       const itemName = typeof enriched.itemName === 'string' ? enriched.itemName : typeof action.config.itemName === 'string' ? action.config.itemName : '用品';
       const quantitySuggestion = typeof enriched.purchaseQuantity === 'number' ? enriched.purchaseQuantity : 1;
@@ -280,11 +405,13 @@ export class ActionExecutor {
       if (context.shouldNotify === false) return { notified: false, skipped: true };
       const title = typeof context.humanSummary === 'string' ? context.humanSummary.slice(0, 60) : '计划有新的结果';
       const body = typeof context.resultSummary === 'string' ? context.resultSummary : title;
-      const priority = action.config.priority === 'P1' || action.config.priority === 'P0' || action.config.priority === 'P2' || action.config.priority === 'P3'
+      const actionPriority = action.config.priority === 'P1' || action.config.priority === 'P0' || action.config.priority === 'P2' || action.config.priority === 'P3'
         ? action.config.priority
-        : context.notificationPriority === 'P1' || context.notificationPriority === 'P0' || context.notificationPriority === 'P2' || context.notificationPriority === 'P3'
-          ? context.notificationPriority
-        : 'P2';
+        : null;
+      const contextPriority = context.notificationPriority === 'P1' || context.notificationPriority === 'P0' || context.notificationPriority === 'P2' || context.notificationPriority === 'P3'
+        ? context.notificationPriority
+        : null;
+      const priority = this.resolveNotificationPriority(actionPriority, contextPriority);
       await this.notifications.emit({
         userId,
         executionId,
@@ -328,7 +455,7 @@ export class ActionExecutor {
   }
 
   private enrichLocalContext(context: Record<string, unknown>) {
-    return this.dailySummary.enrichContext(this.household.enrichContext(this.logistics.enrichContext(this.content.enrichContext(this.billing.enrichContext(context)))));
+    return this.study.enrichContext(this.device.enrichContext(this.dailySummary.enrichContext(this.household.enrichContext(this.logistics.enrichContext(this.content.enrichContext(this.billing.enrichContext(context)))))));
   }
 
   private normalizeGeneratedVariants(value: unknown) {
@@ -369,5 +496,11 @@ export class ActionExecutor {
       if (first) return first;
     }
     return null;
+  }
+
+  private resolveNotificationPriority(actionPriority: 'P0' | 'P1' | 'P2' | 'P3' | null, contextPriority: 'P0' | 'P1' | 'P2' | 'P3' | null) {
+    const score = { P0: 0, P1: 1, P2: 2, P3: 3 } as const;
+    if (actionPriority && contextPriority) return score[actionPriority] <= score[contextPriority] ? actionPriority : contextPriority;
+    return contextPriority ?? actionPriority ?? 'P2';
   }
 }

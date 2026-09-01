@@ -72,6 +72,13 @@ function scheduleFromTime(value: string) {
   return schedule(`${Number(minute)} ${Number(hour)} * * *`);
 }
 
+function parseDelimitedTextList(value: string) {
+  return value
+    .split(/[,\n，]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 const manualSource: PlanDefinitionInput['sources'] = [
   { sourceType: 'manual', config: {}, sortOrder: 0 },
 ];
@@ -155,6 +162,27 @@ const dailyImportantSummarySchema = z.object({
   includeCalendar: z.boolean().default(true),
   includeMessages: z.boolean().default(true),
   maxItems: z.number().int().min(1).max(20).default(5),
+  notificationPreference: z.enum(['silent', 'summary', 'important']).default('summary'),
+}).strict();
+
+const examStudyPlanSchema = z.object({
+  planName: z.string().trim().min(1).max(120).optional(),
+  examName: z.string().trim().min(1).max(120).default('我的考试'),
+  examDate: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/, '请输入 YYYY-MM-DD 格式的日期').default('2027-01-01'),
+  subjects: z.string().trim().min(1).max(500).default('科目一，科目二'),
+  dailyStudyMinutes: z.number().int().min(15).max(24 * 60).default(60),
+  preferredStudyTime: z.string().trim().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/, '请输入 HH:mm 格式的时间').default('20:00'),
+  target: z.string().trim().min(1).max(255).default('按计划完成备考'),
+  currentProgress: z.number().int().min(0).max(100).default(0),
+  weeklySummaryDay: z.enum(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']).default('sunday'),
+  missedTaskStrategy: z.enum(['catch_up_today', 'rebalance_future']).default('catch_up_today'),
+}).strict();
+
+const deviceConsumableReminderSchema = z.object({
+  planName: z.string().trim().min(1).max(120).optional(),
+  deviceProfileId: z.string().uuid(),
+  consumableId: z.string().uuid(),
+  preparationMode: z.enum(['reminder', 'shopping_list']).default('shopping_list'),
   notificationPreference: z.enum(['silent', 'summary', 'important']).default('summary'),
 }).strict();
 
@@ -520,29 +548,58 @@ export const PLAN_TEMPLATES: readonly PlanTemplateManifest[] = [
     icon: '学习',
     status: 'published',
     automationLevel: 'L2',
-    requiredConnectors: ['manual', 'calendar', 'internal'],
+    requiredConnectors: ['internal'],
     details: {
-      doesWhat: '围绕考试日期和每日学习时间生成学习安排，并支持后续重排。',
-      runsWhen: '每天晚间生成下一步学习任务。',
-      dataNeeded: '考试日期、科目、目标、学习时间和当前进度。',
-      remindsWhen: '需要你补学习或复盘时提醒。',
-      connectionSummary: '第一版先使用手动与内部数据。',
-      riskSummary: '只生成计划和提醒，不会替你做高风险动作。',
+      doesWhat: '围绕考试日期、每日学习时间和当前进度，生成当天学习任务并在漏学后重排后续安排。',
+      runsWhen: '每天在你设定的学习时间自动生成当天任务，也支持手动补跑。',
+      dataNeeded: '考试日期、科目、每日学习时长、目标和当前进度。',
+      remindsWhen: '有新的学习任务、需要补漏，或到了每周复盘日时提醒。',
+      connectionSummary: '第一版只依赖计划配置和内部运行时数据，不接真实日历。',
+      riskSummary: '只生成学习任务、复盘摘要和提醒，不会替你发送外部消息或执行高风险动作。',
     },
-    configFields: [],
-    configSchema: z.object({}).strict(),
-    buildDefinition() {
+    configFields: [
+      { key: 'planName', type: 'text', required: false, label: '计划名称', helpText: '例如“60 天冲刺教资笔试”。' },
+      { key: 'examName', type: 'text', required: true, label: '考试名称', helpText: '例如“教资笔试”或“CPA 会计”。' },
+      { key: 'examDate', type: 'date', required: true, label: '考试日期', helpText: '填写正式考试日期。' },
+      { key: 'subjects', type: 'text', required: true, label: '考试科目', helpText: '用逗号分隔，例如“数学，英语，政治”。' },
+      { key: 'dailyStudyMinutes', type: 'number', required: true, label: '每天学习时长', helpText: '每天计划学多久。', defaultValue: 60, min: 15, max: 1440 },
+      { key: 'preferredStudyTime', type: 'time', required: true, label: '学习时间', helpText: '每天几点生成当天学习任务。', defaultValue: '20:00' },
+      { key: 'target', type: 'text', required: true, label: '备考目标', helpText: '例如“60 天内完成三轮复习”。' },
+      { key: 'currentProgress', type: 'number', required: true, label: '当前进度', helpText: '用 0 到 100 表示当前备考进度。', defaultValue: 0, min: 0, max: 100 },
+      { key: 'weeklySummaryDay', type: 'select', required: true, label: '每周复盘日', helpText: '每周哪一天输出学习周总结。', defaultValue: 'sunday', options: [{ value: 'monday', label: '周一' }, { value: 'tuesday', label: '周二' }, { value: 'wednesday', label: '周三' }, { value: 'thursday', label: '周四' }, { value: 'friday', label: '周五' }, { value: 'saturday', label: '周六' }, { value: 'sunday', label: '周日' }] },
+      { key: 'missedTaskStrategy', type: 'select', required: true, label: '漏学处理方式', helpText: '漏掉的学习任务，是优先补上，还是放进后续节奏里重排。', defaultValue: 'catch_up_today', options: [{ value: 'catch_up_today', label: '今天优先补上' }, { value: 'rebalance_future', label: '后续节奏重排' }] },
+    ],
+    configSchema: examStudyPlanSchema,
+    buildDefinition(config) {
+      const parsed = examStudyPlanSchema.parse(config);
+      const subjects = parseDelimitedTextList(parsed.subjects);
       return {
-        name: '考试学习计划',
-        description: '按天生成学习任务，支持后续根据进度调整。',
+        name: parsed.planName?.trim() || '考试学习计划',
+        description: '按天生成学习任务、跟踪进度，并在漏学后只重排未来安排。',
         domain: 'study',
         automationLevel: 'L2',
-        sources: manualSource,
-        triggers: schedule('0 20 * * *'),
+        sources: [{
+          sourceType: 'internal',
+          config: {
+            resource: 'study_plan',
+            examName: parsed.examName,
+            examDate: parsed.examDate,
+            subjects,
+            dailyStudyMinutes: parsed.dailyStudyMinutes,
+            preferredStudyTime: parsed.preferredStudyTime,
+            target: parsed.target,
+            currentProgress: parsed.currentProgress,
+            weeklySummaryDay: parsed.weeklySummaryDay,
+            missedTaskStrategy: parsed.missedTaskStrategy,
+          },
+          sortOrder: 0,
+        }],
+        triggers: scheduleFromTime(parsed.preferredStudyTime),
         conditions: [],
         actions: [
-          { actionType: 'create_task', config: { list: 'study_plan' }, stepOrder: 0 },
-          { actionType: 'summarize', config: { format: 'short' }, stepOrder: 1 },
+          { actionType: 'create_task', config: { list: 'study_plan', domain: 'study' }, stepOrder: 0 },
+          { actionType: 'summarize', config: { format: 'short', domain: 'study' }, stepOrder: 1 },
+          { actionType: 'notify', config: { channel: 'in_app', priority: 'P2', eventType: 'study_plan_ready' }, stepOrder: 2 },
         ],
       };
     },
@@ -557,31 +614,48 @@ export const PLAN_TEMPLATES: readonly PlanTemplateManifest[] = [
     icon: '设备',
     status: 'published',
     automationLevel: 'L1',
-    requiredConnectors: ['manual', 'device'],
+    requiredConnectors: ['internal'],
     details: {
-      doesWhat: '根据更换周期估算设备耗材剩余时间，提前提醒你准备。',
-      runsWhen: '每周自动检查一次。',
-      dataNeeded: '设备类型、耗材名称、上次更换时间和预计剩余寿命。',
-      remindsWhen: '快到更换阈值时提醒。',
-      connectionSummary: '第一版先用手工输入或内部资料。',
-      riskSummary: '只做准备清单和提醒，不自动购买。',
+      doesWhat: '根据设备耗材的更换周期估算剩余时间，快到阈值时提醒你并准备购买清单。',
+      runsWhen: '每天自动检查一次，也支持你更新“已更换”时间后重新计算。',
+      dataNeeded: '设备资料、耗材名称、上次更换时间、更换周期和提醒阈值。',
+      remindsWhen: '剩余寿命接近阈值时提醒，或替你准备耗材清单。',
+      connectionSummary: '第一版只使用手工维护的设备与耗材资料，不依赖真实设备 API。',
+      riskSummary: '只停在提醒与准备购买清单，不会自动下单，也不会接真实支付。',
     },
-    configFields: [],
-    configSchema: z.object({}).strict(),
-    buildDefinition() {
+    configFields: [
+      { key: 'planName', type: 'text', required: false, label: '计划名称', helpText: '例如“净水器滤芯提醒”。' },
+      { key: 'deviceProfileId', type: 'text', required: true, label: '设备编号', helpText: '填写你已创建好的设备编号。' },
+      { key: 'consumableId', type: 'text', required: true, label: '耗材编号', helpText: '填写需要跟踪的耗材编号。' },
+      { key: 'preparationMode', type: 'select', required: true, label: '提醒方式', helpText: '只提醒，或直接准备内部购买清单。', defaultValue: 'shopping_list', options: [{ value: 'reminder', label: '提醒' }, { value: 'shopping_list', label: '准备购买清单' }] },
+      { key: 'notificationPreference', type: 'select', required: true, label: '提醒强度', helpText: '快到更换阈值时按你的偏好提醒。', defaultValue: 'summary', options: [{ value: 'silent', label: '静默' }, { value: 'summary', label: '摘要提醒' }, { value: 'important', label: '重要提醒' }] },
+    ],
+    configSchema: deviceConsumableReminderSchema,
+    buildDefinition(config) {
+      const parsed = deviceConsumableReminderSchema.parse(config);
       return {
-        name: '设备耗材提醒',
-        description: '根据更换周期提醒设备耗材，不自动购买。',
+        name: parsed.planName?.trim() || '设备耗材提醒',
+        description: '根据更换周期提醒设备耗材，必要时准备购买清单，不自动购买。',
         domain: 'device',
-        automationLevel: 'L1',
-        sources: manualSource,
-        triggers: schedule('0 9 * * 1'),
-        conditions: [
-          { groupId: 'root', logicalOperator: 'AND', fieldPath: 'remainingDays', operator: 'LTE', comparisonValue: 14, sortOrder: 0 },
-        ],
+        automationLevel: 'L2',
+        sources: [{
+          sourceType: 'internal',
+          config: {
+            resource: 'device_consumable',
+            deviceProfileId: parsed.deviceProfileId,
+            consumableId: parsed.consumableId,
+            preparationMode: parsed.preparationMode,
+          },
+          sortOrder: 0,
+        }],
+        triggers: schedule('0 9 * * *'),
+        conditions: [],
         actions: [
-          { actionType: 'prepare_purchase', config: { currency: 'CNY' }, stepOrder: 0 },
-          { actionType: 'notify', config: { channel: 'in_app', priority: 'P2', eventType: 'device_consumable_prepare' }, stepOrder: 1 },
+          { actionType: 'summarize', config: { format: 'short', domain: 'device', preparationMode: parsed.preparationMode }, stepOrder: 0 },
+          ...(parsed.preparationMode === 'shopping_list'
+            ? [{ actionType: 'prepare_purchase', config: { currency: 'CNY', domain: 'device', preparationMode: parsed.preparationMode }, stepOrder: 1 } as const]
+            : []),
+          { actionType: 'notify', config: { channel: 'in_app', priority: parsed.notificationPreference === 'important' ? 'P1' : 'P2', eventType: 'device_consumable_prepare' }, stepOrder: parsed.preparationMode === 'shopping_list' ? 2 : 1 },
         ],
       };
     },

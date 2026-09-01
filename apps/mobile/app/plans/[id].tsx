@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
-import { ActivityIndicator, Button, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useMemo, useState } from 'react';
+import { ActivityIndicator, Button, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { api } from '../../src/api';
 import { useAuthStore } from '../../src/auth-store';
 import {
@@ -30,7 +31,7 @@ interface PlanSummary {
   currentVersion: { versionNumber: number; name: string; templateKey: string | null; templateVersion: string | null; templateConfig: Record<string, unknown> | null; automationLevel: string } | null;
   activeVersion: { versionNumber: number; name: string } | null;
   planCenterSummary: {
-    kind: 'logistics' | 'household' | 'content' | 'daily_summary';
+    kind: 'logistics' | 'household' | 'content' | 'daily_summary' | 'study' | 'device';
     currentStatus: string;
     latestCheckAt?: string | null;
     nextCheckAt?: string | null;
@@ -46,6 +47,12 @@ interface PlanSummary {
     includedSources?: string[];
     latestSummaryAt?: string | null;
     latestImportantCount?: number;
+    expectedReplaceAt?: string | null;
+    remainingDays?: number | null;
+    nearReplacement?: boolean;
+    shoppingListPrepared?: boolean;
+    consumableName?: string | null;
+    deviceName?: string | null;
   } | null;
 }
 
@@ -72,10 +79,21 @@ interface TemplateDetail {
   configFields: TemplateConfigField[];
 }
 
+interface DeviceConsumable {
+  id: string;
+  deviceProfileId: string;
+  name: string;
+  lastReplacedAt: string;
+  replacementIntervalDays: number;
+  remindBeforeDays: number;
+  expectedReplaceAt: string;
+}
+
 export default function PlanDetailPage() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const token = useAuthStore((state) => state.token);
   const client = useQueryClient();
+  const [replacementDate, setReplacementDate] = useState('');
   const summary = useQuery({
     queryKey: ['plan', id, token],
     queryFn: () => api<PlanSummary>(`/plans/${id}`, token),
@@ -92,6 +110,20 @@ export default function PlanDetailPage() {
     queryFn: () => api<TemplateDetail>(`/templates/${summary.data?.templateKey}`, token),
     enabled: Boolean(token && summary.data?.templateKey),
   });
+  const deviceProfileId = typeof version.data?.templateConfig?.deviceProfileId === 'string' ? version.data.templateConfig.deviceProfileId : null;
+  const deviceConsumableId = typeof version.data?.templateConfig?.consumableId === 'string' ? version.data.templateConfig.consumableId : null;
+  const deviceConsumables = useQuery({
+    queryKey: ['device-consumables', token, deviceProfileId],
+    queryFn: () => api<DeviceConsumable[]>(
+      `/device-consumables${deviceProfileId ? `?deviceProfileId=${encodeURIComponent(deviceProfileId)}` : ''}`,
+      token,
+    ),
+    enabled: Boolean(token && summary.data?.planCenterSummary?.kind === 'device' && deviceProfileId),
+  });
+  const selectedConsumable = useMemo(
+    () => deviceConsumables.data?.find((item) => item.id === deviceConsumableId) ?? null,
+    [deviceConsumables.data, deviceConsumableId],
+  );
   const apply = useMutation({
     mutationFn: () => api(`/plans/${id}/versions/${currentVersionNumber}/apply`, token, { method: 'POST' }),
     onSuccess: async () => {
@@ -110,8 +142,25 @@ export default function PlanDetailPage() {
       ]);
     },
   });
+  const updateReplacement = useMutation({
+    mutationFn: () => {
+      if (!deviceConsumableId) throw new Error('缺少耗材配置');
+      return api(`/device-consumables/${deviceConsumableId}/replacement`, token, {
+        method: 'PATCH',
+        body: JSON.stringify({ lastReplacedAt: normalizeDateInput(replacementDate) }),
+      });
+    },
+    onSuccess: async () => {
+      setReplacementDate('');
+      await Promise.all([
+        client.invalidateQueries({ queryKey: ['plan', id, token] }),
+        client.invalidateQueries({ queryKey: ['device-consumables', token, deviceProfileId] }),
+      ]);
+      await refreshAll();
+    },
+  });
   const refreshAll = async () => {
-    await Promise.all([summary.refetch(), version.refetch(), template.refetch()]);
+    await Promise.all([summary.refetch(), version.refetch(), template.refetch(), deviceConsumables.refetch()]);
   };
 
   if (!token) {
@@ -191,6 +240,18 @@ export default function PlanDetailPage() {
                   <Text style={local.text}>最近重要事项数：{summary.data.planCenterSummary.latestImportantCount ?? 0}</Text>
                 </>
               ) : null}
+              {summary.data.planCenterSummary.kind === 'device' ? (
+                <>
+                  <Text style={local.text}>设备：{summary.data.planCenterSummary.deviceName ?? '未命名设备'}</Text>
+                  <Text style={local.text}>耗材：{summary.data.planCenterSummary.consumableName ?? '未命名耗材'}</Text>
+                  <Text style={local.text}>预计更换：{formatTime(summary.data.planCenterSummary.expectedReplaceAt)}</Text>
+                  <Text style={local.text}>剩余时间：{typeof summary.data.planCenterSummary.remainingDays === 'number' ? `${Math.max(summary.data.planCenterSummary.remainingDays, 0)} 天` : '待计算'}</Text>
+                  <Text style={local.text}>最近检查：{formatTime(summary.data.planCenterSummary.latestCheckAt)}</Text>
+                  <Text style={local.text}>下次检查：{formatTime(summary.data.planCenterSummary.nextCheckAt)}</Text>
+                  <Text style={local.text}>是否已准备购买清单：{boolLabel(summary.data.planCenterSummary.shoppingListPrepared)}</Text>
+                  <Text style={local.text}>上次更换：{selectedConsumable ? formatTime(selectedConsumable.lastReplacedAt) : '暂未读取'}</Text>
+                </>
+              ) : null}
             </View>
           ) : null}
 
@@ -204,7 +265,7 @@ export default function PlanDetailPage() {
             <Text style={local.cardTitle}>数据来源</Text>
             {version.data.definition.sources.map((source, index) => (
               <Text style={local.text} key={`${source.sourceType}-${index}`}>
-                {index + 1}. {sourceTypeLabel(source.sourceType)}{source.connectorKey ? ` · ${source.connectorKey}` : ''}{source.connectionId ? ' · 已绑定连接' : ''}
+                {index + 1}. {sourceTypeLabel(source.sourceType)}{source.connectionId ? ' · 已完成连接设置' : ''}
               </Text>
             ))}
             <Text style={local.cardTitle}>运行条件</Text>
@@ -225,6 +286,25 @@ export default function PlanDetailPage() {
             <Text style={local.cardTitle}>什么时候通知</Text>
             <Text style={local.text}>{notificationText(version.data)}</Text>
           </View>
+
+          {summary.data.planCenterSummary?.kind === 'device' && deviceConsumableId ? (
+            <View style={local.card}>
+              <Text style={local.cardTitle}>更新已更换时间</Text>
+              <Text style={local.text}>更换完耗材后，在这里更新日期，系统会重新计算预计更换时间和后续提醒。</Text>
+              <TextInput
+                style={local.input}
+                placeholder="YYYY-MM-DD"
+                value={replacementDate}
+                onChangeText={setReplacementDate}
+              />
+              <Button
+                title={updateReplacement.isPending ? '更新中…' : '确认已更换'}
+                onPress={() => updateReplacement.mutate()}
+                disabled={updateReplacement.isPending || !replacementDate.trim()}
+              />
+              {updateReplacement.isError ? <Text style={local.error}>更新失败，请检查日期格式后重试。</Text> : null}
+            </View>
+          ) : null}
 
           <View style={local.card}>
             <Button title="编辑" onPress={() => router.push(`/plans/${id}/edit` as never)} />
@@ -250,6 +330,12 @@ export default function PlanDetailPage() {
       )}
     </ScrollView>
   );
+}
+
+function normalizeDateInput(value: string) {
+  const trimmed = value.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return `${trimmed}T00:00:00.000Z`;
+  return trimmed;
 }
 
 function renderConfig(config: Record<string, unknown> | null, fields: TemplateConfigField[] | undefined) {
@@ -306,6 +392,7 @@ const local = StyleSheet.create({
   card: { backgroundColor: '#FFFFFF', borderRadius: 16, padding: 18, marginBottom: 12, borderWidth: 1, borderColor: '#E3E7E4' },
   cardTitle: { fontWeight: '700', fontSize: 16, color: '#24342C', marginTop: 10, marginBottom: 4 },
   text: { color: '#6B7770', lineHeight: 21 },
+  input: { borderWidth: 1, borderColor: '#D9DEDA', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 11, backgroundColor: '#FAFBFA', marginTop: 10, marginBottom: 10 },
   buttonGap: { height: 10 },
   error: { color: '#A63D3D', marginTop: 10 },
 });

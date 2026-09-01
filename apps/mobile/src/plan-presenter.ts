@@ -32,22 +32,22 @@ export function automationLevelLabel(level: string): string {
     case 'L0':
       return '只记录';
     case 'L1':
-      return '自动整理';
+      return '提醒我';
     case 'L2':
-      return '自动准备';
+      return '替我准备好';
     case 'L3':
-      return '自动执行';
+      return '执行前会先问你';
     default:
-      return level;
+      return '按计划自动处理';
   }
 }
 
 export function sourceTypeLabel(sourceType: string): string {
   switch (sourceType) {
     case 'manual':
-      return '手动输入';
+      return '你手动提供的信息';
     case 'internal':
-      return '内部数据';
+      return '系统里的已有信息';
     case 'billing':
       return '账单连接';
     case 'email':
@@ -80,14 +80,16 @@ export function triggerSummary(triggerType: string, config: Record<string, unkno
 }
 
 export function conditionSummary(fieldPath: string, operator: string, comparisonValue: unknown): string {
+  const fieldLabel = conditionFieldLabel(fieldPath);
+  if (fieldLabel === null) return '满足已配置的运行条件时执行';
   const operatorLabel = conditionOperatorLabel(operator);
   const right = typeof comparisonValue === 'object' ? JSON.stringify(comparisonValue) : String(comparisonValue ?? '—');
-  return `${fieldPath} ${operatorLabel} ${right}`;
+  return `${fieldLabel} ${operatorLabel} ${right}`;
 }
 
 export function actionSummary(actionType: string, config: Record<string, unknown> | null | undefined): string {
   if (actionType === 'notify') {
-    return `通知你${typeof config?.priority === 'string' ? `（${config.priority}）` : ''}`;
+    return '按你的偏好提醒你';
   }
   if (actionType === 'summarize') return '生成摘要';
   if (actionType === 'compare') return '做周期对比';
@@ -96,7 +98,8 @@ export function actionSummary(actionType: string, config: Record<string, unknown
   if (actionType === 'create_draft') return '保存平台草稿';
   if (actionType === 'prepare_publish') return '准备发布版本';
   if (actionType === 'prepare_purchase') return '准备补货清单';
-  return actionType;
+  if (actionType === 'create_task') return '生成今天要做的任务';
+  return '执行已配置的动作';
 }
 
 export function notificationPreferenceLabel(value: unknown): string {
@@ -148,5 +151,22 @@ function conditionOperatorLabel(operator: string) {
       return '涨幅超过';
     default:
       return operator;
+  }
+}
+
+function conditionFieldLabel(fieldPath: string) {
+  switch (fieldPath) {
+    case 'amount.total':
+      return '总金额';
+    case 'monthOverMonthChangePercent':
+      return '与上期相比的变化';
+    case 'tracking.hoursSinceUpdate':
+      return '快递最近无更新时长';
+    case 'household.daysUntilRunOut':
+      return '用品预计剩余时间';
+    case 'device.remainingDays':
+      return '耗材预计剩余时间';
+    default:
+      return null;
   }
 }

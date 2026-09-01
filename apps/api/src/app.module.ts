@@ -24,6 +24,8 @@ import { AuditModule } from './audit/audit.module';
 import { RiskModule } from './risk/risk.module';
 import { AiAdapterModule } from './ai-adapter/ai-adapter.module';
 import { AdminModule } from './admin/admin.module';
+import { StudyModule } from './study/study.module';
+import { DeviceModule } from './device/device.module';
 
 @Module({
   imports: [
@@ -48,6 +50,8 @@ import { AdminModule } from './admin/admin.module';
     DailySummaryModule,
     LogisticsModule,
     HouseholdModule,
+    StudyModule,
+    DeviceModule,
     PlansModule,
     TemplatesModule,
     ExecutionModule,

@@ -66,7 +66,7 @@ export class ExecutionRunner {
       const initialRun = existing.every((step) => step.attemptCount === 0);
       let context: Record<string, unknown>;
       try {
-        context = await this.sources.resolve(execution.userId, assembled.definition.sources, execution.triggerPayloadJson, execution.requestId);
+        context = await this.sources.resolve(execution.userId, assembled.definition.sources, { ...execution.triggerPayloadJson, planId: execution.planId }, execution.requestId);
         context = { ...context, planId: execution.planId };
         if (initialRun) {
           const conditionsMet = this.conditions.evaluate(assembled.definition.conditions, context);

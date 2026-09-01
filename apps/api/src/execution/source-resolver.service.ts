@@ -4,8 +4,10 @@ import type { NormalizedSource } from '@lazy-armor/plan-schema';
 import { BillingService } from '../billing/billing.service';
 import { ContentService } from '../content/content.service';
 import { DailySummaryService } from '../daily-summary/daily-summary.service';
+import { DeviceService } from '../device/device.service';
 import { HouseholdService } from '../household/household.service';
 import { LogisticsService } from '../logistics/logistics.service';
+import { StudyService } from '../study/study.service';
 import { ExecutionRuntimeError } from './execution.types';
 import { RuntimeConnectionGuard } from './runtime-connection-guard.service';
 
@@ -17,8 +19,10 @@ export class SourceResolver {
     private readonly billing: BillingService,
     private readonly content: ContentService,
     private readonly dailySummary: DailySummaryService,
+    private readonly device: DeviceService,
     private readonly logistics: LogisticsService,
     private readonly household: HouseholdService,
+    private readonly study: StudyService,
   ) {}
 
   async resolve(userId: string, sources: NormalizedSource[], triggerPayload: Record<string, unknown>, requestId: string): Promise<Record<string, unknown>> {
@@ -50,6 +54,14 @@ export class SourceResolver {
           context = await this.dailySummary.resolveInternal(userId, source.config, context);
           continue;
         }
+        if (source.config.resource === 'study_plan') {
+          context = await this.study.resolveInternal(userId, source.config, context);
+          continue;
+        }
+        if (source.config.resource === 'device_consumable') {
+          context = await this.device.resolveInternal(userId, source.config, context);
+          continue;
+        }
         throw new ExecutionRuntimeError('SOURCE_CONNECTION_REQUIRED', 'Internal source requires a connection');
       }
       const checked = await this.guard.assertUsable(userId, source.connectionId, 'READ_INTERNAL');
@@ -63,6 +75,6 @@ export class SourceResolver {
   }
 
   private enrichLocalContext(context: Record<string, unknown>) {
-    return this.dailySummary.enrichContext(this.household.enrichContext(this.logistics.enrichContext(this.content.enrichContext(this.billing.enrichContext(context)))));
+    return this.study.enrichContext(this.device.enrichContext(this.dailySummary.enrichContext(this.household.enrichContext(this.logistics.enrichContext(this.content.enrichContext(this.billing.enrichContext(context)))))));
   }
 }
