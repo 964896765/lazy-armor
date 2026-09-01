@@ -1,0 +1,46 @@
+{
+  "name": "@lazy-armor/api",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "nest build",
+    "dev": "nest start --watch",
+    "start": "node dist/main.js",
+    "start:api": "node dist/entrypoints/api.main.js",
+    "start:execution-worker": "node dist/entrypoints/execution-worker.main.js",
+    "start:outbox-worker": "node dist/entrypoints/outbox-worker.main.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@lazy-armor/config": "workspace:*",
+    "@lazy-armor/connector-sdk": "workspace:*",
+    "@lazy-armor/database": "workspace:*",
+    "@lazy-armor/plan-schema": "workspace:*",
+    "@lazy-armor/shared": "workspace:*",
+    "@nestjs/common": "11.1.18",
+    "@nestjs/config": "4.0.2",
+    "@nestjs/core": "11.1.18",
+    "@nestjs/jwt": "11.0.1",
+    "@nestjs/platform-express": "11.1.18",
+    "bcryptjs": "3.0.2",
+    "bullmq": "6.3.3",
+    "class-transformer": "0.5.1",
+    "class-validator": "0.14.2",
+    "drizzle-orm": "0.45.2",
+    "express": "5.2.1",
+    "ioredis": "5.8.1",
+    "mysql2": "3.24.2",
+    "reflect-metadata": "0.2.2",
+    "rxjs": "7.8.2",
+    "zod": "4.1.5"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "11.0.10",
+    "@nestjs/testing": "11.1.18",
+    "@types/express": "5.0.3",
+    "@types/supertest": "6.0.3",
+    "supertest": "7.1.4",
+    "vitest": "4.1.11"
+  }
+}

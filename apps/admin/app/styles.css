@@ -1,0 +1,21 @@
+:root { color-scheme: light; font-family: Inter, "PingFang SC", "Microsoft YaHei", sans-serif; background: #f5f4ef; color: #1f2a25; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+main { display: grid; grid-template-columns: 240px 1fr; min-height: 100vh; }
+aside { background: #183b2d; color: #fff; padding: 32px 24px; }
+.brand { font-size: 24px; font-weight: 800; }
+.admin { color: #a8c6b8; margin: 6px 0 36px; }
+nav { display: grid; gap: 8px; }
+nav span { padding: 11px 12px; border-radius: 10px; background: rgba(255,255,255,.05); }
+section { padding: 40px; }
+header { display: flex; justify-content: space-between; align-items: center; }
+header p { color: #6d7e75; margin: 0; }
+h1 { font-size: 34px; margin: 4px 0 24px; }
+button { border: 1px solid #ccd4ce; background: #fff; border-radius: 10px; padding: 10px 16px; color: #486055; }
+.notice { background: #fff8db; border: 1px solid #eadc9a; border-radius: 12px; padding: 16px; margin-bottom: 24px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px; }
+article { background: #fff; border: 1px solid #e5e8e5; border-radius: 16px; padding: 22px; }
+article h2 { font-size: 18px; margin: 0; }
+article p { color: #69756f; min-height: 42px; }
+article small { color: #8b9891; }
+@media (max-width: 760px) { main { grid-template-columns: 1fr; } aside { display: none; } section { padding: 24px; } }

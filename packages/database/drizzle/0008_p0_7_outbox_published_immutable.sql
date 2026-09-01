@@ -1,0 +1,1 @@
+CREATE TRIGGER `outbox_messages_published_immutable` BEFORE UPDATE ON `outbox_messages` FOR EACH ROW BEGIN IF OLD.`status` = 'published' AND NOT (OLD.`status` <=> NEW.`status`) THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Published Outbox message is immutable'; END IF; END;

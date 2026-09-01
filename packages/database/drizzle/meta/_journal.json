@@ -1,0 +1,111 @@
+{
+  "version": "7",
+  "dialect": "mysql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1788253200000,
+      "tag": "0000_p0_foundation",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1788256800000,
+      "tag": "0001_plan_engine_core",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1788260400000,
+      "tag": "0002_execution_engine_core",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1788264000000,
+      "tag": "0003_execution_policy_and_lease",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1788267600000,
+      "tag": "0004_execution_policy_immutable",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1788271200000,
+      "tag": "0005_risk_approval_notification",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1788274800000,
+      "tag": "0006_p0_6_compliance_extensions",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1788278400000,
+      "tag": "0007_p0_7_audit_idempotency_outbox",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1788282000000,
+      "tag": "0008_p0_7_outbox_published_immutable",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1788285600000,
+      "tag": "0009_p0_final_audit_auth",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1788289200000,
+      "tag": "0010_p0_final_audit_system_user_nullable",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1788292800000,
+      "tag": "0011_p0_final_credential_webhook_retention",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1788296400000,
+      "tag": "0012_p1_template_config_and_billing",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1788300000000,
+      "tag": "0013_p1_logistics_household",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1788303600000,
+      "tag": "0014_p1_content_daily_summary",
+      "breakpoints": true
+    }
+  ]
+}

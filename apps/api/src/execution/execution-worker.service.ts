@@ -1,0 +1,50 @@
+import { Injectable, OnApplicationShutdown, OnModuleInit } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { Worker } from 'bullmq';
+import IORedis from 'ioredis';
+import { ExecutionRunner } from './execution-runner.service';
+import { ExecutionLeaseService } from './execution-lease.service';
+import { workerEnabled } from '../common/app-role';
+
+@Injectable()
+export class ExecutionWorker implements OnModuleInit, OnApplicationShutdown {
+  private worker?: Worker<{ executionId: string }>;
+  private redis?: IORedis;
+
+  constructor(private readonly config: ConfigService, private readonly runner: ExecutionRunner, private readonly lease: ExecutionLeaseService) {}
+
+  onModuleInit() {
+    if (process.env.NODE_ENV === 'test' || !workerEnabled('execution-worker')) return;
+    this.redis = new IORedis(this.config.getOrThrow<string>('REDIS_URL'), { maxRetriesPerRequest: null });
+    this.worker = new Worker('lazy-armor-executions', async (job) => {
+      const outcome = await this.processExecution(job.data.executionId);
+      if (outcome.retryScheduled) throw new Error('CONTROLLED_RETRY_SCHEDULED');
+      return outcome;
+    }, { connection: this.redis, concurrency: 4 });
+  }
+
+  async processExecution(executionId: string) {
+    const lease = await this.lease.acquire(executionId);
+    if (!lease.acquired) return { status: lease.status };
+    const heartbeat = setInterval(() => {
+      void this.lease.heartbeat(executionId, lease.workerToken).catch(() => undefined);
+    }, Math.max(100, Math.floor(this.lease.leaseDurationMs / 3)));
+    heartbeat.unref();
+    try {
+      return await this.runner.run(executionId, lease.workerToken);
+    } finally {
+      clearInterval(heartbeat);
+    }
+  }
+
+  async readiness() {
+    if (!this.worker) return { ready: false, reason: 'execution_worker_not_running' };
+    await this.worker.waitUntilReady();
+    return { ready: this.worker.isRunning(), reason: this.worker.isRunning() ? null : 'execution_worker_not_running' };
+  }
+
+  async onApplicationShutdown() {
+    await this.worker?.close();
+    if (this.redis && this.redis.status !== 'end') await this.redis.quit();
+  }
+}
