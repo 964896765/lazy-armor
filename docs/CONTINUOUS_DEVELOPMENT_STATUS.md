@@ -1,40 +1,90 @@
 # Continuous Development Status
 
-## 2026-09-01
+## 2026-09-02
 
-### P1-1 Finance + Template Config + Plan Center
+### Product Development
 
-- Status: in\_progress
+- Status: `P1 DEVELOPMENT COMPLETE`
 
-- Scope completed:
+- P1-1 `月度账单汇总`: completed
 
-  - Template Detail API and controlled config schema are available for finance canonical plans.
+- P1-2 `话费异常守护`: completed
 
-  - Installed plans persist `templateKey` + `templateVersion`, and template-based edits create a new immutable `PlanVersion`.
+- P1-3 `快递静默管家`: completed
 
-  - Finance canonical input and execution loop are available for monthly billing summary and mobile bill guard.
+- P1-4 `家庭补给提醒`: completed
 
-  - Mobile now upgrades `＋` from direct install to template detail + install-before-config flow.
+- P1-5 `视频一稿多发`: completed
 
-  - Mobile `计划` tab now works as a minimal Plan Center with `运行中 / 需要设置 / 已暂停` grouping.
+- P1-6 `每日重要事项摘要`: completed
 
-  - Mobile plan detail and template-based edit pages are connected to existing Plan Domain Service.
+- P1-7 `考试学习计划`: completed
 
-- Remaining for next package:
+- P1-8 `设备耗材提醒`: completed
 
-  - Continue into `P1-2 快递静默管家`.
+- Natural Language Plan Creation: completed
 
-  - Continue into `P1-3 家庭补给提醒`.
+- Template Contract: completed
 
-  - Extend the same template/config/detail pattern to the remaining canonical plans.
+- Consumer Language cleanup: completed
 
-### Parallel P0 Hardening
+### Architecture Status
 
-- `P0-H1 Android`: not blocked by current P1 work; keep separate production readiness track.
+- Canonical chain remains the only workflow path:
+  `Source -> Trigger -> Condition -> Action -> Risk -> Approval -> Execution -> Result -> Fallback -> Audit`
 
-- `P0-H2 Credential`: not blocked by current P1 work; keep separate rotation/version contract track.
+- No domain-specific workflow engine was introduced for finance, life, content, summary, study, or device domains.
 
-- `P0-H3 Webhook`: not blocked by current P1 work; keep separate retention/cleanup track.
+- Template resolution is now governed by a server-owned contract:
+  `approvalPolicy`, `riskConstraint`, `notificationPolicy`
 
-- `P0-H4 Worker Operations`: not blocked by current P1 work; keep separate readiness/recovery track.
+- Risk truth still comes from `ACTION_DEFINITIONS`; templates can constrain but cannot lower risk.
+
+- Natural language creation remains:
+  `natural language -> controlled intent parser -> canonical template -> controlled config -> plan draft`
+
+### Regression Status
+
+- Root / API / Mobile typechecks: PASS
+
+- P1 finance / life / content-summary / study / device / natural-language / templates: PASS
+
+- P1 template contract regression: PASS
+
+- P1 canonical plans regression: PASS
+
+- P0 execution / risk / approval / runtime permission / idempotency / outbox / audit key regressions: PASS
+
+- Current regression result: `PASS`
+
+### Documentation State
+
+- README: updated to current phase
+
+- `docs/P1_DEVELOPMENT_REPORT.md`: added
+
+- `docs/PRODUCTION_READINESS_CHECKLIST.md`: added
+
+- This document now reflects real current status instead of the old P0-only baseline
+
+### P0 Hardening
+
+- `P0-H1 Android Production Gate`: parallel, not a blocker for normal P2 development unless a hard stop is triggered
+
+- `P0-H2 Credential`: parallel final verification in progress
+
+- `P0-H3 Webhook`: parallel retention/privacy verification in progress
+
+- `P0-H4 Worker Operations`: parallel fault-matrix verification in progress
+
+- P0 hardening status is intentionally tracked separately from P1 development completion
+
+### Next Development Step
+
+- Immediate next stage: `P2-0 Provider Capability Matrix`
+
+- Followed by: `P2 Connection Lifecycle`
+
+- Planned first adapters after contract freeze:
+  `Email / Gmail`, `Calendar`
 

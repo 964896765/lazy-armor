@@ -4,6 +4,7 @@ import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-nat
 import { api } from '../../src/api';
 import { useAuthStore } from '../../src/auth-store';
 import { executionStatusLabel, executionStepMark, sortExecutionSteps } from '../../src/execution-presenter';
+import { actionSummary } from '../../src/plan-presenter';
 import { approvalStatusLabel, riskLevelLabel, stepApprovalLabel } from '../../src/today-presenter';
 import { styles } from '../../src/shell';
 
@@ -23,7 +24,7 @@ export default function ExecutionDetail() {
   <View style={styles.card}><Text style={styles.cardTitle}>风险评估</Text><Text style={styles.cardText}>整体风险：{riskLevelLabel(detail.data.declaredRiskLevel)}</Text><Text style={styles.cardText}>确认状态：{approvalStatusLabel(detail.data.approvalStatus)}</Text></View>
   {detail.data.approvals.map((approval) => <View style={[styles.card, local.approval]} key={approval.id}><Text style={styles.cardTitle}>确认请求</Text><Text style={styles.cardText}>{approval.actionSummary}</Text><Text style={styles.cardText}>状态：{approvalStatusLabel(approval.status)}（{riskLevelLabel(approval.effectiveRiskLevel)}）</Text>{approval.reason ? <Text style={styles.cardText}>原因：{approval.reason}</Text> : null}{approval.decidedAt ? <Text style={styles.cardText}>处理时间：{new Date(approval.decidedAt).toLocaleString('zh-CN')}</Text> : null}{approval.decisionReason ? <Text style={styles.cardText}>处理说明：{approval.decisionReason}</Text> : null}</View>)}
   {detail.data.notifications.length > 0 && <View style={styles.card}><Text style={styles.cardTitle}>通知</Text>{detail.data.notifications.map((item) => <Text style={styles.cardText} key={item.id}>{item.title} · {item.body}</Text>)}</View>}
-  {sortExecutionSteps(detail.data.steps).map((step) => <View style={styles.card} key={step.id}><Text style={styles.cardTitle}>{executionStepMark(step.status)}　第 {step.stepOrder + 1} 步</Text><Text style={styles.cardText}>{step.actionType}{step.retryCount > 0 ? ` · 已重试 ${step.retryCount} 次` : ''}{step.errorMessage ? ` · ${step.errorMessage}` : ''}</Text><Text style={styles.cardText}>风险：{riskLevelLabel(step.effectiveRiskLevel)} · {stepApprovalLabel(step)}</Text></View>)}
+  {sortExecutionSteps(detail.data.steps).map((step) => <View style={styles.card} key={step.id}><Text style={styles.cardTitle}>{executionStepMark(step.status)}　第 {step.stepOrder + 1} 步</Text><Text style={styles.cardText}>{actionSummary(step.actionType, null)}{step.retryCount > 0 ? ` · 已重试 ${step.retryCount} 次` : ''}{step.errorMessage ? ` · ${step.errorMessage}` : ''}</Text><Text style={styles.cardText}>风险：{riskLevelLabel(step.effectiveRiskLevel)} · {stepApprovalLabel(step)}</Text></View>)}
   </>}</ScrollView>;
 }
 const local = StyleSheet.create({ page: { flex: 1, backgroundColor: '#F5F4EF' }, content: { padding: 24, paddingTop: 52 }, approval: { borderColor: '#F2A65A', borderWidth: 2 } });

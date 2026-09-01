@@ -3,7 +3,16 @@ import { router } from 'expo-router';
 import { ActivityIndicator, Button, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { api } from '../../src/api';
 import { useAuthStore } from '../../src/auth-store';
-import { formatTime, planGroup, planStatusLabel, type PlanListStatus } from '../../src/plan-presenter';
+import { executionStatusLabel } from '../../src/execution-presenter';
+import {
+  formatTime,
+  planCenterStatusLabel,
+  planGroup,
+  planStatusLabel,
+  platformLabel,
+  sourceSummaryLabel,
+  type PlanListStatus,
+} from '../../src/plan-presenter';
 import { styles } from '../../src/shell';
 
 interface PlanSummary {
@@ -76,21 +85,21 @@ export default function Plans() {
                 {plan.description ? <Text style={styles.cardText}>{plan.description}</Text> : null}
                 {plan.planCenterSummary?.kind === 'logistics' ? (
                   <>
-                    <Text style={styles.cardText}>当前状态：{plan.planCenterSummary.currentStatus}{plan.planCenterSummary.isException ? ' · 需要留意' : ''}</Text>
+                    <Text style={styles.cardText}>当前状态：{planCenterStatusLabel('logistics', plan.planCenterSummary.currentStatus)}{plan.planCenterSummary.isException ? ' · 需要留意' : ''}</Text>
                     <Text style={styles.cardText}>最近检查：{formatTime(plan.planCenterSummary.latestCheckAt ?? plan.latestExecution?.createdAt)}</Text>
                     <Text style={styles.cardText}>下次检查：{formatTime(plan.planCenterSummary.nextCheckAt ?? plan.nextExpectedRunAt)}</Text>
                   </>
                 ) : null}
                 {plan.planCenterSummary?.kind === 'household' ? (
                   <>
-                    <Text style={styles.cardText}>当前状态：{plan.planCenterSummary.currentStatus}</Text>
+                    <Text style={styles.cardText}>当前状态：{planCenterStatusLabel('household', plan.planCenterSummary.currentStatus)}</Text>
                     <Text style={styles.cardText}>预计耗尽：{formatTime(plan.planCenterSummary.estimatedRunOutAt)}</Text>
                     <Text style={styles.cardText}>下次提醒：{formatTime(plan.planCenterSummary.nextReminderAt)}</Text>
                   </>
                 ) : null}
                 {plan.planCenterSummary?.kind === 'content' ? (
                   <>
-                    <Text style={styles.cardText}>目标平台：{(plan.planCenterSummary.targetPlatforms ?? []).join('、') || '暂未设置'}</Text>
+                    <Text style={styles.cardText}>目标平台：{(plan.planCenterSummary.targetPlatforms ?? []).map((item) => platformLabel(item)).join('、') || '暂未设置'}</Text>
                     <Text style={styles.cardText}>最近准备：{plan.planCenterSummary.latestPreparedVariantCount ?? 0} 个版本</Text>
                     <Text style={styles.cardText}>是否等待确认：{plan.planCenterSummary.waitingConfirmation ? '是' : '否'}</Text>
                   </>
@@ -98,11 +107,11 @@ export default function Plans() {
                 {plan.planCenterSummary?.kind === 'daily_summary' ? (
                   <>
                     <Text style={styles.cardText}>摘要时间：{plan.planCenterSummary.summaryTime ?? '暂未设置'}</Text>
-                    <Text style={styles.cardText}>数据来源：{(plan.planCenterSummary.includedSources ?? []).join('、') || '暂未设置'}</Text>
+                    <Text style={styles.cardText}>数据来源：{(plan.planCenterSummary.includedSources ?? []).map((item) => sourceSummaryLabel(item)).join('、') || '暂未设置'}</Text>
                     <Text style={styles.cardText}>最近重点事项：{plan.planCenterSummary.latestImportantCount ?? 0} 件</Text>
                   </>
                 ) : null}
-                <Text style={styles.cardText}>最近执行：{plan.latestExecution ? `${formatTime(plan.latestExecution.createdAt)} · ${plan.latestExecution.resultSummary ?? plan.latestExecution.status}` : '暂未运行'}</Text>
+                <Text style={styles.cardText}>最近执行：{plan.latestExecution ? `${formatTime(plan.latestExecution.createdAt)} · ${plan.latestExecution.resultSummary ?? executionStatusLabel(plan.latestExecution.status)}` : '暂未运行'}</Text>
                 <Text style={styles.cardText}>下次预计运行：{formatTime(plan.nextExpectedRunAt)}</Text>
                 <Text style={styles.cardText}>连接/配置：{plan.hasMissingConnection ? '还缺连接或权限' : '已具备当前所需数据'}</Text>
               </View>

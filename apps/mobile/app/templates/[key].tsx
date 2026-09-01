@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Button, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { api } from '../../src/api';
 import { useAuthStore } from '../../src/auth-store';
-import { automationLevelLabel } from '../../src/plan-presenter';
+import { automationLevelLabel, templateGroupLabel } from '../../src/plan-presenter';
 import {
   buildInitialTemplateConfig,
   normalizeTemplateConfig,
@@ -209,7 +209,7 @@ export default function TemplateDetailPage() {
 
           <View style={local.card}>
             <Text style={local.cardTitle}>模板信息</Text>
-            <Text style={local.text}>分类：{detail.data.group}</Text>
+            <Text style={local.text}>分类：{templateGroupLabel(detail.data.group)}</Text>
             <Text style={local.text}>它会怎么帮你：{automationLevelLabel(detail.data.automationLevel)}</Text>
             <Text style={local.text}>模板版本：V{detail.data.templateVersion}</Text>
           </View>

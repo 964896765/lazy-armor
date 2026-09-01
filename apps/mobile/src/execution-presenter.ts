@@ -14,7 +14,7 @@ const STEP_MARKS: Record<string, string> = {
 
 export type ExecutionListState = 'loading' | 'error' | 'empty' | 'ready';
 
-export function executionStatusLabel(status: string) { return STATUS_LABELS[status] ?? status; }
+export function executionStatusLabel(status: string) { return STATUS_LABELS[status] ?? '处理中'; }
 export function executionStepMark(status: string) { return STEP_MARKS[status] ?? '○'; }
 export function sortExecutionSteps<T extends PresentableExecutionStep>(steps: T[]) { return [...steps].sort((left, right) => left.stepOrder - right.stepOrder); }
 export function executionListState(loading: boolean, error: boolean, count: number): ExecutionListState {

@@ -6,7 +6,12 @@
 
 个人事务自动化平台。品牌主张：从从容容，游刃有余。
 
-当前阶段只建设统一底层的 P0 技术设计，不进行大规模业务编码。
+当前状态：
+
+- `P0 Core` 已完成
+- `P1 Canonical Plans` 已完成
+- `P0 Production Hardening` 持续并行
+- 下一阶段进入 `P2 Real Connectors`
 
 ## 文档
 
@@ -15,6 +20,9 @@
 - [P0 第一轮完成报告](docs/P0_ROUND1_COMPLETION_REPORT.md)
 - [P0-4 Plan Engine Core 完成报告](docs/P0_4_COMPLETION_REPORT.md)
 - [P0-5 Execution Engine Core 完成报告](docs/P0_5_COMPLETION_REPORT.md)
+- [持续开发状态](docs/CONTINUOUS_DEVELOPMENT_STATUS.md)
+- [P1 开发报告](docs/P1_DEVELOPMENT_REPORT.md)
+- [生产就绪清单](docs/PRODUCTION_READINESS_CHECKLIST.md)
 
 ## P0 设计冻结原则
 
@@ -47,4 +55,25 @@ API 默认位于 `http://127.0.0.1:3001/api`，健康检查为 `/api/health`。�
 
 ## 当前实现范围
 
-当前实现停在 P0-5：除 P0-1～P0-4 的基础架构、身份、Connector 与 Plan Engine 外，已实现正式 Execution / ExecutionStep、受控状态机、BullMQ Worker、Lease/Heartbeat/Crash Recovery、Step 级 Retry/Fallback、运行时 Connection/Permission 校验，以及 Mobile 真实执行记录与详情。P0-6 Risk/Approval/Notification 与 P0-7 Audit/业务 Idempotency/Transactional Outbox 均未开始；R2～R4 Action 在这些安全能力完成前一律阻断。
+当前已完成：
+
+- P0 Core：
+  身份、Connector Framework、Plan Engine、Execution Engine、Risk / Approval / Notification、Audit、业务 Idempotency、Transactional Outbox
+- P1：
+  8 个 Canonical Plans、Template Contract、Natural Language Plan Creation、移动端主要消费者路径
+- 当前唯一自动化主链：
+  `Source -> Trigger -> Condition -> Action -> Risk -> Approval -> Execution -> Result -> Fallback -> Audit`
+
+当前正在并行推进：
+
+- P0-H1 Android Production Gate
+- P0-H2 Credential 最终验证
+- P0-H3 Webhook 隐私与 retention 验证
+- P0-H4 Worker Operations fault matrix
+
+接下来直接进入：
+
+- `P2-0 Provider Capability Matrix`
+- `P2 Connection Lifecycle`
+- 首批真实连接器：
+  `Email / Gmail`、`Calendar`

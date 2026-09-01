@@ -23,7 +23,7 @@ export function planStatusLabel(status: string): string {
     case 'archived':
       return '已归档';
     default:
-      return status;
+      return '暂不可用';
   }
 }
 
@@ -39,6 +39,18 @@ export function automationLevelLabel(level: string): string {
       return '执行前会先问你';
     default:
       return '按计划自动处理';
+  }
+}
+
+export function templateGroupLabel(group: string): string {
+  switch (group) {
+    case '我的钱':
+    case '我的生活':
+    case '我的事情':
+    case '我的东西':
+      return group;
+    default:
+      return '其他计划';
   }
 }
 
@@ -61,8 +73,96 @@ export function sourceTypeLabel(sourceType: string): string {
     case 'content_platform':
       return '内容平台';
     default:
-      return sourceType;
+      return '其他来源';
   }
+}
+
+export function sourceSummaryLabel(sourceType: string): string {
+  switch (sourceType) {
+    case 'internal_task':
+      return '系统任务';
+    case 'manual_event':
+      return '手动记录';
+    case 'test_email':
+    case 'email':
+      return '邮件';
+    case 'test_calendar':
+    case 'calendar':
+      return '日历';
+    case 'billing':
+      return '账单';
+    case 'logistics':
+      return '快递';
+    case 'device':
+      return '设备信息';
+    default:
+      return sourceTypeLabel(sourceType);
+  }
+}
+
+export function platformLabel(platform: string): string {
+  switch (platform) {
+    case 'douyin':
+      return '抖音';
+    case 'bilibili':
+      return 'B站';
+    case 'xiaohongshu':
+      return '小红书';
+    case 'kuaishou':
+      return '快手';
+    case 'wechat_video':
+      return '视频号';
+    default:
+      return '其他平台';
+  }
+}
+
+export function planCenterStatusLabel(kind: string, status: string): string {
+  if (!status) return '暂不可用';
+  if (kind === 'content') {
+    switch (status) {
+      case 'draft_ready':
+        return '草稿已准备好';
+      case 'needs_revision':
+        return '还需要你调整';
+      case 'prepared':
+        return '发布前已准备好';
+      default:
+        return '已准备当前内容';
+    }
+  }
+  if (kind === 'daily_summary') {
+    switch (status) {
+      case 'silent':
+        return '本轮无需提醒';
+      case 'summary_ready':
+        return '摘要已准备好';
+      default:
+        return '已按当前策略整理';
+    }
+  }
+  if (kind === 'logistics') {
+    switch (status) {
+      case 'quiet':
+        return '目前一切正常';
+      case 'stale':
+      case 'exception':
+        return '需要留意';
+      default:
+        return '已完成本轮检查';
+    }
+  }
+  if (kind === 'household') {
+    switch (status) {
+      case 'sufficient':
+        return '暂时够用';
+      case 'low_stock':
+        return '该准备补货了';
+      default:
+        return '已完成本轮检查';
+    }
+  }
+  return '已按当前计划处理';
 }
 
 export function triggerSummary(triggerType: string, config: Record<string, unknown> | null | undefined): string {
@@ -73,10 +173,10 @@ export function triggerSummary(triggerType: string, config: Record<string, unkno
     if (day === '*' && month === '*' && weekDay === '*' && /^\*\/\d+$/.test(hour ?? '')) return `每 ${hour.slice(2)} 小时整`;
     if (day === '*' && month === '*' && weekDay === '*') return `每天 ${hour}:${minute}`;
     if (day === '*' && month === '*' && /^[0-6]$/.test(weekDay ?? '')) return `每周 ${weekdayLabel(Number(weekDay))} ${hour}:${minute}`;
-    return cron;
+    return '按固定时间运行';
   }
   if (triggerType === 'manual') return '手动触发';
-  return triggerType;
+  return '按已配置方式触发';
 }
 
 export function conditionSummary(fieldPath: string, operator: string, comparisonValue: unknown): string {
@@ -111,7 +211,7 @@ export function notificationPreferenceLabel(value: unknown): string {
     case 'important':
       return '重要提醒';
     default:
-      return typeof value === 'string' ? value : '—';
+      return '按计划提醒';
   }
 }
 
@@ -150,7 +250,7 @@ function conditionOperatorLabel(operator: string) {
     case 'PERCENT_CHANGE_GT':
       return '涨幅超过';
     default:
-      return operator;
+      return '满足条件';
   }
 }
 

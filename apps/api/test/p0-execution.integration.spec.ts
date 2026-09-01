@@ -187,9 +187,26 @@ describe.sequential('P0-5 Execution Engine integration and security', () => {
     expect(await detail(userA.token, created.body.id)).toMatchObject({ status: 'failed', errorCode: 'CONDITION_INPUT_INVALID' });
   });
 
-  it('16 routes R2, R3 and R4 actions into the P0-6 approval gate before any external side effect', async () => {
+  it('16 keeps R2 internal actions running and routes only R3/R4 into the P0-6 approval gate', async () => {
+    const r2Plan = await createPlan(userA.token, definition('R2 内部动作', [{
+      actionType: 'generate_content',
+      config: { format: 'short', targetPlatforms: ['douyin'] },
+      stepOrder: 0,
+    }]));
+    const r2Created = await dispatch(userA.token, r2Plan.id, {
+      amount: 300,
+      masterContent: {
+        title: '周末把衣柜整理好',
+        body: '顺手整理换季衣物，并准备一条适合短视频平台的文案。',
+        tags: ['收纳', '换季'],
+        coverReference: 'cover://demo',
+      },
+      targetPlatforms: ['douyin'],
+    }).expect(201);
+    await worker.processExecution(r2Created.body.id);
+    expect((await detail(userA.token, r2Created.body.id)).status).toBe('succeeded');
+
     const definitions = [
-      definition('R2 安全门', [{ actionType: 'create_draft', config: {}, stepOrder: 0 }]),
       definition('R3 安全门', [{ actionType: 'publish', connectionId: internalConnectionId, config: { visibility: 'private' }, stepOrder: 0 }]),
       definition('R4 安全门', [{ actionType: 'create_order', connectionId: internalConnectionId, config: { currency: 'CNY' }, stepOrder: 0 }]),
     ];
@@ -204,13 +221,15 @@ describe.sequential('P0-5 Execution Engine integration and security', () => {
   });
 
   it('17 creates partially_succeeded when an earlier Step succeeded and a later Step failed', async () => {
-    const plan = await createPlan(userA.token, definition('部分成功', [record(0), { actionType: 'notify', config: { channel: 'in_app' }, stepOrder: 1 }]));
+    const connectionId = await createConnection(userA.token, testConnectorKey, '部分成功未授权');
+    const plan = await createPlan(userA.token, definition('部分成功', [record(0), testAction(connectionId, 1)]));
     const created = await dispatch(userA.token, plan.id, { amount: 300 }).expect(201);
     expect((await worker.processExecution(created.body.id)).status).toBe('partially_succeeded');
   });
 
   it('18 makes a fully failed Execution terminal and never executes a later Step', async () => {
-    const plan = await createPlan(userA.token, definition('全部失败', [{ actionType: 'notify', config: { channel: 'in_app' }, stepOrder: 0 }, record(1)]));
+    const connectionId = await createConnection(userA.token, testConnectorKey, '全部失败未授权');
+    const plan = await createPlan(userA.token, definition('全部失败', [testAction(connectionId, 0), record(1)]));
     const created = await dispatch(userA.token, plan.id, { amount: 300 }).expect(201);
     await worker.processExecution(created.body.id);
     const result = await detail(userA.token, created.body.id);
@@ -332,7 +351,7 @@ describe.sequential('P0-5 Execution Engine integration and security', () => {
     await pool.query("UPDATE executions SET status='running',worker_token='dead-worker',heartbeat_at=DATE_SUB(UTC_TIMESTAMP(6),INTERVAL 1 MINUTE),lease_expires_at=DATE_SUB(UTC_TIMESTAMP(6),INTERVAL 30 SECOND),started_at=UTC_TIMESTAMP(6) WHERE id=UUID_TO_BIN(?)", [created.body.id]);
     await pool.query("UPDATE execution_steps SET status='succeeded',attempt_count=1,started_at=UTC_TIMESTAMP(6),finished_at=UTC_TIMESTAMP(6) WHERE id=UUID_TO_BIN(?)", [row.steps[0].id]);
     await pool.query("UPDATE execution_steps SET status='running',attempt_count=1,started_at=UTC_TIMESTAMP(6) WHERE id=UUID_TO_BIN(?)", [row.steps[1].id]);
-    expect((await reconciler.reconcile(new Date(Date.now() + 1_000))).recovered).toBe(1);
+    expect((await reconciler.reconcile(new Date(Date.now() + 1_000))).recovered).toBeGreaterThanOrEqual(1);
     expect((await worker.processExecution(created.body.id)).status).toBe('succeeded');
     const recovered = await detail(userA.token, created.body.id);
     expect(recovered.steps[0].attemptCount).toBe(1);

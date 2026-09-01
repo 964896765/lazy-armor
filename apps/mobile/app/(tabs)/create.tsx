@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Button, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { api } from '../../src/api';
 import { useAuthStore } from '../../src/auth-store';
-import { automationLevelLabel } from '../../src/plan-presenter';
+import { automationLevelLabel, templateGroupLabel } from '../../src/plan-presenter';
 import { styles } from '../../src/shell';
 
 interface PlanTemplateSummary {
@@ -135,7 +135,7 @@ export default function Create() {
                   <Text style={local.level}>{automationLevelLabel(template.automationLevel)}</Text>
                 </View>
                 <Text style={styles.cardText}>{template.description}</Text>
-                <Text style={styles.cardText}>分类：{template.group}</Text>
+                <Text style={styles.cardText}>分类：{templateGroupLabel(template.group)}</Text>
                 <Text style={styles.cardText}>连接情况：{connectorSummary(template.requiredConnectors)}</Text>
                 <View style={local.button}>
                   <Button title="查看详情" onPress={() => router.push(`/templates/${template.key}` as never)} />

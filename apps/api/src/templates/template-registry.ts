@@ -1,4 +1,12 @@
-import type { AutomationLevel, PlanDefinitionInput } from '@lazy-armor/plan-schema';
+import {
+  ACTION_DEFINITIONS,
+  normalizePlanDefinition,
+  type ActionType,
+  type ApprovalPolicyDefinition,
+  type AutomationLevel,
+  type PlanDefinitionInput,
+  type RiskLevel,
+} from '@lazy-armor/plan-schema';
 import { z } from 'zod';
 
 export type TemplateStatus = 'published' | 'draft';
@@ -54,10 +62,29 @@ export interface PlanTemplateManifest {
   status: TemplateStatus;
   automationLevel: AutomationLevel;
   requiredConnectors: string[];
+  approvalPolicy: ApprovalPolicyDefinition;
+  riskConstraint: TemplateRiskConstraint;
+  notificationPolicy: TemplateNotificationPolicy;
   details: TemplateDetailContent;
   configFields: TemplateConfigField[];
   configSchema: z.ZodObject<z.ZodRawShape>;
   buildDefinition(config: Record<string, unknown>): PlanDefinitionInput;
+}
+
+export type TemplateNotificationMode = 'silent' | 'summary' | 'important';
+
+export interface TemplateNotificationPolicy {
+  defaultMode: TemplateNotificationMode;
+  allowedModes: TemplateNotificationMode[];
+  silentOnSuccess: boolean;
+  notifyOnFailure: boolean;
+  notifyOnNeedsAction: boolean;
+}
+
+export interface TemplateRiskConstraint {
+  maxRiskLevel: RiskLevel;
+  allowExternalSideEffect: boolean;
+  allowedActionTypes: ActionType[];
 }
 
 function schedule(cronExpression: string) {
@@ -99,6 +126,28 @@ function scheduleFromInterval(interval: '6h' | '12h' | '24h') {
   if (interval === '6h') return schedule('0 */6 * * *');
   if (interval === '12h') return schedule('0 */12 * * *');
   return schedule('0 9 * * *');
+}
+
+const RISK_SCORE: Record<RiskLevel, number> = { R0: 0, R1: 1, R2: 2, R3: 3, R4: 4 };
+const NEVER_APPROVAL_POLICY: ApprovalPolicyDefinition = { type: 'never', config: {} };
+const R3_APPROVAL_POLICY: ApprovalPolicyDefinition = { type: 'above_risk_level', config: { riskLevel: 'R3' } };
+
+function riskConstraint(maxRiskLevel: RiskLevel, allowedActionTypes: ActionType[], allowExternalSideEffect = false): TemplateRiskConstraint {
+  return { maxRiskLevel, allowedActionTypes, allowExternalSideEffect };
+}
+
+function notificationPolicy(
+  defaultMode: TemplateNotificationMode,
+  allowedModes: TemplateNotificationMode[],
+  options?: Partial<Pick<TemplateNotificationPolicy, 'silentOnSuccess' | 'notifyOnFailure' | 'notifyOnNeedsAction'>>,
+): TemplateNotificationPolicy {
+  return {
+    defaultMode,
+    allowedModes,
+    silentOnSuccess: options?.silentOnSuccess ?? defaultMode === 'silent',
+    notifyOnFailure: options?.notifyOnFailure ?? true,
+    notifyOnNeedsAction: options?.notifyOnNeedsAction ?? true,
+  };
 }
 
 const monthlyBillSummarySchema = z.object({
@@ -198,6 +247,9 @@ export const PLAN_TEMPLATES: readonly PlanTemplateManifest[] = [
     status: 'published',
     automationLevel: 'L1',
     requiredConnectors: ['manual', 'internal'],
+    approvalPolicy: NEVER_APPROVAL_POLICY,
+    riskConstraint: riskConstraint('R1', ['classify', 'compare', 'summarize', 'notify']),
+    notificationPolicy: notificationPolicy('silent', ['silent', 'summary', 'important']),
     details: {
       doesWhat: '自动汇总一个统计周期内的账单金额，整理分类、环比和异常变化。',
       runsWhen: '每月固定日期上午运行一次，也可以手动触发补跑。',
@@ -266,6 +318,9 @@ export const PLAN_TEMPLATES: readonly PlanTemplateManifest[] = [
     status: 'published',
     automationLevel: 'L1',
     requiredConnectors: ['manual', 'internal'],
+    approvalPolicy: NEVER_APPROVAL_POLICY,
+    riskConstraint: riskConstraint('R1', ['compare', 'summarize', 'notify']),
+    notificationPolicy: notificationPolicy('silent', ['silent', 'important']),
     details: {
       doesWhat: '检查本月话费是不是超过你的阈值，或者相比上月突然上涨。',
       runsWhen: '每月固定日期检查一次，也能在接收到新账单后手动复核。',
@@ -322,6 +377,9 @@ export const PLAN_TEMPLATES: readonly PlanTemplateManifest[] = [
     status: 'published',
     automationLevel: 'L1',
     requiredConnectors: ['manual', 'internal'],
+    approvalPolicy: NEVER_APPROVAL_POLICY,
+    riskConstraint: riskConstraint('R1', ['summarize', 'notify']),
+    notificationPolicy: notificationPolicy('important', ['important'], { silentOnSuccess: true }),
     details: {
       doesWhat: '自动帮你盯着快递，正常运输时不打扰，长时间没动静或出现异常时再告诉你。',
       runsWhen: '按你设置的检查频率定时检查一次。',
@@ -368,6 +426,9 @@ export const PLAN_TEMPLATES: readonly PlanTemplateManifest[] = [
     status: 'published',
     automationLevel: 'L2',
     requiredConnectors: ['manual', 'internal'],
+    approvalPolicy: NEVER_APPROVAL_POLICY,
+    riskConstraint: riskConstraint('R1', ['summarize', 'prepare_purchase', 'notify']),
+    notificationPolicy: notificationPolicy('summary', ['summary', 'important'], { silentOnSuccess: true }),
     details: {
       doesWhat: '根据消耗周期估算快用完的时间，提前准备补货清单。',
       runsWhen: '按计划定时检查，也会跟着你更新最近一次购买时间重新计算。',
@@ -432,6 +493,9 @@ export const PLAN_TEMPLATES: readonly PlanTemplateManifest[] = [
     status: 'published',
     automationLevel: 'L2',
     requiredConnectors: ['internal'],
+    approvalPolicy: R3_APPROVAL_POLICY,
+    riskConstraint: riskConstraint('R2', ['generate_content', 'create_draft', 'prepare_publish', 'notify']),
+    notificationPolicy: notificationPolicy('summary', ['silent', 'summary', 'important']),
     details: {
       doesWhat: '上传一次内容，帮你整理成不同平台需要的版本。',
       runsWhen: '手动触发后，先生成平台草稿，再停在准备态。',
@@ -459,7 +523,6 @@ export const PLAN_TEMPLATES: readonly PlanTemplateManifest[] = [
         description: '把主内容整理成多个平台的草稿和准备信息，不直接正式发布。',
         domain: 'content',
         automationLevel: 'L2',
-        approvalPolicy: { type: 'above_risk_level', config: { riskLevel: 'R3' } },
         sources: [{
           sourceType: 'internal',
           config: {
@@ -491,6 +554,9 @@ export const PLAN_TEMPLATES: readonly PlanTemplateManifest[] = [
     status: 'published',
     automationLevel: 'L1',
     requiredConnectors: ['internal'],
+    approvalPolicy: NEVER_APPROVAL_POLICY,
+    riskConstraint: riskConstraint('R1', ['summarize', 'notify']),
+    notificationPolicy: notificationPolicy('summary', ['silent', 'summary', 'important'], { silentOnSuccess: true }),
     details: {
       doesWhat: '只告诉你今天真正值得处理的事情，而不是把所有消息都堆过来。',
       runsWhen: '每天固定时间生成一次摘要。',
@@ -549,6 +615,9 @@ export const PLAN_TEMPLATES: readonly PlanTemplateManifest[] = [
     status: 'published',
     automationLevel: 'L2',
     requiredConnectors: ['internal'],
+    approvalPolicy: NEVER_APPROVAL_POLICY,
+    riskConstraint: riskConstraint('R1', ['create_task', 'summarize', 'notify']),
+    notificationPolicy: notificationPolicy('summary', ['summary', 'important'], { silentOnSuccess: false }),
     details: {
       doesWhat: '围绕考试日期、每日学习时间和当前进度，生成当天学习任务并在漏学后重排后续安排。',
       runsWhen: '每天在你设定的学习时间自动生成当天任务，也支持手动补跑。',
@@ -615,6 +684,9 @@ export const PLAN_TEMPLATES: readonly PlanTemplateManifest[] = [
     status: 'published',
     automationLevel: 'L1',
     requiredConnectors: ['internal'],
+    approvalPolicy: NEVER_APPROVAL_POLICY,
+    riskConstraint: riskConstraint('R1', ['summarize', 'prepare_purchase', 'notify']),
+    notificationPolicy: notificationPolicy('summary', ['silent', 'summary', 'important'], { silentOnSuccess: true }),
     details: {
       doesWhat: '根据设备耗材的更换周期估算剩余时间，快到阈值时提醒你并准备购买清单。',
       runsWhen: '每天自动检查一次，也支持你更新“已更换”时间后重新计算。',
@@ -673,8 +745,16 @@ export function getPlanTemplateByKey(key: string) {
 export function resolvePlanTemplate(key: string, input?: Record<string, unknown>) {
   const template = getPlanTemplateByKey(key);
   if (!template) return null;
+  return resolvePlanTemplateManifest(template, input);
+}
+
+export function resolvePlanTemplateManifest(template: PlanTemplateManifest, input?: Record<string, unknown>) {
   const config = template.configSchema.parse(input ?? {});
-  const definition = template.buildDefinition(config);
+  const built = template.buildDefinition(config);
+  const definition = validateResolvedPlanTemplate(template, config, {
+    ...built,
+    approvalPolicy: template.approvalPolicy,
+  });
   return {
     manifest: template,
     config,
@@ -685,4 +765,61 @@ export function resolvePlanTemplate(key: string, input?: Record<string, unknown>
       templateConfig: config,
     },
   } satisfies ResolvedPlanTemplate;
+}
+
+export function validateResolvedPlanTemplate(
+  template: PlanTemplateManifest,
+  config: Record<string, unknown>,
+  definition: PlanDefinitionInput,
+) {
+  const normalized = normalizePlanDefinition(definition);
+  if (JSON.stringify(normalized.approvalPolicy ?? null) !== JSON.stringify(template.approvalPolicy)) {
+    throw new Error(`Template ${template.key} emitted an approvalPolicy outside the server contract`);
+  }
+  if (!template.notificationPolicy.allowedModes.includes(template.notificationPolicy.defaultMode)) {
+    throw new Error(`Template ${template.key} notificationPolicy.defaultMode must be included in allowedModes`);
+  }
+  const requestedMode = typeof config.notificationPreference === 'string' ? config.notificationPreference : null;
+  if (requestedMode && !template.notificationPolicy.allowedModes.includes(requestedMode as TemplateNotificationMode)) {
+    throw new Error(`Template ${template.key} notification mode ${requestedMode} is not allowed by the server contract`);
+  }
+  const connectorRefs = [
+    ...normalized.sources.map((source) => source.connectorKey).filter((item): item is string => Boolean(item)),
+    ...normalized.actions.map((action) => action.connectorKey).filter((item): item is string => Boolean(item)),
+  ];
+  const undeclaredConnector = connectorRefs.find((item) => !template.requiredConnectors.includes(item));
+  if (undeclaredConnector) {
+    throw new Error(`Template ${template.key} references undeclared connector ${undeclaredConnector}`);
+  }
+  let highestRisk: RiskLevel = 'R0';
+  for (const action of normalized.actions) {
+    if (!template.riskConstraint.allowedActionTypes.includes(action.actionType)) {
+      throw new Error(`Template ${template.key} emitted disallowed action ${action.actionType}`);
+    }
+    const declared = ACTION_DEFINITIONS[action.actionType];
+    if (RISK_SCORE[action.riskLevel] > RISK_SCORE[template.riskConstraint.maxRiskLevel]) {
+      throw new Error(`Template ${template.key} emitted ${action.actionType} above max risk ${template.riskConstraint.maxRiskLevel}`);
+    }
+    if (!template.riskConstraint.allowExternalSideEffect && declared.externalEffect) {
+      throw new Error(`Template ${template.key} emitted external side-effect action ${action.actionType}`);
+    }
+    if (RISK_SCORE[action.riskLevel] > RISK_SCORE[highestRisk]) highestRisk = action.riskLevel;
+  }
+  if (!approvalPolicyMeetsSystemFloor(template.approvalPolicy, highestRisk)) {
+    throw new Error(`Template ${template.key} approvalPolicy is below the system safety floor for ${highestRisk}`);
+  }
+  return {
+    ...definition,
+    approvalPolicy: template.approvalPolicy,
+  } satisfies PlanDefinitionInput;
+}
+
+function approvalPolicyMeetsSystemFloor(policy: ApprovalPolicyDefinition, highestRisk: RiskLevel) {
+  if (RISK_SCORE[highestRisk] < RISK_SCORE.R3) return true;
+  if (policy.type === 'always' || policy.type === 'per_execution' || policy.type === 'temporary_authorization') return true;
+  if (policy.type === 'above_risk_level') {
+    const threshold = policy.config.riskLevel;
+    return typeof threshold === 'string' && threshold in RISK_SCORE && RISK_SCORE[threshold as RiskLevel] <= RISK_SCORE.R3;
+  }
+  return false;
 }

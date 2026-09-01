@@ -8,7 +8,7 @@ export function todayState(signedIn: boolean, loading: boolean, error: boolean, 
 }
 
 export function notificationPriorityLabel(priority: string) {
-  return ({ P0: '紧急', P1: '重要', P2: '摘要', P3: '静默' } as Record<string, string>)[priority] ?? priority;
+  return ({ P0: '紧急', P1: '重要', P2: '摘要', P3: '静默' } as Record<string, string>)[priority] ?? '提醒';
 }
 
 // 审批卡用「人话」而非机器风险码：说明这一步做什么、为什么需要确认、可能产生什么影响。
@@ -23,12 +23,12 @@ export function approvalRiskText(risk: string) {
 }
 
 export function approvalStatusLabel(status: string) {
-  return ({ pending: '待确认', approved: '已确认', rejected: '已拒绝', expired: '已过期', cancelled: '已取消' } as Record<string, string>)[status] ?? status;
+  return ({ pending: '待确认', approved: '已确认', rejected: '已拒绝', expired: '已过期', cancelled: '已取消' } as Record<string, string>)[status] ?? '待处理';
 }
 
 export function riskLevelLabel(risk: string | null) {
   if (!risk) return '未评估';
-  return { R0: '仅读取', R1: '内部整理', R2: '准备动作', R3: '外部可见', R4: '资金账户级' }[risk] ?? risk;
+  return { R0: '仅读取', R1: '内部整理', R2: '准备动作', R3: '外部可见', R4: '资金账户级' }[risk] ?? '需要谨慎确认';
 }
 
 export function stepApprovalLabel(step: { approvalGateStatus?: string | null; status?: string }) {
@@ -39,5 +39,5 @@ export function stepApprovalLabel(step: { approvalGateStatus?: string | null; st
   if (status === 'not_required') return '无需确认';
   if (status === 'rejected') return '已拒绝';
   if (status === 'cancelled') return '确认已取消';
-  return '';
+  return '按当前策略处理';
 }

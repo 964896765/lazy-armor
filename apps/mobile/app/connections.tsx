@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { ActivityIndicator, Button, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { api } from '../src/api';
 import { useAuthStore } from '../src/auth-store';
+import { capabilityDescription, capabilityLabel, capabilityRiskHint, connectionActionLabel, connectionStatusLabel } from '../src/connection-presenter';
 import { styles } from '../src/shell';
 
 interface Connector {
@@ -48,17 +49,19 @@ function ConnectionCard({ item, token }: { item: Connection; token: string }) {
   return (
     <View style={styles.card}>
       <Text style={styles.cardTitle}>{item.connectorName}</Text>
-      <Text style={styles.cardText}>{item.externalAccountName} · {item.status}</Text>
+      <Text style={styles.cardText}>{item.externalAccountName} · {connectionStatusLabel(item.status)}</Text>
       <Text style={local.permissionHeading}>权限</Text>
       {permissions.isLoading && <ActivityIndicator />}
       {permissions.data?.map((permission) => (
         <View style={local.permissionRow} key={permission.capability}>
           <View style={local.permissionCopy}>
-            <Text style={local.permissionName}>{permission.name}</Text>
-            <Text style={local.permissionMeta}>{permission.riskLevel} · {permission.granted ? '已授权' : '未授权'}</Text>
+            <Text style={local.permissionName}>{capabilityLabel(permission.capability, permission.name)}</Text>
+            <Text style={local.permissionMeta}>{permission.granted ? '已授权' : '未授权'}</Text>
+            <Text style={local.permissionDesc}>{capabilityDescription(permission.capability)}</Text>
+            <Text style={local.permissionHint}>{capabilityRiskHint(permission.capability, permission.riskLevel)}</Text>
           </View>
           <Button
-            title={permission.granted ? '撤销' : '授权'}
+            title={connectionActionLabel(permission.granted)}
             onPress={() => updatePermission.mutate(permission)}
             disabled={updatePermission.isPending || item.status === 'revoked'}
           />
@@ -146,5 +149,7 @@ const local = StyleSheet.create({
   permissionCopy: { flex: 1, paddingRight: 12 },
   permissionName: { color: '#25362E', fontWeight: '600' },
   permissionMeta: { color: '#76827B', marginTop: 3, fontSize: 12 },
+  permissionDesc: { color: '#5E6A63', marginTop: 4, lineHeight: 18 },
+  permissionHint: { color: '#287052', marginTop: 4, lineHeight: 18 },
   revokeButton: { marginTop: 12 },
 });

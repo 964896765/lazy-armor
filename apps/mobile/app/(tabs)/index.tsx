@@ -4,7 +4,8 @@ import { ActivityIndicator, Alert, Button, RefreshControl, ScrollView, StyleShee
 import { api } from '../../src/api';
 import { useAuthStore } from '../../src/auth-store';
 import { styles } from '../../src/shell';
-import { approvalRiskText, notificationPriorityLabel, todayState } from '../../src/today-presenter';
+import { approvalRiskText, notificationPriorityLabel, riskLevelLabel, todayState } from '../../src/today-presenter';
+import { executionStatusLabel } from '../../src/execution-presenter';
 
 interface ApprovalCard { id: string; executionId: string; riskLevel: string; summary: string; expiresAt: string; planName: string }
 interface AlertCard { id: string; priority: string; title: string; body: string; executionId: string | null; createdAt: string }
@@ -31,10 +32,10 @@ export default function Today() {
     {state === 'loading' && <ActivityIndicator />}
     {state === 'error' && <View style={styles.card}><Text style={styles.cardTitle}>今天暂时加载失败</Text><Button title="重新加载" onPress={() => today.refetch()} /></View>}
     {state === 'empty' && <View style={styles.card}><Text style={styles.cardTitle}>目前没有待处理事项</Text><Text style={styles.cardText}>正常完成的自动化保持安静，可在“记录”中查看。</Text></View>}
-    {today.data?.pendingApprovals.map((item) => <View style={[styles.card, local.approval]} key={item.id}><Text style={local.section}>需要确认 · {item.riskLevel}</Text><Text style={styles.cardTitle}>{item.planName}</Text><Text style={styles.cardText}>{item.summary}</Text><Text style={styles.cardText}>{approvalRiskText(item.riskLevel)} · {new Date(item.expiresAt).toLocaleTimeString('zh-CN')} 前有效</Text><View style={local.actions}><Button title="拒绝" color="#9B3A32" onPress={() => confirm(item, 'reject')} disabled={decide.isPending} /><Button title="确认继续" onPress={() => confirm(item, 'approve')} disabled={decide.isPending} /></View></View>)}
+    {today.data?.pendingApprovals.map((item) => <View style={[styles.card, local.approval]} key={item.id}><Text style={local.section}>需要确认 · {riskLevelLabel(item.riskLevel)}</Text><Text style={styles.cardTitle}>{item.planName}</Text><Text style={styles.cardText}>{item.summary}</Text><Text style={styles.cardText}>{approvalRiskText(item.riskLevel)} · {new Date(item.expiresAt).toLocaleTimeString('zh-CN')} 前有效</Text><View style={local.actions}><Button title="拒绝" color="#9B3A32" onPress={() => confirm(item, 'reject')} disabled={decide.isPending} /><Button title="确认继续" onPress={() => confirm(item, 'approve')} disabled={decide.isPending} /></View></View>)}
     {today.data?.alerts.map((item) => <View style={styles.card} key={item.id}><Text style={local.section}>{notificationPriorityLabel(item.priority)}</Text><Text style={styles.cardTitle}>{item.title}</Text><Text style={styles.cardText}>{item.body}</Text>{item.executionId && <Button title="查看执行记录" onPress={() => router.push(`/executions/${item.executionId}` as never)} />}</View>)}
     {(today.data?.processed.length ?? 0) > 0 && <Text style={local.heading}>已处理摘要</Text>}
-    {today.data?.processed.map((item) => <View style={styles.card} key={item.id}><Text style={styles.cardTitle}>{item.planName}</Text><Text style={styles.cardText}>计划 V{item.planVersionNumber} · {item.resultSummary ?? item.status}</Text></View>)}
+    {today.data?.processed.map((item) => <View style={styles.card} key={item.id}><Text style={styles.cardTitle}>{item.planName}</Text><Text style={styles.cardText}>计划 V{item.planVersionNumber} · {item.resultSummary ?? executionStatusLabel(item.status)}</Text></View>)}
   </ScrollView>;
 }
 

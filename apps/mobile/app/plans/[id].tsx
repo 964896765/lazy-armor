@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { ActivityIndicator, Button, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { api } from '../../src/api';
 import { useAuthStore } from '../../src/auth-store';
+import { executionStatusLabel } from '../../src/execution-presenter';
 import {
   actionSummary,
   automationLevelLabel,
@@ -11,8 +12,12 @@ import {
   conditionSummary,
   formatTime,
   notificationPreferenceLabel,
+  planCenterStatusLabel,
   planStatusLabel,
+  platformLabel,
+  sourceSummaryLabel,
   sourceTypeLabel,
+  templateGroupLabel,
   triggerSummary,
 } from '../../src/plan-presenter';
 import type { TemplateConfigField } from '../../src/template-config-form';
@@ -198,17 +203,17 @@ export default function PlanDetailPage() {
             <Text style={local.cardTitle}>当前状态</Text>
             <Text style={local.text}>状态：{planStatusLabel(summary.data.status)}</Text>
             <Text style={local.text}>自动化等级：{automationLevelLabel(version.data.automationLevel)}</Text>
-            <Text style={local.text}>来自模板：{template.data?.name ?? summary.data.templateKey ?? '手工计划'}{summary.data.templateVersion ? ` · V${summary.data.templateVersion}` : ''}</Text>
+            <Text style={local.text}>来自模板：{template.data?.name ?? '已安装模板'}{summary.data.templateVersion ? ` · V${summary.data.templateVersion}` : ''}</Text>
             <Text style={local.text}>当前版本：V{version.data.versionNumber}</Text>
             <Text style={local.text}>生效版本：{summary.data.activeVersion ? `V${summary.data.activeVersion.versionNumber}` : '尚未 Apply'}</Text>
             <Text style={local.text}>下次预计运行：{formatTime(summary.data.nextExpectedRunAt)}</Text>
-            <Text style={local.text}>最近一次执行：{summary.data.latestExecution ? `${formatTime(summary.data.latestExecution.createdAt)} · ${summary.data.latestExecution.resultSummary ?? summary.data.latestExecution.status}` : '暂未运行'}</Text>
+            <Text style={local.text}>最近一次执行：{summary.data.latestExecution ? `${formatTime(summary.data.latestExecution.createdAt)} · ${summary.data.latestExecution.resultSummary ?? executionStatusLabel(summary.data.latestExecution.status)}` : '暂未运行'}</Text>
           </View>
 
           {summary.data.planCenterSummary ? (
             <View style={local.card}>
               <Text style={local.cardTitle}>当前概况</Text>
-              <Text style={local.text}>当前状态：{summary.data.planCenterSummary.currentStatus}</Text>
+              <Text style={local.text}>当前状态：{planCenterStatusLabel(summary.data.planCenterSummary.kind, summary.data.planCenterSummary.currentStatus)}</Text>
               {summary.data.planCenterSummary.kind === 'logistics' ? (
                 <>
                   <Text style={local.text}>最近检查：{formatTime(summary.data.planCenterSummary.latestCheckAt)}</Text>
@@ -226,7 +231,7 @@ export default function PlanDetailPage() {
               ) : null}
               {summary.data.planCenterSummary.kind === 'content' ? (
                 <>
-                  <Text style={local.text}>目标平台：{(summary.data.planCenterSummary.targetPlatforms ?? []).join('、') || '暂未设置'}</Text>
+                  <Text style={local.text}>目标平台：{(summary.data.planCenterSummary.targetPlatforms ?? []).map((item) => platformLabel(item)).join('、') || '暂未设置'}</Text>
                   <Text style={local.text}>最近准备版本数：{summary.data.planCenterSummary.latestPreparedVariantCount ?? 0}</Text>
                   <Text style={local.text}>是否需要确认：{boolLabel(summary.data.planCenterSummary.waitingConfirmation)}</Text>
                   <Text style={local.text}>当前策略：{summary.data.planCenterSummary.currentStrategy ?? '仅准备草稿'}</Text>
@@ -235,7 +240,7 @@ export default function PlanDetailPage() {
               {summary.data.planCenterSummary.kind === 'daily_summary' ? (
                 <>
                   <Text style={local.text}>摘要时间：{summary.data.planCenterSummary.summaryTime ?? '暂未设置'}</Text>
-                  <Text style={local.text}>数据来源：{(summary.data.planCenterSummary.includedSources ?? []).join('、') || '暂未设置'}</Text>
+                  <Text style={local.text}>数据来源：{(summary.data.planCenterSummary.includedSources ?? []).map((item) => sourceSummaryLabel(item)).join('、') || '暂未设置'}</Text>
                   <Text style={local.text}>最近摘要时间：{formatTime(summary.data.planCenterSummary.latestSummaryAt)}</Text>
                   <Text style={local.text}>最近重要事项数：{summary.data.planCenterSummary.latestImportantCount ?? 0}</Text>
                 </>
@@ -340,21 +345,37 @@ function normalizeDateInput(value: string) {
 
 function renderConfig(config: Record<string, unknown> | null, fields: TemplateConfigField[] | undefined) {
   if (!config || Object.keys(config).length === 0) return <Text style={local.text}>当前版本没有额外模板配置。</Text>;
-  return Object.entries(config).map(([key, value]) => {
+  const visibleEntries = Object.entries(config).flatMap(([key, value]) => {
     const field = fields?.find((item) => item.key === key);
-    return (
+    if (!field) {
+      return [];
+    }
+    return [(
       <Text style={local.text} key={key}>
-        {(field?.label ?? key)}：{formatConfigValue(key, value)}
+        {field.label}：{formatConfigValue(field, value)}
       </Text>
-    );
+    )];
   });
+  return visibleEntries.length > 0 ? visibleEntries : <Text style={local.text}>当前版本已配置完成。</Text>;
 }
 
-function formatConfigValue(key: string, value: unknown) {
-  if (Array.isArray(value)) return value.join('、');
+function formatConfigValue(field: TemplateConfigField, value: unknown) {
+  if (Array.isArray(value)) {
+    const labels = value.map((item) => optionLabel(field, item)).filter(Boolean);
+    return labels.length > 0 ? labels.join('、') : '已配置';
+  }
   if (typeof value === 'boolean') return boolLabel(value);
-  if (key === 'notificationPreference') return notificationPreferenceLabel(value);
-  return String(value);
+  if (field.key === 'notificationPreference') return notificationPreferenceLabel(value);
+  if (field.key === 'group') return templateGroupLabel(String(value));
+  if (field.type === 'select' || field.type === 'multiselect') return optionLabel(field, value);
+  if (field.type === 'date' || field.type === 'time') return String(value);
+  if (typeof value === 'string' || typeof value === 'number') return String(value);
+  return '已配置';
+}
+
+function optionLabel(field: TemplateConfigField, value: unknown) {
+  const matched = field.options?.find((option) => option.value === String(value));
+  return matched?.label ?? '已配置';
 }
 
 function notificationText(version: PlanVersionDetail) {
