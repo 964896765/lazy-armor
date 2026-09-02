@@ -10,6 +10,7 @@ import { QueueService } from '../infrastructure/queue.service';
 import { EXECUTION_WORKER, OUTBOX_WORKER } from '../execution/execution.module';
 
 type WorkerStatus = 'UP' | 'DEGRADED' | 'DOWN';
+type OperationalHealth = 'UP' | 'DEGRADED' | 'DOWN' | 'UNKNOWN' | 'NOT_APPLICABLE';
 
 interface WorkerProbeResponse {
   status: 'ready' | 'not_ready';
@@ -20,6 +21,7 @@ interface WorkerProbeResponse {
   bullmq?: string;
   queueCounts?: Record<string, number>;
   worker?: { ready?: boolean; reason?: string | null };
+  reason?: string | null;
 }
 
 interface WorkerLiveResponse {
@@ -198,16 +200,14 @@ export class AdminOperationsService {
         acc[key] = (acc[key] ?? 0) + 1;
         return acc;
       }, {});
-      const readinessClassification: WorkerStatus = connector.productionStatus === 'DISABLED'
-        ? 'DOWN'
-        : connector.productionStatus === 'DRAFT_ONLY'
-          ? 'DEGRADED'
-          : 'UP';
+      const operationalHealth: OperationalHealth = connector.supportsHealthCheck
+        ? 'UNKNOWN'
+        : 'NOT_APPLICABLE';
       return {
         provider: connector.name,
         providerKey: connector.key,
         providerType: connector.providerType,
-        readinessClassification,
+        operationalHealth,
         productionGateStatus: connector.productionStatus,
         capabilityAvailability,
         rateLimitStrategy: connector.rateLimitStrategy ?? 'none',
@@ -230,19 +230,26 @@ export class AdminOperationsService {
     const ready = probeReady || inProcess.ready;
     const status: WorkerStatus = !live ? 'DOWN' : ready ? 'UP' : 'DEGRADED';
     const checkedAt = probe.ready?.checkedAt ?? probe.live?.checkedAt ?? now.toISOString();
+    const processHeartbeatAt = probe.live?.checkedAt ?? probe.ready?.checkedAt ?? (inProcess.live ? now.toISOString() : null);
     return {
       role,
       status,
+      processStatus: live ? 'UP' : 'DOWN',
       liveness: live ? 'UP' : 'DOWN',
       readiness: {
         status: ready ? 'ready' : 'not_ready',
         mysql: probe.ready?.mysql ?? (inProcess.live ? 'ready' : 'unknown'),
         redis: probe.ready?.redis ?? 'unknown',
         bullmq: probe.ready?.bullmq ?? 'unknown',
-        reason: probe.ready?.worker?.reason ?? inProcess.reason ?? null,
+        reason: probe.ready?.worker?.reason ?? probe.ready?.reason ?? inProcess.reason ?? null,
       },
-      lastHeartbeatAt: db.lastHeartbeatAt ?? checkedAt,
-      heartbeatAgeSeconds: ageSeconds(db.lastHeartbeatAt ? new Date(db.lastHeartbeatAt) : new Date(checkedAt), now),
+      processHeartbeatAt,
+      lastProbeSuccessAt: probe.ready?.checkedAt ?? probe.live?.checkedAt ?? null,
+      lastWorkActivityAt: db.lastWorkActivityAt,
+      workActivityAgeSeconds: ageSeconds(db.lastWorkActivityAt ? new Date(db.lastWorkActivityAt) : null, now),
+      // Legacy aliases kept for compatibility while Operations UI migrates to process/work split fields.
+      lastHeartbeatAt: db.lastWorkActivityAt,
+      heartbeatAgeSeconds: ageSeconds(db.lastWorkActivityAt ? new Date(db.lastWorkActivityAt) : null, now),
       queueBacklog: db.queueBacklog,
       oldestPendingAgeSeconds: db.oldestPendingAgeSeconds,
       activeWork: db.activeWork,
@@ -266,6 +273,7 @@ export class AdminOperationsService {
     const backlog = queueCounts ? Number(queueCounts.waiting ?? 0) + Number(queueCounts.delayed ?? 0) : 0;
     return {
       lastHeartbeatAt: latestHeartbeat[0]?.lastHeartbeatAt?.toISOString() ?? null,
+      lastWorkActivityAt: latestHeartbeat[0]?.lastHeartbeatAt?.toISOString() ?? null,
       queueBacklog: backlog,
       oldestPendingAgeSeconds: ageSeconds(oldestPending[0]?.oldestQueuedAt ?? null, now),
       activeWork: Number(runningCount[0]?.n ?? 0),
@@ -288,6 +296,7 @@ export class AdminOperationsService {
     const retryWaitCount = await this.countOutboxStatus('retry_wait');
     return {
       lastHeartbeatAt: latestActivity[0]?.lastUpdatedAt?.toISOString() ?? null,
+      lastWorkActivityAt: latestActivity[0]?.lastUpdatedAt?.toISOString() ?? null,
       queueBacklog: pendingCount + retryWaitCount,
       oldestPendingAgeSeconds: ageSeconds(oldestPending[0]?.oldestPendingAt ?? null, now),
       activeWork: Number(activeLocks[0]?.n ?? 0),

@@ -7,6 +7,17 @@ import { EXECUTION_WORKER, OUTBOX_WORKER } from '../execution/execution.module';
 import { QueueService } from '../infrastructure/queue.service';
 
 interface WorkerHealth { ready: boolean; reason: string | null }
+type ProbeReadiness = {
+  status: 'ready' | 'not_ready';
+  role: string;
+  checkedAt: string;
+  mysql?: string;
+  redis?: string;
+  bullmq?: string;
+  queueCounts?: Record<string, number>;
+  worker?: { ready?: boolean; reason?: string | null };
+  reason?: string | null;
+};
 
 export class WorkerProbe {
   private server?: Server;
@@ -23,12 +34,13 @@ export class WorkerProbe {
       if (request.url === '/live') { response.statusCode = 200; response.end(JSON.stringify({ status: 'ok', role, checkedAt: new Date().toISOString() })); return; }
       if (request.url !== '/ready') { response.statusCode = 404; response.end(JSON.stringify({ status: 'not_found' })); return; }
       try {
-        const readiness = await this.readiness();
+        const readiness = await this.withTimeout(this.readiness(), this.readinessTimeoutMs(), 'readiness_timeout');
         response.statusCode = readiness.status === 'ready' ? 200 : 503;
         response.end(JSON.stringify(readiness));
-      } catch {
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : 'readiness_check_failed';
         response.statusCode = 503;
-        response.end(JSON.stringify({ status: 'not_ready', role }));
+        response.end(JSON.stringify({ status: 'not_ready', role, checkedAt: new Date().toISOString(), reason }));
       }
     });
     await new Promise<void>((resolve, reject) => {
@@ -44,7 +56,7 @@ export class WorkerProbe {
     this.server = undefined;
   }
 
-  private async readiness() {
+  private async readiness(): Promise<ProbeReadiness> {
     const role = currentAppRole();
     const pool = this.app.get<Pool>(MYSQL_POOL);
     await pool.query('SELECT 1');
@@ -53,6 +65,36 @@ export class WorkerProbe {
       ? await this.app.get<{ readiness(): Promise<WorkerHealth> }>(EXECUTION_WORKER).readiness()
       : this.app.get<{ readiness(): WorkerHealth }>(OUTBOX_WORKER).readiness();
     const ready = queue.bullmq === 'ready' && worker.ready;
-    return { status: ready ? 'ready' : 'not_ready', role, checkedAt: new Date().toISOString(), mysql: 'ready', redis: queue.redis, bullmq: queue.bullmq, queueCounts: queue.counts, worker };
+    return {
+      status: ready ? 'ready' : 'not_ready',
+      role,
+      checkedAt: new Date().toISOString(),
+      mysql: 'ready',
+      redis: queue.redis,
+      bullmq: queue.bullmq,
+      queueCounts: queue.counts,
+      worker,
+      reason: ready ? null : worker.reason ?? 'dependency_not_ready',
+    };
+  }
+
+  private readinessTimeoutMs() {
+    const parsed = Number(process.env.WORKER_READINESS_TIMEOUT_MS ?? 3_000);
+    return Number.isFinite(parsed) && parsed >= 200 ? parsed : 3_000;
+  }
+
+  private async withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        promise,
+        new Promise<T>((_, reject) => {
+          timer = setTimeout(() => reject(new Error(message)), timeoutMs);
+          timer.unref?.();
+        }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   }
 }

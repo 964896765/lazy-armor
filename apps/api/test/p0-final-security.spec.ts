@@ -310,6 +310,7 @@ describe.sequential('P0 Final security hardening', () => {
     expect(() =>
       assertProductionSafe(parseEnv({
         NODE_ENV: 'production',
+        APP_ENV: 'production',
         DATABASE_URL: 'mysql://prod.example.com/lazy_armor',
         REDIS_URL: 'redis://prod.example.com:6379',
         JWT_SECRET: 'a'.repeat(32),
@@ -322,6 +323,7 @@ describe.sequential('P0 Final security hardening', () => {
     expect(() =>
       assertProductionSafe(parseEnv({
         NODE_ENV: 'production',
+        APP_ENV: 'production',
         DATABASE_URL: 'mysql://prod.example.com/lazy_armor',
         REDIS_URL: 'redis://prod.example.com:6379',
         JWT_SECRET: 'a'.repeat(32),
@@ -334,6 +336,7 @@ describe.sequential('P0 Final security hardening', () => {
     expect(() =>
       assertProductionSafe(parseEnv({
         NODE_ENV: 'production',
+        APP_ENV: 'production',
         DATABASE_URL: 'mysql://prod.example.com/lazy_armor',
         REDIS_URL: 'redis://prod.example.com:6379',
         JWT_SECRET: 'a'.repeat(32),
@@ -341,6 +344,19 @@ describe.sequential('P0 Final security hardening', () => {
         CREDENTIAL_PROVIDER: 'production',
       })),
     ).toThrow(/ALLOWED_ORIGINS must declare the production CORS allowlist/);
+
+    expect(() =>
+      assertProductionSafe(parseEnv({
+        NODE_ENV: 'production',
+        APP_ENV: 'staging',
+        DATABASE_URL: 'mysql://127.0.0.1/lazy_armor',
+        REDIS_URL: 'redis://staging.example.com:6379',
+        JWT_SECRET: 'a'.repeat(32),
+        CREDENTIAL_MASTER_KEY: Buffer.alloc(32, 7).toString('base64'),
+        CREDENTIAL_PROVIDER: 'production',
+        ALLOWED_ORIGINS: 'https://staging.lazyarmor.example',
+      })),
+    ).toThrow(/DATABASE_URL must not point to localhost in staging/);
   });
 
   it('never leaks stack traces or internal details from the exception filter', async () => {

@@ -1,11 +1,31 @@
 {
   "build": {
+    "development": {
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "NODE_ENV": "development",
+        "EXPO_PUBLIC_APP_ENV": "development"
+      }
+    },
+    "staging": {
+      "android": {
+        "buildType": "app-bundle"
+      },
+      "env": {
+        "NODE_ENV": "production",
+        "EXPO_PUBLIC_APP_ENV": "staging",
+        "LAZY_ARMOR_ANDROID_ALLOW_DEBUG_RELEASE": "true"
+      }
+    },
     "production": {
       "android": {
         "buildType": "app-bundle"
       },
       "env": {
-        "NODE_ENV": "production"
+        "NODE_ENV": "production",
+        "EXPO_PUBLIC_APP_ENV": "production"
       }
     },
     "verification": {
@@ -14,6 +34,7 @@
       },
       "env": {
         "NODE_ENV": "production",
+        "EXPO_PUBLIC_APP_ENV": "development",
         "LAZY_ARMOR_ANDROID_ALLOW_DEBUG_RELEASE": "true"
       }
     }

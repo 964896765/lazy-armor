@@ -1,4 +1,4 @@
-import { Inject, Injectable, OnApplicationShutdown, OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnApplicationShutdown, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { webhookReceipts } from '@lazy-armor/database';
 import { and, eq, isNull, lte } from 'drizzle-orm';
@@ -8,12 +8,18 @@ import { AuditService } from '../audit/audit.service';
 @Injectable()
 export class WebhookRetentionService implements OnModuleInit, OnApplicationShutdown {
   private timer?: ReturnType<typeof setInterval>;
+  private readonly logger = new Logger(WebhookRetentionService.name);
   constructor(@Inject(DATABASE) private readonly db: InjectedDatabase, private readonly config: ConfigService, private readonly audit: AuditService) {}
 
   onModuleInit() {
     if (process.env.NODE_ENV === 'test') return;
     const interval = (this.config.get<number>('WEBHOOK_CLEANUP_INTERVAL_SECONDS') ?? 3600) * 1000;
-    this.timer = setInterval(() => void this.cleanup().catch(() => undefined), interval);
+    void this.cleanup().catch((error) => {
+      this.logger.warn(`Webhook startup cleanup failed: ${error instanceof Error ? error.message : 'unknown error'}`);
+    });
+    this.timer = setInterval(() => void this.cleanup().catch((error) => {
+      this.logger.warn(`Webhook retention cleanup failed: ${error instanceof Error ? error.message : 'unknown error'}`);
+    }), interval);
     this.timer.unref();
   }
 

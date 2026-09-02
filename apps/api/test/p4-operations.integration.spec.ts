@@ -60,6 +60,9 @@ describe.sequential('P4 operations snapshot', { timeout: 60000 }, () => {
     expect(workers.body.executionWorker).toMatchObject({
       role: 'execution-worker',
       status: expect.any(String),
+      processStatus: expect.any(String),
+      processHeartbeatAt: expect.anything(),
+      lastWorkActivityAt: expect.anything(),
       readiness: expect.objectContaining({
         status: expect.any(String),
       }),
@@ -67,6 +70,9 @@ describe.sequential('P4 operations snapshot', { timeout: 60000 }, () => {
     expect(workers.body.outboxWorker).toMatchObject({
       role: 'outbox-worker',
       status: expect.any(String),
+      processStatus: expect.any(String),
+      processHeartbeatAt: expect.anything(),
+      lastWorkActivityAt: expect.anything(),
       readiness: expect.objectContaining({
         status: expect.any(String),
       }),
@@ -102,7 +108,7 @@ describe.sequential('P4 operations snapshot', { timeout: 60000 }, () => {
       expect.objectContaining({
         providerKey: expect.any(String),
         productionGateStatus: expect.any(String),
-        readinessClassification: expect.any(String),
+        operationalHealth: expect.any(String),
       }),
     ]));
 

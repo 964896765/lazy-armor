@@ -88,6 +88,7 @@ def lazyArmorKeyAlias = System.getenv('LAZY_ARMOR_ANDROID_KEY_ALIAS')
 def lazyArmorKeyPassword = System.getenv('LAZY_ARMOR_ANDROID_KEY_PASSWORD')
 def lazyArmorHasReleaseSigning = [lazyArmorKeystorePath, lazyArmorKeystorePassword, lazyArmorKeyAlias, lazyArmorKeyPassword].every { it != null && !it.trim().isEmpty() }
 def lazyArmorAllowDebugRelease = System.getenv('LAZY_ARMOR_ANDROID_ALLOW_DEBUG_RELEASE') == 'true'
+def lazyArmorAppEnv = (System.getenv('EXPO_PUBLIC_APP_ENV') ?: System.getenv('APP_ENV') ?: (System.getenv('NODE_ENV') == 'production' ? 'production' : 'development')).toLowerCase()
 def lazyArmorReleaseRequested = gradle.startParameter.taskNames.any { it.toLowerCase().contains('release') }
 
 android {
@@ -131,6 +132,8 @@ android {
             // see https://reactnative.dev/docs/signed-apk-android.
             if (lazyArmorHasReleaseSigning) {
                 signingConfig signingConfigs.release
+            } else if (lazyArmorAppEnv == 'production' && lazyArmorAllowDebugRelease) {
+                throw new GradleException('Production builds must never use debug signing. Remove LAZY_ARMOR_ANDROID_ALLOW_DEBUG_RELEASE or switch APP_ENV away from production.')
             } else if (lazyArmorAllowDebugRelease) {
                 signingConfig signingConfigs.debug
             } else if (lazyArmorReleaseRequested) {
