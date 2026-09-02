@@ -1,4 +1,6 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
+import { get as httpGet } from 'node:http';
+import { get as httpsGet } from 'node:https';
 import { ConfigService } from '@nestjs/config';
 import { ConnectorsService } from '../connectors/connectors.service';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
@@ -11,6 +13,16 @@ import { EXECUTION_WORKER, OUTBOX_WORKER } from '../execution/execution.module';
 
 type WorkerStatus = 'UP' | 'DEGRADED' | 'DOWN';
 type OperationalHealth = 'UP' | 'DEGRADED' | 'DOWN' | 'UNKNOWN' | 'NOT_APPLICABLE';
+
+interface WorkerDbMetrics {
+  lastHeartbeatAt: string | null;
+  lastWorkActivityAt: string | null;
+  queueBacklog: number;
+  oldestPendingAgeSeconds: number | null;
+  activeWork: number;
+  failureCount: number;
+  recentFailures: Array<{ errorCode: string | null; updatedAt: string }>;
+}
 
 interface WorkerProbeResponse {
   status: 'ready' | 'not_ready';
@@ -43,8 +55,9 @@ export class AdminOperationsService {
   ) {}
 
   async overview() {
+    const generatedAt = new Date().toISOString();
     const [snapshot, workers, outbox, executionOverview, connectorHealth] = await Promise.all([
-      this.diagnostics.snapshot(),
+      this.safe(() => this.diagnostics.snapshot(), this.emptyDiagnosticsSnapshot(generatedAt)),
       this.workers(),
       this.outbox(),
       this.executions(),
@@ -101,96 +114,112 @@ export class AdminOperationsService {
 
   async outbox() {
     const now = new Date();
-    const [countsRow, oldestPendingRow, recentFailures] = await Promise.all([
-      this.db.select({
-        deadCount: count(outboxMessages.id),
-      }).from(outboxMessages).where(eq(outboxMessages.status, 'dead')),
-      this.db.select({
-        oldestPendingAt: min(outboxMessages.nextAttemptAt),
-      }).from(outboxMessages).where(or(eq(outboxMessages.status, 'pending'), eq(outboxMessages.status, 'retry_wait'))),
-      this.db.select({
-        id: outboxMessages.id,
-        aggregateType: outboxMessages.aggregateType,
-        eventType: outboxMessages.eventType,
-        destination: outboxMessages.destination,
-        status: outboxMessages.status,
-        attemptCount: outboxMessages.attemptCount,
-        lastErrorCode: outboxMessages.lastErrorCode,
-        updatedAt: outboxMessages.updatedAt,
-      }).from(outboxMessages)
-        .where(inArray(outboxMessages.status, ['dead', 'retry_wait']))
-        .orderBy(desc(outboxMessages.updatedAt))
-        .limit(10),
-    ]);
-    const [pendingCount, retryWaitCount] = await Promise.all([
-      this.countOutboxStatus('pending'),
-      this.countOutboxStatus('retry_wait'),
-    ]);
-    return {
+    return this.safe(async () => {
+      const [countsRow, oldestPendingRow, recentFailures] = await Promise.all([
+        this.db.select({
+          deadCount: count(outboxMessages.id),
+        }).from(outboxMessages).where(eq(outboxMessages.status, 'dead')),
+        this.db.select({
+          oldestPendingAt: min(outboxMessages.nextAttemptAt),
+        }).from(outboxMessages).where(or(eq(outboxMessages.status, 'pending'), eq(outboxMessages.status, 'retry_wait'))),
+        this.db.select({
+          id: outboxMessages.id,
+          aggregateType: outboxMessages.aggregateType,
+          eventType: outboxMessages.eventType,
+          destination: outboxMessages.destination,
+          status: outboxMessages.status,
+          attemptCount: outboxMessages.attemptCount,
+          lastErrorCode: outboxMessages.lastErrorCode,
+          updatedAt: outboxMessages.updatedAt,
+        }).from(outboxMessages)
+          .where(inArray(outboxMessages.status, ['dead', 'retry_wait']))
+          .orderBy(desc(outboxMessages.updatedAt))
+          .limit(10),
+      ]);
+      const [pendingCount, retryWaitCount] = await Promise.all([
+        this.countOutboxStatus('pending'),
+        this.countOutboxStatus('retry_wait'),
+      ]);
+      return {
+        generatedAt: now.toISOString(),
+        deadCount: Number(countsRow[0]?.deadCount ?? 0),
+        pendingCount,
+        retryWaitCount,
+        oldestPendingAt: oldestPendingRow[0]?.oldestPendingAt?.toISOString() ?? null,
+        oldestPendingAgeSeconds: ageSeconds(oldestPendingRow[0]?.oldestPendingAt ?? null, now),
+        recentFailures: recentFailures.map((row) => ({
+          id: row.id,
+          aggregateType: row.aggregateType,
+          eventType: row.eventType,
+          destination: row.destination,
+          status: row.status,
+          attemptCount: row.attemptCount,
+          lastErrorCode: row.lastErrorCode,
+          updatedAt: row.updatedAt.toISOString(),
+        })),
+      };
+    }, {
       generatedAt: now.toISOString(),
-      deadCount: Number(countsRow[0]?.deadCount ?? 0),
-      pendingCount,
-      retryWaitCount,
-      oldestPendingAt: oldestPendingRow[0]?.oldestPendingAt?.toISOString() ?? null,
-      oldestPendingAgeSeconds: ageSeconds(oldestPendingRow[0]?.oldestPendingAt ?? null, now),
-      recentFailures: recentFailures.map((row) => ({
-        id: row.id,
-        aggregateType: row.aggregateType,
-        eventType: row.eventType,
-        destination: row.destination,
-        status: row.status,
-        attemptCount: row.attemptCount,
-        lastErrorCode: row.lastErrorCode,
-        updatedAt: row.updatedAt.toISOString(),
-      })),
-    };
+      deadCount: 0,
+      pendingCount: 0,
+      retryWaitCount: 0,
+      oldestPendingAt: null,
+      oldestPendingAgeSeconds: null,
+      recentFailures: [],
+    });
   }
 
   async executions() {
     const now = new Date();
-    const [recentFailed, stuck] = await Promise.all([
-      this.db.select({
-        id: executions.id,
-        planId: executions.planId,
-        status: executions.status,
-        errorCode: executions.errorCode,
-        resultCode: executions.resultCode,
-        updatedAt: executions.updatedAt,
-      }).from(executions)
-        .where(and(eq(executions.status, 'failed'), gte(executions.updatedAt, new Date(now.getTime() - 24 * 60 * 60 * 1000))))
-        .orderBy(desc(executions.updatedAt))
-        .limit(10),
-      this.db.select({
-        id: executions.id,
-        planId: executions.planId,
-        workerToken: executions.workerToken,
-        heartbeatAt: executions.heartbeatAt,
-        leaseExpiresAt: executions.leaseExpiresAt,
-        updatedAt: executions.updatedAt,
-      }).from(executions)
-        .where(and(eq(executions.status, 'running'), lt(executions.leaseExpiresAt, now)))
-        .orderBy(asc(executions.leaseExpiresAt))
-        .limit(10),
-    ]);
-    return {
+    return this.safe(async () => {
+      const [recentFailed, stuck] = await Promise.all([
+        this.db.select({
+          id: executions.id,
+          planId: executions.planId,
+          status: executions.status,
+          errorCode: executions.errorCode,
+          resultCode: executions.resultCode,
+          updatedAt: executions.updatedAt,
+        }).from(executions)
+          .where(and(eq(executions.status, 'failed'), gte(executions.updatedAt, new Date(now.getTime() - 24 * 60 * 60 * 1000))))
+          .orderBy(desc(executions.updatedAt))
+          .limit(10),
+        this.db.select({
+          id: executions.id,
+          planId: executions.planId,
+          workerToken: executions.workerToken,
+          heartbeatAt: executions.heartbeatAt,
+          leaseExpiresAt: executions.leaseExpiresAt,
+          updatedAt: executions.updatedAt,
+        }).from(executions)
+          .where(and(eq(executions.status, 'running'), lt(executions.leaseExpiresAt, now)))
+          .orderBy(asc(executions.leaseExpiresAt))
+          .limit(10),
+      ]);
+      return {
+        generatedAt: now.toISOString(),
+        recentFailed: recentFailed.map((row) => ({
+          id: row.id,
+          planId: row.planId,
+          status: row.status,
+          errorCode: row.errorCode,
+          resultCode: row.resultCode,
+          updatedAt: row.updatedAt.toISOString(),
+        })),
+        stuck: stuck.map((row) => ({
+          id: row.id,
+          planId: row.planId,
+          workerLease: row.workerToken,
+          lastHeartbeatAt: row.heartbeatAt?.toISOString() ?? null,
+          leaseExpiresAt: row.leaseExpiresAt?.toISOString() ?? null,
+          stuckDurationSeconds: ageSeconds(row.leaseExpiresAt ?? row.updatedAt, now),
+        })),
+      };
+    }, {
       generatedAt: now.toISOString(),
-      recentFailed: recentFailed.map((row) => ({
-        id: row.id,
-        planId: row.planId,
-        status: row.status,
-        errorCode: row.errorCode,
-        resultCode: row.resultCode,
-        updatedAt: row.updatedAt.toISOString(),
-      })),
-      stuck: stuck.map((row) => ({
-        id: row.id,
-        planId: row.planId,
-        workerLease: row.workerToken,
-        lastHeartbeatAt: row.heartbeatAt?.toISOString() ?? null,
-        leaseExpiresAt: row.leaseExpiresAt?.toISOString() ?? null,
-        stuckDurationSeconds: ageSeconds(row.leaseExpiresAt ?? row.updatedAt, now),
-      })),
-    };
+      recentFailed: [],
+      stuck: [],
+    });
   }
 
   async connectorsSummary() {
@@ -220,9 +249,10 @@ export class AdminOperationsService {
   private async workerSummary(role: 'execution-worker' | 'outbox-worker') {
     const now = new Date();
     const probe = await this.fetchWorkerProbe(role);
-    const db = role === 'execution-worker'
-      ? await this.executionWorkerDb(now)
-      : await this.outboxWorkerDb(now);
+    const db = await this.safe(
+      () => role === 'execution-worker' ? this.executionWorkerDb(now) : this.outboxWorkerDb(now),
+      this.emptyWorkerDbMetrics(),
+    );
     const probeReady = probe.ready?.status === 'ready';
     const probeLive = probe.live?.status === 'ok';
     const inProcess = await this.inProcessWorker(role);
@@ -305,6 +335,41 @@ export class AdminOperationsService {
     };
   }
 
+  private emptyDiagnosticsSnapshot(generatedAt: string) {
+    return {
+      generatedAt,
+      activeExecutions: 0,
+      failedExecutions24h: 0,
+      waitingApproval: 0,
+      waitingDispatch: 0,
+      pendingOutbox: 0,
+      deadOutbox: 0,
+      outcomeUnknown: 0,
+      staleCredentials: 0,
+      stuckExecutions: 0,
+    };
+  }
+
+  private emptyWorkerDbMetrics(): WorkerDbMetrics {
+    return {
+      lastHeartbeatAt: null,
+      lastWorkActivityAt: null,
+      queueBacklog: 0,
+      oldestPendingAgeSeconds: null,
+      activeWork: 0,
+      failureCount: 0,
+      recentFailures: [],
+    };
+  }
+
+  private async safe<T>(producer: () => Promise<T>, fallback: T): Promise<T> {
+    try {
+      return await producer();
+    } catch {
+      return fallback;
+    }
+  }
+
   private async fetchWorkerProbe(role: 'execution-worker' | 'outbox-worker') {
     const host = this.config.get<string>('WORKER_PROBE_HOST') ?? '127.0.0.1';
     const port = this.config.get<number>(role === 'execution-worker' ? 'EXECUTION_WORKER_PROBE_PORT' : 'OUTBOX_WORKER_PROBE_PORT') ?? (role === 'execution-worker' ? 3011 : 3012);
@@ -337,16 +402,31 @@ export class AdminOperationsService {
   }
 
   private async fetchJson<T>(url: string): Promise<T | null> {
-    try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 400);
-      const response = await fetch(url, { signal: controller.signal });
-      clearTimeout(timer);
-      if (!response.ok) return null;
-      return await response.json() as T;
-    } catch {
-      return null;
-    }
+    return await new Promise<T | null>((resolve) => {
+      const transport = url.startsWith('https:') ? httpsGet : httpGet;
+      const request = transport(url, { timeout: 400 }, (response) => {
+        if ((response.statusCode ?? 500) < 200 || (response.statusCode ?? 500) >= 300) {
+          response.resume();
+          resolve(null);
+          return;
+        }
+        let body = '';
+        response.setEncoding('utf8');
+        response.on('data', (chunk) => { body += chunk; });
+        response.on('end', () => {
+          try {
+            resolve(JSON.parse(body) as T);
+          } catch {
+            resolve(null);
+          }
+        });
+      });
+      request.on('timeout', () => {
+        request.destroy();
+        resolve(null);
+      });
+      request.on('error', () => resolve(null));
+    });
   }
 
   private async countOutboxStatus(status: 'pending' | 'retry_wait') {

@@ -10,6 +10,7 @@ import {
   LogisticsProviderConnector,
   ManualConnector,
   TrueProcessHarnessConnector,
+  trueProcessHarnessEnabled,
   WebhookConnector,
 } from './base-connectors';
 import { ConnectorCatalogSyncService } from './connector-catalog-sync.service';
@@ -18,27 +19,33 @@ import { ConnectorsService } from './connectors.service';
 
 export const CONNECTOR_REGISTRY = 'CONNECTOR_REGISTRY';
 
+export function shouldRegisterTrueProcessHarnessConnector(env: NodeJS.ProcessEnv) {
+  return trueProcessHarnessEnabled(env);
+}
+
+export function createConnectorRegistry(env: NodeJS.ProcessEnv = process.env) {
+  const registry = new ConnectorRegistry();
+  registry.register(new ManualConnector());
+  registry.register(new InternalConnector());
+  registry.register(new WebhookConnector());
+  registry.register(new GmailConnector());
+  registry.register(new GoogleCalendarConnector());
+  registry.register(new FileProviderConnector());
+  registry.register(new LogisticsProviderConnector());
+  registry.register(new ContentProviderConnector());
+  if (shouldRegisterTrueProcessHarnessConnector(env)) {
+    registry.register(new TrueProcessHarnessConnector());
+  }
+  return registry;
+}
+
 @Module({
   imports: [DatabaseModule],
   controllers: [ConnectorsController],
   providers: [
     {
       provide: ConnectorRegistry,
-      useFactory: () => {
-        const registry = new ConnectorRegistry();
-        registry.register(new ManualConnector());
-        registry.register(new InternalConnector());
-        registry.register(new WebhookConnector());
-        registry.register(new GmailConnector());
-        registry.register(new GoogleCalendarConnector());
-        registry.register(new FileProviderConnector());
-        registry.register(new LogisticsProviderConnector());
-        registry.register(new ContentProviderConnector());
-        if (process.env.LAZY_ARMOR_ENABLE_TRUE_PROCESS_TEST_CONNECTOR === '1') {
-          registry.register(new TrueProcessHarnessConnector());
-        }
-        return registry;
-      },
+      useFactory: () => createConnectorRegistry(process.env),
     },
     { provide: CONNECTOR_REGISTRY, useExisting: ConnectorRegistry },
     ConnectorCatalogSyncService,

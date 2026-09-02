@@ -7,7 +7,7 @@ import path from 'node:path';
 import type { INestApplication } from '@nestjs/common';
 import { Queue } from 'bullmq';
 import IORedis from 'ioredis';
-import { createPool, type Pool } from 'mysql2/promise';
+import { createPool, type Pool, type RowDataPacket } from 'mysql2/promise';
 import request from 'supertest';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { ExecutionQueueReconciler } from '../src/execution/execution-queue-reconciler.service';
@@ -15,6 +15,13 @@ import { ExecutionQueueReconciler } from '../src/execution/execution-queue-recon
 interface Session {
   token: string;
   userId: string;
+}
+
+interface ExecutionLeaseRow {
+  status: string;
+  planVersionId: string;
+  workerToken: string | null;
+  leaseExpiresAt: Date | null;
 }
 
 interface WorkerProcess {
@@ -32,6 +39,7 @@ const dockerComposePath = path.join(repoRoot, 'infra', 'docker', 'docker-compose
 const activeWorkers: WorkerProcess[] = [];
 let portCursor = 35210;
 let sharedInternalConnectionId = '';
+let poolRef: Pool;
 
 describe.sequential('P0-H4 execution worker true-process reliability', { timeout: 180000 }, () => {
   let app: INestApplication;
@@ -39,6 +47,7 @@ describe.sequential('P0-H4 execution worker true-process reliability', { timeout
   let redis: IORedis;
   let queue: Queue<{ executionId: string }>;
   let user: Session;
+  let readonly: Session;
   let internalConnectionId: string;
   let reconciler: ExecutionQueueReconciler;
   const unique = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -65,11 +74,14 @@ describe.sequential('P0-H4 execution worker true-process reliability', { timeout
     await app.init();
 
     pool = createPool({ uri: process.env.DATABASE_URL, connectionLimit: 6, timezone: 'Z' });
+    poolRef = pool;
     redis = new IORedis(process.env.REDIS_URL!, { maxRetriesPerRequest: null });
     queue = new Queue('lazy-armor-executions', { connection: redis });
     reconciler = app.get(ExecutionQueueReconciler);
 
     user = await register(app, `h4-worker-${unique}@example.com`, 'H4 Worker');
+    readonly = await register(app, `h4-ops-${unique}@example.com`, 'H4 Worker Ops');
+    await pool.query('UPDATE users SET role=? WHERE id=UUID_TO_BIN(?)', ['operations_readonly', readonly.userId]);
     internalConnectionId = await createConnection(app, user.token, 'internal', `内部连接-${unique}`);
     sharedInternalConnectionId = internalConnectionId;
     await grant(app, user.token, internalConnectionId, 'WRITE_INTERNAL');
@@ -94,7 +106,7 @@ describe.sequential('P0-H4 execution worker true-process reliability', { timeout
   });
 
   it('starts a standalone execution worker, serves /live and /ready, and consumes queued executions', async () => {
-    const worker = await startExecutionWorker();
+    const worker = await startExecutionWorker(3011);
     const live = await fetchJson(`http://127.0.0.1:${worker.probePort}/live`);
     expect(live).toMatchObject({
       status: 'ok',
@@ -200,6 +212,86 @@ describe.sequential('P0-H4 execution worker true-process reliability', { timeout
     expect(result.recovered).toBeGreaterThanOrEqual(0);
     void worker;
   });
+
+  it('shows explicit Worker A -> Worker B takeover on the same execution and planVersion without creating a second execution', async () => {
+    const planId = await createLongRunningPlan(app, user.token, `worker-a-b-${unique}`, 48);
+    const requestId = `worker-a-b-${unique}`;
+    const executionId = await dispatch(app, user.token, planId, { amount: 365 }, requestId);
+    const seeded = await detail(app, user.token, executionId);
+    const originalPlanVersionId = seeded.planVersionId as string;
+
+    const workerA = await startExecutionWorker();
+    const leaseA = await waitForExecutionLease(executionId, (row) => row.workerToken !== null && row.status === 'running');
+    const progress = await waitForExecutionProgress(executionId, 2);
+    expect(leaseA.planVersionId).toBe(originalPlanVersionId);
+    const workerAToken = leaseA.workerToken;
+    expect(workerAToken).toBeTruthy();
+    expect(progress.succeededSteps).toBeGreaterThanOrEqual(2);
+
+    await hardKillWorker(workerA);
+    await pool.query("UPDATE executions SET worker_token=?, heartbeat_at=DATE_SUB(UTC_TIMESTAMP(6), INTERVAL 1 MINUTE), lease_expires_at=DATE_SUB(UTC_TIMESTAMP(6), INTERVAL 30 SECOND), updated_at=UTC_TIMESTAMP(6) WHERE id=UUID_TO_BIN(?)", [workerAToken, executionId]);
+    await queue.add('takeover-b', { executionId }, { jobId: `${executionId}-takeover-b`, removeOnComplete: true, removeOnFail: false });
+
+    await startExecutionWorker();
+    const recovered = await waitForExecutionStatus(app, user.token, executionId, 'succeeded');
+    expect(recovered.id).toBe(executionId);
+    expect(recovered.planVersionId).toBe(originalPlanVersionId);
+    expect(recovered.steps[0].attemptCount).toBe(1);
+    expect(recovered.steps.some((step: { stepOrder: number; attemptCount: number }) => step.stepOrder > 0 && step.attemptCount >= 1)).toBe(true);
+    expect(recovered.events.some((event: { eventType: string }) => event.eventType === 'worker_lease_recovered')).toBe(true);
+
+    const [executionRows] = await pool.query<RowDataPacket[]>(
+      'SELECT COUNT(*) count FROM executions WHERE request_id=?',
+      [requestId],
+    );
+    expect(Number(executionRows[0]?.count ?? 0)).toBe(1);
+  });
+
+  it('reconciles a stuck execution, clears operations stuck count, and records recovery audit without direct status mutation by admin', async () => {
+    const planId = await createTwoStepPlan(app, user.token, `stuck-recovery-${unique}`);
+    const requestId = `stuck-${unique}`;
+    const executionId = await dispatch(app, user.token, planId, { amount: 366 }, requestId);
+    const seeded = await detail(app, user.token, executionId);
+
+    const queuedJob = await queue.getJob(executionId);
+    if (queuedJob && !(await queuedJob.isActive())) await queuedJob.remove();
+    await pool.query("UPDATE execution_steps SET status='succeeded',attempt_count=1,started_at=UTC_TIMESTAMP(6),finished_at=UTC_TIMESTAMP(6),updated_at=UTC_TIMESTAMP(6) WHERE id=UUID_TO_BIN(?)", [seeded.steps[0].id]);
+    await pool.query("UPDATE execution_steps SET status='running',attempt_count=1,started_at=UTC_TIMESTAMP(6),finished_at=NULL,updated_at=UTC_TIMESTAMP(6) WHERE id=UUID_TO_BIN(?)", [seeded.steps[1].id]);
+    await pool.query("UPDATE executions SET status='running',worker_token='stale-worker',heartbeat_at=DATE_SUB(UTC_TIMESTAMP(6), INTERVAL 2 MINUTE),lease_expires_at=DATE_SUB(UTC_TIMESTAMP(6), INTERVAL 1 MINUTE),started_at=UTC_TIMESTAMP(6),updated_at=UTC_TIMESTAMP(6) WHERE id=UUID_TO_BIN(?)", [executionId]);
+
+    const before = await request(app.getHttpServer())
+      .get('/api/admin/operations/executions')
+      .set(auth(readonly.token))
+      .expect(200);
+    expect(before.body.stuck).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: executionId,
+      }),
+    ]));
+
+    const reconcileResult = await reconciler.reconcile(new Date(Date.now() + 1_000));
+    expect(reconcileResult.recovered).toBeGreaterThanOrEqual(1);
+
+    await startExecutionWorker();
+    const recovered = await waitForExecutionStatus(app, user.token, executionId, 'succeeded');
+    expect(recovered.events.some((event: { eventType: string }) => event.eventType === 'queue_reconciled')).toBe(true);
+
+    const after = await request(app.getHttpServer())
+      .get('/api/admin/operations/executions')
+      .set(auth(readonly.token))
+      .expect(200);
+    expect(after.body.stuck.some((item: { id: string }) => item.id === executionId)).toBe(false);
+
+    const [auditRows] = await pool.query<RowDataPacket[]>(
+      'SELECT action, reason_code reasonCode FROM audit_logs WHERE execution_id=UUID_TO_BIN(?) AND action=\'EXECUTION_RECOVERED\' ORDER BY created_at DESC LIMIT 5',
+      [executionId],
+    );
+    expect(auditRows).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        action: 'EXECUTION_RECOVERED',
+      }),
+    ]));
+  });
 });
 
 async function register(app: INestApplication, email: string, displayName: string): Promise<Session> {
@@ -272,6 +364,33 @@ async function createTwoStepPlan(app: INestApplication, token: string, name: str
   return created.body.id as string;
 }
 
+async function createLongRunningPlan(app: INestApplication, token: string, name: string, stepCount: number) {
+  const compareSteps = Array.from({ length: Math.max(2, stepCount - 1) }, (_, index) => ({
+    actionType: 'compare',
+    config: {},
+    stepOrder: index,
+  }));
+  const created = await request(app.getHttpServer())
+    .post('/api/plans')
+    .set(auth(token))
+    .send({
+      name,
+      description: 'P0-H4 explicit worker takeover',
+      domain: 'general',
+      automationLevel: 'L1',
+      sources: [{ sourceType: 'manual', config: {}, sortOrder: 0 }],
+      triggers: [{ triggerType: 'manual', config: {}, sortOrder: 0 }],
+      conditions: [{ groupId: 'root', logicalOperator: 'AND', fieldPath: 'amount', operator: 'GT', comparisonValue: 200, sortOrder: 0 }],
+      actions: [
+        ...compareSteps,
+        { actionType: 'update_internal_record', connectionId: internalConnectionIdRef(), requiredCapability: 'WRITE_INTERNAL', config: { recordType: 'worker-h4-takeover' }, stepOrder: compareSteps.length },
+      ],
+    })
+    .expect(201);
+  await activatePlan(app, token, created.body.id as string);
+  return created.body.id as string;
+}
+
 function internalConnectionIdRef() {
   if (!sharedInternalConnectionId) throw new Error('Internal connection is not ready');
   return sharedInternalConnectionId;
@@ -306,8 +425,42 @@ async function waitForExecutionStatus(app: INestApplication, token: string, exec
   throw new Error(`Execution did not reach ${status}`);
 }
 
-async function startExecutionWorker(): Promise<WorkerProcess> {
-  const probePort = nextPort();
+async function waitForExecutionLease(executionId: string, predicate: (row: ExecutionLeaseRow) => boolean, timeoutMs = 10_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const row = await executionLeaseRow(executionId);
+    if (row && predicate(row)) return row;
+    await sleep(50);
+  }
+  throw new Error(`Execution lease did not reach expected state for ${executionId}`);
+}
+
+async function waitForExecutionProgress(executionId: string, minSucceededSteps: number, timeoutMs = 10_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const [rows] = await poolRef.query<RowDataPacket[]>(
+      `SELECT
+          (SELECT status FROM executions WHERE id=UUID_TO_BIN(?)) executionStatus,
+          SUM(CASE WHEN status='succeeded' THEN 1 ELSE 0 END) succeededSteps,
+          SUM(CASE WHEN status='running' THEN 1 ELSE 0 END) runningSteps
+        FROM execution_steps
+       WHERE execution_id=UUID_TO_BIN(?)`,
+      [executionId, executionId],
+    );
+    const executionStatus = String(rows[0]?.executionStatus ?? '');
+    const succeededSteps = Number(rows[0]?.succeededSteps ?? 0);
+    const runningSteps = Number(rows[0]?.runningSteps ?? 0);
+    if (executionStatus === 'running' && succeededSteps >= minSucceededSteps) {
+      return { succeededSteps, runningSteps };
+    }
+    await sleep(25);
+  }
+  throw new Error(`Execution did not reach ${minSucceededSteps} succeeded steps for ${executionId}`);
+}
+
+
+async function startExecutionWorker(explicitProbePort?: number): Promise<WorkerProcess> {
+  const probePort = explicitProbePort ?? nextPort();
   const output: string[] = [];
   const env = {
     ...process.env,
@@ -350,6 +503,20 @@ async function stopWorker(worker: WorkerProcess, signal: 'SIGTERM' | 'SIGINT' = 
     if (!forced && worker.child.exitCode === null && await isChildProcessAlive(worker.child)) {
       throw new Error(`Worker process did not exit after ${signal}. Logs:\n${worker.output.join('')}`);
     }
+  }
+}
+
+async function hardKillWorker(worker: WorkerProcess) {
+  forgetWorker(worker);
+  if (worker.child.exitCode !== null) return;
+  if (worker.child.pid) {
+    try {
+      execFileSync('taskkill', ['/PID', String(worker.child.pid), '/T', '/F'], { stdio: 'ignore' });
+    } catch {}
+  }
+  const exited = await waitForExit(worker.child, 4_000);
+  if (!exited && worker.child.exitCode === null && await isChildProcessAlive(worker.child)) {
+    throw new Error(`Worker process did not exit after force kill. Logs:\n${worker.output.join('')}`);
   }
 }
 
@@ -471,4 +638,12 @@ function forgetWorker(worker: WorkerProcess) {
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function executionLeaseRow(executionId: string): Promise<ExecutionLeaseRow | null> {
+  const [rows] = await poolRef.query<RowDataPacket[]>(
+    'SELECT status, BIN_TO_UUID(plan_version_id) planVersionId, worker_token workerToken, lease_expires_at leaseExpiresAt FROM executions WHERE id=UUID_TO_BIN(?)',
+    [executionId],
+  );
+  return (rows[0] as unknown as ExecutionLeaseRow) ?? null;
 }

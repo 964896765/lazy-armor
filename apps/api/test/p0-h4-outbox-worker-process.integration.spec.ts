@@ -8,6 +8,7 @@ import type { INestApplication } from '@nestjs/common';
 import { createPool, type Pool, type RowDataPacket } from 'mysql2/promise';
 import request from 'supertest';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { AdminOperationsService } from '../src/admin/admin-operations.service';
 
 interface Session {
   token: string;
@@ -54,7 +55,7 @@ interface HarnessState {
 }
 
 const auth = (token: string) => ({ authorization: `Bearer ${token}` });
-const apiRoot = path.resolve(__dirname, '..');
+const apiRoot = process.cwd();
 const repoRoot = path.resolve(apiRoot, '..', '..');
 const outboxWorkerEntry = path.join(apiRoot, 'dist', 'entrypoints', 'outbox-worker.main.js');
 const dockerComposePath = path.join(repoRoot, 'infra', 'docker', 'docker-compose.yml');
@@ -66,6 +67,7 @@ let appRef: INestApplication;
 let poolRef: Pool;
 let executionWorkerRef: WorkerFacade;
 let userRef: Session;
+let operationsRef: AdminOperationsService;
 
 describe.sequential('P0-H4 outbox worker true-process reliability', { timeout: 240000 }, () => {
   let outbox: { claim(batch: number, workerId: string, leaseMs?: number): Promise<OutboxRow[]> };
@@ -98,6 +100,7 @@ describe.sequential('P0-H4 outbox worker true-process reliability', { timeout: 2
     poolRef = createPool({ uri: process.env.DATABASE_URL, connectionLimit: 6, timezone: 'Z' });
     executionWorkerRef = appRef.get('EXECUTION_WORKER');
     outbox = appRef.get('OUTBOX_SERVICE');
+    operationsRef = appRef.get(AdminOperationsService);
 
     userRef = await register(appRef, `h4-outbox-${unique}@example.com`, 'H4 Outbox');
     sharedConnectionId = await createConnection(appRef, userRef.token, 'true_process_test', `True Process Connector-${unique}`);
@@ -239,6 +242,78 @@ describe.sequential('P0-H4 outbox worker true-process reliability', { timeout: 2
     expect(receivedKeys('TEST_OUTBOX_UNSAFE')).toHaveLength(1);
   });
 
+  it('retries a known retryable provider failure until dead_letter without switching to outcome_unknown', async () => {
+    const waiting = await prepareWaitingDispatch('known-retryable-failure', 'TEST_OUTBOX_SAFE', 'provider-5xx-always');
+    await startOutboxWorker();
+    await accelerateOutboxRetries();
+
+    const operation = await waitForOperationStatus(waiting.stepId, 'failed');
+    const detail = await waitForExecutionStatus(appRef, userRef.token, waiting.executionId, 'failed');
+    const outboxRow = await outboxByOp(operation.id);
+
+    expect(operation.errorCode).toBe('PROVIDER_5XX');
+    expect(outboxRow).toMatchObject({
+      status: 'dead',
+      lastErrorCode: 'PROVIDER_5XX',
+    });
+    expect(sideEffects('TEST_OUTBOX_SAFE')).toBe(0);
+    expect(receivedKeys('TEST_OUTBOX_SAFE').length).toBeGreaterThanOrEqual(5);
+    expect(new Set(receivedKeys('TEST_OUTBOX_SAFE')).size).toBe(1);
+    expect(detail.notifications).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        eventType: 'side_effect_dead_letter',
+        actionRequired: true,
+      }),
+    ]));
+    expect(detail.notifications.some((notice: { eventType: string }) => notice.eventType === 'side_effect_outcome_unknown')).toBe(false);
+    expect(detail.events.some((event: { eventType: string }) => event.eventType === 'side_effect_dead_letter')).toBe(true);
+  });
+
+  it('fails a non-retryable provider rejection once and never upgrades it to outcome_unknown', async () => {
+    const waiting = await prepareWaitingDispatch('known-rejection', 'TEST_OUTBOX_SAFE', 'reject');
+    await startOutboxWorker();
+
+    const operation = await waitForOperationStatus(waiting.stepId, 'failed');
+    const detail = await waitForExecutionStatus(appRef, userRef.token, waiting.executionId, 'failed');
+    const outboxRow = await outboxByOp(operation.id);
+
+    expect(operation.errorCode).toBe('PROVIDER_REJECTED');
+    expect(outboxRow).toMatchObject({
+      status: 'dead',
+      lastErrorCode: 'PROVIDER_REJECTED',
+    });
+    expect(sideEffects('TEST_OUTBOX_SAFE')).toBe(0);
+    expect(receivedKeys('TEST_OUTBOX_SAFE')).toHaveLength(1);
+    expect(detail.notifications.some((notice: { eventType: string }) => notice.eventType === 'side_effect_outcome_unknown')).toBe(false);
+    expect(detail.events.some((event: { eventType: string }) => event.eventType === 'side_effect_failed')).toBe(true);
+  });
+
+  it('never re-dispatches a dead_letter after worker or dependency restarts', async () => {
+    const waiting = await prepareWaitingDispatch('dead-letter-boundary', 'TEST_OUTBOX_SAFE', 'provider-5xx-always');
+    await startOutboxWorker();
+    await accelerateOutboxRetries();
+
+    const operation = await waitForOperationStatus(waiting.stepId, 'failed');
+    expect((await outboxByOp(operation.id))?.status).toBe('dead');
+    const callsBeforeRestart = receivedKeys('TEST_OUTBOX_SAFE').length;
+
+    await startOutboxWorker();
+    await sleep(2_000);
+    expect(receivedKeys('TEST_OUTBOX_SAFE').length).toBe(callsBeforeRestart);
+
+    stopContainer('lazy-armor-p0-redis-1');
+    startContainer('lazy-armor-p0-redis-1');
+    await ensureContainerHealthy('lazy-armor-p0-redis-1');
+    stopContainer('lazy-armor-p0-mysql-1');
+    startContainer('lazy-armor-p0-mysql-1');
+    await ensureContainerHealthy('lazy-armor-p0-mysql-1', 60_000);
+
+    await startOutboxWorker();
+    await sleep(2_000);
+    expect(receivedKeys('TEST_OUTBOX_SAFE').length).toBe(callsBeforeRestart);
+    expect((await outboxByOp(operation.id))?.status).toBe('dead');
+  });
+
   it('recovers after provider success followed by worker crash without repeating the side effect', async () => {
     const waiting = await prepareWaitingDispatch('success-then-crash', 'TEST_OUTBOX_SAFE', 'crash-after-success-once');
     const firstWorker = await startOutboxWorker();
@@ -255,6 +330,45 @@ describe.sequential('P0-H4 outbox worker true-process reliability', { timeout: 2
     expect(sideEffects('TEST_OUTBOX_SAFE')).toBe(1);
     expect(receivedKeys('TEST_OUTBOX_SAFE').length).toBeGreaterThanOrEqual(2);
     expect(new Set(receivedKeys('TEST_OUTBOX_SAFE')).size).toBe(1);
+  });
+
+  it('updates operations metrics from real outbox backlog, active work, dead letter, and outcome_unknown states', async () => {
+    const pending = await prepareWaitingDispatch('ops-backlog', 'TEST_OUTBOX_SAFE', 'ok');
+    const pendingOperation = await waitForOperation(pending.stepId);
+    expect(pendingOperation).toBeTruthy();
+
+    const backlog = await waitForOutboxMetrics((metrics) =>
+      metrics.workers.outboxWorker.queueBacklog > 0
+      && metrics.workers.outboxWorker.oldestPendingAgeSeconds !== null,
+    );
+    expect(backlog.workers.outboxWorker.queueBacklog).toBeGreaterThan(0);
+
+    const claimed = await outbox.claim(1, 'ops-active', 30_000);
+    expect(claimed).toHaveLength(1);
+    const active = await waitForOutboxMetrics((metrics) => metrics.workers.outboxWorker.activeWork > 0);
+    expect(active.workers.outboxWorker.activeWork).toBeGreaterThan(0);
+
+    await poolRef.query(
+      'UPDATE outbox_messages SET status=\'pending\', locked_by=NULL, lock_expires_at=NULL, next_attempt_at=? WHERE id=UUID_TO_BIN(?)',
+      [new Date(Date.now() - 1_000), claimed[0].id],
+    );
+    await startOutboxWorker();
+    await waitForOperationStatus(pending.stepId, 'succeeded');
+
+    const dead = await prepareWaitingDispatch('ops-dead-letter', 'TEST_OUTBOX_SAFE', 'provider-5xx-always');
+    await accelerateOutboxRetries();
+    await waitForOperationStatus(dead.stepId, 'failed');
+    const deadMetrics = await waitForOutboxMetrics((metrics) =>
+      metrics.outbox.deadCount > 0
+      && metrics.overview.delivery.deadOutbox > 0
+      && metrics.workers.outboxWorker.recentFailures.some((item: { errorCode: string | null }) => item.errorCode === 'PROVIDER_5XX'),
+    );
+    expect(deadMetrics.outbox.recentFailures.some((item: { lastErrorCode: string | null }) => item.lastErrorCode === 'PROVIDER_5XX')).toBe(true);
+
+    const unknown = await prepareWaitingDispatch('ops-outcome-unknown', 'TEST_OUTBOX_UNSAFE', 'timeout-always');
+    await waitForOperationStatus(unknown.stepId, 'outcome_unknown');
+    const unknownMetrics = await waitForOutboxMetrics((metrics) => metrics.overview.delivery.outcomeUnknown > 0);
+    expect(unknownMetrics.overview.delivery.outcomeUnknown).toBeGreaterThan(0);
   });
 });
 
@@ -394,7 +508,38 @@ async function waitForOperationStatus(stepId: string, status: string, timeoutMs 
     if (row?.status === status) return row;
     await sleep(250);
   }
-  throw new Error(`Operation did not reach ${status}`);
+  const current = await operationByStep(stepId);
+  const outboxRow = current ? await outboxByOp(current.id) : null;
+  throw new Error(`Operation did not reach ${status}; current=${current?.status ?? 'missing'} error=${current?.errorCode ?? 'null'} outbox=${outboxRow?.status ?? 'missing'} attempts=${outboxRow?.attemptCount ?? 'null'} lastError=${outboxRow?.lastErrorCode ?? 'null'}`);
+}
+
+async function accelerateOutboxRetries(rounds = 10) {
+  for (let i = 0; i < rounds; i += 1) {
+    await poolRef.query('UPDATE outbox_messages SET next_attempt_at=? WHERE status=\'retry_wait\'', [new Date(Date.now() - 1_000)]);
+    await sleep(350);
+  }
+}
+
+async function waitForOutboxMetrics(
+  predicate: (metrics: {
+    workers: Awaited<ReturnType<AdminOperationsService['workers']>>;
+    overview: Awaited<ReturnType<AdminOperationsService['overview']>>;
+    outbox: Awaited<ReturnType<AdminOperationsService['outbox']>>;
+  }) => boolean,
+  timeoutMs = 20_000,
+) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const [workers, overview, outboxStatus] = await Promise.all([
+      operationsRef.workers(),
+      operationsRef.overview(),
+      operationsRef.outbox(),
+    ]);
+    const metrics = { workers, overview, outbox: outboxStatus };
+    if (predicate(metrics)) return metrics;
+    await sleep(250);
+  }
+  throw new Error('Operations outbox metrics did not reach expected state');
 }
 
 async function operationByStep(stepId: string): Promise<OperationRow | null> {

@@ -6,6 +6,7 @@ import { DATABASE, type InjectedDatabase } from '../common/database.module';
 import { AuditService } from '../audit/audit.service';
 import type { PermissionUpdateDto } from '../connections/dto';
 import { ConnectorRegistry } from '@lazy-armor/connector-sdk';
+import { TRUE_PROCESS_HARNESS_CONNECTOR_KEY, trueProcessHarnessEnabled } from '../connectors/base-connectors';
 
 @Injectable()
 export class PermissionsService {
@@ -130,6 +131,7 @@ export class PermissionsService {
     // Legacy dynamically registered connectors only exist in isolated tests.
     // Production adapters must declare a complete gate contract.
     if (!metadata.productionStatus || !capability) return process.env.NODE_ENV === 'test';
+    if (metadata.key === TRUE_PROCESS_HARNESS_CONNECTOR_KEY && trueProcessHarnessEnabled(process.env)) return true;
     return metadata.productionStatus !== 'DISABLED' && capability.providerAvailability !== 'disabled';
   }
 }

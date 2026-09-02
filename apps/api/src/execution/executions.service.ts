@@ -82,7 +82,10 @@ export class ExecutionsService {
       outputs,
       events,
       approvals,
-      notifications: detailNotifications,
+      notifications: detailNotifications.map((notification) => ({
+        ...notification,
+        actionRequired: Boolean(notification.actionRequired),
+      })),
     };
   }
 

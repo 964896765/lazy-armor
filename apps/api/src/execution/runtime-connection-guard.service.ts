@@ -5,6 +5,7 @@ import { DATABASE, type InjectedDatabase } from '../common/database.module';
 import { CREDENTIAL_PROVIDER, CredentialProviderError, type CredentialProvider } from '../credentials/credential-provider';
 import { ExecutionRuntimeError } from './execution.types';
 import { ConnectorRegistry } from '@lazy-armor/connector-sdk';
+import { TRUE_PROCESS_HARNESS_CONNECTOR_KEY, trueProcessHarnessEnabled } from '../connectors/base-connectors';
 
 @Injectable()
 export class RuntimeConnectionGuard {
@@ -62,7 +63,8 @@ export class RuntimeConnectionGuard {
     const metadata = adapter.metadata();
     const runtimeCapability = adapter.capabilities().find((item) => item.key === capabilityKey);
     const legacyTestAdapter = process.env.NODE_ENV === 'test' && !metadata.productionStatus;
-    if ((!legacyTestAdapter && (!runtimeCapability || metadata.productionStatus === 'DISABLED')) || runtimeCapability?.providerAvailability === 'disabled') {
+    const trueProcessHarness = metadata.key === TRUE_PROCESS_HARNESS_CONNECTOR_KEY && trueProcessHarnessEnabled(process.env);
+    if ((!legacyTestAdapter && !trueProcessHarness && (!runtimeCapability || metadata.productionStatus === 'DISABLED')) || runtimeCapability?.providerAvailability === 'disabled') {
       throw new ExecutionRuntimeError('PROVIDER_GATE_DISABLED', 'Provider capability is disabled');
     }
     return { connectorId: connection.connectorId, connectorKey: connection.connectorKey, operation: permission.operation };

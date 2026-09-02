@@ -27,6 +27,14 @@ abstract class BaseConnector implements Connector {
   async revoke(): Promise<void> {}
 }
 
+export const TRUE_PROCESS_HARNESS_CONNECTOR_KEY = 'true_process_test';
+
+export function trueProcessHarnessEnabled(env: NodeJS.ProcessEnv) {
+  return env.LAZY_ARMOR_ENABLE_TRUE_PROCESS_TEST_CONNECTOR === '1'
+    && env.NODE_ENV !== 'production'
+    && env.APP_ENV === 'development';
+}
+
 export class ManualConnector extends BaseConnector {
   metadata = () => ({
     key: 'manual',
@@ -131,12 +139,12 @@ function harnessBehavior(request: ConnectorRequest) {
 
 export class TrueProcessHarnessConnector extends BaseConnector {
   metadata = () => ({
-    key: 'true_process_test',
+    key: TRUE_PROCESS_HARNESS_CONNECTOR_KEY,
     name: 'True Process Test',
-    description: '仅用于真进程 worker 故障矩阵验证的受控测试连接器。',
+    description: '仅用于真进程 worker 故障矩阵验证的 test-only harness；never production，never staging。',
     version: '1.0.0-test',
     providerType: 'internal' as const,
-    productionStatus: 'BETA' as const,
+    productionStatus: 'DISABLED' as const,
     authentication: { type: 'none' as const },
     supportsRefresh: false,
     supportsRevoke: false,
@@ -189,6 +197,16 @@ export class TrueProcessHarnessConnector extends BaseConnector {
     if (behavior === 'reject') {
       writeTrueProcessHarnessState(state);
       return { ok: false, data: { reason: 'provider rejected' } };
+    }
+
+    if (behavior === 'provider-5xx-once' && state.callCounts[callKey] === 1) {
+      writeTrueProcessHarnessState(state);
+      throw new ConnectorError('PROVIDER_5XX', 'PROVIDER_UNAVAILABLE', 'Provider returned a retryable 5xx response', { retryable: true });
+    }
+
+    if (behavior === 'provider-5xx-always') {
+      writeTrueProcessHarnessState(state);
+      throw new ConnectorError('PROVIDER_5XX', 'PROVIDER_UNAVAILABLE', 'Provider returned a retryable 5xx response', { retryable: true });
     }
 
     if (behavior === 'timeout-once' && state.callCounts[callKey] === 1) {
