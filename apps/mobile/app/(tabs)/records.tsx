@@ -20,7 +20,7 @@ export default function Records() {
   const state = executionListState(executions.isLoading, executions.isError, executions.data?.length ?? 0);
   return (
     <ScrollView style={local.page} contentContainerStyle={local.content} refreshControl={token ? <RefreshControl refreshing={executions.isFetching} onRefresh={() => executions.refetch()} /> : undefined}>
-      <Text style={styles.eyebrow}>懒人装甲 · P0</Text><Text style={styles.title}>记录</Text><Text style={styles.subtitle}>每一次处理都绑定当时生效的计划版本。</Text>
+      <Text style={styles.eyebrow}>懒人装甲</Text><Text style={styles.title}>记录</Text><Text style={styles.subtitle}>每一次处理都会保留当时使用的计划，方便回看。</Text>
       {!token && <View style={styles.card}><Text style={styles.cardTitle}>登录后查看真实记录</Text><Button title="去登录" onPress={() => router.push('/connections')} /></View>}
       {state === 'loading' && <ActivityIndicator />}
       {state === 'error' && <View style={styles.card}><Text style={styles.cardTitle}>记录暂时加载失败</Text><Button title="重新加载" onPress={() => executions.refetch()} /></View>}

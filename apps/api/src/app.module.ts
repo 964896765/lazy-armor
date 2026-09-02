@@ -26,6 +26,8 @@ import { AiAdapterModule } from './ai-adapter/ai-adapter.module';
 import { AdminModule } from './admin/admin.module';
 import { StudyModule } from './study/study.module';
 import { DeviceModule } from './device/device.module';
+import { ProfilesModule } from './profiles/profiles.module';
+import { OperationsModule } from './operations/operations.module';
 
 @Module({
   imports: [
@@ -52,6 +54,8 @@ import { DeviceModule } from './device/device.module';
     HouseholdModule,
     StudyModule,
     DeviceModule,
+    ProfilesModule,
+    OperationsModule,
     PlansModule,
     TemplatesModule,
     ExecutionModule,

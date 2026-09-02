@@ -54,6 +54,19 @@ export function templateGroupLabel(group: string): string {
   }
 }
 
+const TEMPLATE_GROUP_ORDER = ['我的生活', '我的钱', '我的事情', '我的东西'] as const;
+
+export function groupPlanTemplates<T extends { group: string }>(templates: readonly T[]) {
+  const groups = TEMPLATE_GROUP_ORDER.map((group) => ({
+    group,
+    label: templateGroupLabel(group),
+    items: templates.filter((template) => template.group === group),
+  })).filter((group) => group.items.length > 0);
+  const other = templates.filter((template) => !TEMPLATE_GROUP_ORDER.includes(template.group as typeof TEMPLATE_GROUP_ORDER[number]));
+  if (other.length > 0) groups.push({ group: '其他计划', label: '其他计划', items: other });
+  return groups;
+}
+
 export function sourceTypeLabel(sourceType: string): string {
   switch (sourceType) {
     case 'manual':
@@ -199,6 +212,7 @@ export function actionSummary(actionType: string, config: Record<string, unknown
   if (actionType === 'prepare_publish') return '准备发布版本';
   if (actionType === 'prepare_purchase') return '准备补货清单';
   if (actionType === 'create_task') return '生成今天要做的任务';
+  if (actionType === 'archive') return '准备文件归档清单';
   return '执行已配置的动作';
 }
 

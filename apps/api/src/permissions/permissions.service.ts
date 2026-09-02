@@ -1,14 +1,15 @@
 import { ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { connectionPermissions, connections, connectorCapabilities } from '@lazy-armor/database';
+import { connectionPermissions, connections, connectorCapabilities, connectors } from '@lazy-armor/database';
 import { newId } from '@lazy-armor/shared';
 import { and, eq } from 'drizzle-orm';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
 import { AuditService } from '../audit/audit.service';
 import type { PermissionUpdateDto } from '../connections/dto';
+import { ConnectorRegistry } from '@lazy-armor/connector-sdk';
 
 @Injectable()
 export class PermissionsService {
-  constructor(@Inject(DATABASE) private readonly db: InjectedDatabase, private readonly audit: AuditService) {}
+  constructor(@Inject(DATABASE) private readonly db: InjectedDatabase, private readonly audit: AuditService, private readonly registry: ConnectorRegistry) {}
 
   async list(userId: string, connectionId: string) {
     await this.assertOwnedConnection(userId, connectionId);
@@ -97,6 +98,7 @@ export class PermissionsService {
       expiresAt: connectionPermissions.expiresAt,
       revokedAt: connectionPermissions.revokedAt,
       operation: connectorCapabilities.operation,
+      providerAvailability: connectorCapabilities.providerAvailability,
     }).from(connectionPermissions)
       .innerJoin(connectorCapabilities, eq(connectionPermissions.connectorCapabilityId, connectorCapabilities.id))
       .where(and(eq(connectionPermissions.connectionId, connectionId), eq(connectorCapabilities.key, capabilityKey)))
@@ -105,15 +107,29 @@ export class PermissionsService {
     if (!permission || permission.granted !== 1 || permission.revokedAt || (permission.expiresAt && permission.expiresAt <= new Date())) {
       throw new ForbiddenException(`Capability permission denied: ${capabilityKey}`);
     }
+    if (!this.providerCapabilityEnabled(connection.connectorKey, capabilityKey)) {
+      throw new ForbiddenException(`Provider capability is disabled: ${capabilityKey}`);
+    }
     return { connection, operation: permission.operation };
   }
 
   private async assertOwnedConnection(userId: string, connectionId: string) {
-    const rows = await this.db.select({ id: connections.id, connectorId: connections.connectorId, status: connections.status, expiresAt: connections.expiresAt })
+    const rows = await this.db.select({ id: connections.id, connectorId: connections.connectorId, connectorKey: connectors.key, status: connections.status, expiresAt: connections.expiresAt, productionStatus: connectors.productionStatus })
       .from(connections)
+      .innerJoin(connectors, eq(connections.connectorId, connectors.id))
       .where(and(eq(connections.id, connectionId), eq(connections.userId, userId)))
       .limit(1);
     if (!rows[0]) throw new NotFoundException('Connection not found');
     return rows[0];
+  }
+
+  private providerCapabilityEnabled(connectorKey: string, capabilityKey: string) {
+    const adapter = this.registry.get(connectorKey);
+    const metadata = adapter.metadata();
+    const capability = adapter.capabilities().find((item) => item.key === capabilityKey);
+    // Legacy dynamically registered connectors only exist in isolated tests.
+    // Production adapters must declare a complete gate contract.
+    if (!metadata.productionStatus || !capability) return process.env.NODE_ENV === 'test';
+    return metadata.productionStatus !== 'DISABLED' && capability.providerAvailability !== 'disabled';
   }
 }

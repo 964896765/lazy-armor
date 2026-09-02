@@ -63,9 +63,16 @@ export class BillingService {
     const reference = typeof context.referenceDate === 'string' ? new Date(context.referenceDate) : new Date();
     const currentPeriod = this.resolveBillingPeriod(reference, billingPeriodMode === 'previous_month' ? -1 : 0);
     const previousPeriod = this.resolveBillingPeriod(reference, billingPeriodMode === 'previous_month' ? -2 : -1);
+    const category = typeof config.category === 'string' && config.category.trim() ? config.category.trim() : null;
+    const currentWhere = category
+      ? and(eq(billingRecords.userId, userId), eq(billingRecords.billingPeriod, currentPeriod), eq(billingRecords.category, category))
+      : and(eq(billingRecords.userId, userId), eq(billingRecords.billingPeriod, currentPeriod));
+    const previousWhere = category
+      ? and(eq(billingRecords.userId, userId), eq(billingRecords.billingPeriod, previousPeriod), eq(billingRecords.category, category))
+      : and(eq(billingRecords.userId, userId), eq(billingRecords.billingPeriod, previousPeriod));
     const [currentRows, previousRows] = await Promise.all([
-      this.db.select().from(billingRecords).where(and(eq(billingRecords.userId, userId), eq(billingRecords.billingPeriod, currentPeriod))).orderBy(asc(billingRecords.occurredAt)),
-      this.db.select().from(billingRecords).where(and(eq(billingRecords.userId, userId), eq(billingRecords.billingPeriod, previousPeriod))).orderBy(asc(billingRecords.occurredAt)),
+      this.db.select().from(billingRecords).where(currentWhere).orderBy(asc(billingRecords.occurredAt)),
+      this.db.select().from(billingRecords).where(previousWhere).orderBy(asc(billingRecords.occurredAt)),
     ]);
     return this.buildBillingContext({
       ...context,

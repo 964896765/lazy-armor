@@ -13,7 +13,17 @@ export class ApiError extends Error {
 
 export function resolveApiUrl(): string {
   const configured = process.env.EXPO_PUBLIC_API_URL?.trim();
-  if (configured) return configured;
+  if (configured) {
+    if (process.env.NODE_ENV === 'production') {
+      let url: URL;
+      try { url = new URL(configured); }
+      catch { throw new Error('EXPO_PUBLIC_API_URL must be a valid production URL'); }
+      const local = ['localhost', '127.0.0.1', '::1'].includes(url.hostname.toLowerCase());
+      if (local) throw new Error('EXPO_PUBLIC_API_URL must not point to localhost in production builds');
+      if (url.protocol !== 'https:') throw new Error('EXPO_PUBLIC_API_URL must use HTTPS in production builds');
+    }
+    return configured.replace(/\/$/, '');
+  }
   if (process.env.NODE_ENV === 'production') {
     throw new Error('EXPO_PUBLIC_API_URL is required in production builds');
   }

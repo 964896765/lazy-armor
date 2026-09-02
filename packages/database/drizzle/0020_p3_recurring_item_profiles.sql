@@ -1,0 +1,20 @@
+CREATE TABLE `recurring_item_profiles` (
+  `id` BINARY(16) NOT NULL,
+  `user_id` BINARY(16) NOT NULL,
+  `domain` VARCHAR(32) NOT NULL,
+  `category` VARCHAR(80) NOT NULL,
+  `title` VARCHAR(160) NOT NULL,
+  `next_due_at` DATETIME(6) NOT NULL,
+  `recurrence_days` INT NULL,
+  `remind_before_days` INT NOT NULL DEFAULT 7,
+  `status` VARCHAR(32) NOT NULL,
+  `last_completed_at` DATETIME(6) NULL,
+  `source_type` VARCHAR(32) NOT NULL,
+  `metadata_json` JSON NULL,
+  `created_at` DATETIME(6) NOT NULL,
+  `updated_at` DATETIME(6) NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `recurring_items_user_due_idx` (`user_id`, `status`, `next_due_at`),
+  KEY `recurring_items_user_domain_idx` (`user_id`, `domain`, `category`),
+  CONSTRAINT `recurring_item_profiles_user_id_users_id_fk` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE RESTRICT
+);

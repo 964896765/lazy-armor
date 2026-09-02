@@ -134,6 +134,27 @@
       "when": 1788318000000,
       "tag": "0018_p2_file_import",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1788321600000,
+      "tag": "0019_p3_core_profiles",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1788325200000,
+      "tag": "0020_p3_recurring_item_profiles",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1788328800000,
+      "tag": "0021_p3_operational_records",
+      "breakpoints": true
     }
   ]
 }

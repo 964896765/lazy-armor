@@ -183,6 +183,16 @@ function calendarFor(key: string) {
         status: 'confirmed',
       },
     ],
+    conflict: [
+      {
+        id: 'evt-conflict-100', title: '客户方案评审', startAt: '2027-04-06T09:00:00.000Z', endAt: '2027-04-06T10:00:00.000Z',
+        timezone: 'Asia/Shanghai', location: '线上', organizer: 'sales@example.com', attendeesSummary: '5 位参会人', status: 'confirmed',
+      },
+      {
+        id: 'evt-conflict-101', title: '项目周会', startAt: '2027-04-06T09:30:00.000Z', endAt: '2027-04-06T10:30:00.000Z',
+        timezone: 'Asia/Shanghai', location: '会议室 B', organizer: 'pm@example.com', attendeesSummary: '6 位参会人', status: 'confirmed',
+      },
+    ],
   };
   return calendars[key] ?? calendars.primary;
 }
@@ -389,14 +399,17 @@ export class GoogleCalendarConnector extends OAuthConnectorBase {
 
   capabilities = (): ConnectorCapability[] => [
     { key: 'READ_EVENT', name: '读取日历事件', userFacingName: '读取日历事件', riskLevel: 'R0', operation: 'read', requiredPermission: 'READ_EVENT', providerAvailability: 'beta' },
+    { key: 'CREATE_EVENT', name: '创建日历事件', userFacingName: '创建日历事项', riskLevel: 'R3', operation: 'execute', requiredPermission: 'CREATE_EVENT', providerAvailability: 'disabled', sideEffectContract: { sideEffect: true, supportsIdempotencyKey: true, supportsOperationLookup: true, retrySafety: 'ambiguous' } },
+    { key: 'UPDATE_EVENT', name: '更新日历事件', userFacingName: '更新日历事项', riskLevel: 'R3', operation: 'execute', requiredPermission: 'UPDATE_EVENT', providerAvailability: 'disabled', sideEffectContract: { sideEffect: true, supportsIdempotencyKey: true, supportsOperationLookup: true, retrySafety: 'ambiguous' } },
   ];
 
   protected providerKey() { return 'google_calendar'; }
   protected externalAccountPrefix() { return 'calendar'; }
 
   async completeAuthorization(request: AuthorizationCallbackRequest): Promise<AuthorizationCallbackResult> {
+    const calendarKey = request.code.trim().toLowerCase().includes('conflict') ? 'conflict' : 'primary';
     return {
-      ...this.buildCredential(request.code, { calendarKey: 'primary' }),
+      ...this.buildCredential(request.code, { calendarKey }),
       grantedCapabilities: ['READ_EVENT'],
     };
   }
@@ -455,7 +468,16 @@ export class FileProviderConnector extends BaseConnector {
     const fileName = typeof request.input.fileName === 'string' ? request.input.fileName : '';
     const mimeType = typeof request.input.mimeType === 'string' ? request.input.mimeType : 'application/octet-stream';
     const contentBase64 = typeof request.input.contentBase64 === 'string' ? request.input.contentBase64 : '';
-    if (!fileName || !contentBase64) throw new ConnectorError('INVALID_FILE', 'INVALID_REQUEST', 'Selected file metadata or content is missing');
+    if (!fileName) throw new ConnectorError('INVALID_FILE', 'INVALID_REQUEST', 'Selected file name is missing');
+    if (request.capability === 'READ_FILE_METADATA' && !contentBase64) {
+      const sizeBytes = typeof request.input.sizeBytes === 'number' ? request.input.sizeBytes : 0;
+      const contentSha256 = typeof request.input.contentSha256 === 'string' ? request.input.contentSha256.toLowerCase() : '';
+      if (!Number.isInteger(sizeBytes) || sizeBytes < 1 || sizeBytes > 1_000_000 || !/^[a-f0-9]{64}$/.test(contentSha256)) {
+        throw new ConnectorError('INVALID_FILE', 'INVALID_REQUEST', 'Selected file metadata is incomplete or invalid');
+      }
+      return { ok: true, data: { fileName, mimeType, sizeBytes, contentSha256 } };
+    }
+    if (!contentBase64) throw new ConnectorError('INVALID_FILE', 'INVALID_REQUEST', 'Selected file content is missing');
     const content = Buffer.from(contentBase64, 'base64');
     if (content.length === 0 || content.length > 1_000_000) throw new ConnectorError('INVALID_FILE', 'INVALID_REQUEST', 'Selected file must be between 1 byte and 1 MB');
     const metadata = { fileName, mimeType, sizeBytes: content.length, contentSha256: createHash('sha256').update(content).digest('hex') };
@@ -501,17 +523,17 @@ function normalizeLogisticsFixture(provider: string, payload: Record<string, unk
   if (provider === 'sf_test') {
     const state = logisticsState(String(payload.opCode ?? ''));
     return {
-      trackingNumber: String(payload.waybillNo ?? ''), carrier: 'SF', state,
-      latestEvent: String(payload.opDesc ?? ''), lastUpdatedAt: String(payload.opTime ?? ''),
-      deliveredAt: state === 'delivered' ? String(payload.opTime ?? '') : null,
+      tracking_number: String(payload.waybillNo ?? ''), carrier: 'SF', state,
+      latest_event: String(payload.opDesc ?? ''), last_updated_at: String(payload.opTime ?? ''),
+      delivered_at: state === 'delivered' ? String(payload.opTime ?? '') : null,
     };
   }
   if (provider === 'jd_test') {
     const state = logisticsState(String(payload.statusCode ?? ''));
     return {
-      trackingNumber: String(payload.orderCode ?? ''), carrier: 'JD', state,
-      latestEvent: String(payload.statusText ?? ''), lastUpdatedAt: String(payload.statusTime ?? ''),
-      deliveredAt: state === 'delivered' ? String(payload.statusTime ?? '') : null,
+      tracking_number: String(payload.orderCode ?? ''), carrier: 'JD', state,
+      latest_event: String(payload.statusText ?? ''), last_updated_at: String(payload.statusTime ?? ''),
+      delivered_at: state === 'delivered' ? String(payload.statusTime ?? '') : null,
     };
   }
   throw new ConnectorError('INVALID_PROVIDER_FIXTURE', 'INVALID_REQUEST', 'Unsupported logistics test provider');
@@ -545,6 +567,7 @@ export class ContentProviderConnector extends OAuthConnectorBase {
     { key: 'READ_CONTENT', name: '读取内容', userFacingName: '读取内容', riskLevel: 'R0', operation: 'read', requiredPermission: 'READ_CONTENT', providerAvailability: 'draft_only' },
     { key: 'CREATE_DRAFT', name: '创建内容草稿', userFacingName: '准备发布草稿', riskLevel: 'R2', operation: 'execute', requiredPermission: 'CREATE_DRAFT', providerAvailability: 'draft_only', sideEffectContract: { sideEffect: true, retrySafety: 'ambiguous' } },
     { key: 'PUBLISH_CONTENT', name: '发布内容', userFacingName: '发布内容', riskLevel: 'R3', operation: 'execute', requiredPermission: 'PUBLISH_CONTENT', providerAvailability: 'disabled', sideEffectContract: { sideEffect: true, supportsIdempotencyKey: true, supportsOperationLookup: true, retrySafety: 'ambiguous' } },
+    { key: 'READ_ANALYTICS', name: '读取内容数据', userFacingName: '读取内容表现', riskLevel: 'R0', operation: 'read', requiredPermission: 'READ_ANALYTICS', providerAvailability: 'disabled' },
   ];
 
   protected providerKey() { return 'content_provider'; }

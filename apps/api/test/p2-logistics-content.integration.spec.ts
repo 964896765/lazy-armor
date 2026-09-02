@@ -21,6 +21,9 @@ describe.sequential('P2-4/5 logistics and content adapters', () => {
       connectorId: 'logistics_provider', externalAccountName: '物流测试 Adapter', credentials: { apiKey: 'test-only' },
     }).expect(201);
     logisticsConnectionId = logistics.body.id as string;
+    await request(app.getHttpServer()).put(`/api/connections/${logisticsConnectionId}/permissions`).set(auth(user.token)).send({
+      permissions: [{ capability: 'READ_TRACKING', granted: true }],
+    }).expect(200);
     contentConnectionId = (await oauthConnect(app, user.token, 'content_provider', 'content-test')).connection.id as string;
   });
 
@@ -38,8 +41,8 @@ describe.sequential('P2-4/5 logistics and content adapters', () => {
         },
       }).expect(201);
     expect(response.body).toEqual({
-      trackingNumber: 'SF10001', carrier: 'SF', state: 'delivered', latestEvent: '已签收',
-      lastUpdatedAt: '2026-09-02T08:00:00.000Z', deliveredAt: '2026-09-02T08:00:00.000Z',
+      tracking_number: 'SF10001', carrier: 'SF', state: 'delivered', latest_event: '已签收',
+      last_updated_at: '2026-09-02T08:00:00.000Z', delivered_at: '2026-09-02T08:00:00.000Z',
     });
     expect(JSON.stringify(response.body)).not.toContain('waybillNo');
     expect(JSON.stringify(response.body)).not.toContain('opCode');
@@ -63,8 +66,8 @@ describe.sequential('P2-4/5 logistics and content adapters', () => {
     const draft = await request(app.getHttpServer())
       .post(`/api/connections/${contentConnectionId}/invoke`).set(auth(user.token)).send({
         capability: 'CREATE_DRAFT', requestId: `content-draft-${unique}`, input: { title: '平台草稿' },
-      }).expect(201);
-    expect(draft.body).toMatchObject({ title: '平台草稿', status: 'draft', published: false });
+      }).expect(403);
+    expect(draft.body.message).toContain('Execution Engine');
 
     await request(app.getHttpServer())
       .post(`/api/connections/${contentConnectionId}/invoke`).set(auth(user.token)).send({

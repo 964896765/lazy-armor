@@ -41,9 +41,9 @@ describe('P2 mobile connection presenter', () => {
   it.each([
     ['manual', 'MANUAL_INPUT'], ['internal', 'READ_INTERNAL'], ['internal', 'WRITE_INTERNAL'],
     ['webhook', 'RECEIVE_WEBHOOK'], ['gmail', 'READ_EMAIL_METADATA'], ['gmail', 'READ_EMAIL'],
-    ['gmail', 'CREATE_DRAFT'], ['google_calendar', 'READ_EVENT'], ['file_provider', 'READ_FILE_METADATA'],
+    ['gmail', 'CREATE_DRAFT'], ['google_calendar', 'READ_EVENT'], ['google_calendar', 'CREATE_EVENT'], ['google_calendar', 'UPDATE_EVENT'], ['file_provider', 'READ_FILE_METADATA'],
     ['file_provider', 'READ_FILE'], ['logistics_provider', 'READ_TRACKING'], ['content_provider', 'READ_CONTENT'],
-    ['content_provider', 'CREATE_DRAFT'], ['content_provider', 'PUBLISH_CONTENT'],
+    ['content_provider', 'CREATE_DRAFT'], ['content_provider', 'PUBLISH_CONTENT'], ['content_provider', 'READ_ANALYTICS'],
   ])('presents current provider capability %s/%s in consumer language', (provider, capability) => {
     const label = capabilityLabel(provider, capability);
     expect(label).not.toBe('其他权限');

@@ -29,7 +29,7 @@ export class ConnectionsService {
   async create(userId: string, input: CreateConnectionDto) {
     const adapter = this.getAdapter(input.connectorId);
     const catalog = await this.requireCatalog(input.connectorId);
-    if (adapter.metadata().authentication.type === 'oauth2') {
+    if (adapter.metadata().authentication?.type === 'oauth2') {
       throw new BadRequestException('OAuth provider must be connected through the authorization flow');
     }
     const connectionId = await this.createConnectionRecord(userId, {
@@ -37,7 +37,11 @@ export class ConnectionsService {
       externalAccountName: input.externalAccountName,
       credentials: input.credentials,
       expiresAt: input.expiresAt ?? null,
-      grantedCapabilities: adapter.capabilities().map((capability) => capability.key),
+      // Creating a connection proves ownership of the connection record, not
+      // consent for every capability it may expose. Permissions are granted by
+      // the explicit confirmation endpoint (OAuth callbacks carry their own
+      // provider grant set).
+      grantedCapabilities: [],
       connectorId: catalog.id,
       status: 'connected',
       statusReason: null,
@@ -289,6 +293,14 @@ export class ConnectionsService {
       await this.handleConnectorFailure(current.id, error);
       throw mapConnectorError(error);
     }
+  }
+
+  async invokeConsumerRead(userId: string, id: string, input: InvokeConnectorDto) {
+    const grant = await this.permissions.assertGranted(userId, id, input.capability);
+    if (grant.operation !== 'read') {
+      throw new ForbiddenException('External write capabilities must run through the Execution Engine');
+    }
+    return this.invoke(userId, id, input);
   }
 
   private baseSelect() {

@@ -85,5 +85,13 @@ describe.sequential('P2 Calendar connector', () => {
       .set(auth(user.token))
       .expect(200);
     expect(detail.body.outputs.some((item: { actionType: string; output: { sourceCounts?: Record<string, number> } }) => item.actionType === 'summarize' && item.output.sourceCounts?.calendar === 2)).toBe(true);
+
+    await request(app.getHttpServer())
+      .put(`/api/connections/${calendarConnectionId}/permissions`)
+      .set(auth(user.token))
+      .send({ permissions: [{ capability: 'READ_EVENT', granted: false }] })
+      .expect(200);
+    const blocked = await dispatchPlan(app, worker, user.token, installed.body.id, { referenceDate: '2027-04-07T08:00:00.000Z' });
+    expect(blocked.body).toMatchObject({ status: 'failed', errorCode: 'PERMISSION_REVOKED' });
   });
 });

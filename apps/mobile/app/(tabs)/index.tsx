@@ -29,7 +29,7 @@ export default function Today() {
     { text: decision === 'approve' ? '确认继续' : '拒绝', style: decision === 'reject' ? 'destructive' : 'default', onPress: () => decide.mutate({ id: approval.id, decision, risk: approval.riskLevel }) },
   ]);
   return <ScrollView style={local.page} contentContainerStyle={local.content} refreshControl={token ? <RefreshControl refreshing={today.isFetching} onRefresh={() => today.refetch()} /> : undefined}>
-    <Text style={styles.eyebrow}>懒人装甲 · P0</Text><Text style={styles.title}>今天</Text><Text style={styles.subtitle}>先看有没有必须由你处理的事情。</Text>
+    <Text style={styles.eyebrow}>懒人装甲</Text><Text style={styles.title}>今天</Text><Text style={styles.subtitle}>先看有没有必须由你处理的事情。</Text>
     {state === 'signed_out' && <View style={styles.card}><Text style={styles.cardTitle}>登录后查看今天</Text><Button title="去登录" onPress={() => router.push('/connections')} /></View>}
     {state === 'loading' && <ActivityIndicator />}
     {state === 'error' && <View style={styles.card}><Text style={styles.cardTitle}>今天暂时加载失败</Text><Button title="重新加载" onPress={() => today.refetch()} /></View>}

@@ -32,7 +32,7 @@ export class ConnectionsController {
   @Post(':id/reconnect') reconnect(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() input: StartOAuthConnectionDto) { return this.connections.reconnect(user.id, id, input); }
   @Post(':id/credentials/rotate') rotateCredentials(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() input: RotateConnectionCredentialsDto) { return this.connections.rotateCredentials(user.id, id, input); }
   @Post(':id/invoke') async invoke(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() input: InvokeConnectorDto) {
-    const result = await this.connections.invoke(user.id, id, input);
+    const result = await this.connections.invokeConsumerRead(user.id, id, input);
     return result.data;
   }
   @Get(':id/permissions') listPermissions(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) { return this.permissions.list(user.id, id); }

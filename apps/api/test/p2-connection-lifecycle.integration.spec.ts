@@ -135,4 +135,35 @@ describe.sequential('P2 connection lifecycle', () => {
     );
     expect(Number(auditRows[0].count)).toBeGreaterThanOrEqual(3);
   });
+
+  it('uses the same permission, health and disconnect lifecycle for Calendar, File, Logistics and Content', async () => {
+    for (const provider of ['google_calendar', 'content_provider']) {
+      const { state } = await start(provider, userA.token);
+      const created = await request(app.getHttpServer())
+        .post(`/api/connections/oauth/${provider}/callback`).set(auth(userA.token))
+        .send({ state, code: `${provider}-test`, redirectUri }).expect(201);
+      const permissions = await request(app.getHttpServer()).get(`/api/connections/${created.body.id}/permissions`).set(auth(userA.token)).expect(200);
+      expect(permissions.body.some((permission: { granted: boolean }) => permission.granted)).toBe(true);
+      await request(app.getHttpServer()).post(`/api/connections/${created.body.id}/validate`).set(auth(userA.token)).expect(201);
+      await request(app.getHttpServer()).delete(`/api/connections/${created.body.id}`).set(auth(userA.token)).expect(204);
+      const revoked = await request(app.getHttpServer()).get(`/api/connections/${created.body.id}`).set(auth(userA.token)).expect(200);
+      expect(revoked.body.status).toBe('revoked');
+    }
+
+    for (const provider of [
+      { key: 'file_provider', capability: 'READ_FILE', credentials: undefined },
+      { key: 'logistics_provider', capability: 'READ_TRACKING', credentials: { apiKey: 'test-only' } },
+    ]) {
+      const created = await request(app.getHttpServer()).post('/api/connections').set(auth(userA.token)).send({
+        connectorId: provider.key, externalAccountName: `${provider.key} lifecycle`, ...(provider.credentials ? { credentials: provider.credentials } : {}),
+      }).expect(201);
+      const before = await request(app.getHttpServer()).get(`/api/connections/${created.body.id}/permissions`).set(auth(userA.token)).expect(200);
+      expect(before.body.find((permission: { capability: string }) => permission.capability === provider.capability)?.granted).toBe(false);
+      await request(app.getHttpServer()).put(`/api/connections/${created.body.id}/permissions`).set(auth(userA.token)).send({
+        permissions: [{ capability: provider.capability, granted: true }],
+      }).expect(200);
+      await request(app.getHttpServer()).post(`/api/connections/${created.body.id}/validate`).set(auth(userA.token)).expect(201);
+      await request(app.getHttpServer()).delete(`/api/connections/${created.body.id}`).set(auth(userA.token)).expect(204);
+    }
+  });
 });

@@ -27,7 +27,7 @@ export class ActionExecutor {
     private readonly study: StudyService,
   ) {}
 
-  supports(actionType: string): boolean { return ['record', 'compare', 'update_internal_record', 'classify', 'summarize', 'notify', 'prepare_purchase', 'generate_content', 'create_draft', 'prepare_publish', 'create_task'].includes(actionType); }
+  supports(actionType: string): boolean { return ['record', 'compare', 'update_internal_record', 'classify', 'summarize', 'notify', 'prepare_purchase', 'generate_content', 'create_draft', 'prepare_publish', 'create_task', 'archive'].includes(actionType); }
 
   async execute(userId: string, executionId: string, action: NormalizedAction, context: Record<string, unknown>, effectiveRisk: RiskLevel = action.riskLevel): Promise<Record<string, unknown>> {
     // 批准后的每一次执行都必须先重新过 Runtime Connection Guard（连接归属/状态/权限/能力/凭据），
@@ -50,6 +50,17 @@ export class ActionExecutor {
     }
     if (action.actionType === 'record' && !action.connectionId) {
       return { recorded: true, recordType: action.config.recordType ?? 'execution_record' };
+    }
+    if (action.actionType === 'archive' && !action.connectionId) {
+      const fileName = typeof local.fileName === 'string' ? local.fileName : '所选文件';
+      const contentSha256 = typeof local.contentSha256 === 'string' ? local.contentSha256 : null;
+      const destination = typeof action.config.destination === 'string' ? action.config.destination : '待整理';
+      return {
+        archivePrepared: true,
+        archiveManifest: { fileName, contentSha256, destination },
+        humanSummary: `已为 ${fileName} 准备归档信息，建议放入“${destination}”。`,
+        resultSummary: `已准备 ${fileName} 的归档信息；原文件未被移动或删除。`,
+      };
     }
     if (action.actionType === 'compare' && !action.connectionId) {
       const enriched = this.billing.enrichContext(local);
@@ -217,6 +228,84 @@ export class ActionExecutor {
           notificationPriority: summary.mustHandleCount > 0 || notificationPreference === 'important' ? 'P1' : 'P2',
           notificationEventType: 'daily_important_summary',
           notificationDedupeKey: `daily-summary:${summary.generatedAt.slice(0, 10)}`,
+        };
+      }
+      if (action.config.domain === 'calendar_conflict') {
+        const events = Array.isArray(local.events)
+          ? local.events.flatMap((item) => item && typeof item === 'object' && !Array.isArray(item) ? [item as Record<string, unknown>] : [])
+          : [];
+        const normalized = events.flatMap((event) => {
+          if (typeof event.id !== 'string' || typeof event.title !== 'string' || typeof event.startAt !== 'string' || typeof event.endAt !== 'string') return [];
+          const startAt = new Date(event.startAt);
+          const endAt = new Date(event.endAt);
+          if (!Number.isFinite(startAt.getTime()) || !Number.isFinite(endAt.getTime()) || endAt <= startAt) return [];
+          return [{ id: event.id, title: event.title, startAt, endAt }];
+        }).sort((left, right) => left.startAt.getTime() - right.startAt.getTime());
+        const conflicts: Array<{ firstId: string; firstTitle: string; secondId: string; secondTitle: string; overlapMinutes: number }> = [];
+        for (let left = 0; left < normalized.length; left += 1) {
+          for (let right = left + 1; right < normalized.length; right += 1) {
+            if (normalized[right].startAt >= normalized[left].endAt) break;
+            const overlapMinutes = Math.round((Math.min(normalized[left].endAt.getTime(), normalized[right].endAt.getTime()) - normalized[right].startAt.getTime()) / 60000);
+            if (overlapMinutes > 0) conflicts.push({ firstId: normalized[left].id, firstTitle: normalized[left].title, secondId: normalized[right].id, secondTitle: normalized[right].title, overlapMinutes });
+          }
+        }
+        const humanSummary = conflicts.length === 0 ? '日历里没有发现时间冲突。' : `发现 ${conflicts.length} 组日历时间冲突，需要你确认。`;
+        return {
+          calendarEventCount: normalized.length,
+          conflictCount: conflicts.length,
+          conflicts,
+          humanSummary,
+          resultSummary: humanSummary,
+          shouldNotify: conflicts.length > 0,
+          notificationPriority: 'P1',
+          notificationEventType: 'calendar_conflict_detected',
+          notificationDedupeKey: `calendar-conflict:${typeof local.planId === 'string' ? local.planId : executionId}:${conflicts.map((item) => `${item.firstId}:${item.secondId}`).join('|') || 'none'}`,
+        };
+      }
+      if (action.config.domain === 'recurring_item') {
+        const item = local.recurringItem && typeof local.recurringItem === 'object' && !Array.isArray(local.recurringItem)
+          ? local.recurringItem as Record<string, unknown>
+          : {};
+        const title = typeof item.title === 'string' ? item.title : '周期事项';
+        const daysUntilDue = typeof item.daysUntilDue === 'number' ? item.daysUntilDue : 0;
+        const dueSoon = item.dueSoon === true;
+        const overdue = item.overdue === true;
+        const notificationPreference = typeof action.config.notificationPreference === 'string' ? action.config.notificationPreference : 'summary';
+        const humanSummary = overdue
+          ? `${title} 已逾期 ${Math.abs(daysUntilDue)} 天，需要你处理。`
+          : dueSoon
+            ? `${title} 将在 ${Math.max(daysUntilDue, 0)} 天后到期。`
+            : `${title} 距离到期还有 ${Math.max(daysUntilDue, 0)} 天。`;
+        return {
+          recurringItem: item,
+          humanSummary,
+          resultSummary: humanSummary,
+          shouldNotify: (dueSoon || overdue) && notificationPreference !== 'silent',
+          notificationPriority: overdue ? 'P1' : 'P2',
+          notificationEventType: typeof item.domain === 'string' && item.domain === 'work' ? 'work_follow_up_due' : 'recurring_item_due',
+          notificationDedupeKey: `recurring-item:${typeof item.id === 'string' ? item.id : executionId}:${typeof item.nextDueAt === 'string' ? item.nextDueAt : 'unknown'}`,
+        };
+      }
+      if (action.config.domain === 'operations') {
+        const summary = local.operationalSummary && typeof local.operationalSummary === 'object' && !Array.isArray(local.operationalSummary)
+          ? local.operationalSummary as Record<string, unknown>
+          : {};
+        const recordCount = typeof summary.recordCount === 'number' ? summary.recordCount : 0;
+        const attentionCount = typeof summary.attentionCount === 'number' ? summary.attentionCount : 0;
+        const notificationPreference = typeof action.config.notificationPreference === 'string' ? action.config.notificationPreference : 'summary';
+        const counts = summary.counts && typeof summary.counts === 'object' && !Array.isArray(summary.counts) ? summary.counts as Record<string, number> : {};
+        const humanSummary = attentionCount > 0
+          ? `今日经营记录 ${recordCount} 条，其中 ${attentionCount} 条需要处理。`
+          : `今日经营记录 ${recordCount} 条，没有需要立即处理的异常。`;
+        return {
+          operationalSummary: summary,
+          counts,
+          humanSummary,
+          resultSummary: humanSummary,
+          shouldNotify: attentionCount > 0 && notificationPreference !== 'silent',
+          notificationPriority: 'P1',
+          notificationEventType: 'operations_attention_required',
+          notificationDedupeKey: `operations:${typeof summary.date === 'string' ? summary.date : executionId}`,
         };
       }
       if (action.config.domain === 'content') {

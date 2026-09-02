@@ -58,13 +58,8 @@ describe.sequential('P2 Gmail connector', () => {
       .post(`/api/connections/${gmailConnectionId}/invoke`)
       .set(auth(user.token))
       .send({ capability: 'CREATE_DRAFT', requestId: `gmail-draft-${unique}`, input: { subject: '整理一下今天的重点', body: '先帮我准备草稿' } })
-      .expect(201);
-    expect(draft.body).toMatchObject({
-      created: true,
-      draftId: expect.any(String),
-      threadId: expect.any(String),
-      subject: '整理一下今天的重点',
-    });
+      .expect(403);
+    expect(draft.body.message).toContain('Execution Engine');
   });
 
   it('enforces runtime permission revocation immediately', async () => {

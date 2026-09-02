@@ -1,0 +1,20 @@
+CREATE TABLE `operational_records` (
+  `id` BINARY(16) NOT NULL,
+  `user_id` BINARY(16) NOT NULL,
+  `record_type` VARCHAR(32) NOT NULL,
+  `subject` VARCHAR(160) NOT NULL,
+  `quantity` INT NULL,
+  `amount_minor` INT NULL,
+  `currency` CHAR(3) NULL,
+  `status` VARCHAR(32) NOT NULL,
+  `occurred_at` DATETIME(6) NOT NULL,
+  `needs_attention` INT NOT NULL DEFAULT 0,
+  `source_type` VARCHAR(32) NOT NULL,
+  `metadata_json` JSON NULL,
+  `created_at` DATETIME(6) NOT NULL,
+  `updated_at` DATETIME(6) NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `operational_records_user_time_idx` (`user_id`, `occurred_at`, `record_type`),
+  KEY `operational_records_user_attention_idx` (`user_id`, `needs_attention`, `status`),
+  CONSTRAINT `operational_records_user_id_users_id_fk` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE RESTRICT
+);

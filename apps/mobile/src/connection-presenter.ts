@@ -50,6 +50,7 @@ export function capabilityLabel(providerKey: string, capability: string, fallbac
     case 'ARCHIVE_FILE': return '归档文件';
     case 'STORE_FILE': return '保存文件';
     case 'READ_CONTENT': return '读取内容';
+    case 'READ_ANALYTICS': return '读取内容表现';
     case 'PUBLISH_CONTENT': return '发布内容';
     case 'READ_TRACKING': return '读取物流状态';
     case 'RECEIVE_WEBHOOK': return '接收外部回调';
@@ -75,6 +76,7 @@ export function capabilityDescription(providerKey: string, capability: string) {
     case 'ARCHIVE_FILE': return '替你归档文件。';
     case 'STORE_FILE': return '保存处理后的文件。';
     case 'READ_CONTENT': return '读取已有内容或草稿。';
+    case 'READ_ANALYTICS': return '读取内容的浏览、互动等表现数据。';
     case 'PUBLISH_CONTENT': return '发布内容到外部平台，执行前会先让你确认。';
     case 'READ_TRACKING': return '读取物流状态和最近进展。';
     case 'RECEIVE_WEBHOOK': return '接收对方平台推送的状态更新。';

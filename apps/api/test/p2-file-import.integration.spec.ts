@@ -8,6 +8,7 @@ describe.sequential('P2-3 local file import adapter', () => {
   let app: INestApplication;
   let pool: Pool;
   let user: Session;
+  let otherUser: Session;
   let fileConnectionId: string;
   const unique = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
@@ -16,10 +17,14 @@ describe.sequential('P2-3 local file import adapter', () => {
     app = booted.app;
     pool = booted.pool;
     user = await register(app, `p2-file-${unique}@example.com`, 'P2 File Import');
+    otherUser = await register(app, `p2-file-other-${unique}@example.com`, 'P2 File Other');
     const connection = await request(app.getHttpServer()).post('/api/connections').set(auth(user.token)).send({
       connectorId: 'file_provider', externalAccountName: '本地文件选择器',
     }).expect(201);
     fileConnectionId = connection.body.id as string;
+    await request(app.getHttpServer()).put(`/api/connections/${fileConnectionId}/permissions`).set(auth(user.token)).send({
+      permissions: ['READ_FILE_METADATA', 'READ_FILE'].map((capability) => ({ capability, granted: true })),
+    }).expect(200);
   });
 
   it('implements READ_FILE_METADATA and READ_FILE without a cloud-drive mirror', async () => {
@@ -82,5 +87,26 @@ describe.sequential('P2-3 local file import adapter', () => {
     await request(app.getHttpServer()).post('/api/file-imports/billing').set(auth(user.token)).send({
       fileName: 'bad.json', mimeType: 'application/json', contentBase64: Buffer.from('[{"amount":"oops"}]').toString('base64'), idempotencyKey: `bad-${unique}`,
     }).expect(400);
+    await request(app.getHttpServer()).post('/api/file-imports/billing').set(auth(user.token)).send({
+      fileName: 'too-large.csv', mimeType: 'text/csv', contentBase64: Buffer.alloc(1_000_001, 65).toString('base64'), idempotencyKey: `large-${unique}`,
+    }).expect(400);
+  });
+
+  it('serializes concurrent duplicate imports and keeps provenance user-owned', async () => {
+    const payload = {
+      fileName: 'concurrent.json', mimeType: 'application/json', idempotencyKey: `concurrent-${unique}`,
+      contentBase64: Buffer.from(JSON.stringify([{ provider: '宽带公司', category: '宽带', billingPeriod: '2026-09', amount: 99, currency: 'CNY', occurredAt: '2026-09-01T00:00:00.000Z' }])).toString('base64'),
+    };
+    const [first, second] = await Promise.all([
+      request(app.getHttpServer()).post('/api/file-imports/billing').set(auth(user.token)).send(payload),
+      request(app.getHttpServer()).post('/api/file-imports/billing').set(auth(user.token)).send(payload),
+    ]);
+    expect([first.status, second.status]).toEqual([201, 201]);
+    expect(first.body.id).toBe(second.body.id);
+    expect([first.body.duplicate, second.body.duplicate].sort()).toEqual([false, true]);
+    const own = await request(app.getHttpServer()).get('/api/file-imports').set(auth(user.token)).expect(200);
+    const other = await request(app.getHttpServer()).get('/api/file-imports').set(auth(otherUser.token)).expect(200);
+    expect(own.body.some((item: { id: string }) => item.id === first.body.id)).toBe(true);
+    expect(other.body.some((item: { id: string }) => item.id === first.body.id)).toBe(false);
   });
 });

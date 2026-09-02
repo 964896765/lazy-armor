@@ -4,10 +4,11 @@ import { and, eq } from 'drizzle-orm';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
 import { CREDENTIAL_PROVIDER, CredentialProviderError, type CredentialProvider } from '../credentials/credential-provider';
 import { ExecutionRuntimeError } from './execution.types';
+import { ConnectorRegistry } from '@lazy-armor/connector-sdk';
 
 @Injectable()
 export class RuntimeConnectionGuard {
-  constructor(@Inject(DATABASE) private readonly db: InjectedDatabase, @Inject(CREDENTIAL_PROVIDER) private readonly credentials: CredentialProvider) {}
+  constructor(@Inject(DATABASE) private readonly db: InjectedDatabase, @Inject(CREDENTIAL_PROVIDER) private readonly credentials: CredentialProvider, private readonly registry: ConnectorRegistry) {}
 
   async assertUsable(userId: string, connectionId: string, capabilityKey: string) {
     const rows = await this.db.select({
@@ -20,6 +21,7 @@ export class RuntimeConnectionGuard {
       credentialCurrentVersion: credentialRefs.currentVersion,
       credentialStatus: credentialRefs.status,
       credentialExpiresAt: credentialRefs.expiresAt,
+      productionStatus: connectors.productionStatus,
     }).from(connections)
       .innerJoin(connectors, eq(connections.connectorId, connectors.id))
       .leftJoin(credentialRefs, eq(connections.credentialRefId, credentialRefs.id))
@@ -46,6 +48,7 @@ export class RuntimeConnectionGuard {
       revokedAt: connectionPermissions.revokedAt,
       expiresAt: connectionPermissions.expiresAt,
       operation: connectorCapabilities.operation,
+      providerAvailability: connectorCapabilities.providerAvailability,
     }).from(connectorCapabilities)
       .leftJoin(connectionPermissions, and(eq(connectionPermissions.connectorCapabilityId, connectorCapabilities.id), eq(connectionPermissions.connectionId, connectionId)))
       .where(and(eq(connectorCapabilities.connectorId, connection.connectorId), eq(connectorCapabilities.key, capabilityKey)))
@@ -55,6 +58,13 @@ export class RuntimeConnectionGuard {
     if (permission.revokedAt) throw new ExecutionRuntimeError('PERMISSION_REVOKED', 'Capability permission has been revoked');
     if (permission.expiresAt && permission.expiresAt <= new Date()) throw new ExecutionRuntimeError('PERMISSION_EXPIRED', 'Capability permission has expired');
     if (permission.granted !== 1) throw new ExecutionRuntimeError('CAPABILITY_NOT_GRANTED', 'Capability permission is not granted');
+    const adapter = this.registry.get(connection.connectorKey);
+    const metadata = adapter.metadata();
+    const runtimeCapability = adapter.capabilities().find((item) => item.key === capabilityKey);
+    const legacyTestAdapter = process.env.NODE_ENV === 'test' && !metadata.productionStatus;
+    if ((!legacyTestAdapter && (!runtimeCapability || metadata.productionStatus === 'DISABLED')) || runtimeCapability?.providerAvailability === 'disabled') {
+      throw new ExecutionRuntimeError('PROVIDER_GATE_DISABLED', 'Provider capability is disabled');
+    }
     return { connectorId: connection.connectorId, connectorKey: connection.connectorKey, operation: permission.operation };
   }
 }

@@ -57,7 +57,7 @@ const sourceConfigSchemas: Record<SourceType, z.ZodTypeAny> = {
   email: z.object({ folder: shortText.optional(), query: z.string().max(500).optional() }).strict(),
   calendar: z.object({ calendarId: shortText.optional() }).strict(),
   notification: z.object({ category: shortText.optional() }).strict(),
-  file: z.object({ pathPrefix: z.string().max(500).optional() }).strict(),
+  file: z.object({ pathPrefix: z.string().max(500).optional(), metadataOnly: z.boolean().optional() }).strict(),
   webhook: z.object({ eventType: shortText }).strict(),
   internal: z.object({
     resource: shortText,
@@ -94,6 +94,8 @@ const sourceConfigSchemas: Record<SourceType, z.ZodTypeAny> = {
     missedTaskStrategy: shortText.optional(),
     deviceProfileId: z.uuid().optional(),
     consumableId: z.uuid().optional(),
+    profileId: z.uuid().optional(),
+    expectedDomain: shortText.optional(),
   }).strict(),
   commerce: z.object({ resource: shortText }).strict(),
   device: z.object({ metric: shortText }).strict(),

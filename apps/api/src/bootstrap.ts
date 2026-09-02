@@ -7,6 +7,9 @@ import { AppModule } from './app.module';
 // 构建共享 HTTP 应用（CORS 白名单 + 安全响应头 + 请求体上限 + 校验管道 + 优雅停机）。
 export async function createHttpApp() {
   const app = await NestFactory.create(AppModule, { bodyParser: false });
+  // Base64 adds ~33% overhead. Only the authenticated local-file import path
+  // receives the larger parser budget; every other API keeps the tighter cap.
+  app.use('/api/file-imports', json({ limit: '1400kb' }));
   app.use(json({ limit: '256kb' }));
   app.use(urlencoded({ extended: false, limit: '64kb' }));
   app.setGlobalPrefix('api');

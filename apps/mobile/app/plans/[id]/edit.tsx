@@ -101,7 +101,7 @@ export default function PlanEditPage() {
         <>
           <Text style={local.eyebrow}>计划编辑</Text>
           <Text style={local.title}>{summary.data.name ?? template.data.name}</Text>
-          <Text style={local.subtitle}>修改后会生成一个新的 PlanVersion，不会覆盖已经存在的历史版本。</Text>
+          <Text style={local.subtitle}>修改后会生成一个新版本，不会覆盖已经存在的历史记录。</Text>
           <View style={local.card}>
             <Text style={local.cardTitle}>可编辑配置</Text>
             <TemplateConfigForm

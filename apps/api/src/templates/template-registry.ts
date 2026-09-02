@@ -237,6 +237,63 @@ const deviceConsumableReminderSchema = z.object({
   notificationPreference: z.enum(['silent', 'summary', 'important']).default('summary'),
 }).strict();
 
+const vehicleCareReminderSchema = z.object({
+  planName: z.string().trim().min(1).max(120).optional(),
+  profileId: z.string().uuid(),
+  reminderTime: z.string().trim().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/).default('09:00'),
+  remindBeforeDays: z.number().int().min(1).max(180).default(30),
+  mileageBufferKm: z.number().int().min(0).max(10000).default(500),
+  notificationPreference: z.enum(['silent', 'summary', 'important']).default('summary'),
+}).strict();
+
+const digitalSubscriptionReminderSchema = z.object({
+  planName: z.string().trim().min(1).max(120).optional(),
+  profileId: z.string().uuid(),
+  reminderTime: z.string().trim().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/).default('09:00'),
+  remindBeforeDays: z.number().int().min(1).max(180).default(14),
+  notificationPreference: z.enum(['silent', 'summary', 'important']).default('summary'),
+}).strict();
+
+const utilityBillGuardSchema = z.object({
+  planName: z.string().trim().min(1).max(120).optional(),
+  category: z.enum(['水费', '电费', '燃气', '宽带']),
+  monthlyThreshold: z.number().min(0).max(1000000),
+  increaseThresholdPercent: z.number().min(1).max(1000).default(30),
+  checkDayOfMonth: z.number().int().min(1).max(28).default(5),
+}).strict();
+
+const abnormalSpendGuardSchema = z.object({
+  planName: z.string().trim().min(1).max(120).optional(),
+  amountThreshold: z.number().min(0).max(100000000),
+  increaseThresholdPercent: z.number().min(1).max(1000).default(50),
+  notificationPreference: z.enum(['summary', 'important']).default('important'),
+}).strict();
+
+const calendarConflictGuardSchema = z.object({
+  planName: z.string().trim().min(1).max(120).optional(),
+  calendarConnectionId: z.string().uuid(),
+  checkTime: z.string().trim().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/).default('07:30'),
+}).strict();
+
+const fileArchivePreparationSchema = z.object({
+  planName: z.string().trim().min(1).max(120).optional(),
+  fileConnectionId: z.string().uuid(),
+  destination: z.enum(['项目资料', '财务凭证', '行政资料', '参考资料']).default('项目资料'),
+}).strict();
+
+const recurringItemReminderSchema = z.object({
+  planName: z.string().trim().min(1).max(120).optional(),
+  profileId: z.string().uuid(),
+  reminderTime: z.string().trim().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/).default('09:00'),
+  notificationPreference: z.enum(['silent', 'summary', 'important']).default('summary'),
+}).strict();
+
+const operationsDailySummarySchema = z.object({
+  planName: z.string().trim().min(1).max(120).optional(),
+  summaryTime: z.string().trim().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/).default('21:00'),
+  notificationPreference: z.enum(['silent', 'summary', 'important']).default('summary'),
+}).strict();
+
 export const PLAN_TEMPLATES: readonly PlanTemplateManifest[] = [
   {
     key: 'monthly-bill-summary',
@@ -745,6 +802,262 @@ export const PLAN_TEMPLATES: readonly PlanTemplateManifest[] = [
             : []),
           { actionType: 'notify', config: { channel: 'in_app', priority: parsed.notificationPreference === 'important' ? 'P1' : 'P2', eventType: 'device_consumable_prepare' }, stepOrder: parsed.preparationMode === 'shopping_list' ? 2 : 1 },
         ],
+      };
+    },
+  },
+  {
+    key: 'utility-bill-guard', templateVersion: '1', domain: 'billing', group: '我的钱',
+    name: '水电气与宽带账单守护', description: '按类别盯住周期账单，正常不打扰，异常才提醒。', icon: '账单', status: 'published', automationLevel: 'L1',
+    requiredConnectors: ['internal'], approvalPolicy: NEVER_APPROVAL_POLICY,
+    riskConstraint: riskConstraint('R1', ['compare', 'summarize', 'notify']), notificationPolicy: notificationPolicy('silent', ['silent', 'important'], { silentOnSuccess: true }),
+    details: {
+      doesWhat: '复用统一账单记录检查水费、电费、燃气或宽带。', runsWhen: '每月在指定日期检查。', dataNeeded: '对应类别的账单金额和月份。',
+      remindsWhen: '金额超过阈值或相比上期异常上涨时。', connectionSummary: '使用现有 Billing Source，可来自手工、文件或后续正式 Connector。', riskSummary: '只比较和提醒，不缴费、不转账。',
+    },
+    configFields: [
+      { key: 'planName', type: 'text', required: false, label: '计划名称', helpText: '例如“家里电费守护”。' },
+      { key: 'category', type: 'select', required: true, label: '账单类型', helpText: '选择要盯住的周期账单。', options: [{ value: '水费', label: '水费' }, { value: '电费', label: '电费' }, { value: '燃气', label: '燃气' }, { value: '宽带', label: '宽带' }] },
+      { key: 'monthlyThreshold', type: 'number', required: true, label: '金额阈值', helpText: '超过这个金额才提醒。', min: 0, max: 1000000 },
+      { key: 'increaseThresholdPercent', type: 'number', required: true, label: '上涨阈值', helpText: '相比上期上涨百分比。', defaultValue: 30, min: 1, max: 1000 },
+      { key: 'checkDayOfMonth', type: 'number', required: true, label: '检查日期', helpText: '每月哪天检查。', defaultValue: 5, min: 1, max: 28 },
+    ],
+    configSchema: utilityBillGuardSchema,
+    buildDefinition(config) {
+      const parsed = utilityBillGuardSchema.parse(config);
+      return { name: parsed.planName?.trim() || `${parsed.category}守护`, description: '周期账单异常时提醒，正常保持安静。', domain: 'billing', automationLevel: 'L1',
+        sources: [{ sourceType: 'internal', config: { resource: 'billing_records', billingPeriod: 'current_month', category: parsed.category }, sortOrder: 0 }],
+        triggers: schedule(`0 10 ${parsed.checkDayOfMonth} * *`),
+        conditions: [
+          { groupId: 'root', logicalOperator: 'OR', fieldPath: 'amount', operator: 'GT', comparisonValue: parsed.monthlyThreshold, sortOrder: 0 },
+          { groupId: 'root', logicalOperator: 'OR', fieldPath: 'amountChange', operator: 'PERCENT_CHANGE_GT', comparisonValue: parsed.increaseThresholdPercent, sortOrder: 1 },
+        ],
+        actions: [{ actionType: 'compare', config: { baseline: 'previous_period', enabled: true, anomalyThresholdPercent: parsed.increaseThresholdPercent }, stepOrder: 0 }, { actionType: 'summarize', config: { format: 'short', domain: 'billing' }, stepOrder: 1 }, { actionType: 'notify', config: { channel: 'in_app', priority: 'P1', eventType: 'utility_bill_anomaly' }, stepOrder: 2 }],
+      };
+    },
+  },
+  {
+    key: 'abnormal-spend-guard', templateVersion: '1', domain: 'finance', group: '我的钱',
+    name: '异常消费守护', description: '汇总并分类本月消费，只在总额或涨幅异常时提醒。', icon: '消费', status: 'published', automationLevel: 'L1',
+    requiredConnectors: ['internal'], approvalPolicy: NEVER_APPROVAL_POLICY,
+    riskConstraint: riskConstraint('R1', ['classify', 'compare', 'summarize', 'notify']), notificationPolicy: notificationPolicy('important', ['summary', 'important'], { silentOnSuccess: true }),
+    details: {
+      doesWhat: '复用 Billing Records 做消费分类、环比和异常判断。', runsWhen: '每天检查当月累计情况。', dataNeeded: '账单类别、金额、日期。',
+      remindsWhen: '累计金额或相比上月涨幅超过阈值。', connectionSummary: '不绑定某家支付平台，所有来源先归一到 Billing Source。', riskSummary: '不做投资、贷款决策、支付或转账。',
+    },
+    configFields: [
+      { key: 'planName', type: 'text', required: false, label: '计划名称', helpText: '例如“本月消费守护”。' },
+      { key: 'amountThreshold', type: 'number', required: true, label: '累计金额阈值', helpText: '本月累计超过这个金额才提醒。', min: 0, max: 100000000 },
+      { key: 'increaseThresholdPercent', type: 'number', required: true, label: '环比上涨阈值', helpText: '相比上月上涨百分比。', defaultValue: 50, min: 1, max: 1000 },
+      { key: 'notificationPreference', type: 'select', required: true, label: '提醒强度', helpText: '异常时使用摘要或重要提醒。', defaultValue: 'important', options: [{ value: 'summary', label: '摘要提醒' }, { value: 'important', label: '重要提醒' }] },
+    ],
+    configSchema: abnormalSpendGuardSchema,
+    buildDefinition(config) {
+      const parsed = abnormalSpendGuardSchema.parse(config);
+      return { name: parsed.planName?.trim() || '异常消费守护', description: '分类、汇总并判断消费异常，不执行任何资金动作。', domain: 'finance', automationLevel: 'L1',
+        sources: internalBillingSource('current_month'), triggers: schedule('0 21 * * *'),
+        conditions: [
+          { groupId: 'root', logicalOperator: 'OR', fieldPath: 'amount', operator: 'GT', comparisonValue: parsed.amountThreshold, sortOrder: 0 },
+          { groupId: 'root', logicalOperator: 'OR', fieldPath: 'amountChange', operator: 'PERCENT_CHANGE_GT', comparisonValue: parsed.increaseThresholdPercent, sortOrder: 1 },
+        ],
+        actions: [{ actionType: 'classify', config: { taxonomy: 'billing_category', showCategories: true }, stepOrder: 0 }, { actionType: 'compare', config: { baseline: 'previous_period', enabled: true, anomalyThresholdPercent: parsed.increaseThresholdPercent }, stepOrder: 1 }, { actionType: 'summarize', config: { format: 'short', showCategories: true, showMonthOverMonth: true }, stepOrder: 2 }, { actionType: 'notify', config: { channel: 'in_app', priority: parsed.notificationPreference === 'important' ? 'P1' : 'P2', eventType: 'abnormal_spend_detected' }, stepOrder: 3 }],
+      };
+    },
+  },
+  {
+    key: 'vehicle-care-reminder', templateVersion: '1', domain: 'vehicle', group: '我的东西',
+    name: '车辆到期与保养提醒', description: '人工更新里程也能持续检查保险、年检和保养时间。', icon: '车辆', status: 'published', automationLevel: 'L1',
+    requiredConnectors: ['internal'], approvalPolicy: NEVER_APPROVAL_POLICY,
+    riskConstraint: riskConstraint('R1', ['summarize', 'notify']),
+    notificationPolicy: notificationPolicy('summary', ['silent', 'summary', 'important'], { silentOnSuccess: true }),
+    details: {
+      doesWhat: '统一检查保险、年检、保养日期和保养里程，不需要车辆 API。', runsWhen: '每天按设定时间检查一次。',
+      dataNeeded: '车辆资料、人工里程、保险和年检日期、保养日期或里程。', remindsWhen: '接近到期或里程阈值时提醒。',
+      connectionSummary: '只使用你手工维护的 VehicleProfile。', riskSummary: '只整理和提醒，不代办保险、维修或付款。',
+    },
+    configFields: [
+      { key: 'planName', type: 'text', required: false, label: '计划名称', helpText: '例如“我的车保养提醒”。' },
+      { key: 'profileId', type: 'text', required: true, label: '车辆编号', helpText: '选择已创建的车辆资料。' },
+      { key: 'reminderTime', type: 'time', required: true, label: '检查时间', helpText: '每天几点检查。', defaultValue: '09:00' },
+      { key: 'remindBeforeDays', type: 'number', required: true, label: '提前提醒天数', helpText: '距离到期多少天开始提醒。', defaultValue: 30, min: 1, max: 180 },
+      { key: 'mileageBufferKm', type: 'number', required: true, label: '里程提前量', helpText: '距离保养里程多少公里开始提醒。', defaultValue: 500, min: 0, max: 10000 },
+      { key: 'notificationPreference', type: 'select', required: true, label: '提醒强度', helpText: '按你的偏好提醒。', defaultValue: 'summary', options: [{ value: 'silent', label: '静默' }, { value: 'summary', label: '摘要提醒' }, { value: 'important', label: '重要提醒' }] },
+    ],
+    configSchema: vehicleCareReminderSchema,
+    buildDefinition(config) {
+      const parsed = vehicleCareReminderSchema.parse(config);
+      return {
+        name: parsed.planName?.trim() || '车辆到期与保养提醒', description: '检查车辆日期和人工里程，接近阈值时提醒。', domain: 'vehicle', automationLevel: 'L1',
+        sources: [{ sourceType: 'internal', config: { resource: 'vehicle_profile', profileId: parsed.profileId, remindBeforeDays: parsed.remindBeforeDays }, sortOrder: 0 }],
+        triggers: scheduleFromTime(parsed.reminderTime), conditions: [], actions: [
+          { actionType: 'summarize', config: { format: 'short', domain: 'vehicle' }, stepOrder: 0 },
+          { actionType: 'notify', config: { channel: 'in_app', priority: parsed.notificationPreference === 'important' ? 'P1' : 'P2', eventType: 'vehicle_care_due' }, stepOrder: 1 },
+        ],
+      };
+    },
+  },
+  {
+    key: 'digital-subscription-reminder', templateVersion: '1', domain: 'digital_account', group: '我的东西',
+    name: '会员与订阅防浪费', description: '到期前提醒你决定续不续，不自动扣费或取消。', icon: '订阅', status: 'published', automationLevel: 'L1',
+    requiredConnectors: ['internal'], approvalPolicy: NEVER_APPROVAL_POLICY,
+    riskConstraint: riskConstraint('R1', ['summarize', 'notify']),
+    notificationPolicy: notificationPolicy('summary', ['silent', 'summary', 'important'], { silentOnSuccess: true }),
+    details: {
+      doesWhat: '检查会员和订阅到期时间、连接状态与备份状态。', runsWhen: '每天按设定时间检查一次。',
+      dataNeeded: '服务名、订阅状态、到期时间、连接和备份状态；绝不需要账号密码。', remindsWhen: '临近到期、安全提醒或备份落后时提醒。',
+      connectionSummary: '只使用轻量 DigitalAccountProfile，不保存密码。', riskSummary: '只提醒，不自动续费、取消或修改账户权限。',
+    },
+    configFields: [
+      { key: 'planName', type: 'text', required: false, label: '计划名称', helpText: '例如“视频会员防浪费”。' },
+      { key: 'profileId', type: 'text', required: true, label: '数字账号编号', helpText: '选择已创建的数字账号资料。' },
+      { key: 'reminderTime', type: 'time', required: true, label: '检查时间', helpText: '每天几点检查。', defaultValue: '09:00' },
+      { key: 'remindBeforeDays', type: 'number', required: true, label: '提前提醒天数', helpText: '距离到期多少天开始提醒。', defaultValue: 14, min: 1, max: 180 },
+      { key: 'notificationPreference', type: 'select', required: true, label: '提醒强度', helpText: '按你的偏好提醒。', defaultValue: 'summary', options: [{ value: 'silent', label: '静默' }, { value: 'summary', label: '摘要提醒' }, { value: 'important', label: '重要提醒' }] },
+    ],
+    configSchema: digitalSubscriptionReminderSchema,
+    buildDefinition(config) {
+      const parsed = digitalSubscriptionReminderSchema.parse(config);
+      return {
+        name: parsed.planName?.trim() || '会员与订阅防浪费', description: '订阅到期前提醒，不自动续费或取消。', domain: 'digital_account', automationLevel: 'L1',
+        sources: [{ sourceType: 'internal', config: { resource: 'digital_account_profile', profileId: parsed.profileId, remindBeforeDays: parsed.remindBeforeDays }, sortOrder: 0 }],
+        triggers: scheduleFromTime(parsed.reminderTime), conditions: [], actions: [
+          { actionType: 'summarize', config: { format: 'short', domain: 'digital_account' }, stepOrder: 0 },
+          { actionType: 'notify', config: { channel: 'in_app', priority: parsed.notificationPreference === 'important' ? 'P1' : 'P2', eventType: 'digital_subscription_due' }, stepOrder: 1 },
+        ],
+      };
+    },
+  },
+  {
+    key: 'operations-daily-summary', templateVersion: '1', domain: 'operations', group: '我的事情',
+    name: '经营事项日报', description: '把订单、库存、退款和供应记录整理成一份小日报，只突出异常。', icon: '经营', status: 'published', automationLevel: 'L1',
+    requiredConnectors: ['internal'], approvalPolicy: NEVER_APPROVAL_POLICY,
+    riskConstraint: riskConstraint('R1', ['summarize', 'notify']), notificationPolicy: notificationPolicy('summary', ['silent', 'summary', 'important'], { silentOnSuccess: true }),
+    details: {
+      doesWhat: '汇总当天的订单、库存、退款和供应记录。', runsWhen: '每天按设定时间整理一次。', dataNeeded: '轻量经营记录的类型、主题、数量、金额、状态和是否需要处理。',
+      remindsWhen: '有库存、退款或供应异常等需要处理的记录时。', connectionSummary: '先使用手工、文件或内部归一记录，不接大型 ERP。', riskSummary: '只汇总与提醒，不改单、不退款、不采购。',
+    },
+    configFields: [
+      { key: 'planName', type: 'text', required: false, label: '计划名称', helpText: '例如“每天经营重点”。' },
+      { key: 'summaryTime', type: 'time', required: true, label: '日报时间', helpText: '每天几点整理日报。', defaultValue: '21:00' },
+      { key: 'notificationPreference', type: 'select', required: true, label: '提醒强度', helpText: '正常不打扰，有异常时按偏好提醒。', defaultValue: 'summary', options: [{ value: 'silent', label: '静默' }, { value: 'summary', label: '摘要提醒' }, { value: 'important', label: '重要提醒' }] },
+    ],
+    configSchema: operationsDailySummarySchema,
+    buildDefinition(config) {
+      const parsed = operationsDailySummarySchema.parse(config);
+      return {
+        name: parsed.planName?.trim() || '经营事项日报', description: '汇总经营记录并突出需要处理的异常。', domain: 'operations', automationLevel: 'L1',
+        sources: [{ sourceType: 'internal', connectorKey: 'internal', config: { resource: 'operational_records' }, sortOrder: 0 }],
+        triggers: scheduleFromTime(parsed.summaryTime), conditions: [], actions: [
+          { actionType: 'summarize', config: { format: 'short', domain: 'operations', notificationPreference: parsed.notificationPreference }, stepOrder: 0 },
+          { actionType: 'notify', config: { channel: 'in_app', priority: parsed.notificationPreference === 'important' ? 'P1' : 'P2', eventType: 'operations_attention_required' }, stepOrder: 1 },
+        ],
+      };
+    },
+  },
+  {
+    key: 'recurring-life-reminder', templateVersion: '1', domain: 'life', group: '我的生活',
+    name: '周期事项提醒', description: '把保质期、房租和家庭周期事项放进同一个轻量清单，到期前再提醒。', icon: '周期', status: 'published', automationLevel: 'L1',
+    requiredConnectors: ['internal'], approvalPolicy: NEVER_APPROVAL_POLICY,
+    riskConstraint: riskConstraint('R1', ['summarize', 'notify']), notificationPolicy: notificationPolicy('summary', ['silent', 'summary', 'important'], { silentOnSuccess: true }),
+    details: {
+      doesWhat: '检查你手工维护的生活或住房周期事项。', runsWhen: '每天按设定时间检查。', dataNeeded: '事项名称、类别、下次到期日、周期和提前提醒天数。',
+      remindsWhen: '进入提前提醒窗口或已经逾期时。', connectionSummary: '只使用统一 RecurringItemProfile，不需要额外平台连接。', riskSummary: '只提醒，不缴费、不下单，也不修改外部账户。',
+    },
+    configFields: [
+      { key: 'planName', type: 'text', required: false, label: '计划名称', helpText: '例如“房租和证件周期提醒”。' },
+      { key: 'profileId', type: 'text', required: true, label: '周期事项', helpText: '选择已创建的生活或住房周期事项。' },
+      { key: 'reminderTime', type: 'time', required: true, label: '检查时间', helpText: '每天几点检查。', defaultValue: '09:00' },
+      { key: 'notificationPreference', type: 'select', required: true, label: '提醒强度', helpText: '正常保持安静，到期时按偏好提醒。', defaultValue: 'summary', options: [{ value: 'silent', label: '静默' }, { value: 'summary', label: '摘要提醒' }, { value: 'important', label: '重要提醒' }] },
+    ],
+    configSchema: recurringItemReminderSchema,
+    buildDefinition(config) {
+      const parsed = recurringItemReminderSchema.parse(config);
+      return {
+        name: parsed.planName?.trim() || '周期事项提醒', description: '到期前提醒生活和住房周期事项。', domain: 'life', automationLevel: 'L1',
+        sources: [{ sourceType: 'internal', connectorKey: 'internal', config: { resource: 'recurring_item_profile', profileId: parsed.profileId }, sortOrder: 0 }],
+        triggers: scheduleFromTime(parsed.reminderTime), conditions: [], actions: [
+          { actionType: 'summarize', config: { format: 'short', domain: 'recurring_item', notificationPreference: parsed.notificationPreference }, stepOrder: 0 },
+          { actionType: 'notify', config: { channel: 'in_app', priority: parsed.notificationPreference === 'important' ? 'P1' : 'P2', eventType: 'recurring_item_due' }, stepOrder: 1 },
+        ],
+      };
+    },
+  },
+  {
+    key: 'work-follow-up-reminder', templateVersion: '1', domain: 'work', group: '我的事情',
+    name: '工作跟进提醒', description: '用统一周期事项保存需要再次跟进的工作，到期才提醒。', icon: '跟进', status: 'published', automationLevel: 'L1',
+    requiredConnectors: ['internal'], approvalPolicy: NEVER_APPROVAL_POLICY,
+    riskConstraint: riskConstraint('R1', ['summarize', 'notify']), notificationPolicy: notificationPolicy('summary', ['silent', 'summary', 'important'], { silentOnSuccess: true }),
+    details: {
+      doesWhat: '检查工作跟进的下次到期时间和重复周期。', runsWhen: '每天按设定时间检查。', dataNeeded: '跟进主题、下次时间、周期和提前提醒天数。',
+      remindsWhen: '跟进进入提醒窗口或逾期时。', connectionSummary: '复用统一 RecurringItemProfile，不发展成 Office Suite。', riskSummary: '只提醒，不自动发邮件、不修改日历。',
+    },
+    configFields: [
+      { key: 'planName', type: 'text', required: false, label: '计划名称', helpText: '例如“客户方案跟进”。' },
+      { key: 'profileId', type: 'text', required: true, label: '跟进事项', helpText: '选择工作领域的周期事项。' },
+      { key: 'reminderTime', type: 'time', required: true, label: '检查时间', helpText: '每天几点检查。', defaultValue: '09:00' },
+      { key: 'notificationPreference', type: 'select', required: true, label: '提醒强度', helpText: '到期时按偏好提醒。', defaultValue: 'summary', options: [{ value: 'silent', label: '静默' }, { value: 'summary', label: '摘要提醒' }, { value: 'important', label: '重要提醒' }] },
+    ],
+    configSchema: recurringItemReminderSchema,
+    buildDefinition(config) {
+      const parsed = recurringItemReminderSchema.parse(config);
+      return {
+        name: parsed.planName?.trim() || '工作跟进提醒', description: '工作跟进进入提醒窗口时提醒。', domain: 'work', automationLevel: 'L1',
+        sources: [{ sourceType: 'internal', connectorKey: 'internal', config: { resource: 'recurring_item_profile', profileId: parsed.profileId, expectedDomain: 'work' }, sortOrder: 0 }],
+        triggers: scheduleFromTime(parsed.reminderTime), conditions: [], actions: [
+          { actionType: 'summarize', config: { format: 'short', domain: 'recurring_item', notificationPreference: parsed.notificationPreference }, stepOrder: 0 },
+          { actionType: 'notify', config: { channel: 'in_app', priority: parsed.notificationPreference === 'important' ? 'P1' : 'P2', eventType: 'work_follow_up_due' }, stepOrder: 1 },
+        ],
+      };
+    },
+  },
+  {
+    key: 'calendar-conflict-guard', templateVersion: '1', domain: 'work', group: '我的事情',
+    name: '日历冲突守护', description: '只读日历并找出时间重叠，有冲突才提醒。', icon: '日历', status: 'published', automationLevel: 'L1',
+    requiredConnectors: ['google_calendar'], approvalPolicy: NEVER_APPROVAL_POLICY,
+    riskConstraint: riskConstraint('R1', ['summarize', 'notify']), notificationPolicy: notificationPolicy('silent', ['silent', 'important'], { silentOnSuccess: true }),
+    details: {
+      doesWhat: '比较日历事项的起止时间，找出重叠安排。', runsWhen: '每天按设定时间检查。', dataNeeded: '只读日历事件的标题和起止时间。',
+      remindsWhen: '发现至少一组时间冲突时。', connectionSummary: '需要一个已授权“读取日历事件”的 Calendar 连接。', riskSummary: '只读取和比较，不创建、修改或删除日历事项。',
+    },
+    configFields: [
+      { key: 'planName', type: 'text', required: false, label: '计划名称', helpText: '例如“工作日历冲突守护”。' },
+      { key: 'calendarConnectionId', type: 'text', required: true, label: '日历连接', helpText: '选择只读日历连接。' },
+      { key: 'checkTime', type: 'time', required: true, label: '检查时间', helpText: '每天几点检查冲突。', defaultValue: '07:30' },
+    ],
+    configSchema: calendarConflictGuardSchema,
+    buildDefinition(config) {
+      const parsed = calendarConflictGuardSchema.parse(config);
+      return {
+        name: parsed.planName?.trim() || '日历冲突守护', description: '只读日历并识别重叠安排，正常保持安静。', domain: 'work', automationLevel: 'L1',
+        sources: [{ sourceType: 'calendar', connectorKey: 'google_calendar', connectionId: parsed.calendarConnectionId, config: {}, sortOrder: 0 }],
+        triggers: scheduleFromTime(parsed.checkTime), conditions: [], actions: [
+          { actionType: 'summarize', config: { format: 'short', domain: 'calendar_conflict' }, stepOrder: 0 },
+          { actionType: 'notify', config: { channel: 'in_app', priority: 'P1', eventType: 'calendar_conflict_detected' }, stepOrder: 1 },
+        ],
+      };
+    },
+  },
+  {
+    key: 'file-archive-preparation', templateVersion: '1', domain: 'work', group: '我的事情',
+    name: '工作文件归档准备', description: '读取你主动选择的文件信息，生成归档清单，不移动或删除原文件。', icon: '文件', status: 'published', automationLevel: 'L0',
+    requiredConnectors: ['file_provider'], approvalPolicy: NEVER_APPROVAL_POLICY,
+    riskConstraint: riskConstraint('R1', ['archive']), notificationPolicy: notificationPolicy('silent', ['silent'], { silentOnSuccess: true }),
+    details: {
+      doesWhat: '根据文件名和内容指纹准备一条可追踪的归档清单。', runsWhen: '你主动选择文件并运行时。', dataNeeded: '文件名、类型、大小和 SHA-256；计划不保存文件内容。',
+      remindsWhen: '不额外打扰，结果留在执行记录。', connectionSummary: '使用本地文件选择器，只读取最小文件元数据。', riskSummary: '只准备归档信息，不移动、不覆盖、不删除文件。',
+    },
+    configFields: [
+      { key: 'planName', type: 'text', required: false, label: '计划名称', helpText: '例如“项目文件归档准备”。' },
+      { key: 'fileConnectionId', type: 'text', required: true, label: '文件连接', helpText: '选择本地文件读取连接。' },
+      { key: 'destination', type: 'select', required: true, label: '归档类别', helpText: '选择建议归入的类别。', defaultValue: '项目资料', options: [{ value: '项目资料', label: '项目资料' }, { value: '财务凭证', label: '财务凭证' }, { value: '行政资料', label: '行政资料' }, { value: '参考资料', label: '参考资料' }] },
+    ],
+    configSchema: fileArchivePreparationSchema,
+    buildDefinition(config) {
+      const parsed = fileArchivePreparationSchema.parse(config);
+      return {
+        name: parsed.planName?.trim() || '工作文件归档准备', description: '只准备归档清单，不移动或删除原文件。', domain: 'work', automationLevel: 'L0',
+        sources: [{ sourceType: 'file', connectorKey: 'file_provider', connectionId: parsed.fileConnectionId, config: { metadataOnly: true }, sortOrder: 0 }],
+        triggers: [{ triggerType: 'manual', config: {}, sortOrder: 0 }], conditions: [],
+        actions: [{ actionType: 'archive', config: { destination: parsed.destination }, stepOrder: 0 }],
       };
     },
   },

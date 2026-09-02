@@ -3,6 +3,7 @@ import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
 import { createPool, type Pool } from 'mysql2/promise';
 import request from 'supertest';
+import { json, urlencoded } from 'express';
 import { ExecutionWorker } from '../src/execution/execution-worker.service';
 
 export interface Session {
@@ -21,7 +22,10 @@ export async function bootP2App(unique: string): Promise<{ app: INestApplication
   process.env.CREDENTIAL_STORE_PATH ??= `.data/test-p2-${unique}`;
   const { AppModule } = await import('../src/app.module');
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
-  const app = moduleRef.createNestApplication();
+  const app = moduleRef.createNestApplication({ bodyParser: false });
+  app.use('/api/file-imports', json({ limit: '1400kb' }));
+  app.use(json({ limit: '256kb' }));
+  app.use(urlencoded({ extended: false, limit: '64kb' }));
   app.setGlobalPrefix('api');
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
   await app.init();

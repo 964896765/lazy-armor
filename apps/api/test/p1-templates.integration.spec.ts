@@ -45,13 +45,13 @@ describe.sequential('P1 template system integration', { timeout: 60000 }, () => 
     return { token: response.body.accessToken as string };
   }
 
-  it('lists the 8 canonical templates for the plan library', async () => {
+  it('keeps all 8 canonical P1 templates in the expanding plan library', async () => {
     const response = await request(app.getHttpServer())
       .get('/api/templates')
       .set(auth(user.token))
       .expect(200);
 
-    expect(response.body).toHaveLength(8);
+    expect(response.body.length).toBeGreaterThanOrEqual(8);
     expect(response.body.map((item: { key: string }) => item.key)).toEqual(expect.arrayContaining([
       'monthly-bill-summary',
       'mobile-bill-guard',

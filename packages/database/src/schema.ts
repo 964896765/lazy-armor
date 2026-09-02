@@ -385,6 +385,84 @@ export const deviceConsumables = mysqlTable('device_consumables', {
   index('device_consumables_user_status_idx').on(table.userId, table.status, table.updatedAt),
 ]);
 
+export const vehicleProfiles = mysqlTable('vehicle_profiles', {
+  id: uuidBinary('id').primaryKey(),
+  userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  brand: varchar('brand', { length: 120 }).notNull(),
+  model: varchar('model', { length: 120 }).notNull(),
+  year: int('year').notNull(),
+  purchasedAt: datetime('purchased_at', { mode: 'date', fsp: 6 }),
+  mileageKm: int('mileage_km').notNull().default(0),
+  mileageUpdatedAt: datetime('mileage_updated_at', { mode: 'date', fsp: 6 }).notNull(),
+  insuranceExpiresAt: datetime('insurance_expires_at', { mode: 'date', fsp: 6 }),
+  inspectionDueAt: datetime('inspection_due_at', { mode: 'date', fsp: 6 }),
+  maintenanceDueAt: datetime('maintenance_due_at', { mode: 'date', fsp: 6 }),
+  maintenanceMileageKm: int('maintenance_mileage_km'),
+  tireInstalledAt: datetime('tire_installed_at', { mode: 'date', fsp: 6 }),
+  batteryInstalledAt: datetime('battery_installed_at', { mode: 'date', fsp: 6 }),
+  sourceType: varchar('source_type', { length: 32 }).notNull(),
+  metadataJson: json('metadata_json').$type<Record<string, unknown>>(),
+  ...timestamps,
+}, (table) => [
+  index('vehicle_profiles_user_created_idx').on(table.userId, table.createdAt),
+  index('vehicle_profiles_user_due_idx').on(table.userId, table.inspectionDueAt, table.maintenanceDueAt),
+]);
+
+export const digitalAccountProfiles = mysqlTable('digital_account_profiles', {
+  id: uuidBinary('id').primaryKey(),
+  userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  serviceName: varchar('service_name', { length: 120 }).notNull(),
+  subscriptionStatus: varchar('subscription_status', { length: 32 }).notNull(),
+  expiresAt: datetime('expires_at', { mode: 'date', fsp: 6 }),
+  connectionStatus: varchar('connection_status', { length: 32 }).notNull(),
+  securityReminderAt: datetime('security_reminder_at', { mode: 'date', fsp: 6 }),
+  backupStatus: varchar('backup_status', { length: 32 }).notNull(),
+  sourceType: varchar('source_type', { length: 32 }).notNull(),
+  metadataJson: json('metadata_json').$type<Record<string, unknown>>(),
+  ...timestamps,
+}, (table) => [
+  index('digital_accounts_user_expiry_idx').on(table.userId, table.expiresAt, table.createdAt),
+  index('digital_accounts_user_status_idx').on(table.userId, table.subscriptionStatus, table.connectionStatus),
+]);
+
+export const recurringItemProfiles = mysqlTable('recurring_item_profiles', {
+  id: uuidBinary('id').primaryKey(),
+  userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  domain: varchar('domain', { length: 32 }).notNull(),
+  category: varchar('category', { length: 80 }).notNull(),
+  title: varchar('title', { length: 160 }).notNull(),
+  nextDueAt: datetime('next_due_at', { mode: 'date', fsp: 6 }).notNull(),
+  recurrenceDays: int('recurrence_days'),
+  remindBeforeDays: int('remind_before_days').notNull().default(7),
+  status: varchar('status', { length: 32 }).notNull(),
+  lastCompletedAt: datetime('last_completed_at', { mode: 'date', fsp: 6 }),
+  sourceType: varchar('source_type', { length: 32 }).notNull(),
+  metadataJson: json('metadata_json').$type<Record<string, unknown>>(),
+  ...timestamps,
+}, (table) => [
+  index('recurring_items_user_due_idx').on(table.userId, table.status, table.nextDueAt),
+  index('recurring_items_user_domain_idx').on(table.userId, table.domain, table.category),
+]);
+
+export const operationalRecords = mysqlTable('operational_records', {
+  id: uuidBinary('id').primaryKey(),
+  userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  recordType: varchar('record_type', { length: 32 }).notNull(),
+  subject: varchar('subject', { length: 160 }).notNull(),
+  quantity: int('quantity'),
+  amountMinor: int('amount_minor'),
+  currency: char('currency', { length: 3 }),
+  status: varchar('status', { length: 32 }).notNull(),
+  occurredAt: datetime('occurred_at', { mode: 'date', fsp: 6 }).notNull(),
+  needsAttention: int('needs_attention').notNull().default(0),
+  sourceType: varchar('source_type', { length: 32 }).notNull(),
+  metadataJson: json('metadata_json').$type<Record<string, unknown>>(),
+  ...timestamps,
+}, (table) => [
+  index('operational_records_user_time_idx').on(table.userId, table.occurredAt, table.recordType),
+  index('operational_records_user_attention_idx').on(table.userId, table.needsAttention, table.status),
+]);
+
 export const webhookReceipts = mysqlTable('webhook_receipts', {
   id: uuidBinary('id').primaryKey(),
   connectionId: uuidBinary('connection_id').notNull().references(() => connections.id, { onDelete: 'restrict' }),
@@ -768,6 +846,8 @@ export const schema = {
   studyTasks,
   deviceProfiles,
   deviceConsumables,
+  vehicleProfiles,
+  digitalAccountProfiles,
   webhookReceipts,
   plans,
   planVersions,

@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Button, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { api } from '../../src/api';
 import { useAuthStore } from '../../src/auth-store';
-import { automationLevelLabel, templateGroupLabel } from '../../src/plan-presenter';
+import { automationLevelLabel, groupPlanTemplates } from '../../src/plan-presenter';
 import { styles } from '../../src/shell';
 
 interface PlanTemplateSummary {
@@ -66,9 +66,9 @@ export default function Create() {
       contentContainerStyle={local.content}
       refreshControl={token ? <RefreshControl refreshing={templates.isFetching} onRefresh={() => templates.refetch()} /> : undefined}
     >
-      <Text style={styles.eyebrow}>懒人装甲 · P1</Text>
+      <Text style={styles.eyebrow}>懒人装甲</Text>
       <Text style={styles.title}>你今天想偷个什么懒？</Text>
-      <Text style={styles.subtitle}>可以直接说一句人话，也可以继续从懒人计划库里挑一个 Canonical Plan。</Text>
+      <Text style={styles.subtitle}>可以直接说一句人话，也可以从懒人计划库里挑一份现成计划。</Text>
       {!token ? (
         <View style={styles.card}><Text style={styles.cardTitle}>请先登录</Text><Button title="去登录" onPress={() => router.push('/connections')} /></View>
       ) : (
@@ -127,21 +127,25 @@ export default function Create() {
 
           <Text style={local.sectionTitle}>B. 懒人计划库</Text>
           {templates.isError && <Text style={local.error}>模板读取失败，请稍后重试。</Text>}
-          {templates.data?.map((template) => (
-            <Pressable key={template.key} onPress={() => router.push(`/templates/${template.key}` as never)}>
-              <View style={styles.card}>
-                <View style={local.headingRow}>
-                  <Text style={styles.cardTitle}>{template.icon} · {template.name}</Text>
-                  <Text style={local.level}>{automationLevelLabel(template.automationLevel)}</Text>
-                </View>
-                <Text style={styles.cardText}>{template.description}</Text>
-                <Text style={styles.cardText}>分类：{templateGroupLabel(template.group)}</Text>
-                <Text style={styles.cardText}>连接情况：{connectorSummary(template.requiredConnectors)}</Text>
-                <View style={local.button}>
-                  <Button title="查看详情" onPress={() => router.push(`/templates/${template.key}` as never)} />
-                </View>
-              </View>
-            </Pressable>
+          {groupPlanTemplates(templates.data ?? []).map((group) => (
+            <View key={group.group}>
+              <Text style={local.groupTitle}>{group.label}</Text>
+              {group.items.map((template) => (
+                <Pressable key={template.key} onPress={() => router.push(`/templates/${template.key}` as never)}>
+                  <View style={styles.card}>
+                    <View style={local.headingRow}>
+                      <Text style={styles.cardTitle}>{template.icon} · {template.name}</Text>
+                      <Text style={local.level}>{automationLevelLabel(template.automationLevel)}</Text>
+                    </View>
+                    <Text style={styles.cardText}>{template.description}</Text>
+                    <Text style={styles.cardText}>连接情况：{connectorSummary(template.requiredConnectors)}</Text>
+                    <View style={local.button}>
+                      <Button title="查看详情" onPress={() => router.push(`/templates/${template.key}` as never)} />
+                    </View>
+                  </View>
+                </Pressable>
+              ))}
+            </View>
           ))}
           {templates.data?.length === 0 && (
             <View style={styles.card}>
@@ -169,5 +173,6 @@ const local = StyleSheet.create({
   input: { borderWidth: 1, borderColor: '#D9DEDA', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 12, backgroundColor: '#FAFBFA', marginTop: 12, textAlignVertical: 'top' },
   button: { marginTop: 18 },
   sectionTitle: { color: '#17251F', fontSize: 20, fontWeight: '800', marginTop: 8, marginBottom: 12 },
+  groupTitle: { color: '#5B675F', fontSize: 16, fontWeight: '800', marginTop: 14, marginBottom: 8 },
   error: { color: '#A63D3D', marginTop: 10 },
 });

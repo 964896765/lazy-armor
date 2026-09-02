@@ -81,6 +81,16 @@ describe.sequential('P2-0 provider capability matrix', () => {
       supportsRefresh: true,
       supportsRevoke: true,
     });
+    expect(calendar.capabilities).toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: 'READ_EVENT', riskLevel: 'R0', providerAvailability: 'beta' }),
+      expect.objectContaining({ key: 'CREATE_EVENT', riskLevel: 'R3', providerAvailability: 'disabled' }),
+      expect.objectContaining({ key: 'UPDATE_EVENT', riskLevel: 'R3', providerAvailability: 'disabled' }),
+    ]));
+    const content = response.body.find((item: { key: string }) => item.key === 'content_provider');
+    expect(content.capabilities).toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: 'PUBLISH_CONTENT', providerAvailability: 'disabled' }),
+      expect.objectContaining({ key: 'READ_ANALYTICS', providerAvailability: 'disabled' }),
+    ]));
   });
 
   it('keeps connector catalog and capability rows synchronized in the database', async () => {
