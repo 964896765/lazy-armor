@@ -9,7 +9,7 @@ interface Connection { id: string }
 interface DeviceProfile { id: string }
 interface VehicleProfile { id: string }
 interface RecurringItemProfile { id: string }
-interface DigitalAccountProfile { id: string }
+interface MembershipSummary { membership: { name: string }; usage: { activePlans: number }; limits: { max_active_plans: number } }
 interface UnreadCount { count: number }
 
 export default function Me() {
@@ -18,9 +18,9 @@ export default function Me() {
   const devices = useQuery({ queryKey: ['device-profiles', token], queryFn: () => api<DeviceProfile[]>('/device-profiles', token), enabled: Boolean(token) });
   const vehicles = useQuery({ queryKey: ['vehicle-profiles', token], queryFn: () => api<VehicleProfile[]>('/vehicle-profiles', token), enabled: Boolean(token) });
   const recurringItems = useQuery({ queryKey: ['recurring-item-profiles', token], queryFn: () => api<RecurringItemProfile[]>('/recurring-item-profiles', token), enabled: Boolean(token) });
-  const digitalAccounts = useQuery({ queryKey: ['digital-account-profiles', token], queryFn: () => api<DigitalAccountProfile[]>('/digital-account-profiles', token), enabled: Boolean(token) });
+  const membership = useQuery({ queryKey: ['membership', token], queryFn: () => api<MembershipSummary>('/me/membership', token), enabled: Boolean(token) });
   const unread = useQuery({ queryKey: ['notifications-unread', token], queryFn: () => api<UnreadCount>('/notifications/unread-count', token), enabled: Boolean(token) });
-  const loading = connections.isLoading || devices.isLoading || vehicles.isLoading || recurringItems.isLoading || digitalAccounts.isLoading || unread.isLoading;
+  const loading = connections.isLoading || devices.isLoading || vehicles.isLoading || recurringItems.isLoading || membership.isLoading || unread.isLoading;
 
   return (
     <ShellPage title="我的" subtitle="把连接、权限、设备、车辆和安全入口放到同一个地方，方便你自己管理。">
@@ -113,10 +113,14 @@ export default function Me() {
         </Pressable>
       </Link>
 
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>会员</Text>
-        <Text style={styles.cardText}>已记录 {digitalAccounts.data?.length ?? 0} 条数字账号或订阅资料；套餐和会员逻辑会在 P5 继续完善。</Text>
-      </View>
+      <Link href={'/membership' as Href} asChild>
+        <Pressable>
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>会员</Text>
+            <Text style={styles.cardText}>当前是 {membership.data?.membership.name ?? '免费版'}，已启用 {membership.data?.usage.activePlans ?? 0} / {membership.data?.limits.max_active_plans ?? 3} 个计划。</Text>
+          </View>
+        </Pressable>
+      </Link>
     </ShellPage>
   );
 }

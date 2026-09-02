@@ -21,6 +21,7 @@ import {
   triggerSummary,
 } from '../../src/plan-presenter';
 import type { TemplateConfigField } from '../../src/template-config-form';
+import { planMutationErrorMessage } from '../../src/membership-presenter';
 
 interface PlanSummary {
   id: string;
@@ -361,7 +362,7 @@ export default function PlanDetailPage() {
                 />
               </View>
             ))}
-            {apply.isError || changeStatus.isError ? <Text style={local.error}>操作失败，请稍后重试。</Text> : null}
+            {apply.isError || changeStatus.isError ? <Text style={local.error}>{planMutationErrorMessage(changeStatus.error ?? apply.error)}</Text> : null}
           </View>
 
           <View style={local.card}>

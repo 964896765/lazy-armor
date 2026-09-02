@@ -162,6 +162,41 @@
       "when": 1788350400000,
       "tag": "0022_p4_profile_preferences",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1788386400000,
+      "tag": "0023_p5_membership_entitlement",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1788390000000,
+      "tag": "0024_p5_usage_metering",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1788393600000,
+      "tag": "0025_p5_subscription_billing_sandbox",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1788397200000,
+      "tag": "0026_p5_template_lifecycle",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1788400800000,
+      "tag": "0027_p5_cost_foundation",
+      "breakpoints": true
     }
   ]
 }

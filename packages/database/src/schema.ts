@@ -19,6 +19,117 @@ export const users = mysqlTable('users', {
   ...timestamps,
 });
 
+export const membershipPlans = mysqlTable('membership_plans', {
+  id: uuidBinary('id').primaryKey(),
+  planKey: varchar('plan_key', { length: 32 }).notNull(),
+  name: varchar('name', { length: 120 }).notNull(),
+  status: varchar('status', { length: 32 }).notNull(),
+  version: int('version').notNull(),
+  ...timestamps,
+}, (table) => [uniqueIndex('membership_plans_plan_key_uq').on(table.planKey)]);
+
+export const userMemberships = mysqlTable('user_memberships', {
+  id: uuidBinary('id').primaryKey(),
+  userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  membershipPlanKey: varchar('membership_plan_key', { length: 32 }).notNull().references(() => membershipPlans.planKey, { onDelete: 'restrict' }),
+  status: varchar('status', { length: 32 }).notNull(),
+  startedAt: datetime('started_at', { mode: 'date', fsp: 6 }).notNull(),
+  currentPeriodStart: datetime('current_period_start', { mode: 'date', fsp: 6 }),
+  currentPeriodEnd: datetime('current_period_end', { mode: 'date', fsp: 6 }),
+  cancelAtPeriodEnd: int('cancel_at_period_end').notNull().default(0),
+  provider: varchar('provider', { length: 64 }).notNull(),
+  externalSubscriptionId: varchar('external_subscription_id', { length: 255 }),
+  ...timestamps,
+}, (table) => [
+  uniqueIndex('user_memberships_user_uq').on(table.userId),
+  uniqueIndex('user_memberships_provider_subscription_uq').on(table.provider, table.externalSubscriptionId),
+  index('user_memberships_status_period_idx').on(table.status, table.currentPeriodEnd),
+]);
+
+export const subscriptionCustomers = mysqlTable('subscription_customers', {
+  id: uuidBinary('id').primaryKey(),
+  userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  provider: varchar('provider', { length: 64 }).notNull(),
+  externalCustomerId: varchar('external_customer_id', { length: 255 }).notNull(),
+  status: varchar('status', { length: 32 }).notNull(),
+  ...timestamps,
+}, (table) => [
+  uniqueIndex('subscription_customers_user_provider_uq').on(table.userId, table.provider),
+  uniqueIndex('subscription_customers_provider_external_uq').on(table.provider, table.externalCustomerId),
+]);
+
+export const subscriptions = mysqlTable('subscriptions', {
+  id: uuidBinary('id').primaryKey(),
+  userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  subscriptionCustomerId: uuidBinary('subscription_customer_id').notNull().references(() => subscriptionCustomers.id, { onDelete: 'restrict' }),
+  provider: varchar('provider', { length: 64 }).notNull(),
+  externalSubscriptionId: varchar('external_subscription_id', { length: 255 }).notNull(),
+  checkoutRequestId: varchar('checkout_request_id', { length: 255 }).notNull(),
+  externalCheckoutId: varchar('external_checkout_id', { length: 255 }).notNull(),
+  checkoutUrl: varchar('checkout_url', { length: 1024 }).notNull(),
+  membershipPlanKey: varchar('membership_plan_key', { length: 32 }).notNull().references(() => membershipPlans.planKey, { onDelete: 'restrict' }),
+  status: varchar('status', { length: 32 }).notNull(),
+  currentPeriodStart: datetime('current_period_start', { mode: 'date', fsp: 6 }),
+  currentPeriodEnd: datetime('current_period_end', { mode: 'date', fsp: 6 }),
+  cancelAtPeriodEnd: int('cancel_at_period_end').notNull().default(0),
+  ...timestamps,
+}, (table) => [
+  uniqueIndex('subscriptions_provider_external_uq').on(table.provider, table.externalSubscriptionId),
+  uniqueIndex('subscriptions_user_checkout_request_uq').on(table.userId, table.checkoutRequestId),
+  index('subscriptions_user_status_idx').on(table.userId, table.status, table.updatedAt),
+]);
+
+export const subscriptionEvents = mysqlTable('subscription_events', {
+  id: uuidBinary('id').primaryKey(),
+  userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  subscriptionId: uuidBinary('subscription_id').notNull().references(() => subscriptions.id, { onDelete: 'restrict' }),
+  provider: varchar('provider', { length: 64 }).notNull(),
+  externalEventId: varchar('external_event_id', { length: 255 }).notNull(),
+  eventType: varchar('event_type', { length: 80 }).notNull(),
+  payloadHash: char('payload_hash', { length: 64 }).notNull(),
+  payloadSnapshotJson: json('payload_snapshot_json').$type<Record<string, unknown>>().notNull(),
+  occurredAt: datetime('occurred_at', { mode: 'date', fsp: 6 }).notNull(),
+  receivedAt: datetime('received_at', { mode: 'date', fsp: 6 }).notNull(),
+}, (table) => [
+  uniqueIndex('subscription_events_provider_event_uq').on(table.provider, table.externalEventId),
+  index('subscription_events_subscription_time_idx').on(table.subscriptionId, table.occurredAt),
+  index('subscription_events_user_time_idx').on(table.userId, table.occurredAt),
+]);
+
+export const templateLifecycleVersions = mysqlTable('template_lifecycle_versions', {
+  id: uuidBinary('id').primaryKey(),
+  templateKey: varchar('template_key', { length: 120 }).notNull(),
+  templateVersion: varchar('template_version', { length: 32 }).notNull(),
+  status: varchar('status', { length: 32 }).notNull(),
+  revision: int('revision').notNull().default(1),
+  reason: varchar('reason', { length: 500 }),
+  updatedByUserId: uuidBinary('updated_by_user_id').references(() => users.id, { onDelete: 'restrict' }),
+  submittedAt: datetime('submitted_at', { mode: 'date', fsp: 6 }),
+  publishedAt: datetime('published_at', { mode: 'date', fsp: 6 }),
+  deprecatedAt: datetime('deprecated_at', { mode: 'date', fsp: 6 }),
+  suspendedAt: datetime('suspended_at', { mode: 'date', fsp: 6 }),
+  ...timestamps,
+}, (table) => [
+  uniqueIndex('template_lifecycle_key_version_uq').on(table.templateKey, table.templateVersion),
+  index('template_lifecycle_status_updated_idx').on(table.status, table.updatedAt),
+]);
+
+export const costBudgets = mysqlTable('cost_budgets', {
+  id: uuidBinary('id').primaryKey(),
+  budgetKey: varchar('budget_key', { length: 255 }).notNull(),
+  scopeType: varchar('scope_type', { length: 32 }).notNull(),
+  userId: uuidBinary('user_id').references(() => users.id, { onDelete: 'restrict' }),
+  provider: varchar('provider', { length: 80 }),
+  monthlyLimitMinor: int('monthly_limit_minor').notNull(),
+  currency: varchar('currency', { length: 8 }).notNull(),
+  status: varchar('status', { length: 32 }).notNull(),
+  ...timestamps,
+}, (table) => [
+  uniqueIndex('cost_budgets_key_uq').on(table.budgetKey),
+  index('cost_budgets_user_status_idx').on(table.userId, table.status),
+  index('cost_budgets_provider_status_idx').on(table.provider, table.status),
+]);
+
 export const profiles = mysqlTable('profiles', {
   id: uuidBinary('id').primaryKey(),
   userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
@@ -822,8 +933,38 @@ export const auditLogs = mysqlTable('audit_logs', {
   index('audit_logs_resource_idx').on(table.resourceType, table.resourceId),
 ]);
 
+export const usageEvents = mysqlTable('usage_events', {
+  id: uuidBinary('id').primaryKey(),
+  userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  usageType: varchar('usage_type', { length: 64 }).notNull(),
+  quantity: int('quantity').notNull(),
+  unit: varchar('unit', { length: 32 }).notNull(),
+  provider: varchar('provider', { length: 80 }),
+  resourceType: varchar('resource_type', { length: 64 }).notNull(),
+  resourceId: varchar('resource_id', { length: 255 }).notNull(),
+  executionId: uuidBinary('execution_id').references(() => executions.id, { onDelete: 'restrict' }),
+  sideEffectOperationId: uuidBinary('side_effect_operation_id').references(() => sideEffectOperations.id, { onDelete: 'restrict' }),
+  usageIdentity: varchar('usage_identity', { length: 255 }).notNull(),
+  billable: int('billable').notNull().default(0),
+  providerCostMinor: int('provider_cost_minor'),
+  occurredAt: datetime('occurred_at', { mode: 'date', fsp: 6 }).notNull(),
+  createdAt: datetime('created_at', { mode: 'date', fsp: 6 }).notNull(),
+}, (table) => [
+  uniqueIndex('usage_events_identity_uq').on(table.usageIdentity),
+  index('usage_events_user_time_type_idx').on(table.userId, table.occurredAt, table.usageType),
+  index('usage_events_execution_idx').on(table.executionId, table.usageType),
+  index('usage_events_side_effect_idx').on(table.sideEffectOperationId, table.usageType),
+]);
+
 export const schema = {
   users,
+  membershipPlans,
+  userMemberships,
+  subscriptionCustomers,
+  subscriptions,
+  subscriptionEvents,
+  templateLifecycleVersions,
+  costBudgets,
   profiles,
   authIdentities,
   authSessions,
@@ -867,4 +1008,5 @@ export const schema = {
   sideEffectOperations,
   outboxMessages,
   auditLogs,
+  usageEvents,
 };

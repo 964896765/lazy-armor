@@ -5,6 +5,7 @@ import { DATABASE, type InjectedDatabase } from '../common/database.module';
 import { AuditService } from '../audit/audit.service';
 import { ExecutionEventService } from './execution-event.service';
 import { EXECUTION_TERMINAL_STATES, type ExecutionStatus } from './execution.types';
+import { UsageService } from '../usage/usage.service';
 
 const TRANSITIONS: Readonly<Record<ExecutionStatus, readonly ExecutionStatus[]>> = Object.freeze({
   created: ['queued', 'failed', 'cancelled'],
@@ -18,7 +19,7 @@ const TRANSITIONS: Readonly<Record<ExecutionStatus, readonly ExecutionStatus[]>>
 
 @Injectable()
 export class ExecutionStateService {
-  constructor(@Inject(DATABASE) private readonly db: InjectedDatabase, private readonly events: ExecutionEventService, private readonly audit: AuditService) {}
+  constructor(@Inject(DATABASE) private readonly db: InjectedDatabase, private readonly events: ExecutionEventService, private readonly audit: AuditService, private readonly usage: UsageService) {}
 
   async transition(id: string, target: ExecutionStatus, patch: Partial<typeof executions.$inferInsert> = {}) {
     let current: ExecutionStatus | undefined;
@@ -46,6 +47,20 @@ export class ExecutionStateService {
           after: { status: target, resultCode: patch.resultCode ?? null, errorCode: patch.errorCode ?? null },
           source: 'execution_worker', result: patch.errorCode ? 'failure' : 'success', reasonCode: patch.errorCode ?? null,
         }, tx);
+        if (target === 'succeeded' || target === 'partially_succeeded') {
+          await this.usage.record({
+            userId,
+            usageType: 'execution.completed',
+            quantity: 1,
+            unit: 'execution',
+            provider: 'internal',
+            resourceType: 'execution',
+            resourceId: id,
+            executionId: id,
+            usageIdentity: 'execution.completed:' + id,
+            billable: true,
+          }, tx);
+        }
       }
     });
     void changed;

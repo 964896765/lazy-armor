@@ -1,5 +1,5 @@
 import { Inject, Injectable, OnApplicationShutdown, OnModuleInit } from '@nestjs/common';
-import { ConnectorRegistry, resolveSideEffectContract, type SideEffectContract } from '@lazy-armor/connector-sdk';
+import { ConnectorError, ConnectorRegistry, resolveSideEffectContract, type SideEffectContract } from '@lazy-armor/connector-sdk';
 import { executionSteps, executions, outboxMessages, plans, sideEffectOperations } from '@lazy-armor/database';
 import { and, eq } from 'drizzle-orm';
 import { DATABASE, type InjectedDatabase } from '../../common/database.module';
@@ -18,9 +18,11 @@ import { workerEnabled } from '../../common/app-role';
 import { OutboxService } from './outbox.service';
 import { SideEffectOperationsService } from './side-effect-operations.service';
 import { ObservabilityService } from '../../observability/observability.service';
+import { UsageService } from '../../usage/usage.service';
+import { ConnectorRateLimitCoordinator } from '../../infrastructure/connector-rate-limit-coordinator.service';
+import { ProviderCircuitBreakerService } from '../../infrastructure/provider-circuit-breaker.service';
 
 const MAX_OUTBOX_ATTEMPTS = 5;
-const RETRY_BASE_MS = 200;
 const RETRY_MAX_MS = 10_000;
 const POLL_INTERVAL_MS = 1_000;
 const CLAIM_BATCH = 8;
@@ -47,6 +49,9 @@ export class OutboxWorker implements OnModuleInit, OnApplicationShutdown {
     private readonly policy: ExecutionPolicyService,
     private readonly queue: QueueService,
     private readonly telemetry: ObservabilityService,
+    private readonly usage: UsageService,
+    private readonly rateLimits: ConnectorRateLimitCoordinator,
+    private readonly circuits: ProviderCircuitBreakerService,
   ) {}
 
   onModuleInit() {
@@ -168,6 +173,8 @@ export class OutboxWorker implements OnModuleInit, OnApplicationShutdown {
       const capability = this.registry.capability(connectorKey, operation.capabilityKey);
       contract = capability ? resolveSideEffectContract(capability) : null;
       const connector = this.registry.get(connectorKey);
+      await this.circuits.beforeRequest(connectorKey);
+      await this.rateLimits.acquire({ provider: connectorKey, connectionId: operation.connectionId });
       const rebuilt = await this.operations.rebuildRequest(operation.executionStepId);
       await this.events.append(payload.executionId, 'side_effect_dispatch_started', { operationId: operation.id, attempt: operation.attemptCount + 1 }, operation.executionStepId);
       await this.stepStates.transition(operation.executionStepId, 'running', { dispatchStatus: 'executing' });
@@ -196,11 +203,19 @@ export class OutboxWorker implements OnModuleInit, OnApplicationShutdown {
         await this.failOperation(operation, message, 'PROVIDER_REJECTED', 'Provider rejected the side effect operation');
         return;
       }
+      await this.circuits.recordSuccess(connectorKey);
       this.telemetry.increment('connector.success', 1, { connectorKey, capability: operation.capabilityKey ?? 'unknown', operation: 'execute' });
       this.telemetry.histogram('connector.duration', Date.now() - startedAt, { connectorKey, capability: operation.capabilityKey ?? 'unknown', operation: 'execute' });
       this.telemetry.histogram('outbox.dispatch_duration', Date.now() - startedAt, { connectorKey, capability: operation.capabilityKey ?? 'unknown' });
       await this.succeedOperation(operation, message, result.data, rebuilt.executionId);
     } catch (error) {
+      const connectorError = error instanceof ConnectorError ? error : null;
+      if (connectorError?.category === 'RATE_LIMITED' && connectorError.retryAfterMs && operation.connectionId) {
+        await this.rateLimits.honorRetryAfter(connectorKeyForMetrics, operation.connectionId, connectorError.retryAfterMs);
+      }
+      if (connectorError && ['TIMEOUT', 'PROVIDER_UNAVAILABLE'].includes(connectorError.category) && connectorError.code !== 'CIRCUIT_OPEN') {
+        await this.circuits.recordFailure(connectorKeyForMetrics);
+      }
       const mapped = asRuntimeError(error);
       // 审批后权限/连接/凭证变化 → 受控失败，绝不无限重试（§53-55）。
       if (BLOCKING_CODES.has(mapped.code)) {
@@ -221,7 +236,7 @@ export class OutboxWorker implements OnModuleInit, OnApplicationShutdown {
         this.telemetry.increment(mapped.code === 'TIMEOUT' ? 'connector.timeout' : 'outbox.retry_wait', mapped.code === 'TIMEOUT' ? 1 : 1, mapped.code === 'TIMEOUT'
           ? { errorCode: mapped.code, connectorKey: connectorKeyForMetrics, capability: operation.capabilityKey ?? 'unknown' }
           : { errorCode: mapped.code });
-        const nextAttemptAt = new Date(Date.now() + Math.min(RETRY_BASE_MS * 2 ** message.attemptCount, RETRY_MAX_MS));
+        const nextAttemptAt = new Date(Date.now() + Math.min(this.rateLimits.backoffMs(message.attemptCount + 1, connectorError?.retryAfterMs), RETRY_MAX_MS));
         await this.operations.mark(operation.id, { status: 'retry_wait', errorCode: mapped.code, errorMessage: this.sanitizer.sanitizeText(mapped) });
         await this.outbox.markRetryWait(message.id, mapped.code, this.sanitizer.sanitizeText(mapped), nextAttemptAt);
         await this.audit.append({ actorType: 'outbox_worker', actorUserId: null, action: 'SIDE_EFFECT_DISPATCH_RETRY', resourceType: 'side_effect_operation', resourceId: operation.id, userId: operation.userId, executionId: operation.executionId, executionStepId: operation.executionStepId, sideEffectOperationId: operation.id, outboxMessageId: message.id, correlationId: operation.correlationId, causationId: operation.id, after: { attempt: message.attemptCount + 1, nextAttemptAt: nextAttemptAt.toISOString() }, source: 'outbox_worker', result: 'unknown', reasonCode: mapped.code });
@@ -236,7 +251,7 @@ export class OutboxWorker implements OnModuleInit, OnApplicationShutdown {
       this.telemetry.increment(mapped.code === 'RATE_LIMIT' || mapped.code === 'RATE_LIMITED' ? 'connector.rate_limit' : 'outbox.retry_wait', 1, mapped.code === 'RATE_LIMIT' || mapped.code === 'RATE_LIMITED'
         ? { errorCode: mapped.code, connectorKey: connectorKeyForMetrics, capability: operation.capabilityKey ?? 'unknown' }
         : { errorCode: mapped.code });
-      const nextAttemptAt = new Date(Date.now() + Math.min(RETRY_BASE_MS * 2 ** message.attemptCount, RETRY_MAX_MS));
+      const nextAttemptAt = new Date(Date.now() + Math.min(this.rateLimits.backoffMs(message.attemptCount + 1, connectorError?.retryAfterMs), RETRY_MAX_MS));
       await this.operations.mark(operation.id, { status: 'retry_wait', errorCode: mapped.code, errorMessage: this.sanitizer.sanitizeText(mapped) });
       await this.outbox.markRetryWait(message.id, mapped.code, this.sanitizer.sanitizeText(mapped), nextAttemptAt);
     }
@@ -267,6 +282,19 @@ export class OutboxWorker implements OnModuleInit, OnApplicationShutdown {
       await this.stepStates.transition(operation.executionStepId, 'succeeded', { dispatchStatus: 'succeeded', outputSnapshotJson: this.sanitizer.sanitize(data), finishedAt: now }, tx);
       await tx.update(outboxMessages).set({ status: 'published', publishedAt: now, lockedBy: null, lockExpiresAt: null, updatedAt: now }).where(eq(outboxMessages.id, message.id));
       await this.audit.append({ actorType: 'outbox_worker', actorUserId: null, action: 'SIDE_EFFECT_SUCCEEDED', resourceType: 'side_effect_operation', resourceId: operation.id, userId: operation.userId, executionId, executionStepId: operation.executionStepId, sideEffectOperationId: operation.id, outboxMessageId: message.id, correlationId: operation.correlationId, causationId: operation.id, after: { providerOperationId, resultHash }, changeSummary: 'Side effect succeeded', source: 'outbox_worker', result: 'success' }, tx);
+      await this.usage.record({
+        userId: operation.userId,
+        usageType: 'connector.operation',
+        quantity: 1,
+        unit: 'operation',
+        provider: message.destination,
+        resourceType: 'side_effect_operation',
+        resourceId: operation.id,
+        executionId,
+        sideEffectOperationId: operation.id,
+        usageIdentity: 'connector.operation:side-effect:' + operation.id,
+        billable: true,
+      }, tx);
     });
     await this.events.append(executionId, 'side_effect_succeeded', { operationId: operation.id, providerOperationId }, operation.executionStepId);
     await this.resumeExecution(operation.userId, executionId);

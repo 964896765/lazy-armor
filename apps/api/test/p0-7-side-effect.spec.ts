@@ -23,14 +23,15 @@ class P07TestConnector implements Connector {
   readonly appliedKeys = new Set<string>();
   readonly modes = new Map<string, FaultMode>();
   constructor(private readonly key: string) {}
-  metadata = () => ({ key: this.key, name: 'P0-7 Side Effect Test', description: 'Test process only', version: '1.0.0-test' });
+  metadata = () => ({ key: this.key, name: 'P0-7 Side Effect Test', description: 'Test process only', version: '1.0.0-test', connectorSdkVersion: '0.1.0', providerType: 'internal' as const, productionStatus: 'DISABLED' as const, authentication: { type: 'none' as const }, supportsRefresh: false, supportsRevoke: false, supportsWebhook: false, supportsHealthCheck: true, sandboxSupport: 'full' as const, rateLimitStrategy: 'unknown' as const });
   capabilities = () => [
-    { key: 'TEST_R3_EXTERNAL', name: 'R3 external', operation: 'execute' as const, riskLevel: 'R3' as const, sideEffectContract: { supportsIdempotencyKey: true, retrySafety: 'safe' as const } },
-    { key: 'TEST_R3_LOOKUP', name: 'R3 lookup', operation: 'execute' as const, riskLevel: 'R3' as const, sideEffectContract: { supportsIdempotencyKey: true, supportsOperationLookup: true, retrySafety: 'safe' as const } },
-    { key: 'TEST_R3_UNSAFE', name: 'R3 unsafe', operation: 'execute' as const, riskLevel: 'R3' as const, sideEffectContract: { supportsIdempotencyKey: false, supportsOperationLookup: false, retrySafety: 'unsafe' as const } },
-    { key: 'TEST_R4_EXTERNAL', name: 'R4 external', operation: 'execute' as const, riskLevel: 'R4' as const, sideEffectContract: { supportsIdempotencyKey: true, retrySafety: 'safe' as const } },
+    { key: 'TEST_R3_EXTERNAL', name: 'R3 external', operation: 'execute' as const, riskLevel: 'R3' as const, requiredPermission: 'TEST_R3_EXTERNAL', sideEffectContract: { supportsIdempotencyKey: true, retrySafety: 'safe' as const } },
+    { key: 'TEST_R3_LOOKUP', name: 'R3 lookup', operation: 'execute' as const, riskLevel: 'R3' as const, requiredPermission: 'TEST_R3_LOOKUP', sideEffectContract: { supportsIdempotencyKey: true, supportsOperationLookup: true, retrySafety: 'safe' as const } },
+    { key: 'TEST_R3_UNSAFE', name: 'R3 unsafe', operation: 'execute' as const, riskLevel: 'R3' as const, requiredPermission: 'TEST_R3_UNSAFE', sideEffectContract: { supportsIdempotencyKey: false, supportsOperationLookup: false, retrySafety: 'unsafe' as const } },
+    { key: 'TEST_R4_EXTERNAL', name: 'R4 external', operation: 'execute' as const, riskLevel: 'R4' as const, requiredPermission: 'TEST_R4_EXTERNAL', sideEffectContract: { supportsIdempotencyKey: true, retrySafety: 'safe' as const } },
   ];
   async validateConnection() { return { status: 'healthy' as const, checkedAt: new Date().toISOString() }; }
+  async lookupOperation() { return { ok: true, data: { status: 'not_found' } }; }
   setMode(capability: string, mode: FaultMode) { this.modes.set(capability, mode); }
   reset() { this.modes.clear(); this.calls.clear(); this.sideEffects.clear(); this.receivedKeys.clear(); this.appliedKeys.clear(); }
   async execute(request: ConnectorRequest) {

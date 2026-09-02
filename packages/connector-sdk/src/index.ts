@@ -17,6 +17,8 @@ export type ConnectorErrorCategory =
   | 'TIMEOUT'
   | 'OUTCOME_UNKNOWN';
 
+export const CONNECTOR_SDK_VERSION = '0.1.0';
+
 export interface OAuthProviderMetadata {
   authorizationCapability: string;
   supportsRefresh: boolean;
@@ -35,6 +37,7 @@ export interface ConnectorMetadata {
   name: string;
   description: string;
   version: string;
+  connectorSdkVersion: string;
   providerType: ProviderType;
   productionStatus: ProviderProductionStatus;
   authentication: ProviderAuthentication;
@@ -172,11 +175,71 @@ export interface Connector {
   validateConnection?(request?: ConnectorRequest): Promise<ConnectionHealth>;
   read?(request: ConnectorRequest): Promise<ConnectorResult>;
   execute?(request: ConnectorRequest): Promise<ConnectorResult>;
+  lookupOperation?(request: ConnectorRequest): Promise<ConnectorResult>;
   subscribe?(request: SubscriptionRequest): Promise<ConnectorResult>;
   startAuthorization?(request: AuthorizationStartRequest): Promise<AuthorizationStartResult>;
   completeAuthorization?(request: AuthorizationCallbackRequest): Promise<AuthorizationCallbackResult>;
   refreshCredentials?(request: CredentialRefreshRequest): Promise<CredentialRefreshResult>;
   revoke?(): Promise<void>;
+}
+
+export interface ConnectorManifest {
+  schemaVersion: '1';
+  connectorSdkVersion: string;
+  metadata: ConnectorMetadata;
+  permissions: string[];
+  capabilities: Array<ConnectorCapability & { sideEffectContract: SideEffectContract }>;
+}
+
+export function buildConnectorManifest(connector: Connector): ConnectorManifest {
+  const metadata = connector.metadata();
+  const capabilities = connector.capabilities().map((capability) => ({
+    ...capability,
+    sideEffectContract: resolveSideEffectContract(capability),
+  }));
+  return {
+    schemaVersion: '1',
+    connectorSdkVersion: metadata.connectorSdkVersion,
+    metadata,
+    permissions: [...new Set(capabilities.map((item) => item.requiredPermission).filter((item): item is string => Boolean(item)))],
+    capabilities,
+  };
+}
+
+export function validateConnectorManifest(connector: Connector): ConnectorManifest {
+  const manifest = buildConnectorManifest(connector);
+  const errors: string[] = [];
+  const metadata = manifest.metadata;
+  if (!/^[a-z][a-z0-9_-]{1,79}$/.test(metadata.key)) errors.push('metadata.key is invalid');
+  if (!metadata.name.trim() || !metadata.description.trim()) errors.push('metadata name/description are required');
+  if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(metadata.version)) errors.push('metadata.version must be semver');
+  if (manifest.connectorSdkVersion !== CONNECTOR_SDK_VERSION) {
+    errors.push('connectorSdkVersion ' + manifest.connectorSdkVersion + ' is incompatible with ' + CONNECTOR_SDK_VERSION);
+  }
+  if (metadata.authentication.type === 'oauth2' && !metadata.authentication.oauth2) errors.push('oauth2 metadata is required');
+  if (metadata.supportsRefresh && metadata.authentication.type !== 'oauth2') errors.push('refresh requires oauth2 authentication');
+  const keys = new Set<string>();
+  for (const capability of manifest.capabilities) {
+    if (!/^[A-Z][A-Z0-9_]{1,95}$/.test(capability.key)) errors.push('capability key is invalid: ' + capability.key);
+    if (keys.has(capability.key)) errors.push('duplicate capability: ' + capability.key);
+    keys.add(capability.key);
+    if (!capability.requiredPermission?.trim()) errors.push('requiredPermission is missing: ' + capability.key);
+    if (capability.providerAvailability !== 'disabled' && typeof connector[capability.operation] !== 'function') {
+      errors.push('operation handler is missing: ' + capability.key);
+    }
+    const sideEffect = capability.sideEffectContract;
+    if ((capability.riskLevel === 'R3' || capability.riskLevel === 'R4') && !sideEffect.sideEffect) {
+      errors.push('high-risk capability must declare sideEffect: ' + capability.key);
+    }
+    if (sideEffect.retrySafety === 'safe' && !sideEffect.supportsIdempotencyKey && !sideEffect.supportsOperationLookup) {
+      errors.push('safe retry requires idempotency or operation lookup: ' + capability.key);
+    }
+    if (sideEffect.supportsOperationLookup && capability.providerAvailability !== 'disabled' && typeof connector.lookupOperation !== 'function') {
+      errors.push('operation lookup handler is missing: ' + capability.key);
+    }
+  }
+  if (errors.length) throw new Error('Invalid connector manifest for ' + metadata.key + ':\n- ' + errors.join('\n- '));
+  return manifest;
 }
 
 // 解析 Capability 的副作用契约；对 execute 类且未显式声明的能力采用最保守默认。
@@ -197,7 +260,7 @@ export class ConnectorRegistry {
   private readonly connectors = new Map<string, Connector>();
 
   register(connector: Connector): void {
-    const key = connector.metadata().key;
+    const key = validateConnectorManifest(connector).metadata.key;
     if (this.connectors.has(key)) throw new Error(`Connector already registered: ${key}`);
     this.connectors.set(key, connector);
   }

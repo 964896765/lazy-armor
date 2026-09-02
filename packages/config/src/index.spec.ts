@@ -51,4 +51,11 @@ describe('deployment environment isolation', () => {
     expect(resolvePublicRegistration(parseEnv(deployedEnv('staging')))).toBe(false);
     expect(resolvePublicRegistration(parseEnv(deployedEnv('production')))).toBe(false);
   });
+
+  it('keeps sandbox subscription billing disabled in production', () => {
+    expect(() => assertProductionSafe(parseEnv({
+      ...deployedEnv('production'),
+      SUBSCRIPTION_BILLING_PROVIDER: 'sandbox',
+    }))).toThrow(/SUBSCRIPTION_BILLING_PROVIDER must remain disabled/);
+  });
 });

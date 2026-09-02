@@ -1,13 +1,14 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { executionEvents, executionSteps, executions, planVersions, plans, approvalRequests, notifications } from '@lazy-armor/database';
-import { and, asc, desc, eq, gte, lte, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, lt, lte, or, type SQL } from 'drizzle-orm';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
 import { AuditService } from '../audit/audit.service';
 import { QueueService } from '../infrastructure/queue.service';
 import { ExecutionStateService } from './execution-state.service';
 import { EXECUTION_TERMINAL_STATES, type ExecutionStatus } from './execution.types';
-import type { ListExecutionsDto } from './dto';
+import type { ListExecutionsDto, ListExecutionsPageDto } from './dto';
 import { ExecutionApprovalGate } from './execution-approval-gate.service';
+import { decodeCursor, encodeCursor } from '../common/cursor-pagination';
 
 @Injectable()
 export class ExecutionsService {
@@ -38,6 +39,28 @@ export class ExecutionsService {
   async listForPlan(userId: string, planId: string) {
     await this.assertOwnedPlan(userId, planId);
     return this.list(userId, { planId, limit: 100, offset: 0 });
+  }
+
+  async listPage(userId: string, query: ListExecutionsPageDto) {
+    const filters: SQL[] = [eq(executions.userId, userId)];
+    if (query.status) filters.push(eq(executions.status, query.status));
+    if (query.planId) filters.push(eq(executions.planId, query.planId));
+    if (query.from) filters.push(gte(executions.createdAt, new Date(query.from)));
+    if (query.to) filters.push(lte(executions.createdAt, new Date(query.to)));
+    const cursor = decodeCursor(query.cursor);
+    if (cursor) filters.push(or(lt(executions.createdAt, cursor.createdAt), and(eq(executions.createdAt, cursor.createdAt), lt(executions.id, cursor.id)))!);
+    const rows = await this.db.select({
+      id: executions.id, planId: executions.planId, planVersionId: executions.planVersionId, planName: planVersions.name,
+      status: executions.status, resultCode: executions.resultCode, resultSummary: executions.resultSummary,
+      errorCode: executions.errorCode, errorMessage: executions.errorMessage, createdAt: executions.createdAt,
+      startedAt: executions.startedAt, finishedAt: executions.finishedAt,
+    }).from(executions).innerJoin(planVersions, eq(executions.planVersionId, planVersions.id))
+      .where(and(...filters)).orderBy(desc(executions.createdAt), desc(executions.id)).limit(query.limit + 1);
+    const hasMore = rows.length > query.limit;
+    const selected = hasMore ? rows.slice(0, query.limit) : rows;
+    const items = selected.map((row) => ({ ...row, errorMessage: this.consumerErrorDetail(row.errorCode, row.errorMessage) }));
+    const last = selected.at(-1);
+    return { items, nextCursor: hasMore && last ? encodeCursor(last) : null };
   }
 
   async get(userId: string, id: string) {

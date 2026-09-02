@@ -1,7 +1,8 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseIntPipe, Post, Query } from '@nestjs/common';
 import { CurrentUser, type AuthenticatedUser } from '../common/auth-context';
 import { ChangePlanStatusDto, PlanDefinitionDto } from './dto';
 import { PlansService } from './plans.service';
+import { CursorPageDto } from '../common/cursor-pagination';
 
 @Controller('plans')
 export class PlansController {
@@ -9,6 +10,7 @@ export class PlansController {
 
   @Post() create(@CurrentUser() user: AuthenticatedUser, @Body() input: PlanDefinitionDto) { return this.plans.create(user.id, input); }
   @Get() list(@CurrentUser() user: AuthenticatedUser) { return this.plans.list(user.id); }
+  @Get('page') listPage(@CurrentUser() user: AuthenticatedUser, @Query() query: CursorPageDto) { return this.plans.listPage(user.id, query); }
   @Get(':id') get(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) { return this.plans.get(user.id, id); }
   @Get(':id/versions') versions(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) { return this.plans.listVersions(user.id, id); }
   @Get(':id/versions/:version') version(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Param('version', ParseIntPipe) version: number) { return this.plans.getVersion(user.id, id, version); }

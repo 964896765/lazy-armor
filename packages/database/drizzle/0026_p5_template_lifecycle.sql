@@ -1,0 +1,20 @@
+CREATE TABLE template_lifecycle_versions (
+  id BINARY(16) NOT NULL,
+  template_key VARCHAR(120) NOT NULL,
+  template_version VARCHAR(32) NOT NULL,
+  status VARCHAR(32) NOT NULL,
+  revision INT NOT NULL DEFAULT 1,
+  reason VARCHAR(500) NULL,
+  updated_by_user_id BINARY(16) NULL,
+  submitted_at DATETIME(6) NULL,
+  published_at DATETIME(6) NULL,
+  deprecated_at DATETIME(6) NULL,
+  suspended_at DATETIME(6) NULL,
+  created_at DATETIME(6) NOT NULL,
+  updated_at DATETIME(6) NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY template_lifecycle_key_version_uq (template_key, template_version),
+  KEY template_lifecycle_status_updated_idx (status, updated_at),
+  CONSTRAINT template_lifecycle_updated_by_users_id_fk FOREIGN KEY (updated_by_user_id) REFERENCES users (id) ON DELETE RESTRICT,
+  CONSTRAINT template_lifecycle_status_check CHECK (status IN ('draft','review','published','deprecated','suspended'))
+);

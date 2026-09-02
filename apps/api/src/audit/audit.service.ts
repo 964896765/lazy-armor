@@ -1,9 +1,10 @@
 import { Inject, Injectable, OnModuleInit } from '@nestjs/common';
 import { auditLogs, users } from '@lazy-armor/database';
 import { newId } from '@lazy-armor/shared';
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray, lt, or } from 'drizzle-orm';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
 import { SnapshotSanitizer } from '../common/snapshot-sanitizer.service';
+import { decodeCursor, encodeCursor, type CursorPageDto } from '../common/cursor-pagination';
 
 export type AuditActorType = 'user' | 'system' | 'worker' | 'outbox_worker' | 'admin';
 export type AuditResult = 'success' | 'failure' | 'blocked' | 'unknown' | 'pending';
@@ -126,6 +127,28 @@ export class AuditService implements OnModuleInit {
       resourceType: row.resourceType,
       resourceId: row.resourceId,
     }));
+  }
+
+  async listPage(userId: string, query: CursorPageDto) {
+    const cursor = decodeCursor(query.cursor);
+    const filters = [eq(auditLogs.userId, userId)];
+    if (cursor) filters.push(or(lt(auditLogs.createdAt, cursor.createdAt), and(eq(auditLogs.createdAt, cursor.createdAt), lt(auditLogs.id, cursor.id)))!);
+    const rows = await this.db.select({
+      id: auditLogs.id,
+      action: auditLogs.action,
+      resourceType: auditLogs.resourceType,
+      resourceId: auditLogs.resourceId,
+      result: auditLogs.result,
+      reasonCode: auditLogs.reasonCode,
+      changeSummary: auditLogs.changeSummary,
+      source: auditLogs.source,
+      createdAt: auditLogs.createdAt,
+    }).from(auditLogs).where(and(...filters))
+      .orderBy(desc(auditLogs.createdAt), desc(auditLogs.id)).limit(query.limit + 1);
+    const hasMore = rows.length > query.limit;
+    const items = hasMore ? rows.slice(0, query.limit) : rows;
+    const last = items.at(-1);
+    return { items, nextCursor: hasMore && last ? encodeCursor(last) : null };
   }
 
   private securityType(action: string) {

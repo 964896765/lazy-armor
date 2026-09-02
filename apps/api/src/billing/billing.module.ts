@@ -4,9 +4,10 @@ import { BillingService } from './billing.service';
 import { FileImportService } from './file-import.service';
 import { AuditModule } from '../audit/audit.module';
 import { FileImportController } from './file-import.controller';
+import { UsageModule } from '../usage/usage.module';
 
 @Module({
-  imports: [AuditModule],
+  imports: [AuditModule, UsageModule],
   controllers: [BillingController, FileImportController],
   providers: [BillingService, FileImportService],
   exports: [BillingService, FileImportService],

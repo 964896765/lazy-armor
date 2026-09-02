@@ -4,6 +4,7 @@ import { newId } from '@lazy-armor/shared';
 import { and, desc, eq, gte, inArray, ne, or } from 'drizzle-orm';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
 import { NotificationPolicyService } from './notification-policy.service';
+import { UsageService } from '../usage/usage.service';
 
 export type NotificationPriority = 'P0' | 'P1' | 'P2' | 'P3';
 export type TodayPresentationCategory = 'attention' | 'exception' | 'summary';
@@ -27,7 +28,7 @@ export interface NotificationEmitInput {
 
 @Injectable()
 export class NotificationService {
-  constructor(@Inject(DATABASE) private readonly db: InjectedDatabase, private readonly policy: NotificationPolicyService) {}
+  constructor(@Inject(DATABASE) private readonly db: InjectedDatabase, private readonly policy: NotificationPolicyService, private readonly usage: UsageService) {}
 
   async emit(input: NotificationEmitInput, executor: Pick<InjectedDatabase, 'insert' | 'select'> = this.db) {
     const priority = this.policy.resolve(input.eventType, input.priority);
@@ -41,7 +42,22 @@ export class NotificationService {
       dedupeKey: input.dedupeKey, title: input.title.slice(0, 160), body: input.body.slice(0, 1000),
       actionRequired: input.actionRequired ? 1 : 0, status: 'unread', readAt: null, archivedAt: null, createdAt: now, updatedAt: now,
     }).onDuplicateKeyUpdate({ set: { updatedAt: now } });
-    return (await executor.select().from(notifications).where(and(eq(notifications.userId, input.userId), eq(notifications.dedupeKey, input.dedupeKey))).limit(1))[0];
+    const notification = (await executor.select().from(notifications).where(and(eq(notifications.userId, input.userId), eq(notifications.dedupeKey, input.dedupeKey))).limit(1))[0];
+    if (!notification) return null;
+    const common = {
+      userId: input.userId,
+      quantity: 1,
+      unit: 'notification',
+      provider: 'in_app',
+      resourceType: 'notification',
+      resourceId: notification.id,
+      executionId: input.executionId ?? null,
+      billable: false,
+    };
+    await this.usage.record({ ...common, usageType: 'notification.generated', usageIdentity: 'notification.generated:' + notification.id }, executor);
+    // In-app persistence is the delivery boundary for the current provider.
+    await this.usage.record({ ...common, usageType: 'notification.delivered', usageIdentity: 'notification.delivered:' + notification.id }, executor);
+    return notification;
   }
 
   list(userId: string, priority?: NotificationPriority, unreadOnly = false) {

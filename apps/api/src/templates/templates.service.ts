@@ -3,16 +3,20 @@ import { PlanIntentAdapterService } from '../ai-adapter/plan-intent-adapter.serv
 import { PlansService } from '../plans/plans.service';
 import { getPlanTemplateByKey, listPlanTemplates, resolvePlanTemplate } from './template-registry';
 import { ZodError } from 'zod';
+import { TemplateLifecycleService } from './template-lifecycle.service';
 
 @Injectable()
 export class TemplatesService {
   constructor(
     private readonly plans: PlansService,
     private readonly adapter: PlanIntentAdapterService,
+    private readonly lifecycle: TemplateLifecycleService,
   ) {}
 
-  list() {
-    return listPlanTemplates().map((template) => ({
+  async list() {
+    const templates = listPlanTemplates();
+    const states = await this.lifecycle.statesFor(templates);
+    return templates.filter((template) => states.get(template.key) === 'published').map((template) => ({
       key: template.key,
       domain: template.domain,
       group: template.group,
@@ -20,15 +24,17 @@ export class TemplatesService {
       description: template.description,
       icon: template.icon,
       templateVersion: template.templateVersion,
-      status: template.status,
+      status: states.get(template.key),
       automationLevel: template.automationLevel,
       requiredConnectors: template.requiredConnectors,
     }));
   }
 
-  get(key: string) {
+  async get(key: string) {
     const template = getPlanTemplateByKey(key);
     if (!template) throw new NotFoundException('Template not found');
+    const lifecycle = await this.lifecycle.get(key);
+    if (!['published', 'deprecated'].includes(lifecycle.status)) throw new NotFoundException('Template not found');
     const fieldDefaults = Object.fromEntries(template.configFields
       .filter((field) => field.defaultValue !== undefined)
       .map((field) => [field.key, field.defaultValue]));
@@ -43,7 +49,7 @@ export class TemplatesService {
       description: template.description,
       icon: template.icon,
       templateVersion: template.templateVersion,
-      status: template.status,
+      status: lifecycle.status,
       automationLevel: template.automationLevel,
       requiredConnectors: template.requiredConnectors,
       details: template.details,
@@ -52,7 +58,8 @@ export class TemplatesService {
     };
   }
 
-  install(userId: string, key: string, config?: Record<string, unknown>) {
+  async install(userId: string, key: string, config?: Record<string, unknown>) {
+    await this.lifecycle.assertInstallable(key);
     const resolved = this.safeResolve(key, config);
     if (!resolved) throw new NotFoundException('Template not found');
     return this.plans.createFromTemplate(userId, resolved.definition, resolved.metadata);
@@ -73,6 +80,7 @@ export class TemplatesService {
         humanSummary: generated.humanSummary,
       });
     }
+    await this.lifecycle.assertInstallable(generated.template.key);
     const resolved = this.safeResolve(generated.template.key, generated.config);
     if (!resolved) throw new NotFoundException('Template not found');
     const created = await this.plans.createFromTemplate(userId, resolved.definition, resolved.metadata);
@@ -84,7 +92,7 @@ export class TemplatesService {
     };
   }
 
-  createVersionFromTemplate(userId: string, planId: string, config?: Record<string, unknown>) {
+  async createVersionFromTemplate(userId: string, planId: string, config?: Record<string, unknown>) {
     if (config && typeof config !== 'object') throw new BadRequestException('Invalid template config');
     return this.plans.createVersionFromTemplate(userId, planId, config);
   }

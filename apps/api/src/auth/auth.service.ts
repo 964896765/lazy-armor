@@ -1,7 +1,7 @@
 import { ForbiddenException, HttpException, Inject, Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import { authIdentities, authSessions, passwordResetTokens, profiles, users } from '@lazy-armor/database';
+import { authIdentities, authSessions, passwordResetTokens, profiles, userMemberships, users } from '@lazy-armor/database';
 import { newId } from '@lazy-armor/shared';
 import { compare, hash } from 'bcryptjs';
 import { createHash, randomBytes } from 'node:crypto';
@@ -81,6 +81,20 @@ export class AuthService {
           timezone: 'Asia/Shanghai',
           locale: 'zh-CN',
           preferencesJson: null,
+          createdAt: now,
+          updatedAt: now,
+        });
+        await tx.insert(userMemberships).values({
+          id: newId(),
+          userId,
+          membershipPlanKey: 'free',
+          status: 'active',
+          startedAt: now,
+          currentPeriodStart: now,
+          currentPeriodEnd: null,
+          cancelAtPeriodEnd: 0,
+          provider: 'internal',
+          externalSubscriptionId: null,
           createdAt: now,
           updatedAt: now,
         });

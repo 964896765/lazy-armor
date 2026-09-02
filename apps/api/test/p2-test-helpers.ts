@@ -20,11 +20,16 @@ export async function bootP2App(unique: string): Promise<{ app: INestApplication
   process.env.JWT_SECRET ??= 'test-jwt-secret-that-is-longer-than-thirty-two-characters';
   process.env.CREDENTIAL_MASTER_KEY ??= Buffer.alloc(32, 5).toString('base64');
   process.env.CREDENTIAL_STORE_PATH ??= `.data/test-p2-${unique}`;
+  process.env.SUBSCRIPTION_BILLING_PROVIDER = 'sandbox';
+  process.env.SUBSCRIPTION_BILLING_SANDBOX_WEBHOOK_SECRET = 'test-sandbox-subscription-webhook-secret';
   const { AppModule } = await import('../src/app.module');
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
   const app = moduleRef.createNestApplication({ bodyParser: false });
-  app.use('/api/file-imports', json({ limit: '1400kb' }));
-  app.use(json({ limit: '256kb' }));
+  const captureRawBody = (req: import('express').Request, _res: import('express').Response, body: Buffer) => {
+    (req as import('express').Request & { rawBody?: Buffer }).rawBody = Buffer.from(body);
+  };
+  app.use('/api/file-imports', json({ limit: '1400kb', verify: captureRawBody }));
+  app.use(json({ limit: '256kb', verify: captureRawBody }));
   app.use(urlencoded({ extended: false, limit: '64kb' }));
   app.setGlobalPrefix('api');
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));

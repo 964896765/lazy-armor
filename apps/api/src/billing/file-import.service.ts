@@ -6,6 +6,7 @@ import { and, desc, eq } from 'drizzle-orm';
 import { AuditService } from '../audit/audit.service';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
 import type { ImportBillingFileDto } from './dto';
+import { UsageService } from '../usage/usage.service';
 
 interface ParsedBillingRow {
   provider: string;
@@ -24,6 +25,7 @@ export class FileImportService {
   constructor(
     @Inject(DATABASE) private readonly db: InjectedDatabase,
     private readonly audit: AuditService,
+    private readonly usage: UsageService,
   ) {}
 
   async importBillingFile(userId: string, input: ImportBillingFileDto) {
@@ -57,6 +59,17 @@ export class FileImportService {
           userId, correlationId: importId, source: 'api', result: 'success',
           changeSummary: `Imported ${rows.length} billing records from local file metadata`,
           after: { fileName: input.fileName, mimeType: input.mimeType, sizeBytes: content.length, contentSha256, recordCount: rows.length },
+        }, tx);
+        await this.usage.record({
+          userId,
+          usageType: 'storage.file_bytes',
+          quantity: content.length,
+          unit: 'bytes',
+          provider: 'local_file',
+          resourceType: 'file_import',
+          resourceId: importId,
+          usageIdentity: 'storage.file_bytes:' + importId,
+          billable: true,
         }, tx);
       });
     } catch (error) {

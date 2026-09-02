@@ -1,4 +1,4 @@
-import { randomBytes } from 'crypto';
+import { createHash, randomBytes } from 'crypto';
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { ConnectorError, ConnectorRegistry, type ConnectorRequest } from '@lazy-armor/connector-sdk';
 import { connections, connectors, credentialRefs, credentialVersions, connectionPermissions, connectorCapabilities, oauthAuthorizationStates, planActions, planSources, planVersions, plans } from '@lazy-armor/database';
@@ -9,6 +9,9 @@ import { AuditService } from '../audit/audit.service';
 import { CREDENTIAL_PROVIDER, CredentialProviderError, type CredentialProvider } from '../credentials/credential-provider';
 import { PermissionsService } from '../permissions/permissions.service';
 import { ObservabilityService } from '../observability/observability.service';
+import { UsageService } from '../usage/usage.service';
+import { ConnectorRateLimitCoordinator } from '../infrastructure/connector-rate-limit-coordinator.service';
+import { ProviderCircuitBreakerService } from '../infrastructure/provider-circuit-breaker.service';
 import type {
   CompleteOAuthConnectionDto,
   CreateConnectionDto,
@@ -26,6 +29,9 @@ export class ConnectionsService {
     private readonly permissions: PermissionsService,
     private readonly audit: AuditService,
     private readonly telemetry: ObservabilityService,
+    private readonly usage: UsageService,
+    private readonly rateLimits: ConnectorRateLimitCoordinator,
+    private readonly circuits: ProviderCircuitBreakerService,
   ) {}
 
   async create(userId: string, input: CreateConnectionDto) {
@@ -294,18 +300,44 @@ export class ConnectionsService {
     }, async () => {
       const startedAt = Date.now();
       try {
+        await this.circuits.beforeRequest(current.connectorKey);
+        await this.rateLimits.acquire({ provider: current.connectorKey, connectionId: current.id });
         this.telemetry.increment('connector.calls', 1, { connectorKey: current.connectorKey, operation: grant.operation, capability: input.capability });
         let result;
         if (grant.operation === 'read' && adapter.read) result = await adapter.read(request);
         else if (grant.operation === 'execute' && adapter.execute) result = await adapter.execute(request);
         else if (grant.operation === 'subscribe' && adapter.subscribe) result = await adapter.subscribe(request);
         else throw new BadRequestException('Connector does not implement the requested operation');
+        await this.circuits.recordSuccess(current.connectorKey);
         this.telemetry.increment('connector.success', 1, { connectorKey: current.connectorKey, operation: grant.operation, capability: input.capability });
         this.telemetry.histogram('connector.duration', Date.now() - startedAt, { connectorKey: current.connectorKey, operation: grant.operation, capability: input.capability });
+        const logicalIdentity = createHash('sha256').update([
+          userId,
+          id,
+          input.capability,
+          input.idempotencyKey ?? input.requestId,
+        ].join(':')).digest('hex');
+        await this.usage.record({
+          userId,
+          usageType: 'connector.operation',
+          quantity: 1,
+          unit: 'operation',
+          provider: current.connectorKey,
+          resourceType: 'connector_request',
+          resourceId: input.requestId,
+          usageIdentity: 'connector.operation:' + logicalIdentity,
+          billable: true,
+        });
         return result;
       } catch (error) {
         const connectorError = asConnectorError(error);
         const mapped = mapConnectorError(error);
+        if (connectorError?.category === 'RATE_LIMITED' && connectorError.retryAfterMs) {
+          await this.rateLimits.honorRetryAfter(current.connectorKey, current.id, connectorError.retryAfterMs);
+        }
+        if (connectorError && ['TIMEOUT', 'PROVIDER_UNAVAILABLE'].includes(connectorError.category) && connectorError.code !== 'CIRCUIT_OPEN') {
+          await this.circuits.recordFailure(current.connectorKey);
+        }
         if (connectorError?.code === 'TIMEOUT') this.telemetry.increment('connector.timeout', 1, { connectorKey: current.connectorKey, capability: input.capability, errorCode: connectorError.code });
         if (connectorError?.code === 'RATE_LIMIT' || connectorError?.code === 'RATE_LIMITED') this.telemetry.increment('connector.rate_limit', 1, { connectorKey: current.connectorKey, capability: input.capability, errorCode: connectorError.code });
         if (['CREDENTIAL_INVALID', 'CREDENTIAL_EXPIRED', 'CONNECTION_REVOKED', 'CONNECTION_EXPIRED', 'PERMISSION_REVOKED', 'PERMISSION_EXPIRED'].includes(connectorError?.code ?? '')) {

@@ -4,11 +4,12 @@ import { PlanDefinitionAssembler } from './plan-definition.assembler';
 import { PlanStateService } from './plan-state.service';
 import { PlansController } from './plans.controller';
 import { PlansService } from './plans.service';
+import { MembershipModule } from '../membership/membership.module';
 
 export const PLAN_SERVICE = 'PLAN_SERVICE';
 
 @Module({
-  imports: [AuditModule],
+  imports: [AuditModule, MembershipModule],
   controllers: [PlansController],
   providers: [
     PlanDefinitionAssembler,

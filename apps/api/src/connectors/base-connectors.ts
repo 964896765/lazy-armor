@@ -41,6 +41,7 @@ export class ManualConnector extends BaseConnector {
     name: '手动输入',
     description: '由用户手动提供数据',
     version: '1.0.0',
+    connectorSdkVersion: '0.1.0',
     providerType: 'manual' as const,
     productionStatus: 'PRODUCTION_READY' as const,
     authentication: { type: 'none' as const },
@@ -65,6 +66,7 @@ export class InternalConnector extends BaseConnector {
     name: '内部服务',
     description: '读写懒人装甲内部数据',
     version: '1.0.0',
+    connectorSdkVersion: '0.1.0',
     providerType: 'internal' as const,
     productionStatus: 'PRODUCTION_READY' as const,
     authentication: { type: 'none' as const },
@@ -143,6 +145,7 @@ export class TrueProcessHarnessConnector extends BaseConnector {
     name: 'True Process Test',
     description: '仅用于真进程 worker 故障矩阵验证的 test-only harness；never production，never staging。',
     version: '1.0.0-test',
+    connectorSdkVersion: '0.1.0',
     providerType: 'internal' as const,
     productionStatus: 'DISABLED' as const,
     authentication: { type: 'none' as const },
@@ -252,6 +255,22 @@ export class TrueProcessHarnessConnector extends BaseConnector {
       },
     };
   }
+
+  async lookupOperation(request: ConnectorRequest): Promise<ConnectorResult> {
+    const capability = request.capability;
+    const dedupeKey = request.idempotencyKey ?? request.providerIdempotencyKey ?? request.requestId;
+    const marker = capability + ':' + dedupeKey;
+    const state = readTrueProcessHarnessState();
+    return {
+      ok: true,
+      data: {
+        status: state.appliedKeys.includes(marker) ? 'succeeded' : 'not_found',
+        providerOperationId: state.appliedKeys.includes(marker)
+          ? 'tp-' + createHash('sha256').update(marker).digest('hex').slice(0, 12)
+          : null,
+      },
+    };
+  }
 }
 
 export class WebhookConnector extends BaseConnector {
@@ -260,6 +279,7 @@ export class WebhookConnector extends BaseConnector {
     name: 'Webhook',
     description: '接收标准 Webhook 事件',
     version: '1.0.0',
+    connectorSdkVersion: '0.1.0',
     providerType: 'webhook' as const,
     productionStatus: 'BETA' as const,
     authentication: { type: 'api_key' as const },
@@ -426,6 +446,7 @@ export class GmailConnector extends OAuthConnectorBase {
     name: 'Gmail',
     description: '读取邮件标题、内容，并准备邮件草稿。',
     version: '0.1.0',
+    connectorSdkVersion: '0.1.0',
     providerType: 'email' as const,
     productionStatus: 'BETA' as const,
     authentication: {
@@ -554,6 +575,7 @@ export class GoogleCalendarConnector extends OAuthConnectorBase {
     name: 'Google Calendar',
     description: '读取日历事件与可用时间。',
     version: '0.1.0',
+    connectorSdkVersion: '0.1.0',
     providerType: 'calendar' as const,
     productionStatus: 'BETA' as const,
     authentication: {
@@ -626,6 +648,7 @@ export class FileProviderConnector extends BaseConnector {
     name: '文件连接器',
     description: '从用户主动选择的本地文件读取最小元数据和内容。',
     version: '0.1.0',
+    connectorSdkVersion: '0.1.0',
     providerType: 'file' as const,
     productionStatus: 'BETA' as const,
     authentication: { type: 'none' as const },
@@ -670,6 +693,7 @@ export class LogisticsProviderConnector extends BaseConnector {
     name: '物流连接器',
     description: '统一快递状态读取能力矩阵。',
     version: '0.1.0',
+    connectorSdkVersion: '0.1.0',
     providerType: 'logistics' as const,
     productionStatus: 'DRAFT_ONLY' as const,
     authentication: { type: 'api_key' as const },
@@ -730,6 +754,7 @@ export class ContentProviderConnector extends OAuthConnectorBase {
     name: '内容平台连接器',
     description: '统一内容读取、草稿、发布能力矩阵。',
     version: '0.1.0',
+    connectorSdkVersion: '0.1.0',
     providerType: 'content' as const,
     productionStatus: 'DRAFT_ONLY' as const,
     authentication: { type: 'oauth2' as const, oauth2: { authorizationCapability: 'AUTHORIZE_CONTENT_PROVIDER', supportsRefresh: true, supportsRevoke: true, supportsPKCE: true, requiresRedirect: true } },

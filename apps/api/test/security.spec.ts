@@ -7,7 +7,7 @@ describe('credential-safe logging', () => {
   it('redacts tokens, passwords, API keys and nested secrets', async () => {
     const sink = { log: vi.fn(), warn: vi.fn(), error: vi.fn() };
     const { SafeLoggerService } = await import('../dist/common/safe-logger.service.js');
-    const logger = new SafeLoggerService(sink);
+    const logger = new SafeLoggerService().useSink(sink);
     logger.log({ password: 'p', nested: { accessToken: 't', api_key: 'k' }, safe: 'visible' });
     const output = JSON.stringify(sink.log.mock.calls);
     expect(output).not.toContain('"p"');

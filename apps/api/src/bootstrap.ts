@@ -7,6 +7,11 @@ import { resolveCorrelationId, runWithRequestContext } from './common/request-co
 import { SafeLoggerService } from './common/safe-logger.service';
 import { ObservabilityService } from './observability/observability.service';
 
+type RequestWithRawBody = Request & { rawBody?: Buffer };
+const captureRawBody = (req: Request, _res: Response, body: Buffer) => {
+  (req as RequestWithRawBody).rawBody = Buffer.from(body);
+};
+
 // 构建共享 HTTP 应用（CORS 白名单 + 安全响应头 + 请求体上限 + 校验管道 + 优雅停机）。
 export async function createHttpApp() {
   const app = await NestFactory.create(AppModule, { bodyParser: false, bufferLogs: true });
@@ -15,8 +20,8 @@ export async function createHttpApp() {
   app.useLogger(logger);
   // Base64 adds ~33% overhead. Only the authenticated local-file import path
   // receives the larger parser budget; every other API keeps the tighter cap.
-  app.use('/api/file-imports', json({ limit: '1400kb' }));
-  app.use(json({ limit: '256kb' }));
+  app.use('/api/file-imports', json({ limit: '1400kb', verify: captureRawBody }));
+  app.use(json({ limit: '256kb', verify: captureRawBody }));
   app.use(urlencoded({ extended: false, limit: '64kb' }));
   app.setGlobalPrefix('api');
   // CORS：生产用 ALLOWED_ORIGINS 白名单；禁止 `*` + Credential。

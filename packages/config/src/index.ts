@@ -27,9 +27,12 @@ const envSchema = z.object({
   ALLOWED_ORIGINS: z.string().optional(),
   WEBHOOK_RETENTION_DAYS: z.coerce.number().int().min(1).max(30).default(7),
   WEBHOOK_CLEANUP_INTERVAL_SECONDS: z.coerce.number().int().min(60).max(86_400).default(3600),
+  SUBSCRIPTION_BILLING_PROVIDER: z.enum(['disabled', 'sandbox']).default('disabled'),
+  SUBSCRIPTION_BILLING_SANDBOX_WEBHOOK_SECRET: z.string().min(32).default('local-sandbox-subscription-webhook-secret'),
   WORKER_PROBE_HOST: z.string().default('127.0.0.1'),
   EXECUTION_WORKER_PROBE_PORT: z.coerce.number().int().positive().default(3011),
   OUTBOX_WORKER_PROBE_PORT: z.coerce.number().int().positive().default(3012),
+  QUEUE_BACKPRESSURE_THRESHOLD: z.coerce.number().int().min(100).default(10_000),
   WORKER_READINESS_TIMEOUT_MS: z.coerce.number().int().min(200).max(10_000).default(3_000),
 });
 
@@ -67,6 +70,7 @@ export function assertProductionSafe(env: AppEnv): void {
 
   if (env.APP_ENV === 'production') {
     if (env.CREDENTIAL_MASTER_KEY.includes('replace-with')) blockers.push('CREDENTIAL_MASTER_KEY must be a non-default base64-encoded 32-byte key');
+    if (env.SUBSCRIPTION_BILLING_PROVIDER !== 'disabled') blockers.push('SUBSCRIPTION_BILLING_PROVIDER must remain disabled in production');
   }
 
   if (blockers.length) {

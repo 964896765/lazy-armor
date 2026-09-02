@@ -30,6 +30,10 @@ import { DeviceModule } from './device/device.module';
 import { ProfilesModule } from './profiles/profiles.module';
 import { OperationsModule } from './operations/operations.module';
 import { ObservabilityModule } from './observability/observability.module';
+import { MembershipModule } from './membership/membership.module';
+import { UsageModule } from './usage/usage.module';
+import { SubscriptionBillingModule } from './subscription-billing/subscription-billing.module';
+import { CostModule } from './cost/cost.module';
 
 @Module({
   imports: [
@@ -59,6 +63,10 @@ import { ObservabilityModule } from './observability/observability.module';
     ProfilesModule,
     OperationsModule,
     ObservabilityModule,
+    MembershipModule,
+    UsageModule,
+    SubscriptionBillingModule,
+    CostModule,
     PlansModule,
     TemplatesModule,
     ExecutionModule,

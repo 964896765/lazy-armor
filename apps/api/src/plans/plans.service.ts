@@ -21,13 +21,15 @@ import {
   type PlanState,
 } from '@lazy-armor/plan-schema';
 import { newId } from '@lazy-armor/shared';
-import { and, asc, desc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq, lt, or } from 'drizzle-orm';
 import { ZodError } from 'zod';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
 import { AuditService } from '../audit/audit.service';
 import { PlanDefinitionAssembler, type PlanQueryExecutor } from './plan-definition.assembler';
 import { PlanStateService } from './plan-state.service';
 import { resolvePlanTemplate } from '../templates/template-registry';
+import { EntitlementService } from '../membership/entitlement.service';
+import { decodeCursor, encodeCursor, type CursorPageDto } from '../common/cursor-pagination';
 
 type PlanExecutor = PlanQueryExecutor & Pick<InjectedDatabase, 'insert' | 'update'>;
 type TemplateVersionMetadata = {
@@ -47,6 +49,7 @@ export class PlansService {
     private readonly assembler: PlanDefinitionAssembler,
     private readonly stateMachine: PlanStateService,
     private readonly audit: AuditService,
+    private readonly entitlements: EntitlementService,
   ) {}
 
   async create(userId: string, input: PlanDefinitionInput) {
@@ -111,6 +114,19 @@ export class PlansService {
       .where(eq(plans.userId, userId))
       .orderBy(desc(plans.updatedAt));
     return Promise.all(rows.map((row) => this.toResponse(userId, row)));
+  }
+
+  async listPage(userId: string, query: CursorPageDto) {
+    const cursor = decodeCursor(query.cursor);
+    const filters = [eq(plans.userId, userId)];
+    if (cursor) filters.push(or(lt(plans.updatedAt, cursor.createdAt), and(eq(plans.updatedAt, cursor.createdAt), lt(plans.id, cursor.id)))!);
+    const rows = await this.db.select().from(plans).where(and(...filters))
+      .orderBy(desc(plans.updatedAt), desc(plans.id)).limit(query.limit + 1);
+    const hasMore = rows.length > query.limit;
+    const selected = hasMore ? rows.slice(0, query.limit) : rows;
+    const items = await Promise.all(selected.map((row) => this.toResponse(userId, row)));
+    const last = selected.at(-1);
+    return { items, nextCursor: hasMore && last ? encodeCursor({ createdAt: last.updatedAt, id: last.id }) : null };
   }
 
   async get(userId: string, planId: string) {
@@ -229,6 +245,11 @@ export class PlansService {
 
   async changeStatus(userId: string, planId: string, target: PlanState) {
     await this.db.transaction(async (tx) => {
+      // All activations for one user serialize on the membership row before any
+      // Plan row is locked. This keeps concurrent limit checks race- and deadlock-safe.
+      if (target === 'active') {
+        await this.entitlements.assertPlanActivationAllowed(userId, planId, tx);
+      }
       const plan = await this.getOwnedPlan(userId, planId, tx, true);
       const current = plan.status as PlanState;
       this.stateMachine.assertTransition(current, target);

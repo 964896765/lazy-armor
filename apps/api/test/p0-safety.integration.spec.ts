@@ -14,11 +14,11 @@ interface Session { token: string; userId: string }
 class SafetyTestConnector implements Connector {
   readonly calls = new Map<string, number>();
   constructor(private readonly key: string) {}
-  metadata = () => ({ key: this.key, name: 'P0-6 Safety Test', description: 'Test process only', version: '1.0.0-test' });
+  metadata = () => ({ key: this.key, name: 'P0-6 Safety Test', description: 'Test process only', version: '1.0.0-test', connectorSdkVersion: '0.1.0', providerType: 'internal' as const, productionStatus: 'DISABLED' as const, authentication: { type: 'none' as const }, supportsRefresh: false, supportsRevoke: false, supportsWebhook: false, supportsHealthCheck: true, sandboxSupport: 'full' as const, rateLimitStrategy: 'unknown' as const });
   capabilities = () => [
-    { key: 'TEST_R2_INTERNAL', name: 'Internal preparation', operation: 'execute' as const, riskLevel: 'R2' as const },
-    { key: 'TEST_R3_EXTERNAL', name: 'External visible simulation', operation: 'execute' as const, riskLevel: 'R3' as const },
-    { key: 'TEST_R4_EXTERNAL', name: 'Financial account simulation', operation: 'execute' as const, riskLevel: 'R4' as const },
+    { key: 'TEST_R2_INTERNAL', name: 'Internal preparation', operation: 'execute' as const, riskLevel: 'R2' as const, requiredPermission: 'TEST_R2_INTERNAL' },
+    { key: 'TEST_R3_EXTERNAL', name: 'External visible simulation', operation: 'execute' as const, riskLevel: 'R3' as const, requiredPermission: 'TEST_R3_EXTERNAL' },
+    { key: 'TEST_R4_EXTERNAL', name: 'Financial account simulation', operation: 'execute' as const, riskLevel: 'R4' as const, requiredPermission: 'TEST_R4_EXTERNAL' },
   ];
   async validateConnection() { return { status: 'healthy' as const, checkedAt: new Date().toISOString() }; }
   async execute(request: ConnectorRequest) { this.calls.set(request.requestId, (this.calls.get(request.requestId) ?? 0) + 1); return { ok: true, data: { simulated: true } }; }
