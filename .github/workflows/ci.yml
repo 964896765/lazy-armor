@@ -61,8 +61,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Prepare CI database
-        run: |
-          node -e "const mysql=require('mysql2/promise'); (async () => { const db=await mysql.createConnection({host:'127.0.0.1', port:3306, user:'root', password:'root'}); await db.query('CREATE DATABASE IF NOT EXISTS lazy_armor_ci'); await db.end(); })().catch((error) => { console.error(error); process.exit(1); });"
+        run: pnpm --filter @lazy-armor/database prepare-ci-db
 
       - name: Migration safety check
         run: node scripts/check-migration-safety.mjs
