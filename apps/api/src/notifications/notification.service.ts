@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { approvalRequests, executions, notifications, planVersions } from '@lazy-armor/database';
+import { approvalRequests, connections, connectors, executions, notifications, planActions, planSources, planVersions, plans } from '@lazy-armor/database';
 import { newId } from '@lazy-armor/shared';
 import { and, desc, eq, gte, inArray, ne, or } from 'drizzle-orm';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
@@ -74,7 +74,8 @@ export class NotificationService {
 
   async today(userId: string) {
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    const [pendingApprovals, alerts, processed] = await Promise.all([
+    const issueStatuses = ['degraded', 'expired', 'permission_required', 'reauthorization_required', 'provider_error'];
+    const [pendingApprovals, alerts, processed, sourceIssues, actionIssues] = await Promise.all([
       this.db.select({
         id: approvalRequests.id, executionId: approvalRequests.executionId, riskLevel: approvalRequests.effectiveRiskLevel,
         summary: approvalRequests.actionSummary, expiresAt: approvalRequests.expiresAt, planName: planVersions.name,
@@ -95,7 +96,23 @@ export class NotificationService {
       this.db.select({ id: executions.id, status: executions.status, resultSummary: executions.resultSummary, finishedAt: executions.finishedAt, planName: planVersions.name, planVersionNumber: planVersions.versionNumber })
         .from(executions).innerJoin(planVersions, eq(executions.planVersionId, planVersions.id))
         .where(and(eq(executions.userId, userId), gte(executions.createdAt, since))).orderBy(desc(executions.createdAt)).limit(20),
+      this.db.select({ connectionId: connections.id, connectionStatus: connections.status, providerKey: connectors.key, providerName: connectors.name, planId: plans.id, planName: planVersions.name })
+        .from(planSources)
+        .innerJoin(connections, eq(planSources.connectionId, connections.id))
+        .innerJoin(connectors, eq(connections.connectorId, connectors.id))
+        .innerJoin(planVersions, eq(planSources.planVersionId, planVersions.id))
+        .innerJoin(plans, and(eq(plans.activeVersionId, planVersions.id), eq(plans.userId, userId), eq(plans.status, 'active')))
+        .where(inArray(connections.status, issueStatuses)).limit(50),
+      this.db.select({ connectionId: connections.id, connectionStatus: connections.status, providerKey: connectors.key, providerName: connectors.name, planId: plans.id, planName: planVersions.name })
+        .from(planActions)
+        .innerJoin(connections, eq(planActions.connectionId, connections.id))
+        .innerJoin(connectors, eq(connections.connectorId, connectors.id))
+        .innerJoin(planVersions, eq(planActions.planVersionId, planVersions.id))
+        .innerJoin(plans, and(eq(plans.activeVersionId, planVersions.id), eq(plans.userId, userId), eq(plans.status, 'active')))
+        .where(inArray(connections.status, issueStatuses)).limit(50),
     ]);
-    return { pendingApprovals, alerts, processed };
+    const uniqueIssues = new Map<string, typeof sourceIssues[number]>();
+    for (const issue of [...sourceIssues, ...actionIssues]) uniqueIssues.set(`${issue.planId}:${issue.connectionId}`, issue);
+    return { pendingApprovals, connectionIssues: [...uniqueIssues.values()], alerts, processed };
   }
 }

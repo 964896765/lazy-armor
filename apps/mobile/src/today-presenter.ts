@@ -39,5 +39,5 @@ export function stepApprovalLabel(step: { approvalGateStatus?: string | null; st
   if (status === 'not_required') return '无需确认';
   if (status === 'rejected') return '已拒绝';
   if (status === 'cancelled') return '确认已取消';
-  return '按当前策略处理';
+  return '';
 }

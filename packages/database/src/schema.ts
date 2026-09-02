@@ -191,6 +191,26 @@ export const billingRecords = mysqlTable('billing_records', {
   index('billing_records_user_created_idx').on(table.userId, table.createdAt),
 ]);
 
+export const fileImports = mysqlTable('file_imports', {
+  id: uuidBinary('id').primaryKey(),
+  userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  providerKey: varchar('provider_key', { length: 80 }).notNull(),
+  idempotencyKey: varchar('idempotency_key', { length: 255 }).notNull(),
+  fileName: varchar('file_name', { length: 255 }).notNull(),
+  mimeType: varchar('mime_type', { length: 120 }).notNull(),
+  sizeBytes: int('size_bytes').notNull(),
+  contentSha256: char('content_sha256', { length: 64 }).notNull(),
+  status: varchar('status', { length: 32 }).notNull(),
+  recordCount: int('record_count').notNull().default(0),
+  errorCode: varchar('error_code', { length: 100 }),
+  createdAt: datetime('created_at', { mode: 'date', fsp: 6 }).notNull(),
+  processedAt: datetime('processed_at', { mode: 'date', fsp: 6 }),
+}, (table) => [
+  uniqueIndex('file_imports_user_idempotency_uq').on(table.userId, table.idempotencyKey),
+  index('file_imports_user_created_idx').on(table.userId, table.createdAt),
+  index('file_imports_content_hash_idx').on(table.contentSha256),
+]);
+
 export const logisticsTrackingSnapshots = mysqlTable('logistics_tracking_snapshots', {
   id: uuidBinary('id').primaryKey(),
   userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
@@ -737,6 +757,7 @@ export const schema = {
   oauthAuthorizationStates,
   connectionPermissions,
   billingRecords,
+  fileImports,
   logisticsTrackingSnapshots,
   householdSupplyProfiles,
   preparedShoppingItems,

@@ -1,0 +1,21 @@
+{
+  "build": {
+    "production": {
+      "android": {
+        "buildType": "app-bundle"
+      },
+      "env": {
+        "NODE_ENV": "production"
+      }
+    },
+    "verification": {
+      "android": {
+        "buildType": "app-bundle"
+      },
+      "env": {
+        "NODE_ENV": "production",
+        "LAZY_ARMOR_ANDROID_ALLOW_DEBUG_RELEASE": "true"
+      }
+    }
+  }
+}

@@ -49,9 +49,13 @@ describe.sequential('P2-0 provider capability matrix', () => {
     expect(JSON.stringify(gmail)).not.toContain('retrySafety');
   });
 
-  it('exposes internal readiness and side effect matrix in the internal view', async () => {
+  it('exposes internal readiness only through the protected diagnostics endpoint', async () => {
+    await request(app.getHttpServer()).get('/api/admin/diagnostics/connectors').expect(401);
+    await request(app.getHttpServer()).get('/api/admin/diagnostics/connectors').set(auth(user.token)).expect(403);
+    await pool.query('UPDATE users SET role=? WHERE id=UUID_TO_BIN(?)', ['operations_readonly', user.userId]);
     const response = await request(app.getHttpServer())
-      .get('/api/connectors?view=internal')
+      .get('/api/admin/diagnostics/connectors')
+      .set(auth(user.token))
       .expect(200);
     const gmail = response.body.find((item: { key: string }) => item.key === 'gmail');
     expect(gmail.capabilities).toEqual(expect.arrayContaining([

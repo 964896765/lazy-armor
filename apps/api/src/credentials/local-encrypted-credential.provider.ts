@@ -1,5 +1,5 @@
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -14,6 +14,7 @@ interface VersionedStore { formatVersion: 1; currentVersion: number; versions: S
 export class LocalEncryptedCredentialProvider implements CredentialProvider {
   private readonly key: Buffer;
   private readonly directory: string;
+  private readonly locks = new Map<string, Promise<void>>();
 
   constructor(config: ConfigService) {
     this.key = Buffer.from(config.getOrThrow<string>('CREDENTIAL_MASTER_KEY'), 'base64');
@@ -37,14 +38,19 @@ export class LocalEncryptedCredentialProvider implements CredentialProvider {
     return this.decrypt(target.envelope);
   }
 
-  async rotate(ref: string, credential: Credential) {
-    const store = await this.readStore(ref);
-    const version = Math.max(...store.versions.map((item) => item.version)) + 1;
-    for (const item of store.versions) if (item.status === 'active') item.status = 'superseded';
-    store.versions.push({ version, status: 'active', envelope: this.encrypt(credential) });
-    store.currentVersion = version;
-    await this.writeStore(ref, store);
-    return { ref, version };
+  async rotate(ref: string, credential: Credential, expectedCurrentVersion?: number) {
+    return this.withLock(ref, async () => {
+      const store = await this.readStore(ref);
+      if (expectedCurrentVersion !== undefined && store.currentVersion !== expectedCurrentVersion) {
+        throw new CredentialProviderError('VERSION_CONFLICT', 'Credential was rotated concurrently');
+      }
+      const version = Math.max(...store.versions.map((item) => item.version)) + 1;
+      for (const item of store.versions) if (item.status === 'active') item.status = 'superseded';
+      store.versions.push({ version, status: 'active', envelope: this.encrypt(credential) });
+      store.currentVersion = version;
+      await this.writeStore(ref, store);
+      return { ref, version };
+    });
   }
 
   async currentVersion(ref: string) {
@@ -52,21 +58,23 @@ export class LocalEncryptedCredentialProvider implements CredentialProvider {
   }
 
   async revokeVersion(ref: string, version: number): Promise<void> {
-    const store = await this.readStore(ref);
-    const target = store.versions.find((item) => item.version === version);
-    if (!target) throw new CredentialProviderError('VERSION_NOT_FOUND', 'Credential version does not exist');
-    target.status = 'revoked';
-    if (store.currentVersion === version) {
-      const fallback = [...store.versions].filter((item) => item.status !== 'revoked').sort((a, b) => b.version - a.version)[0];
-      if (!fallback) throw new CredentialProviderError('REVOKED', 'Cannot revoke the final version without revoking the credential reference');
-      fallback.status = 'active';
-      store.currentVersion = fallback.version;
-    }
-    await this.writeStore(ref, store);
+    await this.withLock(ref, async () => {
+      const store = await this.readStore(ref);
+      const target = store.versions.find((item) => item.version === version);
+      if (!target) throw new CredentialProviderError('VERSION_NOT_FOUND', 'Credential version does not exist');
+      target.status = 'revoked';
+      if (store.currentVersion === version) {
+        const fallback = [...store.versions].filter((item) => item.status !== 'revoked').sort((a, b) => b.version - a.version)[0];
+        if (!fallback) throw new CredentialProviderError('REVOKED', 'Cannot revoke the final version without revoking the credential reference');
+        fallback.status = 'active';
+        store.currentVersion = fallback.version;
+      }
+      await this.writeStore(ref, store);
+    });
   }
 
   async revoke(ref: string): Promise<void> {
-    await rm(this.fileFor(ref), { force: true });
+    await this.withLock(ref, () => rm(this.fileFor(ref), { force: true }));
   }
 
   async health() {
@@ -105,16 +113,37 @@ export class LocalEncryptedCredentialProvider implements CredentialProvider {
       return parsed;
     } catch (error) {
       if (error instanceof CredentialProviderError) throw error;
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new CredentialProviderError('NOT_FOUND', 'Credential reference does not exist');
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === 'ENOENT') throw new CredentialProviderError('NOT_FOUND', 'Credential reference does not exist');
+      if (code && ['EACCES', 'EPERM', 'EBUSY', 'EMFILE', 'ENFILE'].includes(code)) throw new CredentialProviderError('UNAVAILABLE', 'Credential store is unavailable', true);
       throw new CredentialProviderError('INVALID_DATA', 'Credential store is invalid');
     }
   }
 
   private async writeStore(ref: string, store: VersionedStore) {
+    const target = this.fileFor(ref);
+    const temporary = `${target}.${newId()}.tmp`;
     try {
-      await writeFile(this.fileFor(ref), JSON.stringify(store), { encoding: 'utf8', mode: 0o600 });
+      await writeFile(temporary, JSON.stringify(store), { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+      await rename(temporary, target);
     } catch {
+      await rm(temporary, { force: true }).catch(() => undefined);
       throw new CredentialProviderError('UNAVAILABLE', 'Credential store is unavailable', true);
+    }
+  }
+
+  private async withLock<T>(ref: string, work: () => Promise<T>): Promise<T> {
+    const previous = this.locks.get(ref) ?? Promise.resolve();
+    let release!: () => void;
+    const current = new Promise<void>((resolve) => { release = resolve; });
+    const tail = previous.then(() => current);
+    this.locks.set(ref, tail);
+    await previous;
+    try {
+      return await work();
+    } finally {
+      release();
+      if (this.locks.get(ref) === tail) this.locks.delete(ref);
     }
   }
 }

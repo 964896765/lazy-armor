@@ -1,0 +1,20 @@
+CREATE TABLE `file_imports` (
+  `id` BINARY(16) NOT NULL,
+  `user_id` BINARY(16) NOT NULL,
+  `provider_key` VARCHAR(80) NOT NULL,
+  `idempotency_key` VARCHAR(255) NOT NULL,
+  `file_name` VARCHAR(255) NOT NULL,
+  `mime_type` VARCHAR(120) NOT NULL,
+  `size_bytes` INT NOT NULL,
+  `content_sha256` CHAR(64) NOT NULL,
+  `status` VARCHAR(32) NOT NULL,
+  `record_count` INT NOT NULL DEFAULT 0,
+  `error_code` VARCHAR(100) NULL,
+  `created_at` DATETIME(6) NOT NULL,
+  `processed_at` DATETIME(6) NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `file_imports_user_idempotency_uq` (`user_id`, `idempotency_key`),
+  KEY `file_imports_user_created_idx` (`user_id`, `created_at`),
+  KEY `file_imports_content_hash_idx` (`content_sha256`),
+  CONSTRAINT `file_imports_user_id_users_id_fk` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE RESTRICT
+);

@@ -16,4 +16,5 @@ export class BillingController {
   list(@CurrentUser() user: AuthenticatedUser, @Query() query: ListBillingRecordsDto) {
     return this.billing.list(user.id, query.billingPeriod);
   }
+
 }

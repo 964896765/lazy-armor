@@ -3,11 +3,16 @@ import { Roles, type AuthenticatedUser } from '../common/auth-context';
 import { AuditService } from '../audit/audit.service';
 import { DiagnosticsService } from '../diagnostics/diagnostics.service';
 import { CurrentUser } from '../common/auth-context';
+import { ConnectorsService } from '../connectors/connectors.service';
 
 // 运营只读诊断入口。P0 Final 不开放任何生产写操作（outcome_unknown 人工处置留待 P1）。
 @Controller('admin')
 export class AdminController {
-  constructor(private readonly diagnostics: DiagnosticsService, private readonly audit: AuditService) {}
+  constructor(
+    private readonly diagnostics: DiagnosticsService,
+    private readonly audit: AuditService,
+    private readonly connectors: ConnectorsService,
+  ) {}
 
   @Get('diagnostics')
   @Roles('super_admin', 'operations_readonly')
@@ -15,5 +20,13 @@ export class AdminController {
     const snapshot = await this.diagnostics.snapshot();
     await this.audit.append({ actorType: 'user', actorUserId: user.id, action: 'ADMIN_DIAGNOSTICS_VIEWED', resourceType: 'system', resourceId: 'diagnostics', userId: user.id, source: 'api', result: 'success', changeSummary: `Admin (${user.role}) viewed operational diagnostics` });
     return snapshot;
+  }
+
+  @Get('diagnostics/connectors')
+  @Roles('super_admin', 'operations_readonly')
+  async viewConnectorContracts(@CurrentUser() user: AuthenticatedUser) {
+    const matrix = this.connectors.listInternal();
+    await this.audit.append({ actorType: 'user', actorUserId: user.id, action: 'ADMIN_CONNECTOR_CONTRACTS_VIEWED', resourceType: 'system', resourceId: 'connector-contracts', userId: user.id, source: 'api', result: 'success', changeSummary: `Admin (${user.role}) viewed connector contracts` });
+    return matrix;
   }
 }

@@ -81,6 +81,15 @@ def enableMinifyInReleaseBuilds = (findProperty('android.enableMinifyInReleaseBu
  */
 def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
 
+
+def lazyArmorKeystorePath = System.getenv('LAZY_ARMOR_ANDROID_KEYSTORE')
+def lazyArmorKeystorePassword = System.getenv('LAZY_ARMOR_ANDROID_KEYSTORE_PASSWORD')
+def lazyArmorKeyAlias = System.getenv('LAZY_ARMOR_ANDROID_KEY_ALIAS')
+def lazyArmorKeyPassword = System.getenv('LAZY_ARMOR_ANDROID_KEY_PASSWORD')
+def lazyArmorHasReleaseSigning = [lazyArmorKeystorePath, lazyArmorKeystorePassword, lazyArmorKeyAlias, lazyArmorKeyPassword].every { it != null && !it.trim().isEmpty() }
+def lazyArmorAllowDebugRelease = System.getenv('LAZY_ARMOR_ANDROID_ALLOW_DEBUG_RELEASE') == 'true'
+def lazyArmorReleaseRequested = gradle.startParameter.taskNames.any { it.toLowerCase().contains('release') }
+
 android {
     ndkVersion rootProject.ext.ndkVersion
 
@@ -104,6 +113,14 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
+        if (lazyArmorHasReleaseSigning) {
+            release {
+                storeFile file(lazyArmorKeystorePath)
+                storePassword lazyArmorKeystorePassword
+                keyAlias lazyArmorKeyAlias
+                keyPassword lazyArmorKeyPassword
+            }
+        }
     }
     buildTypes {
         debug {
@@ -112,7 +129,13 @@ android {
         release {
             // Caution! In production, you need to generate your own keystore file.
             // see https://reactnative.dev/docs/signed-apk-android.
-            signingConfig signingConfigs.debug
+            if (lazyArmorHasReleaseSigning) {
+                signingConfig signingConfigs.release
+            } else if (lazyArmorAllowDebugRelease) {
+                signingConfig signingConfigs.debug
+            } else if (lazyArmorReleaseRequested) {
+                throw new GradleException('Production release signing credentials are required. Set LAZY_ARMOR_ANDROID_KEYSTORE, LAZY_ARMOR_ANDROID_KEYSTORE_PASSWORD, LAZY_ARMOR_ANDROID_KEY_ALIAS, and LAZY_ARMOR_ANDROID_KEY_PASSWORD.')
+            }
             def enableShrinkResources = findProperty('android.enableShrinkResourcesInReleaseBuilds') ?: 'false'
             shrinkResources enableShrinkResources.toBoolean()
             minifyEnabled enableMinifyInReleaseBuilds

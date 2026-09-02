@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import {
   ConnectorError,
   type AuthorizationCallbackRequest,
@@ -83,7 +84,7 @@ export class WebhookConnector extends BaseConnector {
     description: '接收标准 Webhook 事件',
     version: '1.0.0',
     providerType: 'webhook' as const,
-    productionStatus: 'PRODUCTION_READY' as const,
+    productionStatus: 'BETA' as const,
     authentication: { type: 'api_key' as const },
     supportsRefresh: false,
     supportsRevoke: true,
@@ -429,29 +430,42 @@ abstract class DisabledProviderConnector extends BaseConnector {
   async execute(): Promise<ConnectorResult> { return this.unavailable(); }
 }
 
-export class FileProviderConnector extends DisabledProviderConnector {
+export class FileProviderConnector extends BaseConnector {
   metadata = () => ({
     key: 'file_provider',
     name: '文件连接器',
-    description: '统一文件读取/归档能力矩阵。',
+    description: '从用户主动选择的本地文件读取最小元数据和内容。',
     version: '0.1.0',
     providerType: 'file' as const,
-    productionStatus: 'DRAFT_ONLY' as const,
-    authentication: { type: 'oauth2' as const, oauth2: { authorizationCapability: 'AUTHORIZE_FILE_PROVIDER', supportsRefresh: true, supportsRevoke: true, supportsPKCE: true, requiresRedirect: true } },
-    supportsRefresh: true,
-    supportsRevoke: true,
+    productionStatus: 'BETA' as const,
+    authentication: { type: 'none' as const },
+    supportsRefresh: false,
+    supportsRevoke: false,
     supportsWebhook: false,
     supportsHealthCheck: true,
-    sandboxSupport: 'limited' as const,
-    rateLimitStrategy: 'unknown' as const,
+    sandboxSupport: 'full' as const,
+    rateLimitStrategy: 'fixed_window' as const,
   });
   capabilities = (): ConnectorCapability[] => [
-    { key: 'READ_FILE_METADATA', name: '读取文件元数据', userFacingName: '读取文件信息', riskLevel: 'R0', operation: 'read', requiredPermission: 'READ_FILE_METADATA', providerAvailability: 'draft_only' },
-    { key: 'READ_FILE', name: '读取文件内容', userFacingName: '读取文件内容', riskLevel: 'R0', operation: 'read', requiredPermission: 'READ_FILE', providerAvailability: 'draft_only' },
+    { key: 'READ_FILE_METADATA', name: '读取文件元数据', userFacingName: '读取文件信息', riskLevel: 'R0', operation: 'read', requiredPermission: 'READ_FILE_METADATA', providerAvailability: 'beta' },
+    { key: 'READ_FILE', name: '读取文件内容', userFacingName: '读取文件内容', riskLevel: 'R0', operation: 'read', requiredPermission: 'READ_FILE', providerAvailability: 'beta' },
   ];
+
+  async read(request: ConnectorRequest): Promise<ConnectorResult> {
+    const fileName = typeof request.input.fileName === 'string' ? request.input.fileName : '';
+    const mimeType = typeof request.input.mimeType === 'string' ? request.input.mimeType : 'application/octet-stream';
+    const contentBase64 = typeof request.input.contentBase64 === 'string' ? request.input.contentBase64 : '';
+    if (!fileName || !contentBase64) throw new ConnectorError('INVALID_FILE', 'INVALID_REQUEST', 'Selected file metadata or content is missing');
+    const content = Buffer.from(contentBase64, 'base64');
+    if (content.length === 0 || content.length > 1_000_000) throw new ConnectorError('INVALID_FILE', 'INVALID_REQUEST', 'Selected file must be between 1 byte and 1 MB');
+    const metadata = { fileName, mimeType, sizeBytes: content.length, contentSha256: createHash('sha256').update(content).digest('hex') };
+    if (request.capability === 'READ_FILE_METADATA') return { ok: true, data: metadata };
+    if (request.capability === 'READ_FILE') return { ok: true, data: { ...metadata, contentBase64 } };
+    throw new ConnectorError('INVALID_CAPABILITY', 'INVALID_REQUEST', `Unsupported capability: ${request.capability}`);
+  }
 }
 
-export class LogisticsProviderConnector extends DisabledProviderConnector {
+export class LogisticsProviderConnector extends BaseConnector {
   metadata = () => ({
     key: 'logistics_provider',
     name: '物流连接器',
@@ -470,9 +484,48 @@ export class LogisticsProviderConnector extends DisabledProviderConnector {
   capabilities = (): ConnectorCapability[] => [
     { key: 'READ_TRACKING', name: '读取物流轨迹', userFacingName: '读取物流状态', riskLevel: 'R0', operation: 'read', requiredPermission: 'READ_TRACKING', providerAvailability: 'draft_only' },
   ];
+
+  async read(request: ConnectorRequest): Promise<ConnectorResult> {
+    if (request.capability !== 'READ_TRACKING') throw new ConnectorError('INVALID_CAPABILITY', 'INVALID_REQUEST', `Unsupported capability: ${request.capability}`);
+    if (request.input.testMode !== true) throw new ConnectorError('PROVIDER_UNAVAILABLE', 'PROVIDER_UNAVAILABLE', 'A production logistics provider is not enabled');
+    const provider = typeof request.input.provider === 'string' ? request.input.provider : 'test';
+    const payload = request.input.payload && typeof request.input.payload === 'object' && !Array.isArray(request.input.payload)
+      ? request.input.payload as Record<string, unknown>
+      : {};
+    const normalized = normalizeLogisticsFixture(provider, payload);
+    return { ok: true, data: normalized };
+  }
 }
 
-export class ContentProviderConnector extends DisabledProviderConnector {
+function normalizeLogisticsFixture(provider: string, payload: Record<string, unknown>) {
+  if (provider === 'sf_test') {
+    const state = logisticsState(String(payload.opCode ?? ''));
+    return {
+      trackingNumber: String(payload.waybillNo ?? ''), carrier: 'SF', state,
+      latestEvent: String(payload.opDesc ?? ''), lastUpdatedAt: String(payload.opTime ?? ''),
+      deliveredAt: state === 'delivered' ? String(payload.opTime ?? '') : null,
+    };
+  }
+  if (provider === 'jd_test') {
+    const state = logisticsState(String(payload.statusCode ?? ''));
+    return {
+      trackingNumber: String(payload.orderCode ?? ''), carrier: 'JD', state,
+      latestEvent: String(payload.statusText ?? ''), lastUpdatedAt: String(payload.statusTime ?? ''),
+      deliveredAt: state === 'delivered' ? String(payload.statusTime ?? '') : null,
+    };
+  }
+  throw new ConnectorError('INVALID_PROVIDER_FIXTURE', 'INVALID_REQUEST', 'Unsupported logistics test provider');
+}
+
+function logisticsState(code: string) {
+  const normalized = code.toLowerCase();
+  if (['80', 'delivered', 'signed'].includes(normalized)) return 'delivered';
+  if (['exception', 'failed', '120'].includes(normalized)) return 'exception';
+  if (['created', '10'].includes(normalized)) return 'created';
+  return 'in_transit';
+}
+
+export class ContentProviderConnector extends OAuthConnectorBase {
   metadata = () => ({
     key: 'content_provider',
     name: '内容平台连接器',
@@ -493,4 +546,40 @@ export class ContentProviderConnector extends DisabledProviderConnector {
     { key: 'CREATE_DRAFT', name: '创建内容草稿', userFacingName: '准备发布草稿', riskLevel: 'R2', operation: 'execute', requiredPermission: 'CREATE_DRAFT', providerAvailability: 'draft_only', sideEffectContract: { sideEffect: true, retrySafety: 'ambiguous' } },
     { key: 'PUBLISH_CONTENT', name: '发布内容', userFacingName: '发布内容', riskLevel: 'R3', operation: 'execute', requiredPermission: 'PUBLISH_CONTENT', providerAvailability: 'disabled', sideEffectContract: { sideEffect: true, supportsIdempotencyKey: true, supportsOperationLookup: true, retrySafety: 'ambiguous' } },
   ];
+
+  protected providerKey() { return 'content_provider'; }
+  protected externalAccountPrefix() { return 'content-test'; }
+
+  async completeAuthorization(request: AuthorizationCallbackRequest): Promise<AuthorizationCallbackResult> {
+    return {
+      ...this.buildCredential(request.code, { contentKey: 'test' }),
+      grantedCapabilities: ['READ_CONTENT', 'CREATE_DRAFT'],
+    };
+  }
+
+  async read(request: ConnectorRequest): Promise<ConnectorResult> {
+    mustCredential(request);
+    if (request.capability !== 'READ_CONTENT') throw new ConnectorError('INVALID_CAPABILITY', 'INVALID_REQUEST', `Unsupported capability: ${request.capability}`);
+    const items = Array.isArray(request.input.items) ? request.input.items : [];
+    return { ok: true, data: { items: items.flatMap((item, index) => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) return [];
+      const row = item as Record<string, unknown>;
+      return [{
+        contentId: typeof row.contentId === 'string' ? row.contentId : `test-content-${index + 1}`,
+        title: typeof row.title === 'string' ? row.title : '未命名内容',
+        body: typeof row.body === 'string' ? row.body : '',
+        updatedAt: typeof row.updatedAt === 'string' ? row.updatedAt : new Date(0).toISOString(),
+      }];
+    }) } };
+  }
+
+  async execute(request: ConnectorRequest): Promise<ConnectorResult> {
+    mustCredential(request);
+    if (request.capability !== 'CREATE_DRAFT') throw new ConnectorError('PROVIDER_UNAVAILABLE', 'PROVIDER_UNAVAILABLE', 'Production publishing remains disabled');
+    return { ok: true, data: {
+      draftId: `content-draft-${request.requestId}`,
+      title: typeof request.input.title === 'string' ? request.input.title : '未命名内容草稿',
+      status: 'draft', published: false,
+    } };
+  }
 }

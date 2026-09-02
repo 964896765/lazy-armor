@@ -27,7 +27,7 @@ export class BillingService {
     amount: number;
     currency: string;
     occurredAt: string;
-    sourceType: 'manual' | 'internal';
+    sourceType: 'manual' | 'internal' | 'file';
   }) {
     const now = new Date();
     const id = newId();

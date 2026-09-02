@@ -555,7 +555,7 @@ export const PLAN_TEMPLATES: readonly PlanTemplateManifest[] = [
     icon: '摘要',
     status: 'published',
     automationLevel: 'L1',
-    requiredConnectors: ['internal'],
+    requiredConnectors: ['internal', 'gmail', 'google_calendar'],
     approvalPolicy: NEVER_APPROVAL_POLICY,
     riskConstraint: riskConstraint('R1', ['summarize', 'notify']),
     notificationPolicy: notificationPolicy('summary', ['silent', 'summary', 'important'], { silentOnSuccess: true }),
@@ -582,25 +582,35 @@ export const PLAN_TEMPLATES: readonly PlanTemplateManifest[] = [
     configSchema: dailyImportantSummarySchema,
     buildDefinition(config) {
       const parsed = dailyImportantSummarySchema.parse(config);
+      const sources: PlanDefinitionInput['sources'] = [{
+        sourceType: 'internal',
+        connectorKey: 'internal',
+        config: {
+          resource: 'important_item_candidates',
+          includedSources: parsed.includedSources,
+          lookAheadHours: parsed.lookAheadHours,
+          includeCalendar: parsed.includeCalendar,
+          includeMessages: parsed.includeMessages,
+          maxItems: parsed.maxItems,
+          ...(parsed.emailConnectionId ? { emailConnectionId: parsed.emailConnectionId } : {}),
+          ...(parsed.calendarConnectionId ? { calendarConnectionId: parsed.calendarConnectionId } : {}),
+        },
+        sortOrder: 0,
+      }];
+      if (parsed.includedSources.includes('email')) sources.push({
+        sourceType: 'email', connectorKey: 'gmail', connectionId: parsed.emailConnectionId ?? undefined,
+        config: {}, sortOrder: sources.length,
+      });
+      if (parsed.includedSources.includes('calendar')) sources.push({
+        sourceType: 'calendar', connectorKey: 'google_calendar', connectionId: parsed.calendarConnectionId ?? undefined,
+        config: {}, sortOrder: sources.length,
+      });
       return {
         name: parsed.planName?.trim() || '每日重要事项摘要',
         description: '每天汇总真正需要处理的事项，普通消息保持静默。',
         domain: 'work',
         automationLevel: 'L1',
-        sources: [{
-          sourceType: 'internal',
-          config: {
-            resource: 'important_item_candidates',
-            includedSources: parsed.includedSources,
-            lookAheadHours: parsed.lookAheadHours,
-            includeCalendar: parsed.includeCalendar,
-            includeMessages: parsed.includeMessages,
-            maxItems: parsed.maxItems,
-            ...(parsed.emailConnectionId ? { emailConnectionId: parsed.emailConnectionId } : {}),
-            ...(parsed.calendarConnectionId ? { calendarConnectionId: parsed.calendarConnectionId } : {}),
-          },
-          sortOrder: 0,
-        }],
+        sources,
         triggers: scheduleFromTime(parsed.summaryTime),
         conditions: [],
         actions: [

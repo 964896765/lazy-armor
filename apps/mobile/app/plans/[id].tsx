@@ -31,6 +31,7 @@ interface PlanSummary {
   templateVersion: string | null;
   nextExpectedRunAt: string | null;
   hasMissingConnection: boolean;
+  missingConnections: Array<{ providerKey: string; providerName: string; requiredCapabilities: string[]; usedBy: string[] }>;
   latestExecution: { id: string; status: string; resultSummary: string | null; createdAt: string } | null;
   allowedTransitions: string[];
   currentVersion: { versionNumber: number; name: string; templateKey: string | null; templateVersion: string | null; templateConfig: Record<string, unknown> | null; automationLevel: string } | null;
@@ -135,6 +136,16 @@ export default function PlanDetailPage() {
       await Promise.all([
         client.invalidateQueries({ queryKey: ['plans', token] }),
         client.invalidateQueries({ queryKey: ['plan', id, token] }),
+      ]);
+    },
+  });
+  const resolveConnections = useMutation({
+    mutationFn: () => api<PlanSummary>(`/plans/${id}/connections/resolve`, token, { method: 'POST' }),
+    onSuccess: async () => {
+      await Promise.all([
+        client.invalidateQueries({ queryKey: ['plans', token] }),
+        client.invalidateQueries({ queryKey: ['plan', id, token] }),
+        client.invalidateQueries({ queryKey: ['plan-version', id] }),
       ]);
     },
   });
@@ -266,6 +277,21 @@ export default function PlanDetailPage() {
             <Text style={local.text}>连接与权限：{summary.data.hasMissingConnection ? '还缺连接或权限，需要继续设置。' : '当前所需连接已满足。'}</Text>
           </View>
 
+          {summary.data.missingConnections.length > 0 ? (
+            <View style={local.card}>
+              <Text style={local.cardTitle}>还差 {summary.data.missingConnections.length} 个连接</Text>
+              <Text style={local.text}>计划草稿已经保留。补好连接后再启用，不会删除你已经设置的内容。</Text>
+              {summary.data.missingConnections.map((connection) => (
+                <Text style={local.text} key={connection.providerKey}>· {connection.providerName}</Text>
+              ))}
+              <View style={local.buttonGap} />
+              <Button title="一键去连接" onPress={() => router.push('/connections')} />
+              <View style={local.buttonGap} />
+              <Button title={resolveConnections.isPending ? '检查中…' : '我已连接，重新检查'} onPress={() => resolveConnections.mutate()} disabled={resolveConnections.isPending} />
+              {resolveConnections.isError ? <Text style={local.error}>还没有找到可用连接，请先完成连接与授权。</Text> : null}
+            </View>
+          ) : null}
+
           <View style={local.card}>
             <Text style={local.cardTitle}>数据来源</Text>
             {version.data.definition.sources.map((source, index) => (
@@ -317,7 +343,7 @@ export default function PlanDetailPage() {
             <Button
               title={apply.isPending ? 'Apply 中…' : '启用 / Apply 当前版本'}
               onPress={() => apply.mutate()}
-              disabled={apply.isPending || !currentVersionNumber}
+              disabled={apply.isPending || !currentVersionNumber || summary.data.hasMissingConnection}
             />
             {summary.data.allowedTransitions.map((status) => (
               <View style={local.buttonGap} key={status}>

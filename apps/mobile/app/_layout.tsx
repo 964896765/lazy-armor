@@ -9,5 +9,5 @@ export default function RootLayout() {
   useEffect(() => {
     void hydrate();
   }, [hydrate]);
-  return <QueryClientProvider client={client}><Stack><Stack.Screen name="(tabs)" options={{ headerShown: false }} /><Stack.Screen name="connections" options={{ title: '我的连接' }} /><Stack.Screen name="executions/[id]" options={{ title: '执行详情' }} /><Stack.Screen name="templates/[key]" options={{ title: '模板详情' }} /><Stack.Screen name="plans/[id]" options={{ title: '计划详情' }} /><Stack.Screen name="plans/[id]/edit" options={{ title: '编辑计划' }} /></Stack></QueryClientProvider>;
+  return <QueryClientProvider client={client}><Stack><Stack.Screen name="(tabs)" options={{ headerShown: false }} /><Stack.Screen name="connections" options={{ title: '我的连接' }} /><Stack.Screen name="oauth/callback" options={{ title: '连接服务' }} /><Stack.Screen name="file-import" options={{ title: '导入账单文件' }} /><Stack.Screen name="executions/[id]" options={{ title: '执行详情' }} /><Stack.Screen name="templates/[key]" options={{ title: '模板详情' }} /><Stack.Screen name="plans/[id]" options={{ title: '计划详情' }} /><Stack.Screen name="plans/[id]/edit" options={{ title: '编辑计划' }} /></Stack></QueryClientProvider>;
 }

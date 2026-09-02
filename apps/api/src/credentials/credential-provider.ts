@@ -5,7 +5,7 @@ export interface CredentialProviderHealth {
   provider: string;
 }
 
-export type CredentialProviderErrorCode = 'NOT_FOUND' | 'VERSION_NOT_FOUND' | 'REVOKED' | 'UNAVAILABLE' | 'INVALID_DATA';
+export type CredentialProviderErrorCode = 'NOT_FOUND' | 'VERSION_NOT_FOUND' | 'VERSION_CONFLICT' | 'REVOKED' | 'UNAVAILABLE' | 'INVALID_DATA';
 
 export class CredentialProviderError extends Error {
   constructor(readonly code: CredentialProviderErrorCode, message: string, readonly retryable = false) {
@@ -24,7 +24,7 @@ export interface CredentialRotationResult {
 export interface CredentialProvider {
   get(ref: string, version?: number): Promise<Credential>;
   set(credential: Credential): Promise<string>;
-  rotate(ref: string, credential: Credential): Promise<CredentialRotationResult>;
+  rotate(ref: string, credential: Credential, expectedCurrentVersion?: number): Promise<CredentialRotationResult>;
   currentVersion(ref: string): Promise<number>;
   revokeVersion(ref: string, version: number): Promise<void>;
   revoke(ref: string): Promise<void>;

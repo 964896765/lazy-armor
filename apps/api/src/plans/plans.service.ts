@@ -64,7 +64,7 @@ export class PlansService {
         updatedAt: now,
         archivedAt: null,
       });
-      const resolved = await this.resolveReferences(tx, userId, parsed);
+      const resolved = await this.resolveReferences(tx, userId, parsed, { allowMissingConnections: true });
       const versionId = await this.insertVersion(tx, userId, planId, 1, resolved, now);
       await tx.update(plans).set({ currentVersionId: versionId, updatedAt: now }).where(eq(plans.id, planId));
       await this.audit.append({ actorType: 'user', actorUserId: userId, action: 'PLAN_CREATED', resourceType: 'plan', resourceId: planId, userId, correlationId: planId, changeSummary: `Plan created with version 1: ${parsed.name}`, source: 'api', result: 'success' }, tx);
@@ -87,7 +87,7 @@ export class PlansService {
         updatedAt: now,
         archivedAt: null,
       });
-      const resolved = await this.resolveReferences(tx, userId, parsed);
+      const resolved = await this.resolveReferences(tx, userId, parsed, { allowMissingConnections: true });
       const versionId = await this.insertVersion(tx, userId, planId, 1, resolved, now, metadata);
       await tx.update(plans).set({ currentVersionId: versionId, updatedAt: now }).where(eq(plans.id, planId));
       await this.audit.append({
@@ -155,7 +155,7 @@ export class PlansService {
         : [];
       if (plan.currentVersionId && !current[0]) throw new ConflictException('Current version pointer is invalid');
       createdVersion = (current[0]?.versionNumber ?? 0) + 1;
-      const resolved = await this.resolveReferences(tx, userId, parsed);
+      const resolved = await this.resolveReferences(tx, userId, parsed, { allowMissingConnections: true });
       const now = new Date();
       const versionId = await this.insertVersion(tx, userId, planId, createdVersion, resolved, now);
       await tx.update(plans).set({ currentVersionId: versionId, updatedAt: now }).where(eq(plans.id, planId));
@@ -176,6 +176,53 @@ export class PlansService {
       }
       await tx.update(plans).set({ activeVersionId: assembled.version.id, updatedAt: new Date() }).where(eq(plans.id, planId));
       await this.audit.append({ actorType: 'user', actorUserId: userId, action: 'PLAN_VERSION_APPLIED', resourceType: 'plan', resourceId: planId, userId, correlationId: planId, causationId: assembled.version.id, changeSummary: `Plan ${planId} applied version ${versionNumber}`, source: 'api', result: 'success' }, tx);
+    });
+    return this.get(userId, planId);
+  }
+
+  async resolveAvailableConnections(userId: string, planId: string) {
+    await this.db.transaction(async (tx) => {
+      const plan = await this.getOwnedPlan(userId, planId, tx, true);
+      if (!plan.currentVersionId) throw new ConflictException('Plan has no current version');
+      if (plan.status === 'archived') throw new ConflictException('Archived plans cannot resolve connections');
+      const assembled = await this.assembler.assembleById(userId, planId, plan.currentVersionId, tx);
+      const providerKeys = new Set([
+        ...assembled.definition.sources.filter((source) => !source.connectionId).map((source) => source.connectorKey),
+        ...assembled.definition.actions.filter((action) => !action.connectionId).map((action) => action.connectorKey),
+      ].filter((key): key is string => Boolean(key)));
+      const available = new Map<string, string>();
+      for (const providerKey of providerKeys) {
+        const row = (await tx.select({ id: connections.id }).from(connections)
+          .innerJoin(connectors, eq(connections.connectorId, connectors.id))
+          .where(and(eq(connections.userId, userId), eq(connectors.key, providerKey), eq(connections.status, 'connected')))
+          .orderBy(desc(connections.updatedAt)).limit(1))[0];
+        if (row) available.set(providerKey, row.id);
+      }
+      let changed = false;
+      const definition: PlanDefinition = {
+        ...assembled.definition,
+        sources: assembled.definition.sources.map((source) => {
+          const connectionId = source.connectionId ?? (source.connectorKey ? available.get(source.connectorKey) : undefined) ?? null;
+          if (connectionId && !source.connectionId) changed = true;
+          return { ...source, connectionId };
+        }),
+        actions: assembled.definition.actions.map((action) => {
+          const connectionId = action.connectionId ?? (action.connectorKey ? available.get(action.connectorKey) : undefined) ?? null;
+          if (connectionId && !action.connectionId) changed = true;
+          return { ...action, connectionId };
+        }),
+      };
+      if (!changed) return;
+      const currentVersion = assembled.version.versionNumber;
+      const now = new Date();
+      const resolved = await this.resolveReferences(tx, userId, definition, { allowMissingConnections: true });
+      const versionId = await this.insertVersion(tx, userId, planId, currentVersion + 1, resolved, now, {
+        templateKey: assembled.version.templateKey,
+        templateVersion: assembled.version.templateVersion,
+        templateConfig: assembled.version.templateConfigJson,
+      });
+      await tx.update(plans).set({ currentVersionId: versionId, updatedAt: now }).where(eq(plans.id, planId));
+      await this.audit.append({ actorType: 'user', actorUserId: userId, action: 'PLAN_CONNECTIONS_RESOLVED', resourceType: 'plan_version', resourceId: versionId, userId, correlationId: planId, changeSummary: `Plan ${planId} bound available connections in version ${currentVersion + 1}`, source: 'api', result: 'success' }, tx);
     });
     return this.get(userId, planId);
   }
@@ -231,7 +278,7 @@ export class PlansService {
       }
       if (!resolvedTemplate) throw new NotFoundException('Template not found');
       const definition = this.parse(resolvedTemplate.definition);
-      const validated = await this.resolveReferences(tx, userId, definition);
+      const validated = await this.resolveReferences(tx, userId, definition, { allowMissingConnections: true });
       nextVersion = current.versionNumber + 1;
       const now = new Date();
       const versionId = await this.insertVersion(tx, userId, planId, nextVersion, validated, now, resolvedTemplate.metadata);
@@ -296,12 +343,17 @@ export class PlansService {
     }
   }
 
-  private async resolveReferences(executor: PlanExecutor, userId: string, definitionInput: PlanDefinitionInput | PlanDefinition): Promise<PlanDefinition> {
+  private async resolveReferences(
+    executor: PlanExecutor,
+    userId: string,
+    definitionInput: PlanDefinitionInput | PlanDefinition,
+    options: { allowMissingConnections?: boolean } = {},
+  ): Promise<PlanDefinition> {
     const definition = this.parse(definitionInput);
     const sources = [] as PlanDefinition['sources'];
     for (const source of definition.sources) {
       const reference = await this.resolveConnectorReference(executor, userId, source.connectorKey, source.connectionId);
-      if (CONNECTION_REQUIRED_SOURCES.has(source.sourceType) && !reference.connectionId) {
+      if (!options.allowMissingConnections && CONNECTION_REQUIRED_SOURCES.has(source.sourceType) && !reference.connectionId) {
         throw new BadRequestException(`${source.sourceType} sources require a connectionId`);
       }
       sources.push({ ...source, connectorKey: reference.connectorKey, connectionId: reference.connectionId });
@@ -314,7 +366,7 @@ export class PlansService {
         && !action.requiredCapability
         && !reference.connectionId
         && !reference.connectorId;
-      if ((ACTION_DEFINITIONS[action.actionType].externalEffect || action.requiredCapability) && !reference.connectionId && !publishDraftOnlyWithoutProvider) {
+      if (!options.allowMissingConnections && (ACTION_DEFINITIONS[action.actionType].externalEffect || action.requiredCapability) && !reference.connectionId && !publishDraftOnlyWithoutProvider) {
         throw new BadRequestException(`${action.actionType} actions with external effects or capabilities require a connectionId`);
       }
       if (action.requiredCapability) {
@@ -437,6 +489,7 @@ export class PlansService {
     const planCenterSummary = summaryVersion
       ? await this.buildPlanCenterSummary(summaryVersion, latestExecution, nextExpectedRunAt)
       : null;
+    const missingConnections = await this.missingConnections(plan.currentVersionId ?? plan.activeVersionId ?? null);
     return {
       id: plan.id,
       status: plan.status,
@@ -451,7 +504,8 @@ export class PlansService {
       latestExecution,
       nextExpectedRunAt,
       planCenterSummary,
-      hasMissingConnection: await this.hasMissingConnection(plan.currentVersionId ?? plan.activeVersionId ?? null),
+      hasMissingConnection: missingConnections.length > 0,
+      missingConnections,
       allowedTransitions: this.stateMachine.allowedTransitions(plan.status as PlanState),
       createdAt: plan.createdAt,
       updatedAt: plan.updatedAt,
@@ -737,14 +791,39 @@ export class PlansService {
     return next?.toISOString() ?? null;
   }
 
-  private async hasMissingConnection(versionId: string | null) {
-    if (!versionId) return false;
+  private async missingConnections(versionId: string | null) {
+    if (!versionId) return [];
     const [sources, actions] = await Promise.all([
-      this.db.select({ sourceType: planSources.sourceType, connectorId: planSources.connectorId, connectionId: planSources.connectionId }).from(planSources).where(eq(planSources.planVersionId, versionId)),
-      this.db.select({ requiredCapability: planActions.requiredCapability, connectorId: planActions.connectorId, connectionId: planActions.connectionId }).from(planActions).where(eq(planActions.planVersionId, versionId)),
+      this.db.select({
+        sourceType: planSources.sourceType,
+        connectorId: planSources.connectorId,
+        connectorKey: connectors.key,
+        connectorName: connectors.name,
+        connectionId: planSources.connectionId,
+      }).from(planSources).leftJoin(connectors, eq(planSources.connectorId, connectors.id)).where(eq(planSources.planVersionId, versionId)),
+      this.db.select({
+        requiredCapability: planActions.requiredCapability,
+        connectorId: planActions.connectorId,
+        connectorKey: connectors.key,
+        connectorName: connectors.name,
+        connectionId: planActions.connectionId,
+      }).from(planActions).leftJoin(connectors, eq(planActions.connectorId, connectors.id)).where(eq(planActions.planVersionId, versionId)),
     ]);
-    if (sources.some((source) => CONNECTION_REQUIRED_SOURCES.has(source.sourceType) && !source.connectionId)) return true;
-    return actions.some((action) => (action.requiredCapability || action.connectorId) && !action.connectionId);
+    const missing = new Map<string, { providerKey: string; providerName: string; requiredCapabilities: string[]; usedBy: string[] }>();
+    const add = (providerKey: string | null, providerName: string | null, usedBy: string, capability?: string | null) => {
+      if (!providerKey) return;
+      const current = missing.get(providerKey) ?? { providerKey, providerName: providerName ?? providerKey, requiredCapabilities: [], usedBy: [] };
+      if (capability && !current.requiredCapabilities.includes(capability)) current.requiredCapabilities.push(capability);
+      if (!current.usedBy.includes(usedBy)) current.usedBy.push(usedBy);
+      missing.set(providerKey, current);
+    };
+    for (const source of sources) {
+      if (CONNECTION_REQUIRED_SOURCES.has(source.sourceType) && !source.connectionId) add(source.connectorKey, source.connectorName, `source:${source.sourceType}`);
+    }
+    for (const action of actions) {
+      if ((action.requiredCapability || action.connectorId) && !action.connectionId) add(action.connectorKey, action.connectorName, 'action', action.requiredCapability);
+    }
+    return [...missing.values()];
   }
 
   private computeNextRun(cronExpression: string, now: Date) {

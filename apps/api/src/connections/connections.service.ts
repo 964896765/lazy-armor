@@ -1,7 +1,7 @@
 import { randomBytes } from 'crypto';
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { ConnectorError, ConnectorRegistry, type ConnectorRequest } from '@lazy-armor/connector-sdk';
-import { connections, connectors, credentialRefs, credentialVersions, connectionPermissions, connectorCapabilities, oauthAuthorizationStates } from '@lazy-armor/database';
+import { connections, connectors, credentialRefs, credentialVersions, connectionPermissions, connectorCapabilities, oauthAuthorizationStates, planActions, planSources, planVersions, plans } from '@lazy-armor/database';
 import { newId } from '@lazy-armor/shared';
 import { and, eq, isNull } from 'drizzle-orm';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
@@ -29,7 +29,7 @@ export class ConnectionsService {
   async create(userId: string, input: CreateConnectionDto) {
     const adapter = this.getAdapter(input.connectorId);
     const catalog = await this.requireCatalog(input.connectorId);
-    if (adapter.metadata().authentication.type === 'oauth2' && (!input.credentials || Object.keys(input.credentials).length === 0)) {
+    if (adapter.metadata().authentication.type === 'oauth2') {
       throw new BadRequestException('OAuth provider must be connected through the authorization flow');
     }
     const connectionId = await this.createConnectionRecord(userId, {
@@ -55,6 +55,31 @@ export class ConnectionsService {
     const rows = await this.baseSelect().where(and(eq(connections.id, id), eq(connections.userId, userId))).limit(1);
     if (!rows[0]) throw new NotFoundException('Connection not found');
     return this.toResponse(rows[0]);
+  }
+
+  async listPlansUsingConnection(userId: string, id: string) {
+    await this.get(userId, id);
+    const [sourceRows, actionRows] = await Promise.all([
+      this.db.select({ planId: plans.id, planName: planVersions.name, planStatus: plans.status, sourceType: planSources.sourceType })
+        .from(planSources)
+        .innerJoin(planVersions, eq(planSources.planVersionId, planVersions.id))
+        .innerJoin(plans, and(eq(plans.activeVersionId, planVersions.id), eq(plans.userId, userId), eq(plans.status, 'active')))
+        .where(eq(planSources.connectionId, id)),
+      this.db.select({ planId: plans.id, planName: planVersions.name, planStatus: plans.status, requiredCapability: planActions.requiredCapability })
+        .from(planActions)
+        .innerJoin(planVersions, eq(planActions.planVersionId, planVersions.id))
+        .innerJoin(plans, and(eq(plans.activeVersionId, planVersions.id), eq(plans.userId, userId), eq(plans.status, 'active')))
+        .where(eq(planActions.connectionId, id)),
+    ]);
+    const usage = new Map<string, { planId: string; planName: string; planStatus: string; requiredCapabilities: string[] }>();
+    const add = (planId: string, planName: string, planStatus: string, capabilities: string[]) => {
+      const current = usage.get(planId) ?? { planId, planName, planStatus, requiredCapabilities: [] };
+      for (const capability of capabilities) if (!current.requiredCapabilities.includes(capability)) current.requiredCapabilities.push(capability);
+      usage.set(planId, current);
+    };
+    for (const row of sourceRows) add(row.planId, row.planName, row.planStatus, sourceCapabilities(row.sourceType));
+    for (const row of actionRows) add(row.planId, row.planName, row.planStatus, row.requiredCapability ? [row.requiredCapability] : []);
+    return [...usage.values()];
   }
 
   async validate(userId: string, id: string) {
@@ -221,7 +246,13 @@ export class ConnectionsService {
     if (current.status === 'revoked') throw new ForbiddenException('Connection has been revoked');
     if (!current.credentialRef || !current.credentialRefId || !current.credentialCurrentVersion) throw new BadRequestException('Connection has no credential reference to rotate');
     if (input.expiresAt && new Date(input.expiresAt) <= new Date()) throw new BadRequestException('Credential expiry must be in the future');
-    const rotated = await this.credentials.rotate(current.credentialRef, input.credentials);
+    let rotated;
+    try {
+      rotated = await this.credentials.rotate(current.credentialRef, input.credentials, current.credentialCurrentVersion);
+    } catch (error) {
+      if (error instanceof CredentialProviderError && error.code === 'VERSION_CONFLICT') throw new ConflictException('Credential was rotated concurrently');
+      throw error;
+    }
     const now = new Date();
     try {
       await this.db.transaction(async (tx) => {
@@ -607,6 +638,14 @@ export class ConnectionsService {
       updatedAt: new Date(),
     }).where(eq(connections.id, connectionId));
   }
+}
+
+function sourceCapabilities(sourceType: string) {
+  if (sourceType === 'email') return ['READ_EMAIL_METADATA', 'READ_EMAIL'];
+  if (sourceType === 'calendar') return ['READ_EVENT'];
+  if (sourceType === 'file') return ['READ_FILE_METADATA', 'READ_FILE'];
+  if (sourceType === 'content_platform') return ['READ_CONTENT'];
+  return [];
 }
 
 function mapHealthToConnectionStatus(status: 'healthy' | 'degraded' | 'unhealthy' | 'reauthorization_required' | 'rate_limited' | 'provider_unavailable') {
