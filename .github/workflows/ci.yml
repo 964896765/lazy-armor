@@ -1,0 +1,104 @@
+name: ci
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -proot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=20
+      redis:
+        image: redis:7.4
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=20
+
+    env:
+      DATABASE_URL: mysql://root:root@127.0.0.1:3306/lazy_armor_ci
+      REDIS_URL: redis://127.0.0.1:6379
+      JWT_SECRET: test-jwt-secret-that-is-longer-than-thirty-two-characters
+      CREDENTIAL_MASTER_KEY: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+      APP_ENV: development
+      NODE_ENV: test
+      APP_ROLE: api
+      EXPO_PUBLIC_APP_ENV: development
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Prepare CI database
+        run: |
+          node -e "const mysql=require('mysql2/promise'); (async () => { const db=await mysql.createConnection({host:'127.0.0.1', port:3306, user:'root', password:'root'}); await db.query('CREATE DATABASE IF NOT EXISTS lazy_armor_ci'); await db.end(); })().catch((error) => { console.error(error); process.exit(1); });"
+
+      - name: Migration safety check
+        run: node scripts/check-migration-safety.mjs
+
+      - name: Apply migrations
+        run: pnpm db:migrate
+
+      - name: Config typecheck
+        run: pnpm --filter @lazy-armor/config typecheck
+
+      - name: Database typecheck
+        run: pnpm --filter @lazy-armor/database typecheck
+
+      - name: Database build
+        run: pnpm --filter @lazy-armor/database build
+
+      - name: Plan schema tests
+        run: pnpm --filter @lazy-armor/plan-schema test
+
+      - name: Connector SDK tests
+        run: pnpm --filter @lazy-armor/connector-sdk test
+
+      - name: API typecheck
+        run: pnpm --filter @lazy-armor/api typecheck
+
+      - name: API build
+        run: pnpm --filter @lazy-armor/api build
+
+      - name: Mobile typecheck
+        run: pnpm --filter @lazy-armor/mobile typecheck
+
+      - name: Mobile tests
+        run: pnpm --filter @lazy-armor/mobile test -- src/api.spec.ts src/auth-store.spec.ts src/token-storage-policy.spec.ts src/p2-mobile-connection-presenter.spec.ts
+
+      - name: P0 security tests
+        run: pnpm --filter @lazy-armor/api test -- test/p0-final-security.spec.ts
+
+      - name: P4 journey focused tests
+        run: pnpm --filter @lazy-armor/api test -- test/p4-consumer-journeys.integration.spec.ts

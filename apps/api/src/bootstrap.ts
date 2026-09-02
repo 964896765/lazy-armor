@@ -3,10 +3,14 @@ import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { json, urlencoded, type NextFunction, type Request, type Response } from 'express';
 import { AppModule } from './app.module';
+import { resolveCorrelationId, runWithRequestContext } from './common/request-context';
+import { SafeLoggerService } from './common/safe-logger.service';
 
 // 构建共享 HTTP 应用（CORS 白名单 + 安全响应头 + 请求体上限 + 校验管道 + 优雅停机）。
 export async function createHttpApp() {
-  const app = await NestFactory.create(AppModule, { bodyParser: false });
+  const app = await NestFactory.create(AppModule, { bodyParser: false, bufferLogs: true });
+  const logger = app.get(SafeLoggerService);
+  app.useLogger(logger);
   // Base64 adds ~33% overhead. Only the authenticated local-file import path
   // receives the larger parser budget; every other API keeps the tighter cap.
   app.use('/api/file-imports', json({ limit: '1400kb' }));
@@ -27,6 +31,22 @@ export async function createHttpApp() {
     res.setHeader('Referrer-Policy', 'no-referrer');
     res.setHeader('Permissions-Policy', 'geolocation=(), camera=(), microphone=()');
     next();
+  });
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    const startedAt = Date.now();
+    const correlationId = resolveCorrelationId(req.header('x-correlation-id'));
+    res.setHeader('x-correlation-id', correlationId);
+    runWithRequestContext({ correlationId }, () => {
+      res.on('finish', () => {
+        logger.event('log', 'http_request_completed', {
+          method: req.method,
+          path: req.originalUrl || req.url,
+          statusCode: res.statusCode,
+          durationMs: Date.now() - startedAt,
+        });
+      });
+      next();
+    });
   });
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
   app.enableShutdownHooks();

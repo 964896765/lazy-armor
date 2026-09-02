@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { APP_FILTER } from '@nestjs/core';
 import { parseEnv, assertProductionSafe } from '@lazy-armor/config';
 import { AllExceptionsFilter } from './common/http-exception.filter';
+import { SafeLoggerService } from './common/safe-logger.service';
 import { BillingModule } from './billing/billing.module';
 import { ContentModule } from './content/content.module';
 import { DailySummaryModule } from './daily-summary/daily-summary.module';
@@ -66,6 +67,9 @@ import { OperationsModule } from './operations/operations.module';
     AiAdapterModule,
     AdminModule,
   ],
-  providers: [{ provide: APP_FILTER, useClass: AllExceptionsFilter }],
+  providers: [
+    SafeLoggerService,
+    { provide: APP_FILTER, useClass: AllExceptionsFilter },
+  ],
 })
 export class AppModule {}

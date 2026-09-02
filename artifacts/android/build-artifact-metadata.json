@@ -1,0 +1,79 @@
+{
+  "artifactType": "AAB",
+  "artifactPath": "C:\\laabuild-73f6c\\apps\\mobile\\android\\app\\build\\outputs\\bundle\\release\\app-release.aab",
+  "sizeBytes": 69246465,
+  "sha256": "C17BEFB2D32D3D230BBEC8E710E0797D8F2151AB04459C4520C223BEDDFB6C01",
+  "applicationId": "com.lazyarmor.app",
+  "versionName": "0.1.0",
+  "versionCode": 1,
+  "buildEnvironment": "development",
+  "apiHost": "http://127.0.0.1:3001",
+  "signingMode": "DEBUG_VERIFICATION_ONLY",
+  "publishable": false,
+  "buildTimestamp": "2026-09-02T13:13:57.8138423Z",
+  "commitSha": "e45ba04d3e802469ebdf67d1d1ded1590e1d73e4",
+  "buildCommand": "gradlew.bat bundleRelease --no-daemon",
+  "buildWorkspace": {
+    "type": "short_ascii_verification_workspace",
+    "path": "C:\\laabuild-73f6c",
+    "pnpmStorePath": "C:\\v2"
+  },
+  "signingEvidence": {
+    "certificateSubject": "CN=Android Debug, OU=Android, O=Unknown, L=Unknown, ST=Unknown, C=US",
+    "certificateSha256Fingerprint": "FA:C6:17:45:DC:09:03:78:6F:B9:ED:E6:2A:96:2B:39:9F:73:48:F0:BB:6F:89:9B:83:32:66:75:91:03:3B:9C",
+    "certificateSha1Fingerprint": "5E:8F:16:06:2E:A3:CD:2C:4A:0D:54:78:76:BA:A6:F3:8C:AB:F6:25",
+    "signatureAlgorithm": "SHA256withRSA",
+    "keyAlgorithm": "RSA-2048",
+    "verificationTool": "jarsigner -verify -verbose -certs",
+    "verificationResult": "jar_verified"
+  },
+  "manifestVerification": {
+    "mergedManifestPath": "C:\\laabuild-73f6c\\apps\\mobile\\android\\app\\build\\intermediates\\merged_manifests\\release\\processReleaseManifest\\AndroidManifest.xml",
+    "declaredPermissions": [
+      "android.permission.INTERNET",
+      "com.lazyarmor.app.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+    ],
+    "dangerousPermissionsAbsent": [
+      "android.permission.READ_CONTACTS",
+      "android.permission.READ_SMS",
+      "android.permission.RECORD_AUDIO",
+      "android.permission.CAMERA",
+      "android.permission.ACCESS_FINE_LOCATION",
+      "android.permission.ACCESS_COARSE_LOCATION",
+      "android.permission.READ_CALL_LOG",
+      "android.permission.WRITE_CALL_LOG"
+    ],
+    "removedDuringVerification": [
+      "android.permission.VIBRATE",
+      "android.permission.WRITE_EXTERNAL_STORAGE",
+      "android.permission.READ_EXTERNAL_STORAGE",
+      "android.permission.USE_BIOMETRIC",
+      "android.permission.USE_FINGERPRINT"
+    ]
+  },
+  "androidSessionCodeGate": {
+    "command": "pnpm --filter @lazy-armor/mobile test -- src/api.spec.ts src/auth-store.spec.ts src/token-storage-policy.spec.ts",
+    "testFiles": 3,
+    "testsPassed": 14,
+    "testsFailed": 0,
+    "status": "14/14 PASS",
+    "verifiedCoverage": [
+      "startup refresh",
+      "refresh token rotation",
+      "invalid refresh cleanup",
+      "offline token preservation",
+      "logout",
+      "API unavailable behavior",
+      "signing fail-closed",
+      "environment API gate"
+    ]
+  },
+  "stagingBetaGate": {
+    "status": "DEFERRED_GATE",
+    "reason": "Missing dedicated staging release keystore and full staging infrastructure set"
+  },
+  "productionGate": {
+    "status": "DEFERRED_GATE",
+    "reason": "Missing production release keystore and physical-device SecureStore verification"
+  }
+}

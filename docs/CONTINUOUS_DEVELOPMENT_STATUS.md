@@ -2,23 +2,21 @@
 
 更新时间：2026-09-02
 
-- Current stage：P4 Productization / Beta；P0-H4、P0-H3 均已代码冻结；Environment Isolation Code Gate 已完成，当前主线进入 Android Beta。
+- Current stage：P4 Productization / Beta；P0-H1 Android Engineering Gate 已验证，后续进入 CI / Observability / Backup-Restore。
 
-- Completed modules：P0-1～P0-7、P1 八个代表性计划、P2 Connector 主体、P3 Domain Expansion；P4 Consumer UX Batch 1/2、P4 Failure Matrix、Operations Snapshot、Worker Probe；H4 execution/outbox true-process、known failure/dead letter、Worker A/B takeover、stuck recovery + Audit、exactly-once crash recovery、TrueProcessHarness fail-closed、Operations dynamic metrics 与最终 Operations linkage；H3 Webhook 强制签名/时间戳、并发幂等、最小化存储、retention identity preservation 与 cleanup audit 最终矩阵；Environment Isolation Code Gate（后端/移动端 fail-closed、Redis/BullMQ 环境命名空间、独立配置模板）。
+- Completed modules：P0-1～P0-7、P1 八个代表性计划、P2 Connector 主体、P3 Domain Expansion；P4 Consumer UX Batch 1（Today 第一轮消费者化、Plan Center 四大区、Plan Detail 第一轮消费者化、My Center 信息架构、Record / Execution Detail 第一轮消费者化、Consumer Presenters）；P4 Consumer UX Batch 2 基础闭环（Consumer Error fail-safe、Today 结构化分类、My Center 可操作入口、Permission Center、设备/车辆/通知/自动化安全等级/数据管理/安全记录、Journey A 与 Journey B 首条消费者 E2E）。
 
-- In progress：Android Beta；之后依次进入 Observability、Backup/Restore 与 P4 Beta Full Regression。
+- In progress：CI / Main Branch Gate、Observability Foundation、Backup / Restore / Rollback、Android staging signing gate、真实 staging infra gate。
 
-- Blockers：真实 staging runtime acceptance 缺托管 Credential Provider 与独立基础设施证据；该 Hard Stop 不阻断 Android Beta 及其他不依赖真实凭据的工程工作。
+- Blockers：当前无阻断普通业务开发的 Hard Stop。
 
-- Deferred gates：托管 Credential Provider 与真实 staging isolation evidence；Android 正式签名密钥与真机 SecureStore；真实支付/转账/高风险下单；Calendar 外部写；Content 正式发布；真实物流 Provider。
+- Deferred gates：Android 真机 SecureStore、Android 正式签名密钥、staging release keystore、真实支付/转账/高风险下单、Calendar 外部写、Content 正式发布、真实物流 Provider。
 
-- Test status：P3 Gate 全 API 回归 31 files / 255 tests PASS；Mobile 49/49 PASS；Monorepo typecheck 8/8 PASS；P4 Batch 1/2 定向测试 PASS；H4 Final Focused Gate：API build PASS、Harness 3/3、execution true-process 8/8、outbox true-process 13/13、Operations linkage 1/1、API typecheck PASS；H3 Final Matrix 1/1、P0 Final Security 12/12、P0 主集成 8/8、API build/typecheck PASS；Environment Config 10/10、Mobile Env 8/8、P0 Final Security 12/12、Config/API typecheck PASS。
+- Test status：P3 Gate 全 API 回归 31 files / 255 tests PASS；Mobile 49/49 PASS；Monorepo typecheck 8/8 PASS；P4 Batch 1 移动端 `pnpm --filter @lazy-armor/mobile test` 与 `typecheck` 已通过；P4 Batch 2 已真实通过 `pnpm --filter @lazy-armor/mobile typecheck`、`pnpm --filter @lazy-armor/mobile test -- src/p2-mobile-connection-presenter.spec.ts`（44 tests）、`pnpm --filter @lazy-armor/api typecheck`、`pnpm --filter @lazy-armor/api test -- test/p4-productization-foundation.integration.spec.ts test/p4-consumer-journeys.integration.spec.ts`（5 tests）、`pnpm --filter @lazy-armor/api test -- test/p2-gmail.integration.spec.ts test/p2-calendar.integration.spec.ts`（8 tests）；Android Session Code Gate：`pnpm --filter @lazy-armor/mobile test -- src/api.spec.ts src/auth-store.spec.ts src/token-storage-policy.spec.ts` → `14/14 PASS`；Android verification build：`gradlew.bat bundleRelease --no-daemon` → `BUILD SUCCESSFUL` with real `.aab`.
 
-- Migration status：0000～0022 forward-only；以当前 migration journal 为准。
+- Migration status：0000～0021 forward-only；开发库/测试库 0020、0021 均已连续重复执行成功。
+- Migration status：0000～0022 forward-only；最新 migration 为 `0022_p4_profile_preferences.sql`。
 
-- P0-H4：CODE COMPLETE / READY FOR WAVE 0 ACCEPTANCE。H4 故障套件共享 Docker MySQL/Redis，必须按 Harness → Execution → Outbox → Operations linkage 串行运行，禁止并发。
-
-- P0-H3：CODE COMPLETE / READY FOR WAVE 0 ACCEPTANCE。Webhook 必须同时提供签名与时间戳；并发重复事件稳定收敛到同一 receipt，原始 payload/secret/敏感值不持久化，retention 清理保留事件身份与 hash 并写入 Audit。
+- Android Beta status：`ANDROID ENGINEERING VERIFIED`；当前验证产物为 development-only AAB，`signingMode = DEBUG_VERIFICATION_ONLY`，`publishable = false`；`STAGING BETA READY` 仍未开放。
 
 - Production disabled capabilities：Calendar `CREATE_EVENT`/`UPDATE_EVENT`、Content `PUBLISH_CONTENT`/`READ_ANALYTICS`、真实 Logistics Provider，以及所有未经专项 Production Gate 的高风险 Provider。
-
