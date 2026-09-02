@@ -1,7 +1,9 @@
 // §31 测试数据库隔离硬门禁：NODE_ENV=test 时拒绝连接非隔离库。
 process.env.NODE_ENV = 'test';
 
-const url = process.env.TEST_DATABASE_URL ?? 'mysql://lazy_armor:lazy_armor_dev@127.0.0.1:3307/lazy_armor_test';
+const url = process.env.TEST_DATABASE_URL
+  ?? process.env.DATABASE_URL
+  ?? 'mysql://lazy_armor:lazy_armor_dev@127.0.0.1:3307/lazy_armor_test';
 const dbName = new URL(url).pathname.replace(/^\//, '');
 if (!dbName.toLowerCase().includes('test')) {
   throw new Error(`Refusing to run tests against non-isolated database "${dbName}". Test database name must contain "test".`);
