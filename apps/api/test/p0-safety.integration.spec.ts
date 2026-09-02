@@ -44,7 +44,7 @@ describe.sequential('P0-6 Risk, Approval and Notification integration', () => {
     process.env.JWT_SECRET ??= 'test-jwt-secret-that-is-longer-than-thirty-two-characters';
     process.env.CREDENTIAL_MASTER_KEY ??= Buffer.alloc(32, 6).toString('base64');
     process.env.CREDENTIAL_STORE_PATH ??= `.data/test-safety-credentials-${unique}`;
-    const { AppModule } = await import('../dist/app.module.js');
+    const { AppModule } = await import(new URL('../dist/app.module.js', import.meta.url).href);
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = moduleRef.createNestApplication(); app.setGlobalPrefix('api');
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true })); await app.init();

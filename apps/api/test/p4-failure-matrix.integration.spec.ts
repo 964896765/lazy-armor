@@ -446,7 +446,7 @@ describe.sequential('P4 failure matrix backend closure', { timeout: 120000 }, ()
     expect(detail.notifications).toEqual(expect.arrayContaining([
       expect.objectContaining({
         eventType: input.expected.eventType,
-        actionRequired: input.expected.actionRequired ? 1 : 0,
+        actionRequired: input.expected.actionRequired,
       }),
     ]));
     expect(today.alerts).toEqual(expect.arrayContaining([
