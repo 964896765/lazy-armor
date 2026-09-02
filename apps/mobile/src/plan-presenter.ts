@@ -1,4 +1,5 @@
 export type PlanListStatus = '运行中' | '需要设置' | '已暂停';
+export type ConsumerPlanGroup = '我的生活' | '我的钱' | '我的事情' | '我的东西' | '其他计划';
 
 export function planGroup(status: string): PlanListStatus {
   if (status === 'active' || status === 'ready') return '运行中';
@@ -55,9 +56,28 @@ export function templateGroupLabel(group: string): string {
 }
 
 const TEMPLATE_GROUP_ORDER = ['我的生活', '我的钱', '我的事情', '我的东西'] as const;
+const TEMPLATE_GROUP_BY_KEY: Record<string, Exclude<ConsumerPlanGroup, '其他计划'>> = {
+  'monthly-bill-summary': '我的钱',
+  'mobile-bill-guard': '我的钱',
+  'utility-bill-guard': '我的钱',
+  'abnormal-spend-guard': '我的钱',
+  'quiet-delivery-guard': '我的生活',
+  'family-supply-reminder': '我的生活',
+  'recurring-life-reminder': '我的生活',
+  'video-multi-platform': '我的事情',
+  'daily-important-summary': '我的事情',
+  'exam-study-plan': '我的事情',
+  'operations-daily-summary': '我的事情',
+  'work-follow-up-reminder': '我的事情',
+  'calendar-conflict-guard': '我的事情',
+  'file-archive-preparation': '我的事情',
+  'device-consumable-reminder': '我的东西',
+  'vehicle-care-reminder': '我的东西',
+  'digital-subscription-reminder': '我的东西',
+};
 
 export function groupPlanTemplates<T extends { group: string }>(templates: readonly T[]) {
-  const groups = TEMPLATE_GROUP_ORDER.map((group) => ({
+  const groups: Array<{ group: ConsumerPlanGroup; label: string; items: readonly T[] }> = TEMPLATE_GROUP_ORDER.map((group) => ({
     group,
     label: templateGroupLabel(group),
     items: templates.filter((template) => template.group === group),
@@ -65,6 +85,38 @@ export function groupPlanTemplates<T extends { group: string }>(templates: reado
   const other = templates.filter((template) => !TEMPLATE_GROUP_ORDER.includes(template.group as typeof TEMPLATE_GROUP_ORDER[number]));
   if (other.length > 0) groups.push({ group: '其他计划', label: '其他计划', items: other });
   return groups;
+}
+
+export function consumerPlanGroup(input: { templateKey?: string | null; planCenterKind?: string | null }): ConsumerPlanGroup {
+  if (input.templateKey && TEMPLATE_GROUP_BY_KEY[input.templateKey]) return TEMPLATE_GROUP_BY_KEY[input.templateKey];
+  switch (input.planCenterKind) {
+    case 'logistics':
+    case 'household':
+      return '我的生活';
+    case 'daily_summary':
+    case 'content':
+    case 'study':
+      return '我的事情';
+    case 'device':
+      return '我的东西';
+    default:
+      return '其他计划';
+  }
+}
+
+export function consumerPlanGroupSubtitle(group: ConsumerPlanGroup): string {
+  switch (group) {
+    case '我的生活':
+      return '生活、家庭、住房、出行和日常安排';
+    case '我的钱':
+      return '账单、消费、订阅和需要留意的金额变化';
+    case '我的事情':
+      return '工作、学习、内容与每天要推进的事情';
+    case '我的东西':
+      return '车辆、设备、数字账号和需要维护的资产';
+    default:
+      return '其他暂未归类的计划';
+  }
 }
 
 export function sourceTypeLabel(sourceType: string): string {

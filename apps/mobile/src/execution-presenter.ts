@@ -22,3 +22,31 @@ export function executionListState(loading: boolean, error: boolean, count: numb
   if (error) return 'error';
   return count === 0 ? 'empty' : 'ready';
 }
+
+export function executionNeedsAttention(status: string) {
+  return ['failed', 'partially_succeeded', 'waiting_approval', 'cancelled'].includes(status);
+}
+
+export function executionAttentionLabel(status: string) {
+  if (status === 'waiting_approval') return '需要你确认';
+  if (status === 'failed' || status === 'partially_succeeded') return '需要你处理';
+  if (status === 'cancelled') return '这次已取消';
+  return '已自动处理';
+}
+
+export function executionStepSummary(status: string) {
+  switch (status) {
+    case 'succeeded':
+      return '这一步已经完成。';
+    case 'failed':
+      return '这一步没有完成。';
+    case 'running':
+      return '这一步正在进行中。';
+    case 'retry_wait':
+      return '系统正在等待下一次重试。';
+    case 'cancelled':
+      return '这一步已经取消。';
+    default:
+      return '这一步正在等待处理。';
+  }
+}

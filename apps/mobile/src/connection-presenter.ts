@@ -25,6 +25,38 @@ export function connectionRecoveryAction(status: string): string | null {
   }
 }
 
+export function connectionStatusExplanation(status: string) {
+  switch (status) {
+    case 'pending_authorization': return '正在等待你完成授权，完成后计划就能继续读取所需数据。';
+    case 'connected': return '连接状态正常，计划可以继续读取当前授权范围内的数据。';
+    case 'degraded': return '连接状态不稳定，下一次自动运行可能拿不到完整结果。';
+    case 'expired': return '连接已经过期，计划暂时拿不到最新数据。';
+    case 'permission_required': return '这条连接缺少当前计划需要的授权范围。';
+    case 'reauthorization_required': return '账号登录状态已经失效，需要你重新连接。';
+    case 'provider_error': return '服务方暂时不可用，这次没能稳定拿到结果。';
+    case 'revoked': return '你已经断开这个连接，相关计划会保留，但不会继续读取。';
+    default: return '当前连接状态还不能自动判断，请稍后再检查。';
+  }
+}
+
+export function connectionStatusNextStep(status: string) {
+  switch (status) {
+    case 'expired':
+    case 'reauthorization_required':
+      return '重新连接后，计划会自动继续运行。';
+    case 'permission_required':
+      return '补齐需要的授权后，相关计划就能恢复。';
+    case 'provider_error':
+      return '稍后重新检查；如果连续失败，再重新连接一次。';
+    case 'degraded':
+      return '先重新检查一次连接状态，必要时再重新连接。';
+    case 'revoked':
+      return '如果还想继续使用这项服务，重新连接即可。';
+    default:
+      return '保持当前状态即可。';
+  }
+}
+
 export function providerReadinessLabel(status: string) {
   switch (status) {
     case 'PRODUCTION_READY': return '可使用';
@@ -85,6 +117,85 @@ export function capabilityDescription(providerKey: string, capability: string) {
     case 'WRITE_INTERNAL': return '更新应用内部记录，用于状态同步与结果沉淀。';
     default: return '在你授权的范围内完成对应计划动作。';
   }
+}
+
+export function consumerErrorMessage(detail: string | null | undefined) {
+  if (!detail) return '这次处理暂时没有返回更多说明。';
+  const normalized = detail.trim().toLowerCase();
+  if (normalized.includes('permission_revoked') || normalized.includes('permission revoked')) {
+    return '相关授权已经被撤销，计划暂时不能继续读取或执行。';
+  }
+  if (normalized.includes('outcome_unknown')) {
+    return '这次结果暂时无法自动确认，需要你看一下是否已经处理成功。';
+  }
+  if (
+    normalized.includes('oauth token refresh failed')
+    || normalized.includes('refresh token is invalid')
+    || normalized.includes('credentials revoked')
+    || normalized.includes('refresh_required')
+  ) {
+    return '账号登录状态已经失效，需要重新连接后才能继续运行。';
+  }
+  if (normalized.includes('timeout')) {
+    return '服务响应超时，这次暂时没有拿到结果。';
+  }
+  if (
+    normalized.includes('provider unavailable')
+    || normalized.includes('provider temporary failure')
+    || normalized.includes('temporary failure')
+    || normalized.includes('provider 5')
+  ) {
+    return '服务暂时不可用，稍后可以再试一次。';
+  }
+  if (normalized.includes('rate limit') || normalized.includes('rate limited')) {
+    return '服务方临时限制了访问频率，稍后再试即可。';
+  }
+  if (normalized.includes('plan failed')) {
+    return '这次计划没有按预期完成。';
+  }
+  if (normalized.includes('network')) {
+    return '网络暂时不可用，这次没能完成同步。';
+  }
+  if (normalized.includes('configuration incomplete') || normalized.includes('invalid template config')) {
+    return '这条计划还没配置完整，补齐后就能继续运行。';
+  }
+  if (normalized.includes('missing connection') || normalized.includes('connection is not available')) {
+    return '这条计划缺少可用连接，补上后就能继续运行。';
+  }
+  return detail;
+}
+
+export function consumerErrorNextStep(detail: string | null | undefined) {
+  if (!detail) return '先重新试一次；如果还是失败，再检查连接和权限。';
+  const normalized = detail.trim().toLowerCase();
+  if (normalized.includes('permission_revoked') || normalized.includes('permission revoked')) {
+    return '去“我的连接”重新授权后，这条计划会继续工作。';
+  }
+  if (normalized.includes('outcome_unknown')) {
+    return '打开记录确认实际结果；如未成功，再重新执行一次。';
+  }
+  if (
+    normalized.includes('oauth token refresh failed')
+    || normalized.includes('refresh token is invalid')
+    || normalized.includes('credentials revoked')
+    || normalized.includes('refresh_required')
+    || normalized.includes('missing connection')
+  ) {
+    return '重新连接对应账号后，再回来启用或重试。';
+  }
+  if (normalized.includes('timeout') || normalized.includes('provider unavailable') || normalized.includes('temporary failure')) {
+    return '稍后重新检查；如果连续失败，再重新连接一次。';
+  }
+  if (normalized.includes('rate limit') || normalized.includes('rate limited')) {
+    return '先等一会儿再试，不需要重复点很多次。';
+  }
+  if (normalized.includes('network')) {
+    return '先确认网络恢复，再重新加载或手动执行。';
+  }
+  if (normalized.includes('configuration incomplete') || normalized.includes('invalid template config')) {
+    return '回到计划详情补齐设置，再重新启用。';
+  }
+  return '先看连接、权限和当前配置是否齐全，再决定是否重试。';
 }
 
 const PROVIDER_CAPABILITY_COPY: Record<string, Record<string, { label: string; description: string }>> = {

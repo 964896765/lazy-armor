@@ -2,8 +2,12 @@ import { describe, expect, it } from 'vitest';
 import {
   capabilityDescription,
   capabilityLabel,
+  connectionStatusExplanation,
+  connectionStatusNextStep,
   connectionRecoveryAction,
   connectionStatusLabel,
+  consumerErrorMessage,
+  consumerErrorNextStep,
   isConsumerConnector,
   providerReadinessLabel,
 } from './connection-presenter';
@@ -23,6 +27,13 @@ describe('P2 mobile connection presenter', () => {
     expect(connectionRecoveryAction('provider_error')).toBe('重新检查');
     expect(connectionRecoveryAction('degraded')).toBe('连接有点问题');
     expect(connectionRecoveryAction('connected')).toBeNull();
+  });
+
+  it('explains connection status and next step in plain language', () => {
+    expect(connectionStatusExplanation('reauthorization_required')).toContain('重新连接');
+    expect(connectionStatusExplanation('permission_required')).toContain('授权范围');
+    expect(connectionStatusNextStep('expired')).toContain('重新连接');
+    expect(connectionStatusNextStep('provider_error')).toContain('稍后重新检查');
   });
 
   it('uses provider context for shared capability keys', () => {
@@ -58,5 +69,13 @@ describe('P2 mobile connection presenter', () => {
     expect(isConsumerConnector('gmail')).toBe(true);
     expect(isConsumerConnector('manual')).toBe(false);
     expect(isConsumerConnector('internal')).toBe(false);
+  });
+
+  it('maps technical failures into consumer-safe language', () => {
+    expect(consumerErrorMessage('OAuth token refresh failed')).toContain('重新连接');
+    expect(consumerErrorMessage('OUTCOME_UNKNOWN')).toContain('无法自动确认');
+    expect(consumerErrorMessage('provider timeout')).toContain('响应超时');
+    expect(consumerErrorNextStep('rate limited')).toContain('等一会儿');
+    expect(consumerErrorNextStep('permission revoked')).toContain('重新授权');
   });
 });

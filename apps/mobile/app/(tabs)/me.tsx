@@ -1,7 +1,104 @@
+import { useQuery } from '@tanstack/react-query';
 import { Link } from 'expo-router';
-import { Pressable, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { api } from '../../src/api';
+import { useAuthStore } from '../../src/auth-store';
 import { ShellPage, styles } from '../../src/shell';
 
+interface Connection { id: string }
+interface DeviceProfile { id: string }
+interface VehicleProfile { id: string }
+interface RecurringItemProfile { id: string }
+interface DigitalAccountProfile { id: string }
+interface UnreadCount { count: number }
+
 export default function Me() {
-  return <ShellPage title="我的" subtitle="连接与权限必须容易查看，也必须容易撤销。"><Link href="/connections" asChild><Pressable><View style={styles.card}><Text style={styles.cardTitle}>我的连接</Text><Text style={styles.cardText}>查看服务状态、逐项权限和撤销连接</Text></View></Pressable></Link></ShellPage>;
+  const token = useAuthStore((state) => state.token);
+  const connections = useQuery({ queryKey: ['connections', token], queryFn: () => api<Connection[]>('/connections', token), enabled: Boolean(token) });
+  const devices = useQuery({ queryKey: ['device-profiles', token], queryFn: () => api<DeviceProfile[]>('/device-profiles', token), enabled: Boolean(token) });
+  const vehicles = useQuery({ queryKey: ['vehicle-profiles', token], queryFn: () => api<VehicleProfile[]>('/vehicle-profiles', token), enabled: Boolean(token) });
+  const recurringItems = useQuery({ queryKey: ['recurring-item-profiles', token], queryFn: () => api<RecurringItemProfile[]>('/recurring-item-profiles', token), enabled: Boolean(token) });
+  const digitalAccounts = useQuery({ queryKey: ['digital-account-profiles', token], queryFn: () => api<DigitalAccountProfile[]>('/digital-account-profiles', token), enabled: Boolean(token) });
+  const unread = useQuery({ queryKey: ['notifications-unread', token], queryFn: () => api<UnreadCount>('/notifications/unread-count', token), enabled: Boolean(token) });
+  const loading = connections.isLoading || devices.isLoading || vehicles.isLoading || recurringItems.isLoading || digitalAccounts.isLoading || unread.isLoading;
+
+  return (
+    <ShellPage title="我的" subtitle="把连接、权限、设备、车辆和安全入口放到同一个地方，方便你自己管理。">
+      {token && loading ? <ActivityIndicator style={local.loading} /> : null}
+
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>个人资料</Text>
+        <Text style={styles.cardText}>{token ? '当前账号已登录，可以继续管理连接、权限和个人资料入口。' : '登录后才能查看你的连接、设备、车辆和通知。'}</Text>
+      </View>
+
+      <Link href="/connections" asChild>
+        <Pressable>
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>我的连接</Text>
+            <Text style={styles.cardText}>已连接 {connections.data?.length ?? 0} 个服务，支持查看状态、重新连接和断开账号。</Text>
+          </View>
+        </Pressable>
+      </Link>
+
+      <Link href="/connections" asChild>
+        <Pressable>
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>权限中心</Text>
+            <Text style={styles.cardText}>从“能读取什么、能准备什么”来查看授权，并可逐项撤销，撤销后会立即生效。</Text>
+          </View>
+        </Pressable>
+      </Link>
+
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>我的设备</Text>
+        <Text style={styles.cardText}>已记录 {devices.data?.length ?? 0} 台设备，可继续用于耗材提醒和维护类计划。</Text>
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>我的车辆</Text>
+        <Text style={styles.cardText}>已记录 {vehicles.data?.length ?? 0} 台车辆，可继续用于保养、保险和年检提醒。</Text>
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>家庭</Text>
+        <Text style={styles.cardText}>已记录 {recurringItems.data?.length ?? 0} 条周期事项，第一版先保留轻量入口，不做家庭社交系统。</Text>
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>通知</Text>
+        <Text style={styles.cardText}>还有 {unread.data?.count ?? 0} 条未读通知；后续会在这里补全通知偏好和优先级设置。</Text>
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>自动化安全等级</Text>
+        <Text style={styles.cardText}>只提醒我：只告诉你结果，不替你动外部账号。</Text>
+        <Text style={styles.cardText}>替我准备好：先把草稿、清单或结果准备好，再交给你确认。</Text>
+        <Text style={styles.cardText}>确认后执行：涉及外部可见动作时，先问你再继续。</Text>
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>隐私</Text>
+        <Text style={styles.cardText}>只读取计划当前需要的最小数据；连接断开后，相关计划会立即失去对应权限。</Text>
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>数据管理</Text>
+        <Text style={styles.cardText}>已为导出、删除和账户删除流程预留正式入口，后续会继续补齐自助操作。</Text>
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>安全记录</Text>
+        <Text style={styles.cardText}>已记录连接、权限和敏感操作的安全事实；这里先保留正式入口说明，不直接暴露底层审计结构。</Text>
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>会员</Text>
+        <Text style={styles.cardText}>已记录 {digitalAccounts.data?.length ?? 0} 条数字账号或订阅资料；套餐和会员逻辑会在 P5 继续完善。</Text>
+      </View>
+    </ShellPage>
+  );
 }
+
+const local = StyleSheet.create({
+  loading: { marginBottom: 12 },
+});

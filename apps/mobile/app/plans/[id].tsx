@@ -211,20 +211,18 @@ export default function PlanDetailPage() {
           <Text style={local.subtitle}>{summary.data.description ?? version.data.description ?? '这是一份可持续运行的懒人计划。'}</Text>
 
           <View style={local.card}>
-            <Text style={local.cardTitle}>当前状态</Text>
-            <Text style={local.text}>状态：{planStatusLabel(summary.data.status)}</Text>
+            <Text style={local.cardTitle}>现在怎么样</Text>
+            <Text style={local.text}>当前状态：{planStatusLabel(summary.data.status)}</Text>
             <Text style={local.text}>自动化等级：{automationLevelLabel(version.data.automationLevel)}</Text>
-            <Text style={local.text}>来自模板：{template.data?.name ?? '已安装模板'}{summary.data.templateVersion ? ` · V${summary.data.templateVersion}` : ''}</Text>
-            <Text style={local.text}>当前版本：V{version.data.versionNumber}</Text>
-            <Text style={local.text}>生效版本：{summary.data.activeVersion ? `V${summary.data.activeVersion.versionNumber}` : '尚未 Apply'}</Text>
             <Text style={local.text}>下次预计运行：{formatTime(summary.data.nextExpectedRunAt)}</Text>
             <Text style={local.text}>最近一次执行：{summary.data.latestExecution ? `${formatTime(summary.data.latestExecution.createdAt)} · ${summary.data.latestExecution.resultSummary ?? executionStatusLabel(summary.data.latestExecution.status)}` : '暂未运行'}</Text>
+            <Text style={local.text}>最近异常：{latestExceptionText(summary.data)}</Text>
           </View>
 
           {summary.data.planCenterSummary ? (
             <View style={local.card}>
               <Text style={local.cardTitle}>当前概况</Text>
-              <Text style={local.text}>当前状态：{planCenterStatusLabel(summary.data.planCenterSummary.kind, summary.data.planCenterSummary.currentStatus)}</Text>
+              <Text style={local.text}>这条计划现在会这样帮你：{planCenterStatusLabel(summary.data.planCenterSummary.kind, summary.data.planCenterSummary.currentStatus)}</Text>
               {summary.data.planCenterSummary.kind === 'logistics' ? (
                 <>
                   <Text style={local.text}>最近检查：{formatTime(summary.data.planCenterSummary.latestCheckAt)}</Text>
@@ -272,25 +270,21 @@ export default function PlanDetailPage() {
           ) : null}
 
           <View style={local.card}>
-            <Text style={local.cardTitle}>当前配置</Text>
-            {renderConfig(version.data.templateConfig, template.data?.configFields)}
-            <Text style={local.text}>连接与权限：{summary.data.hasMissingConnection ? '还缺连接或权限，需要继续设置。' : '当前所需连接已满足。'}</Text>
+            <Text style={local.cardTitle}>它会替我做什么</Text>
+            {version.data.definition.actions.map((action, index) => (
+              <Text style={local.text} key={`${action.actionType}-${index}`}>{index + 1}. {actionSummary(action.actionType, action.config)}</Text>
+            ))}
           </View>
 
-          {summary.data.missingConnections.length > 0 ? (
-            <View style={local.card}>
-              <Text style={local.cardTitle}>还差 {summary.data.missingConnections.length} 个连接</Text>
-              <Text style={local.text}>计划草稿已经保留。补好连接后再启用，不会删除你已经设置的内容。</Text>
-              {summary.data.missingConnections.map((connection) => (
-                <Text style={local.text} key={connection.providerKey}>· {connection.providerName}</Text>
-              ))}
-              <View style={local.buttonGap} />
-              <Button title="一键去连接" onPress={() => router.push('/connections')} />
-              <View style={local.buttonGap} />
-              <Button title={resolveConnections.isPending ? '检查中…' : '我已连接，重新检查'} onPress={() => resolveConnections.mutate()} disabled={resolveConnections.isPending} />
-              {resolveConnections.isError ? <Text style={local.error}>还没有找到可用连接，请先完成连接与授权。</Text> : null}
-            </View>
-          ) : null}
+          <View style={local.card}>
+            <Text style={local.cardTitle}>什么时候会叫我</Text>
+            <Text style={local.text}>{notificationText(version.data)}</Text>
+          </View>
+
+          <View style={local.card}>
+            <Text style={local.cardTitle}>当前设置</Text>
+            {renderConfig(version.data.templateConfig, template.data?.configFields)}
+          </View>
 
           <View style={local.card}>
             <Text style={local.cardTitle}>数据来源</Text>
@@ -298,6 +292,11 @@ export default function PlanDetailPage() {
               <Text style={local.text} key={`${source.sourceType}-${index}`}>
                 {index + 1}. {sourceTypeLabel(source.sourceType)}{source.connectionId ? ' · 已完成连接设置' : ''}
               </Text>
+            ))}
+            <Text style={local.cardTitle}>当前权限</Text>
+            <Text style={local.text}>{summary.data.hasMissingConnection ? '还有连接或授权没补齐，暂时不能稳定运行。' : '当前所需连接和授权都已经满足。'}</Text>
+            {summary.data.missingConnections.map((connection) => (
+              <Text style={local.text} key={connection.providerKey}>· 还需要：{connection.providerName}</Text>
             ))}
             <Text style={local.cardTitle}>运行条件</Text>
             {version.data.definition.triggers.map((trigger, index) => (
@@ -309,14 +308,20 @@ export default function PlanDetailPage() {
             ))}
           </View>
 
-          <View style={local.card}>
-            <Text style={local.cardTitle}>会执行什么</Text>
-            {version.data.definition.actions.map((action, index) => (
-              <Text style={local.text} key={`${action.actionType}-${index}`}>{index + 1}. {actionSummary(action.actionType, action.config)}</Text>
-            ))}
-            <Text style={local.cardTitle}>什么时候通知</Text>
-            <Text style={local.text}>{notificationText(version.data)}</Text>
-          </View>
+          {summary.data.missingConnections.length > 0 ? (
+            <View style={local.card}>
+              <Text style={local.cardTitle}>还差 {summary.data.missingConnections.length} 个连接</Text>
+              <Text style={local.text}>计划草稿已经保留。补好连接后再启用，不会删除你已经设置的内容。</Text>
+              {summary.data.missingConnections.map((connection) => (
+                <Text style={local.text} key={connection.providerKey}>· {connection.providerName}</Text>
+              ))}
+              <View style={local.buttonGap} />
+              <Button title="去补连接" onPress={() => router.push('/connections')} />
+              <View style={local.buttonGap} />
+              <Button title={resolveConnections.isPending ? '检查中…' : '我已连接，重新检查'} onPress={() => resolveConnections.mutate()} disabled={resolveConnections.isPending} />
+              {resolveConnections.isError ? <Text style={local.error}>还没有找到可用连接，请先完成连接与授权。</Text> : null}
+            </View>
+          ) : null}
 
           {summary.data.planCenterSummary?.kind === 'device' && deviceConsumableId ? (
             <View style={local.card}>
@@ -338,10 +343,11 @@ export default function PlanDetailPage() {
           ) : null}
 
           <View style={local.card}>
+            <Text style={local.cardTitle}>管理这条计划</Text>
             <Button title="编辑" onPress={() => router.push(`/plans/${id}/edit` as never)} />
             <View style={local.buttonGap} />
             <Button
-              title={apply.isPending ? 'Apply 中…' : '启用 / Apply 当前版本'}
+              title={apply.isPending ? '启用中…' : '启用这次修改'}
               onPress={() => apply.mutate()}
               disabled={apply.isPending || !currentVersionNumber || summary.data.hasMissingConnection}
             />
@@ -356,6 +362,13 @@ export default function PlanDetailPage() {
               </View>
             ))}
             {apply.isError || changeStatus.isError ? <Text style={local.error}>操作失败，请稍后重试。</Text> : null}
+          </View>
+
+          <View style={local.card}>
+            <Text style={local.cardTitle}>高级信息</Text>
+            <Text style={local.text}>来自模板：{template.data?.name ?? '已安装模板'}{summary.data.templateVersion ? ` · V${summary.data.templateVersion}` : ''}</Text>
+            <Text style={local.text}>当前修改稿：V{version.data.versionNumber}</Text>
+            <Text style={local.text}>当前运行版本：{summary.data.activeVersion ? `V${summary.data.activeVersion.versionNumber}` : '还没有正式启用'}</Text>
           </View>
         </>
       )}
@@ -411,6 +424,13 @@ function notificationText(version: PlanVersionDetail) {
     return `按“${notificationPreferenceLabel(version.templateConfig.notificationPreference)}”处理。`;
   }
   return actionSummary('notify', notifyAction.config);
+}
+
+function latestExceptionText(summary: PlanSummary) {
+  if (!summary.latestExecution) return '最近没有发现异常。';
+  if (summary.latestExecution.status === 'failed') return summary.latestExecution.resultSummary ?? '上一次运行没有成功完成。';
+  if (summary.hasMissingConnection) return '当前缺少连接或授权，需要先补齐。';
+  return '最近没有发现异常。';
 }
 
 function statusActionLabel(status: string) {

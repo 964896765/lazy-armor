@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 export function ShellPage({ title, subtitle, children }: { title: string; subtitle: string; children?: ReactNode }) {
-  return <View style={styles.page}><Text style={styles.eyebrow}>懒人装甲 · P0</Text><Text style={styles.title}>{title}</Text><Text style={styles.subtitle}>{subtitle}</Text>{children}</View>;
+  return <View style={styles.page}><Text style={styles.eyebrow}>懒人装甲</Text><Text style={styles.title}>{title}</Text><Text style={styles.subtitle}>{subtitle}</Text>{children}</View>;
 }
 
 export const styles = StyleSheet.create({
