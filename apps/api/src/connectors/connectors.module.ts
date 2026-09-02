@@ -9,6 +9,7 @@ import {
   InternalConnector,
   LogisticsProviderConnector,
   ManualConnector,
+  TrueProcessHarnessConnector,
   WebhookConnector,
 } from './base-connectors';
 import { ConnectorCatalogSyncService } from './connector-catalog-sync.service';
@@ -33,6 +34,9 @@ export const CONNECTOR_REGISTRY = 'CONNECTOR_REGISTRY';
         registry.register(new FileProviderConnector());
         registry.register(new LogisticsProviderConnector());
         registry.register(new ContentProviderConnector());
+        if (process.env.LAZY_ARMOR_ENABLE_TRUE_PROCESS_TEST_CONNECTOR === '1') {
+          registry.register(new TrueProcessHarnessConnector());
+        }
         return registry;
       },
     },

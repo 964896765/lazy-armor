@@ -1,4 +1,6 @@
 import { createHash } from 'crypto';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import path from 'path';
 import {
   ConnectorError,
   type AuthorizationCallbackRequest,
@@ -74,6 +76,163 @@ export class InternalConnector extends BaseConnector {
   }
   async execute(request: ConnectorRequest): Promise<ConnectorResult> {
     return { ok: true, data: { recorded: true, idempotencyKey: request.idempotencyKey ?? null } };
+  }
+}
+
+interface TrueProcessHarnessState {
+  appliedKeys: string[];
+  sideEffects: Record<string, number>;
+  receivedKeys: Record<string, string[]>;
+  callCounts: Record<string, number>;
+}
+
+function trueProcessHarnessStatePath() {
+  const configured = process.env.LAZY_ARMOR_TRUE_PROCESS_CONNECTOR_STATE_PATH?.trim();
+  return configured ? path.resolve(configured) : path.resolve(process.cwd(), '.data', 'true-process-harness-state.json');
+}
+
+function readTrueProcessHarnessState(): TrueProcessHarnessState {
+  const file = trueProcessHarnessStatePath();
+  if (!existsSync(file)) {
+    return { appliedKeys: [], sideEffects: {}, receivedKeys: {}, callCounts: {} };
+  }
+  try {
+    const parsed = JSON.parse(readFileSync(file, 'utf8')) as Partial<TrueProcessHarnessState>;
+    return {
+      appliedKeys: Array.isArray(parsed.appliedKeys) ? parsed.appliedKeys.filter((item): item is string => typeof item === 'string') : [],
+      sideEffects: parsed.sideEffects && typeof parsed.sideEffects === 'object' ? parsed.sideEffects as Record<string, number> : {},
+      receivedKeys: parsed.receivedKeys && typeof parsed.receivedKeys === 'object' ? parsed.receivedKeys as Record<string, string[]> : {},
+      callCounts: parsed.callCounts && typeof parsed.callCounts === 'object' ? parsed.callCounts as Record<string, number> : {},
+    };
+  } catch {
+    return { appliedKeys: [], sideEffects: {}, receivedKeys: {}, callCounts: {} };
+  }
+}
+
+function writeTrueProcessHarnessState(state: TrueProcessHarnessState) {
+  const file = trueProcessHarnessStatePath();
+  mkdirSync(path.dirname(file), { recursive: true });
+  writeFileSync(file, JSON.stringify(state, null, 2), 'utf8');
+}
+
+function harnessBehavior(request: ConnectorRequest) {
+  const config = request.input?.config;
+  if (config && typeof config === 'object' && !Array.isArray(config)) {
+    const behavior = (config as Record<string, unknown>).behavior;
+    if (typeof behavior === 'string') return behavior;
+  }
+  const context = request.input?.context;
+  if (context && typeof context === 'object' && !Array.isArray(context)) {
+    const behavior = (context as Record<string, unknown>).behavior;
+    if (typeof behavior === 'string') return behavior;
+  }
+  return 'ok';
+}
+
+export class TrueProcessHarnessConnector extends BaseConnector {
+  metadata = () => ({
+    key: 'true_process_test',
+    name: 'True Process Test',
+    description: '仅用于真进程 worker 故障矩阵验证的受控测试连接器。',
+    version: '1.0.0-test',
+    providerType: 'internal' as const,
+    productionStatus: 'BETA' as const,
+    authentication: { type: 'none' as const },
+    supportsRefresh: false,
+    supportsRevoke: false,
+    supportsWebhook: false,
+    supportsHealthCheck: true,
+    sandboxSupport: 'full' as const,
+    rateLimitStrategy: 'unknown' as const,
+  });
+
+  capabilities = (): ConnectorCapability[] => [
+    {
+      key: 'TEST_OUTBOX_SAFE',
+      name: 'Outbox Safe',
+      userFacingName: 'Outbox Safe',
+      riskLevel: 'R3',
+      operation: 'execute',
+      requiredPermission: 'TEST_OUTBOX_SAFE',
+      providerAvailability: 'available',
+      sideEffectContract: { sideEffect: true, supportsIdempotencyKey: true, supportsOperationLookup: true, retrySafety: 'safe' as const },
+    },
+    {
+      key: 'TEST_OUTBOX_UNSAFE',
+      name: 'Outbox Unsafe',
+      userFacingName: 'Outbox Unsafe',
+      riskLevel: 'R3',
+      operation: 'execute',
+      requiredPermission: 'TEST_OUTBOX_UNSAFE',
+      providerAvailability: 'available',
+      sideEffectContract: { sideEffect: true, supportsIdempotencyKey: false, supportsOperationLookup: false, retrySafety: 'unsafe' as const },
+    },
+  ];
+
+  async execute(request: ConnectorRequest): Promise<ConnectorResult> {
+    const capability = request.capability;
+    if (capability !== 'TEST_OUTBOX_SAFE' && capability !== 'TEST_OUTBOX_UNSAFE') {
+      throw new ConnectorError('INVALID_CAPABILITY', 'INVALID_REQUEST', `Unsupported capability: ${request.capability}`);
+    }
+    const state = readTrueProcessHarnessState();
+    const behavior = harnessBehavior(request);
+    const providerSupportsIdempotency = capability === 'TEST_OUTBOX_SAFE';
+    const dedupeKey = providerSupportsIdempotency ? (request.idempotencyKey ?? request.requestId) : `${request.requestId}:${Date.now()}:${Math.random()}`;
+    const marker = `${capability}:${dedupeKey}`;
+    const callKey = providerSupportsIdempotency ? marker : `${capability}:${request.requestId}`;
+    state.callCounts[callKey] = (state.callCounts[callKey] ?? 0) + 1;
+    const received = state.receivedKeys[capability] ?? [];
+    received.push(providerSupportsIdempotency ? dedupeKey : request.requestId);
+    state.receivedKeys[capability] = received;
+    const alreadyApplied = state.appliedKeys.includes(marker);
+
+    if (behavior === 'reject') {
+      writeTrueProcessHarnessState(state);
+      return { ok: false, data: { reason: 'provider rejected' } };
+    }
+
+    if (behavior === 'timeout-once' && state.callCounts[callKey] === 1) {
+      if (!alreadyApplied) {
+        state.appliedKeys.push(marker);
+        state.sideEffects[capability] = (state.sideEffects[capability] ?? 0) + 1;
+      }
+      writeTrueProcessHarnessState(state);
+      throw new ConnectorError('TIMEOUT', 'TIMEOUT', 'Provider accepted the request but timed out before confirming', { retryable: true });
+    }
+
+    if (behavior === 'timeout-always') {
+      if (!alreadyApplied) {
+        state.appliedKeys.push(marker);
+        state.sideEffects[capability] = (state.sideEffects[capability] ?? 0) + 1;
+      }
+      writeTrueProcessHarnessState(state);
+      throw new ConnectorError('TIMEOUT', 'TIMEOUT', 'Provider accepted the request but timed out before confirming', { retryable: true });
+    }
+
+    if (behavior === 'crash-after-success-once' && state.callCounts[callKey] === 1) {
+      if (!alreadyApplied) {
+        state.appliedKeys.push(marker);
+        state.sideEffects[capability] = (state.sideEffects[capability] ?? 0) + 1;
+      }
+      writeTrueProcessHarnessState(state);
+      process.exit(91);
+    }
+
+    if (alreadyApplied) {
+      writeTrueProcessHarnessState(state);
+      return { ok: true, data: { simulated: true, deduped: true, providerOperationId: `tp-${createHash('sha256').update(marker).digest('hex').slice(0, 12)}` } };
+    }
+
+    state.appliedKeys.push(marker);
+    state.sideEffects[capability] = (state.sideEffects[capability] ?? 0) + 1;
+    writeTrueProcessHarnessState(state);
+    return {
+      ok: true,
+      data: {
+        simulated: true,
+        providerOperationId: `tp-${createHash('sha256').update(marker).digest('hex').slice(0, 12)}`,
+      },
+    };
   }
 }
 
