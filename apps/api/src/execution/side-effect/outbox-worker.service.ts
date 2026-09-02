@@ -240,7 +240,7 @@ export class OutboxWorker implements OnModuleInit, OnApplicationShutdown {
       await tx.update(outboxMessages).set({ status: 'dead', lockedBy: null, lockExpiresAt: null, lastErrorCode: error.code, lastErrorMessage: this.sanitizer.sanitizeText(error), updatedAt: now }).where(eq(outboxMessages.id, message.id));
       await this.audit.append({ actorType: 'outbox_worker', actorUserId: null, action: 'SIDE_EFFECT_OUTCOME_UNKNOWN', resourceType: 'side_effect_operation', resourceId: operation.id, userId: operation.userId, executionId, executionStepId: operation.executionStepId, sideEffectOperationId: operation.id, outboxMessageId: message.id, correlationId: operation.correlationId, causationId: operation.id, source: 'outbox_worker', result: 'unknown', reasonCode: error.code, changeSummary: 'Ambiguous outcome; automatic retry stopped' }, tx);
     });
-    await this.notifications.emit({ userId: operation.userId, executionId, executionStepId: operation.executionStepId, priority: 'P0', eventType: 'side_effect_outcome_unknown', dedupeKey: `outcome-unknown:${operation.id}`, title: '操作结果待确认', body: '这一步已向外部服务发出请求，但暂时无法确认最终结果。为了避免重复操作，系统已停止自动重试，需要人工处理。' });
+    await this.notifications.emit({ userId: operation.userId, executionId, executionStepId: operation.executionStepId, priority: 'P0', eventType: 'side_effect_outcome_unknown', dedupeKey: `outcome-unknown:${operation.id}`, title: '操作结果待确认', body: '这一步已向外部服务发出请求，但暂时无法确认最终结果。为了避免重复操作，系统已停止自动重试，需要人工处理。', actionRequired: true });
     await this.events.append(executionId, 'side_effect_outcome_unknown', { operationId: operation.id, errorCode: error.code }, operation.executionStepId);
     await this.finalizeExecution(operation.userId, executionId, 'OUTCOME_UNKNOWN');
   }
@@ -253,7 +253,7 @@ export class OutboxWorker implements OnModuleInit, OnApplicationShutdown {
       await tx.update(outboxMessages).set({ status: 'dead', lockedBy: null, lockExpiresAt: null, lastErrorCode: error.code, lastErrorMessage: this.sanitizer.sanitizeText(error), updatedAt: now }).where(eq(outboxMessages.id, message.id));
       await this.audit.append({ actorType: 'outbox_worker', actorUserId: null, action: 'SIDE_EFFECT_DEAD_LETTER', resourceType: 'side_effect_operation', resourceId: operation.id, userId: operation.userId, executionId, executionStepId: operation.executionStepId, sideEffectOperationId: operation.id, outboxMessageId: message.id, correlationId: operation.correlationId, causationId: operation.id, source: 'outbox_worker', result: 'failure', reasonCode: error.code });
     });
-    await this.notifications.emit({ userId: operation.userId, executionId, executionStepId: operation.executionStepId, priority: 'P1', eventType: 'side_effect_dead_letter', dedupeKey: `dead-letter:${operation.id}`, title: '外部动作连续失败', body: '外部操作多次尝试仍未成功，系统已停止重试，需要人工处理。' });
+    await this.notifications.emit({ userId: operation.userId, executionId, executionStepId: operation.executionStepId, priority: 'P1', eventType: 'side_effect_dead_letter', dedupeKey: `dead-letter:${operation.id}`, title: '外部动作连续失败', body: '外部操作多次尝试仍未成功，系统已停止重试，需要人工处理。', actionRequired: true });
     await this.events.append(executionId, 'side_effect_dead_letter', { operationId: operation.id, errorCode: error.code }, operation.executionStepId);
     await this.finalizeExecution(operation.userId, executionId, error.code);
   }

@@ -134,6 +134,7 @@ export class NotificationService {
         body: item.body,
         executionId: item.executionId,
         createdAt: item.createdAt,
+        actionRequired: Boolean(item.actionRequired),
         category: this.classifyTodayCategory(item.eventType, item.priority as NotificationPriority, Boolean(item.actionRequired)),
       })),
       processed,

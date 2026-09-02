@@ -20,6 +20,22 @@ export class ExecutionRuntimeError extends Error {
 
 export function asRuntimeError(error: unknown): ExecutionRuntimeError {
   if (error instanceof ExecutionRuntimeError) return error;
+  if (error && typeof error === 'object') {
+    const response = typeof (error as { getResponse?: () => unknown }).getResponse === 'function'
+      ? (error as { getResponse: () => unknown }).getResponse()
+      : error;
+    if (response && typeof response === 'object') {
+      const detail = response as { code?: unknown; message?: unknown; retryable?: unknown };
+      const message = Array.isArray(detail.message)
+        ? detail.message.find((item): item is string => typeof item === 'string') ?? 'Execution failed'
+        : typeof detail.message === 'string'
+          ? detail.message
+          : 'Execution failed';
+      if (typeof detail.code === 'string') {
+        return new ExecutionRuntimeError(detail.code, message, typeof detail.retryable === 'boolean' ? detail.retryable : RETRYABLE_ERROR_CODES.has(detail.code));
+      }
+    }
+  }
   // 结构化回退：跨模块边界（如 Connector 抛出的同构错误）时仍保留错误码。
   const candidate = error as Partial<ExecutionRuntimeError>;
   if (error instanceof Error && typeof candidate.code === 'string' && typeof candidate.retryable === 'boolean') {

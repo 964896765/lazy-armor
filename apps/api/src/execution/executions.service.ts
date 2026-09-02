@@ -25,13 +25,14 @@ export class ExecutionsService {
     if (query.planId) filters.push(eq(executions.planId, query.planId));
     if (query.from) filters.push(gte(executions.createdAt, new Date(query.from)));
     if (query.to) filters.push(lte(executions.createdAt, new Date(query.to)));
-    return this.db.select({
+    const rows = await this.db.select({
       id: executions.id, planId: executions.planId, planVersionId: executions.planVersionId, planName: planVersions.name,
       status: executions.status, resultCode: executions.resultCode, resultSummary: executions.resultSummary,
       errorCode: executions.errorCode, errorMessage: executions.errorMessage, createdAt: executions.createdAt,
       startedAt: executions.startedAt, finishedAt: executions.finishedAt,
     }).from(executions).innerJoin(planVersions, eq(executions.planVersionId, planVersions.id))
       .where(and(...filters)).orderBy(desc(executions.createdAt)).limit(query.limit).offset(query.offset);
+    return rows.map((row) => ({ ...row, errorMessage: this.consumerErrorDetail(row.errorCode, row.errorMessage) }));
   }
 
   async listForPlan(userId: string, planId: string) {
@@ -63,7 +64,7 @@ export class ExecutionsService {
       }).from(approvalRequests).where(eq(approvalRequests.executionId, id)).orderBy(asc(approvalRequests.createdAt)),
       this.db.select({
         id: notifications.id, priority: notifications.priority, eventType: notifications.eventType, title: notifications.title,
-        body: notifications.body, status: notifications.status, createdAt: notifications.createdAt,
+        body: notifications.body, actionRequired: notifications.actionRequired, status: notifications.status, createdAt: notifications.createdAt,
       }).from(notifications).where(eq(notifications.executionId, id)).orderBy(asc(notifications.createdAt)).limit(20),
     ]);
     const outputs = steps
@@ -74,7 +75,15 @@ export class ExecutionsService {
         status: step.status,
         output: step.outputSnapshotJson,
       }));
-    return { ...rows[0], steps, outputs, events, approvals, notifications: detailNotifications };
+    return {
+      ...rows[0],
+      errorMessage: this.consumerErrorDetail(rows[0].errorCode, rows[0].errorMessage),
+      steps,
+      outputs,
+      events,
+      approvals,
+      notifications: detailNotifications,
+    };
   }
 
   async cancel(userId: string, id: string) {
@@ -99,5 +108,49 @@ export class ExecutionsService {
   private async assertOwnedPlan(userId: string, planId: string) {
     const rows = await this.db.select({ id: plans.id }).from(plans).where(and(eq(plans.id, planId), eq(plans.userId, userId))).limit(1);
     if (!rows[0]) throw new NotFoundException('Plan not found');
+  }
+
+  private consumerErrorDetail(code: string | null, _message: string | null) {
+    switch (code) {
+      case 'PERMISSION_REVOKED':
+      case 'PERMISSION_EXPIRED':
+      case 'CAPABILITY_NOT_GRANTED':
+        return 'permission revoked';
+      case 'CONNECTION_REVOKED':
+      case 'CONNECTION_EXPIRED':
+        return 'connection expired';
+      case 'CREDENTIAL_INVALID':
+      case 'CREDENTIAL_EXPIRED':
+      case 'CREDENTIAL_UNAVAILABLE':
+        return 'credentials revoked';
+      case 'TIMEOUT':
+        return 'provider timeout';
+      case 'PROVIDER_UNAVAILABLE':
+      case 'PROVIDER_5XX':
+      case 'CONNECTOR_TEMPORARY_ERROR':
+        return 'provider unavailable';
+      case 'RATE_LIMIT':
+      case 'RATE_LIMITED':
+        return 'rate limited';
+      case 'SOURCE_CONNECTION_REQUIRED':
+      case 'CONNECTION_UNAVAILABLE':
+      case 'CONNECTION_NOT_OWNED':
+      case 'CAPABILITY_NOT_FOUND':
+        return 'missing connection';
+      case 'SOURCE_RUNTIME_NOT_IMPLEMENTED':
+      case 'PROVIDER_GATE_DISABLED':
+        return 'configuration incomplete';
+      case 'PLAN_FAILED':
+        return 'plan failed';
+      case 'OUTCOME_UNKNOWN':
+        return 'outcome_unknown';
+      case 'NETWORK_ERROR':
+        return 'network failure';
+      case 'PLAN_DEFINITION_INTEGRITY_ERROR':
+      case 'INTERNAL_EXECUTION_ERROR':
+        return 'unknown internal error';
+      default:
+        return code ? 'unknown internal error' : null;
+    }
   }
 }

@@ -20,7 +20,7 @@ export class WorkerProbe {
     this.server = createServer(async (request, response) => {
       response.setHeader('Content-Type', 'application/json; charset=utf-8');
       response.setHeader('Cache-Control', 'no-store');
-      if (request.url === '/live') { response.statusCode = 200; response.end(JSON.stringify({ status: 'ok', role })); return; }
+      if (request.url === '/live') { response.statusCode = 200; response.end(JSON.stringify({ status: 'ok', role, checkedAt: new Date().toISOString() })); return; }
       if (request.url !== '/ready') { response.statusCode = 404; response.end(JSON.stringify({ status: 'not_found' })); return; }
       try {
         const readiness = await this.readiness();
@@ -53,6 +53,6 @@ export class WorkerProbe {
       ? await this.app.get<{ readiness(): Promise<WorkerHealth> }>(EXECUTION_WORKER).readiness()
       : this.app.get<{ readiness(): WorkerHealth }>(OUTBOX_WORKER).readiness();
     const ready = queue.bullmq === 'ready' && worker.ready;
-    return { status: ready ? 'ready' : 'not_ready', role, mysql: 'ready', redis: queue.redis, bullmq: queue.bullmq, worker };
+    return { status: ready ? 'ready' : 'not_ready', role, checkedAt: new Date().toISOString(), mysql: 'ready', redis: queue.redis, bullmq: queue.bullmq, queueCounts: queue.counts, worker };
   }
 }

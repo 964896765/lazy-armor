@@ -100,9 +100,13 @@ export class ExecutionRunner {
         const gate = await this.approvalGate.check({ execution, step, action: actionDefinition as NormalizedAction });
         if (!gate.allowed) return { status: 'waiting_approval' };
 
-        // §15：外部副作用（externalEffect / 动态 R3-R4）走 SideEffect Pipeline；
-        // R0-R2 内部安全动作继续由 ActionExecutor 直接运行。
-        if (await this.coordinator.isSideEffectAction(actionDefinition as NormalizedAction, gate.effectiveRisk, null)) {
+        // §15/§43：不仅 R3/R4 或 action.externalEffect，能力 contract 明确 sideEffect
+        // 的 R2 动作也必须走受控 Side Effect Pipeline，不能回落到内联执行。
+        const sideEffectContract = await this.coordinator.contractFor(
+          (actionDefinition as NormalizedAction).connectorKey,
+          (actionDefinition as NormalizedAction).requiredCapability,
+        );
+        if (await this.coordinator.isSideEffectAction(actionDefinition as NormalizedAction, gate.effectiveRisk, sideEffectContract)) {
           const prepared = await this.coordinator.prepare({ execution, step: { ...step, inputFingerprint: step.inputFingerprint! }, action: actionDefinition as NormalizedAction, effectiveRisk: gate.effectiveRisk });
           await this.states.transition(executionId, 'waiting_dispatch', { workerToken: null, heartbeatAt: null, leaseExpiresAt: null });
           await this.events.append(executionId, 'execution_waiting_dispatch', { operationId: prepared.operationId }, step.id);
@@ -248,6 +252,7 @@ export class ExecutionRunner {
       case 'SOURCE_CONNECTION_REQUIRED':
       case 'CONNECTION_UNAVAILABLE':
       case 'CONNECTION_NOT_OWNED':
+      case 'CAPABILITY_NOT_FOUND':
         return {
           priority: 'P1' as const,
           eventType: 'missing_connection',
@@ -290,6 +295,7 @@ export class ExecutionRunner {
           actionRequired: false,
         };
       case 'PROVIDER_UNAVAILABLE':
+      case 'PROVIDER_5XX':
       case 'CONNECTOR_TEMPORARY_ERROR':
       case 'CREDENTIAL_UNAVAILABLE':
         return {

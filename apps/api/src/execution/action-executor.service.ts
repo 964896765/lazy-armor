@@ -534,7 +534,7 @@ export class ActionExecutor {
     } catch (error) {
       const mapped = asRuntimeError(error);
       if (mapped.code !== 'INTERNAL_EXECUTION_ERROR') throw mapped;
-      throw new ExecutionRuntimeError('CONNECTOR_TEMPORARY_ERROR', mapped.message, true);
+      throw new ExecutionRuntimeError(mapped.code, mapped.message, mapped.retryable);
     }
   }
 
