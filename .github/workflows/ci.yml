@@ -87,8 +87,14 @@ jobs:
       - name: Plan schema tests
         run: pnpm --filter @lazy-armor/plan-schema test
 
+      - name: Plan schema build
+        run: pnpm --filter @lazy-armor/plan-schema build
+
       - name: Connector SDK tests
         run: pnpm --filter @lazy-armor/connector-sdk test
+
+      - name: Connector SDK build
+        run: pnpm --filter @lazy-armor/connector-sdk build
 
       - name: API typecheck
         run: pnpm --filter @lazy-armor/api typecheck
