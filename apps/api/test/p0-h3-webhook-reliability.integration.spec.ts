@@ -4,6 +4,7 @@ import type { INestApplication } from '@nestjs/common';
 import { createHmac } from 'node:crypto';
 import { createPool, type Pool, type RowDataPacket } from 'mysql2/promise';
 import request from 'supertest';
+import { json } from 'express';
 import { afterAll, describe, expect, it } from 'vitest';
 
 interface Session {
@@ -35,6 +36,62 @@ describe.sequential('P0-H3 webhook reliability and restart cleanup', { timeout: 
     const session = await register(app, `webhook-h3-${unique}@example.com`);
     const secret = 'webhook-h3-secret';
     const connectionId = await createWebhookConnection(app, session.accessToken, secret);
+
+    const currentTimestamp = `${Math.floor(Date.now() / 1000)}`;
+    const rejectedPayload = { kind: 'signature-matrix', sensitiveValue: `must-not-persist-${unique}` };
+    const rejectionBase = { eventId: `reject-${unique}`, requestId: `reject-${unique}`, idempotencyKey: `reject-${unique}`, payload: rejectedPayload };
+    await request(app.getHttpServer()).post(`/api/connections/${connectionId}/webhook-events`).set(auth(session.accessToken)).send({
+      ...rejectionBase, timestamp: currentTimestamp, signature: '0'.repeat(64),
+    }).expect(403);
+    await request(app.getHttpServer()).post(`/api/connections/${connectionId}/webhook-events`).set(auth(session.accessToken)).send({
+      ...rejectionBase, timestamp: currentTimestamp, signature: signPayload('wrong-webhook-secret', currentTimestamp, rejectedPayload),
+    }).expect(403);
+    await request(app.getHttpServer()).post(`/api/connections/${connectionId}/webhook-events`).set(auth(session.accessToken)).send({
+      ...rejectionBase, timestamp: currentTimestamp,
+    }).expect(403);
+    await request(app.getHttpServer()).post(`/api/connections/${connectionId}/webhook-events`).set(auth(session.accessToken)).send({
+      ...rejectionBase, signature: signPayload(secret, currentTimestamp, rejectedPayload),
+    }).expect(403);
+    const expiredTimestamp = `${Math.floor(Date.now() / 1000) - 600}`;
+    await request(app.getHttpServer()).post(`/api/connections/${connectionId}/webhook-events`).set(auth(session.accessToken)).send({
+      ...rejectionBase, timestamp: expiredTimestamp, signature: signPayload(secret, expiredTimestamp, rejectedPayload),
+    }).expect(403);
+
+    const oversizedPayload = { kind: 'oversized', content: 'x'.repeat(100_001) };
+    const oversizedTimestamp = `${Math.floor(Date.now() / 1000)}`;
+    await request(app.getHttpServer()).post(`/api/connections/${connectionId}/webhook-events`).set(auth(session.accessToken)).send({
+      eventId: `oversized-${unique}`, requestId: `oversized-${unique}`, idempotencyKey: `oversized-${unique}`,
+      timestamp: oversizedTimestamp, signature: signPayload(secret, oversizedTimestamp, oversizedPayload), payload: oversizedPayload,
+    }).expect(413);
+
+    const concurrentPayload = { kind: 'concurrent', customerEmail: `private-${unique}@example.com`, token: `secret-token-${unique}`, items: [1, 2] };
+    const concurrentTimestamp = `${Math.floor(Date.now() / 1000)}`;
+    const concurrentEvent = {
+      eventId: `concurrent-${unique}`, requestId: `concurrent-${unique}`, idempotencyKey: `concurrent-${unique}`,
+      timestamp: concurrentTimestamp, signature: signPayload(secret, concurrentTimestamp, concurrentPayload), payload: concurrentPayload,
+    };
+    const concurrent = await Promise.all([
+      request(app.getHttpServer()).post(`/api/connections/${connectionId}/webhook-events`).set(auth(session.accessToken)).send(concurrentEvent),
+      request(app.getHttpServer()).post(`/api/connections/${connectionId}/webhook-events`).set(auth(session.accessToken)).send(concurrentEvent),
+    ]);
+    expect(concurrent.map((response) => response.status)).toEqual([201, 201]);
+    expect(concurrent.map((response) => response.body.duplicate).sort()).toEqual([false, true]);
+    expect(concurrent[0].body.receiptId).toBe(concurrent[1].body.receiptId);
+    const [concurrentRows] = await pool.query<RowDataPacket[]>(
+      'SELECT event_id eventId,request_id requestId,idempotency_key idempotencyKey,payload_hash payloadHash,payload,payload_snapshot_json snapshot,payload_size_bytes sizeBytes FROM webhook_receipts WHERE connection_id=UUID_TO_BIN(?) AND event_id=?',
+      [connectionId, concurrentEvent.eventId],
+    );
+    expect(concurrentRows).toHaveLength(1);
+    expect(concurrentRows[0]).toMatchObject({ eventId: concurrentEvent.eventId, requestId: concurrentEvent.requestId, idempotencyKey: concurrentEvent.idempotencyKey, payload: '{}', payloadHash: expect.stringMatching(/^[a-f0-9]{64}$/), sizeBytes: expect.any(Number) });
+    expect(JSON.stringify(concurrentRows[0])).not.toContain(concurrentPayload.customerEmail);
+    expect(JSON.stringify(concurrentRows[0])).not.toContain(concurrentPayload.token);
+    const [sensitiveAudit] = await pool.query<RowDataPacket[]>(
+      'SELECT before_snapshot_json beforeSnapshot,after_snapshot_json afterSnapshot,change_summary changeSummary FROM audit_logs WHERE resource_id=?',
+      [connectionId],
+    );
+    expect(JSON.stringify(sensitiveAudit)).not.toContain(secret);
+    expect(JSON.stringify(sensitiveAudit)).not.toContain(concurrentPayload.customerEmail);
+    expect(JSON.stringify(sensitiveAudit)).not.toContain(concurrentPayload.token);
 
     const payload = { kind: 'same-payload', value: 1 };
     const timestamp = `${Math.floor(Date.now() / 1000)}`;
@@ -118,6 +175,10 @@ describe.sequential('P0-H3 webhook reliability and restart cleanup', { timeout: 
     const receipt = await waitForReceiptPurge(pool, first.body.receiptId);
     expect(receipt.payload).toBe('{}');
     expect(receipt.purgedAt).toBeTruthy();
+    expect(receipt).toMatchObject({ eventId: `same-${unique}`, requestId: `same-${unique}`, idempotencyKey: `same-${unique}`, payloadHash: expect.stringMatching(/^[a-f0-9]{64}$/) });
+    const [cleanupAudit] = await pool.query<RowDataPacket[]>("SELECT action,after_snapshot_json afterSnapshot FROM audit_logs WHERE action='WEBHOOK_PAYLOAD_RETENTION_CLEANUP' ORDER BY created_at DESC LIMIT 1");
+    expect(cleanupAudit[0]).toMatchObject({ action: 'WEBHOOK_PAYLOAD_RETENTION_CLEANUP' });
+    expect(Number(cleanupAudit[0].afterSnapshot.purged)).toBeGreaterThanOrEqual(1);
   });
 });
 
@@ -130,7 +191,8 @@ async function bootApp(nodeEnv: 'test' | 'development', credentialStorePath: str
   process.env.CREDENTIAL_STORE_PATH = credentialStorePath;
   const { AppModule } = await import('../src/app.module');
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
-  const app = moduleRef.createNestApplication();
+  const app = moduleRef.createNestApplication({ bodyParser: false });
+  app.use(json({ limit: '256kb' }));
   app.setGlobalPrefix('api');
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
   await app.init();
@@ -174,7 +236,7 @@ function signPayload(secret: string, timestamp: string, payload: Record<string, 
 async function waitForReceiptPurge(pool: Pool, receiptId: string) {
   for (let attempt = 0; attempt < 20; attempt += 1) {
     const [rows] = await pool.query<RowDataPacket[]>(
-      'SELECT payload,purged_at purgedAt FROM webhook_receipts WHERE id=UUID_TO_BIN(?)',
+      'SELECT event_id eventId,request_id requestId,idempotency_key idempotencyKey,payload_hash payloadHash,payload,purged_at purgedAt FROM webhook_receipts WHERE id=UUID_TO_BIN(?)',
       [receiptId],
     );
     if (rows[0]?.purgedAt) return rows[0];

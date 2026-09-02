@@ -1,19 +1,17 @@
 pluginManagement {
-  def reactNativeGradlePlugin = new File(
+  def reactNativeGradlePlugin = new File(rootDir,
     providers.exec {
       workingDir(rootDir)
-      commandLine("node", "--print", "require.resolve('@react-native/gradle-plugin/package.json', { paths: [require.resolve('react-native/package.json')] })")
+      commandLine("node", "--print", "require('path').relative(require('fs').realpathSync(process.cwd()), require.resolve('@react-native/gradle-plugin/package.json', { paths: [require.resolve('react-native/package.json')] }))")
     }.standardOutput.asText.get().trim()
-  ).getParentFile().absolutePath
+  ).getAbsoluteFile().getParentFile().absolutePath
   includeBuild(reactNativeGradlePlugin)
   
-  def expoPluginsPath = new File(
-    providers.exec {
+  def expoAutolinkingPackage = new File(rootDir, providers.exec {
       workingDir(rootDir)
-      commandLine("node", "--print", "require.resolve('expo-modules-autolinking/package.json', { paths: [require.resolve('expo/package.json')] })")
-    }.standardOutput.asText.get().trim(),
-    "../android/expo-gradle-plugin"
-  ).absolutePath
+      commandLine("node", "--print", "require('path').relative(require('fs').realpathSync(process.cwd()), require.resolve('expo-modules-autolinking/package.json', { paths: [require.resolve('expo/package.json')] }))")
+    }.standardOutput.asText.get().trim())
+  def expoPluginsPath = new File(expoAutolinkingPackage, "../android/expo-gradle-plugin").absolutePath
   includeBuild(expoPluginsPath)
 }
 

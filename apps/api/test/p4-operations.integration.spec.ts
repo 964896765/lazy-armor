@@ -37,6 +37,7 @@ describe.sequential('P4 operations snapshot', { timeout: 60000 }, () => {
       .expect(200);
     expect(overview.body).toMatchObject({
       status: expect.any(String),
+      dataStatus: 'available',
       generatedAt: expect.any(String),
       execution: expect.objectContaining({
         active: expect.any(Number),
@@ -61,6 +62,7 @@ describe.sequential('P4 operations snapshot', { timeout: 60000 }, () => {
       role: 'execution-worker',
       status: expect.any(String),
       processStatus: expect.any(String),
+      dataStatus: 'available',
       processHeartbeatAt: expect.anything(),
       lastWorkActivityAt: expect.anything(),
       readiness: expect.objectContaining({
@@ -71,6 +73,7 @@ describe.sequential('P4 operations snapshot', { timeout: 60000 }, () => {
       role: 'outbox-worker',
       status: expect.any(String),
       processStatus: expect.any(String),
+      dataStatus: 'available',
       processHeartbeatAt: expect.anything(),
       lastWorkActivityAt: expect.anything(),
       readiness: expect.objectContaining({
@@ -83,6 +86,7 @@ describe.sequential('P4 operations snapshot', { timeout: 60000 }, () => {
       .set(auth(readonly.token))
       .expect(200);
     expect(outbox.body).toMatchObject({
+      dataStatus: 'available',
       deadCount: expect.any(Number),
       pendingCount: expect.any(Number),
       retryWaitCount: expect.any(Number),
@@ -96,6 +100,7 @@ describe.sequential('P4 operations snapshot', { timeout: 60000 }, () => {
       .set(auth(readonly.token))
       .expect(200);
     expect(executions.body).toMatchObject({
+      dataStatus: 'available',
       recentFailed: expect.any(Array),
       stuck: expect.any(Array),
     });

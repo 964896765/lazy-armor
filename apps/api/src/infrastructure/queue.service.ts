@@ -12,8 +12,10 @@ export class QueueService implements OnApplicationShutdown {
 
   constructor(config: ConfigService) {
     this.redis = new IORedis(config.getOrThrow<string>('REDIS_URL'), { maxRetriesPerRequest: null, lazyConnect: true });
-    this.foundationQueue = new Queue('lazy-armor-foundation', { connection: this.redis });
-    this.executionQueue = new Queue('lazy-armor-executions', { connection: this.redis });
+    const prefix = config.get<string>('REDIS_KEY_PREFIX');
+    const queueOptions = { connection: this.redis, ...(prefix ? { prefix } : {}) };
+    this.foundationQueue = new Queue('lazy-armor-foundation', queueOptions);
+    this.executionQueue = new Queue<{ executionId: string }>('lazy-armor-executions', queueOptions);
   }
 
   async health() {

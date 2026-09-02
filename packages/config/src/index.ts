@@ -6,8 +6,15 @@ const envSchema = z.object({
   API_PORT: z.coerce.number().int().positive().default(3001),
   DATABASE_URL: z.string().min(1),
   REDIS_URL: z.string().min(1),
+  REDIS_KEY_PREFIX: z.string().trim().min(1).optional(),
   JWT_SECRET: z.string().min(32),
-  CREDENTIAL_MASTER_KEY: z.string().min(1),
+  CREDENTIAL_MASTER_KEY: z.string().refine((value) => {
+    try {
+      return /^[A-Za-z0-9+/]+={0,2}$/.test(value) && Buffer.from(value, 'base64').length === 32;
+    } catch {
+      return false;
+    }
+  }, 'CREDENTIAL_MASTER_KEY must be a base64-encoded 32-byte key'),
   CREDENTIAL_STORE_PATH: z.string().default('.data/credentials'),
   // Auth production hardening
   ACCESS_TOKEN_TTL_SECONDS: z.coerce.number().int().positive().default(900),
@@ -47,15 +54,18 @@ export function assertProductionSafe(env: AppEnv): void {
   if (env.APP_ENV === 'staging' || env.APP_ENV === 'production') {
     if (isLocalTarget(env.DATABASE_URL)) blockers.push(`DATABASE_URL must not point to localhost in ${env.APP_ENV}`);
     if (isLocalTarget(env.REDIS_URL)) blockers.push(`REDIS_URL must not point to localhost in ${env.APP_ENV}`);
+    if (!env.REDIS_URL.startsWith('rediss://')) blockers.push(`REDIS_URL must use TLS (rediss://) in ${env.APP_ENV}`);
+    const expectedRedisPrefix = `lazy-armor-${env.APP_ENV}`;
+    if (env.REDIS_KEY_PREFIX !== expectedRedisPrefix) blockers.push(`REDIS_KEY_PREFIX=${expectedRedisPrefix} is required in ${env.APP_ENV}`);
     if (env.CREDENTIAL_PROVIDER !== 'production') blockers.push(`CREDENTIAL_PROVIDER=production is required in ${env.APP_ENV}`);
     const origins = (env.ALLOWED_ORIGINS ?? '').split(',').map((value) => value.trim()).filter(Boolean);
     if (origins.length === 0) blockers.push(`ALLOWED_ORIGINS must declare the ${env.APP_ENV} CORS allowlist`);
     if (origins.some((origin) => origin === '*')) blockers.push(`ALLOWED_ORIGINS must not contain "*" in ${env.APP_ENV}`);
-    if (origins.some((origin) => !origin.startsWith('https://'))) blockers.push(`ALLOWED_ORIGINS must use HTTPS origins in ${env.APP_ENV}`);
+    if (origins.some((origin) => !isHttpsOrigin(origin))) blockers.push(`ALLOWED_ORIGINS must contain valid HTTPS origins without paths in ${env.APP_ENV}`);
+    if (env.JWT_SECRET.includes('replace-with') || env.JWT_SECRET.includes('inject-')) blockers.push(`JWT_SECRET must be a non-placeholder value in ${env.APP_ENV}`);
   }
 
   if (env.APP_ENV === 'production') {
-    if (env.JWT_SECRET.includes('replace-with') || env.JWT_SECRET.length < 32) blockers.push('JWT_SECRET must be a strong, non-default value (>= 32 chars)');
     if (env.CREDENTIAL_MASTER_KEY.includes('replace-with')) blockers.push('CREDENTIAL_MASTER_KEY must be a non-default base64-encoded 32-byte key');
   }
 
@@ -75,4 +85,13 @@ function isLocalTarget(value: string) {
     || value.includes('localhost')
     || value.includes('::1')
     || value.includes('10.0.2.2');
+}
+
+function isHttpsOrigin(value: string) {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && url.origin === value && url.hostname.length > 0;
+  } catch {
+    return false;
+  }
 }

@@ -13,14 +13,15 @@ import { EXECUTION_WORKER, OUTBOX_WORKER } from '../execution/execution.module';
 
 type WorkerStatus = 'UP' | 'DEGRADED' | 'DOWN';
 type OperationalHealth = 'UP' | 'DEGRADED' | 'DOWN' | 'UNKNOWN' | 'NOT_APPLICABLE';
+type DataStatus = 'available' | 'unavailable';
 
 interface WorkerDbMetrics {
   lastHeartbeatAt: string | null;
   lastWorkActivityAt: string | null;
-  queueBacklog: number;
+  queueBacklog: number | null;
   oldestPendingAgeSeconds: number | null;
-  activeWork: number;
-  failureCount: number;
+  activeWork: number | null;
+  failureCount: number | null;
   recentFailures: Array<{ errorCode: string | null; updatedAt: string }>;
 }
 
@@ -56,21 +57,30 @@ export class AdminOperationsService {
 
   async overview() {
     const generatedAt = new Date().toISOString();
-    const [snapshot, workers, outbox, executionOverview, connectorHealth] = await Promise.all([
-      this.safe(() => this.diagnostics.snapshot(), this.emptyDiagnosticsSnapshot(generatedAt)),
+    const [diagnosticsResult, workers, outbox, executionOverview, connectorHealth] = await Promise.all([
+      this.tryData(() => this.diagnostics.snapshot()),
       this.workers(),
       this.outbox(),
       this.executions(),
       this.connectorsSummary(),
     ]);
+    const snapshot = diagnosticsResult.data ?? this.emptyDiagnosticsSnapshot(generatedAt);
     const statuses = [workers.executionWorker.status, workers.outboxWorker.status];
+    const dataStatus: DataStatus = diagnosticsResult.dataStatus === 'available'
+      && outbox.dataStatus === 'available'
+      && executionOverview.dataStatus === 'available'
+      && workers.executionWorker.dataStatus === 'available'
+      && workers.outboxWorker.dataStatus === 'available'
+      ? 'available'
+      : 'unavailable';
     const status: WorkerStatus = statuses.includes('DOWN')
       ? 'DOWN'
-      : statuses.includes('DEGRADED')
+      : statuses.includes('DEGRADED') || dataStatus === 'unavailable'
         ? 'DEGRADED'
         : 'UP';
     return {
       status,
+      dataStatus,
       generatedAt: snapshot.generatedAt,
       execution: {
         active: snapshot.activeExecutions,
@@ -114,7 +124,7 @@ export class AdminOperationsService {
 
   async outbox() {
     const now = new Date();
-    return this.safe(async () => {
+    const result = await this.tryData(async () => {
       const [countsRow, oldestPendingRow, recentFailures] = await Promise.all([
         this.db.select({
           deadCount: count(outboxMessages.id),
@@ -158,20 +168,22 @@ export class AdminOperationsService {
           updatedAt: row.updatedAt.toISOString(),
         })),
       };
-    }, {
+    });
+    return result.data ? { dataStatus: 'available' as const, ...result.data } : {
+      dataStatus: 'unavailable' as const,
       generatedAt: now.toISOString(),
-      deadCount: 0,
-      pendingCount: 0,
-      retryWaitCount: 0,
+      deadCount: null,
+      pendingCount: null,
+      retryWaitCount: null,
       oldestPendingAt: null,
       oldestPendingAgeSeconds: null,
       recentFailures: [],
-    });
+    };
   }
 
   async executions() {
     const now = new Date();
-    return this.safe(async () => {
+    const result = await this.tryData(async () => {
       const [recentFailed, stuck] = await Promise.all([
         this.db.select({
           id: executions.id,
@@ -215,11 +227,13 @@ export class AdminOperationsService {
           stuckDurationSeconds: ageSeconds(row.leaseExpiresAt ?? row.updatedAt, now),
         })),
       };
-    }, {
+    });
+    return result.data ? { dataStatus: 'available' as const, ...result.data } : {
+      dataStatus: 'unavailable' as const,
       generatedAt: now.toISOString(),
       recentFailed: [],
       stuck: [],
-    });
+    };
   }
 
   async connectorsSummary() {
@@ -249,16 +263,14 @@ export class AdminOperationsService {
   private async workerSummary(role: 'execution-worker' | 'outbox-worker') {
     const now = new Date();
     const probe = await this.fetchWorkerProbe(role);
-    const db = await this.safe(
-      () => role === 'execution-worker' ? this.executionWorkerDb(now) : this.outboxWorkerDb(now),
-      this.emptyWorkerDbMetrics(),
-    );
+    const dbResult = await this.tryData(() => role === 'execution-worker' ? this.executionWorkerDb(now) : this.outboxWorkerDb(now));
+    const db = dbResult.data ?? this.emptyWorkerDbMetrics();
     const probeReady = probe.ready?.status === 'ready';
     const probeLive = probe.live?.status === 'ok';
     const inProcess = await this.inProcessWorker(role);
     const live = probeLive || inProcess.live;
     const ready = probeReady || inProcess.ready;
-    const status: WorkerStatus = !live ? 'DOWN' : ready ? 'UP' : 'DEGRADED';
+    const status: WorkerStatus = !live ? 'DOWN' : ready && dbResult.dataStatus === 'available' ? 'UP' : 'DEGRADED';
     const checkedAt = probe.ready?.checkedAt ?? probe.live?.checkedAt ?? now.toISOString();
     const processHeartbeatAt = probe.live?.checkedAt ?? probe.ready?.checkedAt ?? (inProcess.live ? now.toISOString() : null);
     return {
@@ -266,6 +278,7 @@ export class AdminOperationsService {
       status,
       processStatus: live ? 'UP' : 'DOWN',
       liveness: live ? 'UP' : 'DOWN',
+      dataStatus: dbResult.dataStatus,
       readiness: {
         status: ready ? 'ready' : 'not_ready',
         mysql: probe.ready?.mysql ?? (inProcess.live ? 'ready' : 'unknown'),
@@ -300,7 +313,7 @@ export class AdminOperationsService {
         .limit(5),
     ]);
     const queueCounts = await this.safeQueueHealth();
-    const backlog = queueCounts ? Number(queueCounts.waiting ?? 0) + Number(queueCounts.delayed ?? 0) : 0;
+    const backlog = queueCounts ? Number(queueCounts.waiting ?? 0) + Number(queueCounts.delayed ?? 0) : null;
     return {
       lastHeartbeatAt: latestHeartbeat[0]?.lastHeartbeatAt?.toISOString() ?? null,
       lastWorkActivityAt: latestHeartbeat[0]?.lastHeartbeatAt?.toISOString() ?? null,
@@ -338,15 +351,15 @@ export class AdminOperationsService {
   private emptyDiagnosticsSnapshot(generatedAt: string) {
     return {
       generatedAt,
-      activeExecutions: 0,
-      failedExecutions24h: 0,
-      waitingApproval: 0,
-      waitingDispatch: 0,
-      pendingOutbox: 0,
-      deadOutbox: 0,
-      outcomeUnknown: 0,
-      staleCredentials: 0,
-      stuckExecutions: 0,
+      activeExecutions: null,
+      failedExecutions24h: null,
+      waitingApproval: null,
+      waitingDispatch: null,
+      pendingOutbox: null,
+      deadOutbox: null,
+      outcomeUnknown: null,
+      staleCredentials: null,
+      stuckExecutions: null,
     };
   }
 
@@ -354,19 +367,19 @@ export class AdminOperationsService {
     return {
       lastHeartbeatAt: null,
       lastWorkActivityAt: null,
-      queueBacklog: 0,
+      queueBacklog: null,
       oldestPendingAgeSeconds: null,
-      activeWork: 0,
-      failureCount: 0,
+      activeWork: null,
+      failureCount: null,
       recentFailures: [],
     };
   }
 
-  private async safe<T>(producer: () => Promise<T>, fallback: T): Promise<T> {
+  private async tryData<T>(producer: () => Promise<T>): Promise<{ dataStatus: DataStatus; data: T | null }> {
     try {
-      return await producer();
+      return { dataStatus: 'available', data: await producer() };
     } catch {
-      return fallback;
+      return { dataStatus: 'unavailable', data: null };
     }
   }
 
@@ -375,8 +388,8 @@ export class AdminOperationsService {
     const port = this.config.get<number>(role === 'execution-worker' ? 'EXECUTION_WORKER_PROBE_PORT' : 'OUTBOX_WORKER_PROBE_PORT') ?? (role === 'execution-worker' ? 3011 : 3012);
     const base = `http://${host}:${port}`;
     const [live, ready] = await Promise.all([
-      this.fetchJson<WorkerLiveResponse>(`${base}/live`),
-      this.fetchJson<WorkerProbeResponse>(`${base}/ready`),
+      this.fetchJson<WorkerLiveResponse>(`${base}/live`, [200]),
+      this.fetchJson<WorkerProbeResponse>(`${base}/ready`, [200, 503]),
     ]);
     return { live, ready };
   }
@@ -395,17 +408,31 @@ export class AdminOperationsService {
 
   private async safeQueueHealth() {
     try {
-      return (await this.queue.health()).counts;
+      return (await this.withTimeout(this.queue.health(), 700, 'queue_health_timeout')).counts;
     } catch {
       return null;
     }
   }
 
-  private async fetchJson<T>(url: string): Promise<T | null> {
+  private async withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        promise,
+        new Promise<T>((_, reject) => { timer = setTimeout(() => reject(new Error(message)), timeoutMs); timer.unref?.(); }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
+  private async fetchJson<T>(url: string, allowedStatusCodes: readonly number[]): Promise<T | null> {
     return await new Promise<T | null>((resolve) => {
       const transport = url.startsWith('https:') ? httpsGet : httpGet;
-      const request = transport(url, { timeout: 400 }, (response) => {
-        if ((response.statusCode ?? 500) < 200 || (response.statusCode ?? 500) >= 300) {
+      const workerReadinessTimeout = this.config.get<number>('WORKER_READINESS_TIMEOUT_MS') ?? 3_000;
+      const requestTimeout = Math.max(1_000, workerReadinessTimeout + 500);
+      const request = transport(url, { timeout: requestTimeout }, (response) => {
+        if (!allowedStatusCodes.includes(response.statusCode ?? 0)) {
           response.resume();
           resolve(null);
           return;

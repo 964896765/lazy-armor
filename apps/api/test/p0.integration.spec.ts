@@ -1,6 +1,7 @@
 import { ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
+import { createHmac } from 'node:crypto';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -101,10 +102,13 @@ describe('P0-1 through P0-3 integration', () => {
   });
 
   it('receives a standard webhook and reserves duplicate-event idempotency', async () => {
-    const created = await request(app.getHttpServer()).post('/api/connections').set('authorization', `Bearer ${userA.token}`).send({ connectorId: 'webhook', externalAccountName: '测试 Webhook' }).expect(201);
+    const secret = 'p0-standard-webhook-secret';
+    const created = await request(app.getHttpServer()).post('/api/connections').set('authorization', `Bearer ${userA.token}`).send({ connectorId: 'webhook', externalAccountName: '测试 Webhook', credentials: { webhookSecret: secret } }).expect(201);
     const id = created.body.id as string;
     await request(app.getHttpServer()).put(`/api/connections/${id}/permissions`).set('authorization', `Bearer ${userA.token}`).send({ permissions: [{ capability: 'RECEIVE_WEBHOOK', granted: true }] }).expect(200);
-    const event = { eventId: `event-${unique}`, requestId: `request-${unique}`, idempotencyKey: `idem-${unique}`, payload: { kind: 'test', value: 42 } };
+    const payload = { kind: 'test', value: 42 };
+    const timestamp = `${Math.floor(Date.now() / 1000)}`;
+    const event = { eventId: `event-${unique}`, requestId: `request-${unique}`, idempotencyKey: `idem-${unique}`, timestamp, signature: createHmac('sha256', secret).update(`${timestamp}.${JSON.stringify(payload)}`).digest('hex'), payload };
     const first = await request(app.getHttpServer()).post(`/api/connections/${id}/webhook-events`).set('authorization', `Bearer ${userA.token}`).send(event).expect(201);
     const duplicate = await request(app.getHttpServer()).post(`/api/connections/${id}/webhook-events`).set('authorization', `Bearer ${userA.token}`).send(event).expect(201);
     expect(first.body.duplicate).toBe(false);

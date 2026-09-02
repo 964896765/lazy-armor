@@ -37,8 +37,8 @@ def lazyArmorReleaseRequested = gradle.startParameter.taskNames.any { it.toLower
       releasePattern,
       `$1if (lazyArmorHasReleaseSigning) {
                 signingConfig signingConfigs.release
-            } else if (lazyArmorAppEnv == 'production' && lazyArmorAllowDebugRelease) {
-                throw new GradleException('Production builds must never use debug signing. Remove LAZY_ARMOR_ANDROID_ALLOW_DEBUG_RELEASE or switch APP_ENV away from production.')
+            } else if (lazyArmorAppEnv in ['staging', 'production'] && lazyArmorAllowDebugRelease) {
+                throw new GradleException('Staging and production builds must never use debug signing. Remove LAZY_ARMOR_ANDROID_ALLOW_DEBUG_RELEASE or switch APP_ENV to development.')
             } else if (lazyArmorAllowDebugRelease) {
                 signingConfig signingConfigs.debug
             } else if (lazyArmorReleaseRequested) {

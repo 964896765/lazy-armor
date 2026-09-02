@@ -15,8 +15,7 @@
       },
       "env": {
         "NODE_ENV": "production",
-        "EXPO_PUBLIC_APP_ENV": "staging",
-        "LAZY_ARMOR_ANDROID_ALLOW_DEBUG_RELEASE": "true"
+        "EXPO_PUBLIC_APP_ENV": "staging"
       }
     },
     "production": {

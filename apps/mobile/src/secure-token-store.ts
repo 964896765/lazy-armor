@@ -11,6 +11,9 @@ export interface SessionTokens {
 }
 
 let memoryAccessToken: string | undefined;
+const nativeStorageOptions: SecureStore.SecureStoreOptions = {
+  keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+};
 
 // 移动端安全令牌存储：原生使用 SecureStore（Keychain/Keystore），Web 拒绝持久化 Refresh Token。
 export async function persistTokens(tokens: SessionTokens): Promise<void> {
@@ -20,8 +23,11 @@ export async function persistTokens(tokens: SessionTokens): Promise<void> {
     // Web 绝不写 localStorage / 普通 AsyncStorage 保存 refresh token。
     return;
   }
-  await SecureStore.setItemAsync(ACCESS_KEY, tokens.accessToken);
-  if (tokens.refreshToken) await SecureStore.setItemAsync(REFRESH_KEY, tokens.refreshToken);
+  // Rotation writes the new refresh token first: a process death between writes
+  // leaves a usable refresh token with an older access token, never the reverse.
+  if (tokens.refreshToken) await SecureStore.setItemAsync(REFRESH_KEY, tokens.refreshToken, nativeStorageOptions);
+  else await SecureStore.deleteItemAsync(REFRESH_KEY).catch(() => undefined);
+  await SecureStore.setItemAsync(ACCESS_KEY, tokens.accessToken, nativeStorageOptions);
 }
 
 export async function loadAccessToken(): Promise<string | undefined> {

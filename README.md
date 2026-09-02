@@ -613,9 +613,13 @@ Staging / Production 使用 **fail-closed** 原则。
 * 禁止 localhost
 * 禁止 `127.0.0.1`
 * 禁止 `10.0.2.2`
+* Staging / Production Redis 必须使用 `rediss://`
+* Staging / Production 分别固定使用 `lazy-armor-staging` / `lazy-armor-production` 键前缀
 * Production 禁止 Debug Signing
 * 缺 Android 正式 Signing 时 Release 必须失败
 * Production Credential 不允许回落到开发本地文件 Provider
+
+部署配置模板分别见 `.env.staging.example` 与 `.env.production.example`。模板只描述变量形状，所有 secret 必须由部署平台的 Secret Manager 注入；当前未注册托管 Credential Provider 时，staging/production API 会拒绝启动。
 
 生产风险不会因为代码已经完成而自动开放。
 

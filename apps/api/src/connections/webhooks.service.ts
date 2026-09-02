@@ -67,7 +67,7 @@ export class WebhooksService {
       });
       return { receiptId: id, duplicate: false };
     } catch (error) {
-      if ((error as { code?: string }).code !== 'ER_DUP_ENTRY') throw error;
+      if (!this.isDuplicateEntry(error)) throw error;
       const raced = await this.findExisting(connectionId, event.eventId, event.idempotencyKey);
       if (!raced || raced.payloadHash !== payloadHash) throw new ConflictException('Duplicate webhook key has a different payload');
       return { receiptId: raced.id, duplicate: true };
@@ -92,8 +92,17 @@ export class WebhooksService {
     return rows[0];
   }
 
+  private isDuplicateEntry(error: unknown) {
+    let current: unknown = error;
+    for (let depth = 0; depth < 4 && current && typeof current === 'object'; depth += 1) {
+      const candidate = current as { code?: string; cause?: unknown };
+      if (candidate.code === 'ER_DUP_ENTRY') return true;
+      current = candidate.cause;
+    }
+    return false;
+  }
+
   private async verifySignatureIfPresent(userId: string, connectionId: string, event: WebhookEventDto) {
-    if (!event.signature && !event.timestamp) return;
     if (!event.signature || !event.timestamp) {
       await this.audit.append({
         actorType: 'user',

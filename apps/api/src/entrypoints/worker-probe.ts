@@ -34,7 +34,7 @@ export class WorkerProbe {
       if (request.url === '/live') { response.statusCode = 200; response.end(JSON.stringify({ status: 'ok', role, checkedAt: new Date().toISOString() })); return; }
       if (request.url !== '/ready') { response.statusCode = 404; response.end(JSON.stringify({ status: 'not_found' })); return; }
       try {
-        const readiness = await this.withTimeout(this.readiness(), this.readinessTimeoutMs(), 'readiness_timeout');
+        const readiness = await this.readiness();
         response.statusCode = readiness.status === 'ready' ? 200 : 503;
         response.end(JSON.stringify(readiness));
       } catch (error) {
@@ -59,22 +59,33 @@ export class WorkerProbe {
   private async readiness(): Promise<ProbeReadiness> {
     const role = currentAppRole();
     const pool = this.app.get<Pool>(MYSQL_POOL);
-    await pool.query('SELECT 1');
-    const queue = await this.app.get(QueueService).health();
-    const worker = role === 'execution-worker'
-      ? await this.app.get<{ readiness(): Promise<WorkerHealth> }>(EXECUTION_WORKER).readiness()
-      : this.app.get<{ readiness(): WorkerHealth }>(OUTBOX_WORKER).readiness();
-    const ready = queue.bullmq === 'ready' && worker.ready;
+    const timeoutMs = this.readinessTimeoutMs();
+    const [mysql, queue, worker] = await Promise.all([
+      this.withTimeout(pool.query('SELECT 1'), timeoutMs, 'mysql_timeout').then(() => 'ready').catch(() => 'unavailable'),
+      this.withTimeout(this.app.get(QueueService).health(), timeoutMs, 'queue_timeout').catch(() => ({ redis: 'unavailable', bullmq: 'unavailable', counts: {} })),
+      this.withTimeout(Promise.resolve(role === 'execution-worker'
+        ? this.app.get<{ readiness(): Promise<WorkerHealth> }>(EXECUTION_WORKER).readiness()
+        : this.app.get<{ readiness(): WorkerHealth }>(OUTBOX_WORKER).readiness()), timeoutMs, 'worker_timeout')
+        .catch((error) => ({ ready: false, reason: error instanceof Error ? error.message : 'worker_readiness_failed' })),
+    ]);
+    const ready = mysql === 'ready' && queue.redis === 'PONG' && queue.bullmq === 'ready' && worker.ready;
+    const reason = ready
+      ? null
+      : mysql !== 'ready'
+        ? 'mysql_dependency_unavailable'
+        : queue.redis !== 'PONG' || queue.bullmq !== 'ready'
+          ? 'redis_or_bullmq_dependency_unavailable'
+          : worker.reason ?? 'worker_not_ready';
     return {
       status: ready ? 'ready' : 'not_ready',
       role,
       checkedAt: new Date().toISOString(),
-      mysql: 'ready',
+      mysql,
       redis: queue.redis,
       bullmq: queue.bullmq,
       queueCounts: queue.counts,
       worker,
-      reason: ready ? null : worker.reason ?? 'dependency_not_ready',
+      reason,
     };
   }
 

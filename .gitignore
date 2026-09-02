@@ -7,6 +7,8 @@ coverage/
 .env
 .env.*
 !.env.example
+!.env.staging.example
+!.env.production.example
 .data/
 *.log
 *.tsbuildinfo
