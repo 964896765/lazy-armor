@@ -19,3 +19,4 @@
 - Android Beta status：`ANDROID ENGINEERING VERIFIED`；当前验证产物为 development-only AAB，`signingMode = DEBUG_VERIFICATION_ONLY`，`publishable = false`；`STAGING BETA READY` 仍未开放。
 
 - Production disabled capabilities：Calendar `CREATE_EVENT`/`UPDATE_EVENT`、Content `PUBLISH_CONTENT`/`READ_ANALYTICS`、真实 Logistics Provider，以及所有未经专项 Production Gate 的高风险 Provider。
+
