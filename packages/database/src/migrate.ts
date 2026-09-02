@@ -1,11 +1,20 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import { migrate } from 'drizzle-orm/mysql2/migrator';
 import { createDatabase } from './client';
 
 function getDatabaseUrl(): string {
   const value = process.env.DATABASE_URL;
-  if (!value) throw new Error('DATABASE_URL is required');
-  return value;
+  if (value) return value;
+  const envFile = path.resolve(__dirname, '../../.env');
+  if (!fs.existsSync(envFile)) throw new Error('DATABASE_URL is required');
+  const matched = fs
+    .readFileSync(envFile, 'utf8')
+    .split(/\r?\n/)
+    .find((line) => line.startsWith('DATABASE_URL='));
+  const fallback = matched?.slice('DATABASE_URL='.length).trim();
+  if (!fallback) throw new Error('DATABASE_URL is required');
+  return fallback;
 }
 
 async function main() {
