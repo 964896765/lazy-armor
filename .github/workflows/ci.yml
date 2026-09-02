@@ -36,7 +36,7 @@ jobs:
           --health-retries=20
 
     env:
-      DATABASE_URL: mysql://root:root@127.0.0.1:3306/lazy_armor_ci
+      DATABASE_URL: mysql://root:root@127.0.0.1:3306/lazy_armor_ci_test
       REDIS_URL: redis://127.0.0.1:6379
       JWT_SECRET: test-jwt-secret-that-is-longer-than-thirty-two-characters
       CREDENTIAL_MASTER_KEY: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
