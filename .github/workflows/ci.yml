@@ -72,6 +72,12 @@ jobs:
       - name: Config typecheck
         run: pnpm --filter @lazy-armor/config typecheck
 
+      - name: Config build
+        run: pnpm --filter @lazy-armor/config build
+
+      - name: Shared build
+        run: pnpm --filter @lazy-armor/shared build
+
       - name: Database typecheck
         run: pnpm --filter @lazy-armor/database typecheck
 
