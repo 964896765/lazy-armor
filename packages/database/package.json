@@ -9,7 +9,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --passWithNoTests",
     "migrate": "tsx src/migrate.ts",
-    "prepare-ci-db": "tsx src/prepare-ci-database.ts"
+    "prepare-ci-db": "tsx src/prepare-ci-database.ts",
+    "backup-restore-gate": "tsx src/backup-restore-gate.ts"
   },
   "dependencies": {
     "drizzle-orm": "0.45.2",

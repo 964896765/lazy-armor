@@ -37,8 +37,9 @@ export async function createHttpApp() {
   app.use((req: Request, res: Response, next: NextFunction) => {
     const startedAt = Date.now();
     const correlationId = resolveCorrelationId(req.header('x-correlation-id'));
+    const requestId = correlationId;
     res.setHeader('x-correlation-id', correlationId);
-    runWithRequestContext({ correlationId }, () => {
+    runWithRequestContext({ correlationId, requestId, method: req.method, routeTemplate: normalizeRouteTemplate(req) }, () => {
       res.on('finish', () => {
         const durationMs = Date.now() - startedAt;
         telemetry.increment('api.request_count', 1, { method: req.method, statusCode: String(res.statusCode) });
@@ -46,7 +47,7 @@ export async function createHttpApp() {
         if (res.statusCode >= 400) telemetry.increment('api.error_count', 1, { method: req.method, statusCode: String(res.statusCode) });
         telemetry.event(res.statusCode >= 500 ? 'error' : res.statusCode >= 400 ? 'warn' : 'log', 'http_request_completed', {
           method: req.method,
-          path: req.originalUrl || req.url,
+          routeTemplate: normalizeRouteTemplate(req),
           statusCode: res.statusCode,
           durationMs,
         });
@@ -57,4 +58,14 @@ export async function createHttpApp() {
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
   app.enableShutdownHooks();
   return app;
+}
+
+function normalizeRouteTemplate(req: Request) {
+  const route = typeof req.route?.path === 'string'
+    ? `${req.baseUrl ?? ''}${req.route.path}`
+    : (req.path || req.url || '/').split('?')[0];
+  return route
+    .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/gi, ':id')
+    .replace(/\/\d{2,}(?=\/|$)/g, '/:id')
+    .replace(/\/[0-9a-f]{16,}(?=\/|$)/gi, '/:id');
 }

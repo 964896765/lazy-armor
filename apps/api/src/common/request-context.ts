@@ -3,6 +3,7 @@ import { newId } from '@lazy-armor/shared';
 
 export interface RequestContext {
   correlationId: string;
+  requestId?: string | null;
   userId?: string | null;
   planId?: string | null;
   planVersionId?: string | null;
@@ -11,6 +12,12 @@ export interface RequestContext {
   sideEffectOperationId?: string | null;
   connectorKey?: string | null;
   errorCode?: string | null;
+  method?: string | null;
+  routeTemplate?: string | null;
+  workerId?: string | null;
+  attempt?: number | null;
+  takeover?: boolean | null;
+  redelivery?: boolean | null;
 }
 
 const requestContext = new AsyncLocalStorage<RequestContext>();
@@ -27,6 +34,7 @@ export function extendRequestContext<T>(patch: Partial<RequestContext>, work: ()
   const current = requestContext.getStore();
   const next: RequestContext = {
     correlationId: patch.correlationId ?? current?.correlationId ?? newId(),
+    requestId: patch.requestId ?? current?.requestId ?? null,
     userId: patch.userId ?? current?.userId ?? null,
     planId: patch.planId ?? current?.planId ?? null,
     planVersionId: patch.planVersionId ?? current?.planVersionId ?? null,
@@ -35,6 +43,12 @@ export function extendRequestContext<T>(patch: Partial<RequestContext>, work: ()
     sideEffectOperationId: patch.sideEffectOperationId ?? current?.sideEffectOperationId ?? null,
     connectorKey: patch.connectorKey ?? current?.connectorKey ?? null,
     errorCode: patch.errorCode ?? current?.errorCode ?? null,
+    method: patch.method ?? current?.method ?? null,
+    routeTemplate: patch.routeTemplate ?? current?.routeTemplate ?? null,
+    workerId: patch.workerId ?? current?.workerId ?? null,
+    attempt: patch.attempt ?? current?.attempt ?? null,
+    takeover: patch.takeover ?? current?.takeover ?? null,
+    redelivery: patch.redelivery ?? current?.redelivery ?? null,
   };
   return requestContext.run(next, work);
 }

@@ -9,6 +9,7 @@
     "typecheck": "turbo typecheck",
     "test": "turbo test",
     "db:migrate": "pnpm --filter @lazy-armor/database migrate",
+    "db:backup-restore-gate": "pnpm --filter @lazy-armor/database backup-restore-gate",
     "docker:up": "docker compose -f infra/docker/docker-compose.yml up -d",
     "docker:down": "docker compose -f infra/docker/docker-compose.yml down"
   },

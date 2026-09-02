@@ -82,12 +82,19 @@ export class OutboxWorker implements OnModuleInit, OnApplicationShutdown {
 
   async process(message: typeof outboxMessages.$inferSelect) {
     const payload = message.payloadJson as { operationId: string; executionStepId: string; executionId: string; userId: string };
+    const workerId = WORKER_ID();
+    const attempt = message.attemptCount + 1;
+    const redelivery = message.attemptCount > 0 || message.status === 'processing';
     return this.telemetry.runWithContext({
       correlationId: message.correlationId,
+      requestId: payload.executionId,
       userId: message.userId,
       executionId: payload.executionId,
       executionStepId: payload.executionStepId,
       sideEffectOperationId: payload.operationId,
+      workerId,
+      attempt,
+      redelivery,
     }, async () => {
       // §25：Dispatch 前重新校验 payload hash；被篡改的消息立即进入 Dead Letter，绝不出站。
       try {
@@ -144,10 +151,16 @@ export class OutboxWorker implements OnModuleInit, OnApplicationShutdown {
       }
       // §17 Runtime Security Recheck：再次检查 Connection/Permission/Credential（Approval 永远不能覆盖 Permission）。
       let connectorKey: string;
+      let credentialRef: string | null | undefined;
+      let credentialVersion: number | null | undefined;
+      let credentialExpiresAt: Date | null | undefined;
       if (operation.connectionId && operation.capabilityKey) {
         const checked = await this.guard.assertUsable(operation.userId, operation.connectionId, operation.capabilityKey);
         connectorKey = checked.connectorKey;
         connectorKeyForMetrics = checked.connectorKey;
+        credentialRef = checked.credentialRef;
+        credentialVersion = checked.credentialVersion;
+        credentialExpiresAt = checked.credentialExpiresAt;
       } else {
         throw new ExecutionRuntimeError('SAFETY_GATE_REQUIRES_IDEMPOTENCY', 'Side effect cannot be dispatched without a bound Connection and Capability');
       }
@@ -159,29 +172,39 @@ export class OutboxWorker implements OnModuleInit, OnApplicationShutdown {
       await this.events.append(payload.executionId, 'side_effect_dispatch_started', { operationId: operation.id, attempt: operation.attemptCount + 1 }, operation.executionStepId);
       await this.stepStates.transition(operation.executionStepId, 'running', { dispatchStatus: 'executing' });
       await this.operations.mark(operation.id, { status: 'executing', attemptCount: operation.attemptCount + 1, startedAt: operation.startedAt ?? new Date(), errorCode: null, errorMessage: null });
-      const result = await this.telemetry.runWithContext({ connectorKey }, () => connector.execute?.({
+      this.telemetry.increment('connector.calls', 1, { connectorKey, capability: operation.capabilityKey ?? 'unknown', operation: 'execute' });
+      const result = await this.telemetry.runWithContext({ connectorKey, requestId: rebuilt.requestId }, () => connector.execute?.({
         capability: operation.capabilityKey!,
         input: { context: rebuilt.triggerPayload, config: rebuilt.actionConfig },
         requestId: rebuilt.requestId,
         idempotencyKey: operation.idempotencyKey,
         providerIdempotencyKey: operation.providerIdempotencyKey ?? undefined,
         operationId: operation.providerOperationId ?? undefined,
+        userId: operation.userId,
+        connectionId: operation.connectionId ?? undefined,
+        connectorKey,
+        credentials: {
+          ref: credentialRef ?? undefined,
+          version: credentialVersion ?? undefined,
+          expiresAt: credentialExpiresAt?.toISOString() ?? null,
+        },
       }));
       if (!result) throw new ExecutionRuntimeError('ACTION_RUNTIME_NOT_IMPLEMENTED', 'Connector does not implement execute');
       if (!result.ok) {
         // Provider 明确拒绝：已知失败，不自动盲重试（§13）。
-        this.telemetry.increment('connector.provider_5xx', 1, { connectorKey, capabilityKey: operation.capabilityKey ?? 'unknown' });
+        this.telemetry.increment('connector.provider_5xx', 1, { connectorKey, capability: operation.capabilityKey ?? 'unknown', errorCode: 'PROVIDER_REJECTED' });
         await this.failOperation(operation, message, 'PROVIDER_REJECTED', 'Provider rejected the side effect operation');
         return;
       }
-      this.telemetry.increment('connector.success', 1, { connectorKey, capabilityKey: operation.capabilityKey ?? 'unknown' });
-      this.telemetry.histogram('outbox.dispatch_duration', Date.now() - startedAt, { connectorKey, capabilityKey: operation.capabilityKey ?? 'unknown' });
+      this.telemetry.increment('connector.success', 1, { connectorKey, capability: operation.capabilityKey ?? 'unknown', operation: 'execute' });
+      this.telemetry.histogram('connector.duration', Date.now() - startedAt, { connectorKey, capability: operation.capabilityKey ?? 'unknown', operation: 'execute' });
+      this.telemetry.histogram('outbox.dispatch_duration', Date.now() - startedAt, { connectorKey, capability: operation.capabilityKey ?? 'unknown' });
       await this.succeedOperation(operation, message, result.data, rebuilt.executionId);
     } catch (error) {
       const mapped = asRuntimeError(error);
       // 审批后权限/连接/凭证变化 → 受控失败，绝不无限重试（§53-55）。
       if (BLOCKING_CODES.has(mapped.code)) {
-        this.telemetry.increment('connector.auth_failure', 1, { errorCode: mapped.code, connectorKey: connectorKeyForMetrics });
+        this.telemetry.increment('connector.auth_failure', 1, { errorCode: mapped.code, connectorKey: connectorKeyForMetrics, capability: operation.capabilityKey ?? 'unknown' });
         await this.failOperation(operation, message, mapped.code, this.sanitizer.sanitizeText(mapped));
         return;
       }
@@ -195,7 +218,9 @@ export class OutboxWorker implements OnModuleInit, OnApplicationShutdown {
         return;
       }
       if (ambiguous) {
-        this.telemetry.increment(mapped.code === 'TIMEOUT' ? 'connector.timeout' : 'outbox.retry_wait', 1, { errorCode: mapped.code });
+        this.telemetry.increment(mapped.code === 'TIMEOUT' ? 'connector.timeout' : 'outbox.retry_wait', mapped.code === 'TIMEOUT' ? 1 : 1, mapped.code === 'TIMEOUT'
+          ? { errorCode: mapped.code, connectorKey: connectorKeyForMetrics, capability: operation.capabilityKey ?? 'unknown' }
+          : { errorCode: mapped.code });
         const nextAttemptAt = new Date(Date.now() + Math.min(RETRY_BASE_MS * 2 ** message.attemptCount, RETRY_MAX_MS));
         await this.operations.mark(operation.id, { status: 'retry_wait', errorCode: mapped.code, errorMessage: this.sanitizer.sanitizeText(mapped) });
         await this.outbox.markRetryWait(message.id, mapped.code, this.sanitizer.sanitizeText(mapped), nextAttemptAt);
@@ -208,7 +233,9 @@ export class OutboxWorker implements OnModuleInit, OnApplicationShutdown {
         await this.deadLetter(operation, message, mapped, payload.executionId);
         return;
       }
-      this.telemetry.increment(mapped.code === 'RATE_LIMIT' || mapped.code === 'RATE_LIMITED' ? 'connector.rate_limit' : 'outbox.retry_wait', 1, { errorCode: mapped.code });
+      this.telemetry.increment(mapped.code === 'RATE_LIMIT' || mapped.code === 'RATE_LIMITED' ? 'connector.rate_limit' : 'outbox.retry_wait', 1, mapped.code === 'RATE_LIMIT' || mapped.code === 'RATE_LIMITED'
+        ? { errorCode: mapped.code, connectorKey: connectorKeyForMetrics, capability: operation.capabilityKey ?? 'unknown' }
+        : { errorCode: mapped.code });
       const nextAttemptAt = new Date(Date.now() + Math.min(RETRY_BASE_MS * 2 ** message.attemptCount, RETRY_MAX_MS));
       await this.operations.mark(operation.id, { status: 'retry_wait', errorCode: mapped.code, errorMessage: this.sanitizer.sanitizeText(mapped) });
       await this.outbox.markRetryWait(message.id, mapped.code, this.sanitizer.sanitizeText(mapped), nextAttemptAt);

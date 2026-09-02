@@ -16,3 +16,4 @@ apps/mobile/web-build/
 artifacts/android/*.apk
 artifacts/android/*.aab
 artifacts/android/*.apks
+artifacts/backup-restore/*.sql

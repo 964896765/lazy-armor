@@ -16,11 +16,12 @@ export class ExecutionLeaseService {
     private readonly stepStates: ExecutionStepStateService,
   ) {}
 
-  async acquire(executionId: string) {
+  async acquire(executionId: string, workerId = `execution-${process.pid}`) {
     const workerToken = newId();
     let status: ExecutionStatus = 'created';
     let recovered = false;
     let acquired = false;
+    let previousWorkerPresent = false;
     await this.db.transaction(async (tx) => {
       const rows = await tx.select({ status: executions.status, workerToken: executions.workerToken, leaseExpiresAt: executions.leaseExpiresAt })
         .from(executions).where(eq(executions.id, executionId)).limit(1).for('update');
@@ -30,17 +31,23 @@ export class ExecutionLeaseService {
       const now = new Date();
       if (rows[0].workerToken && rows[0].leaseExpiresAt && rows[0].leaseExpiresAt > now) return;
       recovered = status === 'running' && Boolean(rows[0].workerToken);
+      previousWorkerPresent = Boolean(rows[0].workerToken);
       await tx.update(executions).set({ workerToken, heartbeatAt: now, leaseExpiresAt: new Date(now.getTime() + this.leaseDurationMs), updatedAt: now }).where(eq(executions.id, executionId));
       acquired = true;
     });
     if (acquired) {
-      await this.events.append(executionId, recovered ? 'worker_lease_recovered' : 'worker_lease_acquired', { workerToken: '[REDACTED]', leaseDurationMs: this.leaseDurationMs });
+      await this.events.append(executionId, recovered ? 'worker_lease_recovered' : 'worker_lease_acquired', {
+        workerId,
+        recovered,
+        previousWorkerPresent,
+        leaseDurationMs: this.leaseDurationMs,
+      });
       if (recovered) {
         const running = await this.db.select({ id: executionSteps.id }).from(executionSteps).where(and(eq(executionSteps.executionId, executionId), eq(executionSteps.status, 'running')));
         for (const step of running) await this.stepStates.transition(step.id, 'retry_wait', { errorCode: 'WORKER_LEASE_EXPIRED', errorMessage: 'Previous worker lease expired; resuming this step' });
       }
     }
-    return { acquired, recovered, workerToken, status };
+    return { acquired, recovered, workerToken, workerId, previousWorkerPresent, status };
   }
 
   async heartbeat(executionId: string, workerToken: string) {

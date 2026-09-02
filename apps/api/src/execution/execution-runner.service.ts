@@ -24,6 +24,12 @@ import { ObservabilityService } from '../observability/observability.service';
 
 const BLOCKING_CODES = new Set(['CONNECTION_REVOKED', 'CONNECTION_EXPIRED', 'PERMISSION_REVOKED', 'PERMISSION_EXPIRED', 'CAPABILITY_NOT_GRANTED', 'CREDENTIAL_INVALID', 'CREDENTIAL_EXPIRED']);
 
+interface ExecutionRunContext {
+  workerId: string;
+  attempt: number;
+  takeover: boolean;
+}
+
 @Injectable()
 export class ExecutionRunner {
   constructor(
@@ -47,15 +53,19 @@ export class ExecutionRunner {
     private readonly telemetry: ObservabilityService,
   ) {}
 
-  async run(executionId: string, workerToken: string): Promise<RunnerOutcome> {
+  async run(executionId: string, workerToken: string, runContext?: ExecutionRunContext): Promise<RunnerOutcome> {
     if (!(await this.lease.heartbeat(executionId, workerToken))) return { status: 'queued' };
     let execution = await this.load(executionId);
     return this.telemetry.runWithContext({
       correlationId: execution.requestId,
+      requestId: execution.requestId,
       userId: execution.userId,
       planId: execution.planId,
       planVersionId: execution.planVersionId,
       executionId,
+      workerId: runContext?.workerId ?? null,
+      attempt: runContext?.attempt ?? null,
+      takeover: runContext?.takeover ?? null,
     }, async () => {
       if (EXECUTION_TERMINAL_STATES.has(execution.status as ExecutionStatus)) return { status: execution.status as ExecutionStatus };
       if (execution.status === 'created') await this.states.transition(executionId, 'queued', { queuedAt: new Date() });
@@ -131,7 +141,7 @@ export class ExecutionRunner {
         await this.events.append(executionId, 'step_attempt_started', { attempt }, step.id);
         this.telemetry.event('log', 'execution_step_started', { executionStepId: step.id, stepOrder: step.stepOrder, attempt });
         try {
-          const output = await this.telemetry.runWithContext({ executionStepId: step.id }, () => this.actions.execute(execution.userId, executionId, actionDefinition as NormalizedAction, context, gate.effectiveRisk));
+          const output = await this.telemetry.runWithContext({ executionStepId: step.id, attempt }, () => this.actions.execute(execution.userId, executionId, actionDefinition as NormalizedAction, context, gate.effectiveRisk));
           context = { ...context, ...output };
           await this.stepStates.transition(step.id, 'succeeded', { outputSnapshotJson: this.sanitizer.sanitize(output), finishedAt: new Date() });
           await this.events.append(executionId, 'step_succeeded', { attempt }, step.id);

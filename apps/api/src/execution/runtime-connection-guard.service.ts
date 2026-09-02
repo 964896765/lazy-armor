@@ -67,6 +67,13 @@ export class RuntimeConnectionGuard {
     if ((!legacyTestAdapter && !trueProcessHarness && (!runtimeCapability || metadata.productionStatus === 'DISABLED')) || runtimeCapability?.providerAvailability === 'disabled') {
       throw new ExecutionRuntimeError('PROVIDER_GATE_DISABLED', 'Provider capability is disabled');
     }
-    return { connectorId: connection.connectorId, connectorKey: connection.connectorKey, operation: permission.operation };
+    return {
+      connectorId: connection.connectorId,
+      connectorKey: connection.connectorKey,
+      operation: permission.operation,
+      credentialRef: connection.credentialRef,
+      credentialVersion: connection.credentialCurrentVersion,
+      credentialExpiresAt: connection.credentialExpiresAt,
+    };
   }
 }

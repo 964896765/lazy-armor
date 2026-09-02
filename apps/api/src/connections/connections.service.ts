@@ -288,11 +288,13 @@ export class ConnectionsService {
     });
     return this.telemetry.runWithContext({
       correlationId: input.requestId,
+      requestId: input.requestId,
       userId,
       connectorKey: current.connectorKey,
     }, async () => {
       const startedAt = Date.now();
       try {
+        this.telemetry.increment('connector.calls', 1, { connectorKey: current.connectorKey, operation: grant.operation, capability: input.capability });
         let result;
         if (grant.operation === 'read' && adapter.read) result = await adapter.read(request);
         else if (grant.operation === 'execute' && adapter.execute) result = await adapter.execute(request);
@@ -304,12 +306,12 @@ export class ConnectionsService {
       } catch (error) {
         const connectorError = asConnectorError(error);
         const mapped = mapConnectorError(error);
-        if (connectorError?.code === 'TIMEOUT') this.telemetry.increment('connector.timeout', 1, { connectorKey: current.connectorKey, capability: input.capability });
-        if (connectorError?.code === 'RATE_LIMIT' || connectorError?.code === 'RATE_LIMITED') this.telemetry.increment('connector.rate_limit', 1, { connectorKey: current.connectorKey, capability: input.capability });
+        if (connectorError?.code === 'TIMEOUT') this.telemetry.increment('connector.timeout', 1, { connectorKey: current.connectorKey, capability: input.capability, errorCode: connectorError.code });
+        if (connectorError?.code === 'RATE_LIMIT' || connectorError?.code === 'RATE_LIMITED') this.telemetry.increment('connector.rate_limit', 1, { connectorKey: current.connectorKey, capability: input.capability, errorCode: connectorError.code });
         if (['CREDENTIAL_INVALID', 'CREDENTIAL_EXPIRED', 'CONNECTION_REVOKED', 'CONNECTION_EXPIRED', 'PERMISSION_REVOKED', 'PERMISSION_EXPIRED'].includes(connectorError?.code ?? '')) {
           this.telemetry.increment('connector.auth_failure', 1, { connectorKey: current.connectorKey, capability: input.capability, errorCode: connectorError?.code ?? 'unknown' });
         }
-        if (connectorError?.code === 'PROVIDER_5XX') this.telemetry.increment('connector.provider_5xx', 1, { connectorKey: current.connectorKey, capability: input.capability });
+        if (connectorError?.code === 'PROVIDER_5XX') this.telemetry.increment('connector.provider_5xx', 1, { connectorKey: current.connectorKey, capability: input.capability, errorCode: connectorError.code });
         await this.handleConnectorFailure(current.id, error);
         throw mapped;
       }

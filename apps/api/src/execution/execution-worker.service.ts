@@ -7,6 +7,8 @@ import { ExecutionLeaseService } from './execution-lease.service';
 import { workerEnabled } from '../common/app-role';
 import { ObservabilityService } from '../observability/observability.service';
 
+const WORKER_ID = () => `execution-${process.pid}`;
+
 @Injectable()
 export class ExecutionWorker implements OnModuleInit, OnApplicationShutdown {
   private worker?: Worker<{ executionId: string }>;
@@ -31,9 +33,10 @@ export class ExecutionWorker implements OnModuleInit, OnApplicationShutdown {
   }
 
   async processExecution(executionId: string) {
-    const lease = await this.lease.acquire(executionId);
+    const workerId = WORKER_ID();
+    const lease = await this.lease.acquire(executionId, workerId);
     if (!lease.acquired) {
-      this.telemetry.event('warn', 'execution_worker_lease_skipped', { executionId, status: lease.status });
+      this.telemetry.event('warn', 'execution_worker_lease_skipped', { executionId, status: lease.status, workerId });
       return { status: lease.status };
     }
     const heartbeat = setInterval(() => {
@@ -41,10 +44,20 @@ export class ExecutionWorker implements OnModuleInit, OnApplicationShutdown {
     }, Math.max(100, Math.floor(this.lease.leaseDurationMs / 3)));
     heartbeat.unref();
     try {
-      return this.telemetry.runWithContext({ executionId }, async () => {
-        this.telemetry.event('log', 'execution_worker_started', { executionId });
-        const outcome = await this.runner.run(executionId, lease.workerToken);
-        this.telemetry.event('log', 'execution_worker_finished', { executionId, status: outcome.status });
+      return this.telemetry.runWithContext({
+        executionId,
+        requestId: executionId,
+        workerId,
+        attempt: lease.recovered ? 2 : 1,
+        takeover: lease.recovered,
+      }, async () => {
+        this.telemetry.event('log', 'execution_worker_started', { executionId, workerId, takeover: lease.recovered });
+        const outcome = await this.runner.run(executionId, lease.workerToken, {
+          workerId,
+          attempt: lease.recovered ? 2 : 1,
+          takeover: lease.recovered,
+        });
+        this.telemetry.event('log', 'execution_worker_finished', { executionId, workerId, status: outcome.status, takeover: lease.recovered });
         return outcome;
       });
     } finally {
