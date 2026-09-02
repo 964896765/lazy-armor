@@ -20,6 +20,7 @@ import { SourceResolver } from './source-resolver.service';
 import { ExecutionApprovalGate } from './execution-approval-gate.service';
 import { SideEffectCoordinator } from './side-effect/side-effect-coordinator.service';
 import { NotificationService } from '../notifications/notification.service';
+import { ObservabilityService } from '../observability/observability.service';
 
 const BLOCKING_CODES = new Set(['CONNECTION_REVOKED', 'CONNECTION_EXPIRED', 'PERMISSION_REVOKED', 'PERMISSION_EXPIRED', 'CAPABILITY_NOT_GRANTED', 'CREDENTIAL_INVALID', 'CREDENTIAL_EXPIRED']);
 
@@ -43,19 +44,31 @@ export class ExecutionRunner {
     private readonly approvalGate: ExecutionApprovalGate,
     private readonly notifications: NotificationService,
     private readonly coordinator: SideEffectCoordinator,
+    private readonly telemetry: ObservabilityService,
   ) {}
 
   async run(executionId: string, workerToken: string): Promise<RunnerOutcome> {
     if (!(await this.lease.heartbeat(executionId, workerToken))) return { status: 'queued' };
     let execution = await this.load(executionId);
-    if (EXECUTION_TERMINAL_STATES.has(execution.status as ExecutionStatus)) return { status: execution.status as ExecutionStatus };
-    if (execution.status === 'created') await this.states.transition(executionId, 'queued', { queuedAt: new Date() });
-    execution = await this.load(executionId);
-    if (execution.cancellationRequestedAt) return this.cancelAtBoundary(executionId, execution.status as ExecutionStatus, 0);
-    if (!['queued', 'retry_wait', 'running'].includes(execution.status)) return this.fail(executionId, execution.status as ExecutionStatus, 'INVALID_EXECUTION_STATE', 'Execution cannot be started from its current state');
-    if (execution.status !== 'running') await this.states.transition(executionId, 'running', { startedAt: execution.startedAt ?? new Date() });
+    return this.telemetry.runWithContext({
+      correlationId: execution.requestId,
+      userId: execution.userId,
+      planId: execution.planId,
+      planVersionId: execution.planVersionId,
+      executionId,
+    }, async () => {
+      if (EXECUTION_TERMINAL_STATES.has(execution.status as ExecutionStatus)) return { status: execution.status as ExecutionStatus };
+      if (execution.status === 'created') await this.states.transition(executionId, 'queued', { queuedAt: new Date() });
+      execution = await this.load(executionId);
+      if (execution.cancellationRequestedAt) return this.cancelAtBoundary(executionId, execution.status as ExecutionStatus, 0);
+      if (!['queued', 'retry_wait', 'running'].includes(execution.status)) return this.fail(executionId, execution.status as ExecutionStatus, 'INVALID_EXECUTION_STATE', 'Execution cannot be started from its current state');
+      if (execution.status !== 'running') {
+        await this.states.transition(executionId, 'running', { startedAt: execution.startedAt ?? new Date() });
+        this.telemetry.increment('execution.started', 1);
+        this.telemetry.event('log', 'execution_started', { executionId, planId: execution.planId, planVersionId: execution.planVersionId });
+      }
 
-    try {
+      try {
       if (execution.planStatus !== 'active') return this.cancelAtBoundary(executionId, 'running', await this.successCount(executionId), 'PLAN_NOT_ACTIVE');
       const assembled = await this.assembler.assembleById(execution.userId, execution.planId, execution.planVersionId);
       if (assembled.version.planId !== execution.planId || assembled.computedHash !== execution.definitionHash || assembled.version.definitionHash !== execution.definitionHash) {
@@ -116,11 +129,13 @@ export class ExecutionRunner {
         const attempt = step.attemptCount + 1;
         await this.stepStates.transition(step.id, 'running', { attemptCount: attempt, startedAt: step.startedAt ?? new Date(), nextRetryAt: null, errorCode: null, errorMessage: null });
         await this.events.append(executionId, 'step_attempt_started', { attempt }, step.id);
+        this.telemetry.event('log', 'execution_step_started', { executionStepId: step.id, stepOrder: step.stepOrder, attempt });
         try {
-          const output = await this.actions.execute(execution.userId, executionId, actionDefinition as NormalizedAction, context, gate.effectiveRisk);
+          const output = await this.telemetry.runWithContext({ executionStepId: step.id }, () => this.actions.execute(execution.userId, executionId, actionDefinition as NormalizedAction, context, gate.effectiveRisk));
           context = { ...context, ...output };
           await this.stepStates.transition(step.id, 'succeeded', { outputSnapshotJson: this.sanitizer.sanitize(output), finishedAt: new Date() });
           await this.events.append(executionId, 'step_succeeded', { attempt }, step.id);
+          this.telemetry.event('log', 'execution_step_succeeded', { executionStepId: step.id, stepOrder: step.stepOrder, attempt });
         } catch (error) {
           const mapped = asRuntimeError(error);
           const safeMessage = this.sanitizer.sanitizeText(mapped);
@@ -135,6 +150,7 @@ export class ExecutionRunner {
             await this.stepStates.transition(step.id, 'retry_wait', { retryCount, nextRetryAt, errorCode: mapped.code, errorMessage: safeMessage });
             await this.states.transition(executionId, 'retry_wait', { errorCode: mapped.code, errorMessage: safeMessage, workerToken: null, heartbeatAt: null, leaseExpiresAt: null });
             await this.events.append(executionId, 'retry_scheduled', { attempt, retryCount, nextRetryAt: nextRetryAt.toISOString(), errorCode: mapped.code }, step.id);
+            this.telemetry.increment('execution.failed', 1, { mode: 'retry_wait', errorCode: mapped.code });
             return { status: 'retry_wait', retryScheduled: true };
           }
           const fallback = await this.fallback.execute(execution.userId, execution.planId, executionId, step.id, mapped.code, execution.resolvedFallbackPolicyJson);
@@ -145,6 +161,7 @@ export class ExecutionRunner {
           await this.states.transition(executionId, finalStatus, { resultCode: fallback.resultCode, resultSummary: fallback.resultSummary, errorCode: mapped.code, errorMessage: safeMessage, finishedAt: new Date(), workerToken: null, heartbeatAt: null, leaseExpiresAt: null });
           if (mapped.code === 'SAFETY_GATE_REQUIRES_APPROVAL_AND_IDEMPOTENCY') await this.notifications.emit({ userId: execution.userId, executionId, priority: 'P0', eventType: 'p0_7_safety_gate_blocked', dedupeKey: `safety-gate:${step.id}`, title: '高风险动作已安全阻断', body: '你已批准该动作，但在业务幂等和事务发件箱完成前，系统不会执行真实外部副作用。' });
           else await this.emitFailureNotification(execution.userId, executionId, mapped.code, mapped.message, step.id);
+          this.telemetry.increment('execution.failed', 1, { mode: finalStatus, errorCode: mapped.code });
           return { status: finalStatus };
         }
       }
@@ -158,14 +175,17 @@ export class ExecutionRunner {
             ? 'All actions completed successfully'
             : 'Execution completed with skipped or failed steps';
       await this.states.transition(executionId, finalStatus, { resultCode: finalStatus === 'succeeded' ? 'EXECUTION_COMPLETED' : 'EXECUTION_PARTIALLY_COMPLETED', resultSummary, errorCode: null, errorMessage: null, finishedAt: new Date(), workerToken: null, heartbeatAt: null, leaseExpiresAt: null });
+      this.recordTerminalOutcome(finalStatus, execution.startedAt);
       return { status: finalStatus };
-    } catch (error) {
+      } catch (error) {
       const latest = await this.load(executionId);
       if (EXECUTION_TERMINAL_STATES.has(latest.status as ExecutionStatus)) return { status: latest.status as ExecutionStatus };
       const mapped = asRuntimeError(error);
       await this.emitFailureNotification(latest.userId, executionId, mapped.code, mapped.message);
+      this.telemetry.increment('execution.failed', 1, { mode: 'failed', errorCode: mapped.code });
       return this.fail(executionId, 'running', mapped.code, this.sanitizer.sanitizeText(mapped));
-    }
+      }
+    });
   }
 
   private async load(id: string) {
@@ -196,7 +216,15 @@ export class ExecutionRunner {
   private async fail(id: string, current: ExecutionStatus, code: string, message: string): Promise<RunnerOutcome> {
     if (EXECUTION_TERMINAL_STATES.has(current)) return { status: current };
     await this.states.transition(id, 'failed', { errorCode: code, errorMessage: this.sanitizer.sanitizeText(message), resultCode: code, resultSummary: 'Execution failed safely', finishedAt: new Date(), workerToken: null, heartbeatAt: null, leaseExpiresAt: null });
+    this.recordTerminalOutcome('failed', null, code);
     return { status: 'failed' };
+  }
+
+  private recordTerminalOutcome(status: RunnerOutcome['status'], startedAt: Date | null, errorCode?: string) {
+    if (status === 'succeeded') this.telemetry.increment('execution.succeeded', 1);
+    else if (status === 'failed' || status === 'partially_succeeded' || status === 'cancelled') this.telemetry.increment('execution.failed', 1, { mode: status, errorCode: errorCode ?? 'none' });
+    if (startedAt) this.telemetry.histogram('execution.duration', Date.now() - startedAt.getTime(), { status });
+    this.telemetry.event(status === 'failed' ? 'error' : 'log', 'execution_finished', { status, durationMs: startedAt ? Date.now() - startedAt.getTime() : null, errorCode: errorCode ?? null });
   }
 
   private async emitFailureNotification(userId: string, executionId: string, code: string, message: string, executionStepId?: string) {

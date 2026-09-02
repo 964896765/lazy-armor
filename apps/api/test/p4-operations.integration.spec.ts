@@ -64,7 +64,6 @@ describe.sequential('P4 operations snapshot', { timeout: 60000 }, () => {
       processStatus: expect.any(String),
       dataStatus: 'available',
       processHeartbeatAt: expect.anything(),
-      lastWorkActivityAt: expect.anything(),
       readiness: expect.objectContaining({
         status: expect.any(String),
       }),
@@ -75,11 +74,12 @@ describe.sequential('P4 operations snapshot', { timeout: 60000 }, () => {
       processStatus: expect.any(String),
       dataStatus: 'available',
       processHeartbeatAt: expect.anything(),
-      lastWorkActivityAt: expect.anything(),
       readiness: expect.objectContaining({
         status: expect.any(String),
       }),
     });
+    expect(workers.body.executionWorker.lastWorkActivityAt === null || typeof workers.body.executionWorker.lastWorkActivityAt === 'string').toBe(true);
+    expect(workers.body.outboxWorker.lastWorkActivityAt === null || typeof workers.body.outboxWorker.lastWorkActivityAt === 'string').toBe(true);
 
     const outbox = await request(app.getHttpServer())
       .get('/api/admin/operations/outbox')
@@ -117,6 +117,31 @@ describe.sequential('P4 operations snapshot', { timeout: 60000 }, () => {
       }),
     ]));
 
+    const alerts = await request(app.getHttpServer())
+      .get('/api/admin/operations/alerts')
+      .set(auth(readonly.token))
+      .expect(200);
+    expect(alerts.body).toMatchObject({
+      overallStatus: expect.any(String),
+      notifyOnly: true,
+      automaticRecovery: 'disabled',
+      riskBypass: false,
+      approvalBypass: false,
+      runtimePermissionBypass: false,
+      alerts: expect.arrayContaining([
+        expect.objectContaining({
+          code: 'WORKER_DOWN',
+          severity: expect.any(String),
+          status: expect.any(String),
+        }),
+        expect.objectContaining({
+          code: 'OUTCOME_UNKNOWN',
+        }),
+      ]),
+    });
+    expect(JSON.stringify(alerts.body)).not.toContain('payload_json');
+    expect(JSON.stringify(alerts.body)).not.toContain('accessToken');
+
     const [rows] = await pool.query<RowDataPacket[]>(
       `SELECT action, COUNT(*) count
          FROM audit_logs
@@ -126,7 +151,8 @@ describe.sequential('P4 operations snapshot', { timeout: 60000 }, () => {
             'ADMIN_WORKER_STATUS_VIEWED',
             'ADMIN_OUTBOX_STATUS_VIEWED',
             'ADMIN_EXECUTION_STATUS_VIEWED',
-            'ADMIN_CONNECTOR_HEALTH_VIEWED'
+            'ADMIN_CONNECTOR_HEALTH_VIEWED',
+            'ADMIN_OPERATIONAL_ALERTS_VIEWED'
           )
         GROUP BY action`,
       [readonly.userId],
@@ -138,6 +164,7 @@ describe.sequential('P4 operations snapshot', { timeout: 60000 }, () => {
       'ADMIN_OUTBOX_STATUS_VIEWED',
       'ADMIN_EXECUTION_STATUS_VIEWED',
       'ADMIN_CONNECTOR_HEALTH_VIEWED',
+      'ADMIN_OPERATIONAL_ALERTS_VIEWED',
     ]));
   });
 });

@@ -10,6 +10,7 @@ import { executions, outboxMessages } from '@lazy-armor/database';
 import { and, asc, count, desc, eq, gte, inArray, isNotNull, lt, max, min, or } from 'drizzle-orm';
 import { QueueService } from '../infrastructure/queue.service';
 import { EXECUTION_WORKER, OUTBOX_WORKER } from '../execution/execution.module';
+import { ObservabilityService } from '../observability/observability.service';
 
 type WorkerStatus = 'UP' | 'DEGRADED' | 'DOWN';
 type OperationalHealth = 'UP' | 'DEGRADED' | 'DOWN' | 'UNKNOWN' | 'NOT_APPLICABLE';
@@ -51,6 +52,7 @@ export class AdminOperationsService {
     private readonly diagnostics: DiagnosticsService,
     private readonly queue: QueueService,
     private readonly connectors: ConnectorsService,
+    private readonly telemetry: ObservabilityService,
     @Optional() @Inject(EXECUTION_WORKER) private readonly executionWorker?: { readiness(): Promise<{ ready: boolean; reason: string | null }> },
     @Optional() @Inject(OUTBOX_WORKER) private readonly outboxWorker?: { readiness(): { ready: boolean; reason: string | null } },
   ) {}
@@ -314,7 +316,7 @@ export class AdminOperationsService {
     ]);
     const queueCounts = await this.safeQueueHealth();
     const backlog = queueCounts ? Number(queueCounts.waiting ?? 0) + Number(queueCounts.delayed ?? 0) : null;
-    return {
+    const metrics = {
       lastHeartbeatAt: latestHeartbeat[0]?.lastHeartbeatAt?.toISOString() ?? null,
       lastWorkActivityAt: latestHeartbeat[0]?.lastHeartbeatAt?.toISOString() ?? null,
       queueBacklog: backlog,
@@ -323,6 +325,9 @@ export class AdminOperationsService {
       failureCount: recentFailed.length,
       recentFailures: recentFailed.map((row) => ({ errorCode: row.errorCode, updatedAt: row.updatedAt.toISOString() })),
     };
+    this.telemetry.gauge('queue.waiting', Number(metrics.queueBacklog ?? 0), { queue: 'lazy-armor-executions', source: 'operations' });
+    this.telemetry.gauge('queue.oldest_age', Number(metrics.oldestPendingAgeSeconds ?? 0), { queue: 'lazy-armor-executions', source: 'operations' });
+    return metrics;
   }
 
   private async outboxWorkerDb(now: Date) {
@@ -337,7 +342,7 @@ export class AdminOperationsService {
     ]);
     const pendingCount = await this.countOutboxStatus('pending');
     const retryWaitCount = await this.countOutboxStatus('retry_wait');
-    return {
+    const metrics = {
       lastHeartbeatAt: latestActivity[0]?.lastUpdatedAt?.toISOString() ?? null,
       lastWorkActivityAt: latestActivity[0]?.lastUpdatedAt?.toISOString() ?? null,
       queueBacklog: pendingCount + retryWaitCount,
@@ -346,6 +351,9 @@ export class AdminOperationsService {
       failureCount: recentDead.length,
       recentFailures: recentDead.map((row) => ({ errorCode: row.lastErrorCode, updatedAt: row.updatedAt.toISOString() })),
     };
+    this.telemetry.gauge('outbox.pending', Number(metrics.queueBacklog ?? 0), { source: 'operations' });
+    this.telemetry.gauge('outbox.oldest_age', Number(metrics.oldestPendingAgeSeconds ?? 0), { source: 'operations' });
+    return metrics;
   }
 
   private emptyDiagnosticsSnapshot(generatedAt: string) {

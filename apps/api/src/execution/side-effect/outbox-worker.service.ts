@@ -17,6 +17,7 @@ import { QueueService } from '../../infrastructure/queue.service';
 import { workerEnabled } from '../../common/app-role';
 import { OutboxService } from './outbox.service';
 import { SideEffectOperationsService } from './side-effect-operations.service';
+import { ObservabilityService } from '../../observability/observability.service';
 
 const MAX_OUTBOX_ATTEMPTS = 5;
 const RETRY_BASE_MS = 200;
@@ -45,6 +46,7 @@ export class OutboxWorker implements OnModuleInit, OnApplicationShutdown {
     private readonly sanitizer: SnapshotSanitizer,
     private readonly policy: ExecutionPolicyService,
     private readonly queue: QueueService,
+    private readonly telemetry: ObservabilityService,
   ) {}
 
   onModuleInit() {
@@ -59,6 +61,7 @@ export class OutboxWorker implements OnModuleInit, OnApplicationShutdown {
   // §22：claim 由 FOR UPDATE SKIP LOCKED 保证多个 Worker 只有一个获得执行权。
   async poll() {
     const claimed = await this.outbox.claim(CLAIM_BATCH, WORKER_ID());
+    this.telemetry.gauge('outbox.pending', claimed.length, { phase: 'claimed_batch' });
     let processed = 0;
     for (const message of claimed) {
       try {
@@ -69,6 +72,7 @@ export class OutboxWorker implements OnModuleInit, OnApplicationShutdown {
         await this.releaseForRecovery(message.id).catch(() => undefined);
       }
     }
+    this.telemetry.event('log', 'outbox_poll_completed', { claimed: claimed.length, processed });
     return { claimed: claimed.length, processed };
   }
 
@@ -78,41 +82,54 @@ export class OutboxWorker implements OnModuleInit, OnApplicationShutdown {
 
   async process(message: typeof outboxMessages.$inferSelect) {
     const payload = message.payloadJson as { operationId: string; executionStepId: string; executionId: string; userId: string };
-    // §25：Dispatch 前重新校验 payload hash；被篡改的消息立即进入 Dead Letter，绝不出站。
-    try {
-      await this.outbox.assertPayloadIntegrity(message.id, payload);
-    } catch (error) {
-      const mapped = asRuntimeError(error);
-      await this.outbox.markDead(message.id, mapped.code, this.sanitizer.sanitizeText(mapped));
-      await this.audit.append({ actorType: 'outbox_worker', actorUserId: null, action: 'SIDE_EFFECT_PAYLOAD_INTEGRITY_FAILURE', resourceType: 'outbox_message', resourceId: message.id, userId: message.userId, executionId: payload.executionId, executionStepId: payload.executionStepId, outboxMessageId: message.id, correlationId: message.correlationId, causationId: payload.operationId, source: 'outbox_worker', result: 'blocked', reasonCode: mapped.code });
-      return;
-    }
-    const operation = await this.operations.get(payload.operationId);
-    if (!operation) {
-      await this.outbox.markDead(message.id, 'OPERATION_NOT_FOUND', 'SideEffectOperation no longer exists');
-      return;
-    }
-    // §23 Redelivery：Operation 已成功 → 不创建第二个业务动作，直接 published。
-    if (operation.status === 'succeeded') {
-      await this.outbox.markPublished(message.id);
-      // §63 恢复：DB 已成功但 Execution 尚未 finalize（崩溃），Redelivery 需推进 Execution。
-      const execRow = (await this.db.select({ status: executions.status }).from(executions).where(eq(executions.id, payload.executionId)).limit(1))[0];
-      if (execRow && !EXECUTION_TERMINAL_STATES.has(execRow.status as ExecutionStatus)) {
-        await this.resumeExecution(operation.userId, payload.executionId);
+    return this.telemetry.runWithContext({
+      correlationId: message.correlationId,
+      userId: message.userId,
+      executionId: payload.executionId,
+      executionStepId: payload.executionStepId,
+      sideEffectOperationId: payload.operationId,
+    }, async () => {
+      // §25：Dispatch 前重新校验 payload hash；被篡改的消息立即进入 Dead Letter，绝不出站。
+      try {
+        await this.outbox.assertPayloadIntegrity(message.id, payload);
+      } catch (error) {
+        const mapped = asRuntimeError(error);
+        this.telemetry.increment('outbox.dead', 1, { reason: mapped.code });
+        await this.outbox.markDead(message.id, mapped.code, this.sanitizer.sanitizeText(mapped));
+        await this.audit.append({ actorType: 'outbox_worker', actorUserId: null, action: 'SIDE_EFFECT_PAYLOAD_INTEGRITY_FAILURE', resourceType: 'outbox_message', resourceId: message.id, userId: message.userId, executionId: payload.executionId, executionStepId: payload.executionStepId, outboxMessageId: message.id, correlationId: message.correlationId, causationId: payload.operationId, source: 'outbox_worker', result: 'blocked', reasonCode: mapped.code });
+        return;
       }
-      return;
-    }
-    // 终态不可重放。
-    if (operation.status === 'outcome_unknown' || operation.status === 'cancelled') {
-      await this.outbox.markDead(message.id, `OPERATION_${operation.status.toUpperCase()}`, 'Operation reached a terminal state that cannot be redelivered');
-      return;
-    }
-    await this.dispatch(operation, message);
+      const operation = await this.operations.get(payload.operationId);
+      if (!operation) {
+        this.telemetry.increment('outbox.dead', 1, { reason: 'OPERATION_NOT_FOUND' });
+        await this.outbox.markDead(message.id, 'OPERATION_NOT_FOUND', 'SideEffectOperation no longer exists');
+        return;
+      }
+      // §23 Redelivery：Operation 已成功 → 不创建第二个业务动作，直接 published。
+      if (operation.status === 'succeeded') {
+        await this.outbox.markPublished(message.id);
+        // §63 恢复：DB 已成功但 Execution 尚未 finalize（崩溃），Redelivery 需推进 Execution。
+        const execRow = (await this.db.select({ status: executions.status }).from(executions).where(eq(executions.id, payload.executionId)).limit(1))[0];
+        if (execRow && !EXECUTION_TERMINAL_STATES.has(execRow.status as ExecutionStatus)) {
+          await this.resumeExecution(operation.userId, payload.executionId);
+        }
+        return;
+      }
+      // 终态不可重放。
+      if (operation.status === 'outcome_unknown' || operation.status === 'cancelled') {
+        this.telemetry.increment('outbox.dead', 1, { reason: `OPERATION_${operation.status.toUpperCase()}` });
+        await this.outbox.markDead(message.id, `OPERATION_${operation.status.toUpperCase()}`, 'Operation reached a terminal state that cannot be redelivered');
+        return;
+      }
+      await this.dispatch(operation, message);
+    });
   }
 
   private async dispatch(operation: typeof sideEffectOperations.$inferSelect, message: typeof outboxMessages.$inferSelect) {
     const payload = message.payloadJson as { operationId: string; executionStepId: string; executionId: string };
     let contract: SideEffectContract | null = null;
+    let connectorKeyForMetrics = 'unknown';
+    const startedAt = Date.now();
     try {
       // §56：Plan 不再 active，不得派发外部副作用。
       const execution = (await this.db.select({ planId: executions.planId, cancellationRequestedAt: executions.cancellationRequestedAt }).from(executions).where(eq(executions.id, payload.executionId)).limit(1))[0];
@@ -130,6 +147,7 @@ export class OutboxWorker implements OnModuleInit, OnApplicationShutdown {
       if (operation.connectionId && operation.capabilityKey) {
         const checked = await this.guard.assertUsable(operation.userId, operation.connectionId, operation.capabilityKey);
         connectorKey = checked.connectorKey;
+        connectorKeyForMetrics = checked.connectorKey;
       } else {
         throw new ExecutionRuntimeError('SAFETY_GATE_REQUIRES_IDEMPOTENCY', 'Side effect cannot be dispatched without a bound Connection and Capability');
       }
@@ -141,25 +159,29 @@ export class OutboxWorker implements OnModuleInit, OnApplicationShutdown {
       await this.events.append(payload.executionId, 'side_effect_dispatch_started', { operationId: operation.id, attempt: operation.attemptCount + 1 }, operation.executionStepId);
       await this.stepStates.transition(operation.executionStepId, 'running', { dispatchStatus: 'executing' });
       await this.operations.mark(operation.id, { status: 'executing', attemptCount: operation.attemptCount + 1, startedAt: operation.startedAt ?? new Date(), errorCode: null, errorMessage: null });
-      const result = await connector.execute?.({
+      const result = await this.telemetry.runWithContext({ connectorKey }, () => connector.execute?.({
         capability: operation.capabilityKey!,
         input: { context: rebuilt.triggerPayload, config: rebuilt.actionConfig },
         requestId: rebuilt.requestId,
         idempotencyKey: operation.idempotencyKey,
         providerIdempotencyKey: operation.providerIdempotencyKey ?? undefined,
         operationId: operation.providerOperationId ?? undefined,
-      });
+      }));
       if (!result) throw new ExecutionRuntimeError('ACTION_RUNTIME_NOT_IMPLEMENTED', 'Connector does not implement execute');
       if (!result.ok) {
         // Provider 明确拒绝：已知失败，不自动盲重试（§13）。
+        this.telemetry.increment('connector.provider_5xx', 1, { connectorKey, capabilityKey: operation.capabilityKey ?? 'unknown' });
         await this.failOperation(operation, message, 'PROVIDER_REJECTED', 'Provider rejected the side effect operation');
         return;
       }
+      this.telemetry.increment('connector.success', 1, { connectorKey, capabilityKey: operation.capabilityKey ?? 'unknown' });
+      this.telemetry.histogram('outbox.dispatch_duration', Date.now() - startedAt, { connectorKey, capabilityKey: operation.capabilityKey ?? 'unknown' });
       await this.succeedOperation(operation, message, result.data, rebuilt.executionId);
     } catch (error) {
       const mapped = asRuntimeError(error);
       // 审批后权限/连接/凭证变化 → 受控失败，绝不无限重试（§53-55）。
       if (BLOCKING_CODES.has(mapped.code)) {
+        this.telemetry.increment('connector.auth_failure', 1, { errorCode: mapped.code, connectorKey: connectorKeyForMetrics });
         await this.failOperation(operation, message, mapped.code, this.sanitizer.sanitizeText(mapped));
         return;
       }
@@ -168,10 +190,12 @@ export class OutboxWorker implements OnModuleInit, OnApplicationShutdown {
       // §43：retrySafety=unsafe 的 Provider 不自动盲重试模糊失败。
       const contractUnsafe = contract?.retrySafety === 'unsafe';
       if (ambiguous && (contractUnsafe || message.attemptCount + 1 >= MAX_OUTBOX_ATTEMPTS)) {
+        this.telemetry.increment('outbox.outcome_unknown', 1, { errorCode: mapped.code });
         await this.unknownOutcome(operation, message, mapped, payload.executionId);
         return;
       }
       if (ambiguous) {
+        this.telemetry.increment(mapped.code === 'TIMEOUT' ? 'connector.timeout' : 'outbox.retry_wait', 1, { errorCode: mapped.code });
         const nextAttemptAt = new Date(Date.now() + Math.min(RETRY_BASE_MS * 2 ** message.attemptCount, RETRY_MAX_MS));
         await this.operations.mark(operation.id, { status: 'retry_wait', errorCode: mapped.code, errorMessage: this.sanitizer.sanitizeText(mapped) });
         await this.outbox.markRetryWait(message.id, mapped.code, this.sanitizer.sanitizeText(mapped), nextAttemptAt);
@@ -180,9 +204,11 @@ export class OutboxWorker implements OnModuleInit, OnApplicationShutdown {
       }
       // 已知安全失败（发送前失败）：同 key 重试至上限后 dead。
       if (message.attemptCount + 1 >= MAX_OUTBOX_ATTEMPTS) {
+        this.telemetry.increment('outbox.dead', 1, { reason: mapped.code });
         await this.deadLetter(operation, message, mapped, payload.executionId);
         return;
       }
+      this.telemetry.increment(mapped.code === 'RATE_LIMIT' || mapped.code === 'RATE_LIMITED' ? 'connector.rate_limit' : 'outbox.retry_wait', 1, { errorCode: mapped.code });
       const nextAttemptAt = new Date(Date.now() + Math.min(RETRY_BASE_MS * 2 ** message.attemptCount, RETRY_MAX_MS));
       await this.operations.mark(operation.id, { status: 'retry_wait', errorCode: mapped.code, errorMessage: this.sanitizer.sanitizeText(mapped) });
       await this.outbox.markRetryWait(message.id, mapped.code, this.sanitizer.sanitizeText(mapped), nextAttemptAt);

@@ -12,5 +12,6 @@ import { RolesGuard } from './roles.guard';
   imports: [AuditModule, DiagnosticsModule, ConnectorsModule, ExecutionModule],
   controllers: [AdminController],
   providers: [AdminOperationsService, RolesGuard, { provide: APP_GUARD, useClass: RolesGuard }],
+  exports: [AdminOperationsService],
 })
 export class AdminModule {}

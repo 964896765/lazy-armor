@@ -29,6 +29,7 @@ import { StudyModule } from './study/study.module';
 import { DeviceModule } from './device/device.module';
 import { ProfilesModule } from './profiles/profiles.module';
 import { OperationsModule } from './operations/operations.module';
+import { ObservabilityModule } from './observability/observability.module';
 
 @Module({
   imports: [
@@ -57,6 +58,7 @@ import { OperationsModule } from './operations/operations.module';
     DeviceModule,
     ProfilesModule,
     OperationsModule,
+    ObservabilityModule,
     PlansModule,
     TemplatesModule,
     ExecutionModule,

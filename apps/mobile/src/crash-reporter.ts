@@ -18,6 +18,8 @@ export interface CrashReporter {
   captureMessage(message: string, context?: CrashContext): void;
 }
 
+export type CrashBoundaryHandler = (error: unknown, extraContext?: CrashContext) => void;
+
 export function sanitizeCrashContext(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(sanitizeCrashContext);
   if (value && typeof value === 'object') {
@@ -56,4 +58,14 @@ export class ConsoleSanitizedCrashReporter implements CrashReporter {
 
 export function createCrashReporter(mode: 'noop' | 'console' = 'noop'): CrashReporter {
   return mode === 'console' ? new ConsoleSanitizedCrashReporter() : new NoopCrashReporter();
+}
+
+export function createCrashBoundaryHandler(reporter: CrashReporter, baseContext: CrashContext = {}): CrashBoundaryHandler {
+  return (error: unknown, extraContext: CrashContext = {}) => {
+    reporter.captureException(error, {
+      boundary: 'mobile-ui',
+      ...baseContext,
+      ...extraContext,
+    });
+  };
 }

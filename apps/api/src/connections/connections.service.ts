@@ -8,6 +8,7 @@ import { DATABASE, type InjectedDatabase } from '../common/database.module';
 import { AuditService } from '../audit/audit.service';
 import { CREDENTIAL_PROVIDER, CredentialProviderError, type CredentialProvider } from '../credentials/credential-provider';
 import { PermissionsService } from '../permissions/permissions.service';
+import { ObservabilityService } from '../observability/observability.service';
 import type {
   CompleteOAuthConnectionDto,
   CreateConnectionDto,
@@ -24,6 +25,7 @@ export class ConnectionsService {
     private readonly registry: ConnectorRegistry,
     private readonly permissions: PermissionsService,
     private readonly audit: AuditService,
+    private readonly telemetry: ObservabilityService,
   ) {}
 
   async create(userId: string, input: CreateConnectionDto) {
@@ -284,15 +286,34 @@ export class ConnectionsService {
       requestId: input.requestId,
       idempotencyKey: input.idempotencyKey,
     });
-    try {
-      if (grant.operation === 'read' && adapter.read) return await adapter.read(request);
-      if (grant.operation === 'execute' && adapter.execute) return await adapter.execute(request);
-      if (grant.operation === 'subscribe' && adapter.subscribe) return await adapter.subscribe(request);
-      throw new BadRequestException('Connector does not implement the requested operation');
-    } catch (error) {
-      await this.handleConnectorFailure(current.id, error);
-      throw mapConnectorError(error);
-    }
+    return this.telemetry.runWithContext({
+      correlationId: input.requestId,
+      userId,
+      connectorKey: current.connectorKey,
+    }, async () => {
+      const startedAt = Date.now();
+      try {
+        let result;
+        if (grant.operation === 'read' && adapter.read) result = await adapter.read(request);
+        else if (grant.operation === 'execute' && adapter.execute) result = await adapter.execute(request);
+        else if (grant.operation === 'subscribe' && adapter.subscribe) result = await adapter.subscribe(request);
+        else throw new BadRequestException('Connector does not implement the requested operation');
+        this.telemetry.increment('connector.success', 1, { connectorKey: current.connectorKey, operation: grant.operation, capability: input.capability });
+        this.telemetry.histogram('connector.duration', Date.now() - startedAt, { connectorKey: current.connectorKey, operation: grant.operation, capability: input.capability });
+        return result;
+      } catch (error) {
+        const connectorError = asConnectorError(error);
+        const mapped = mapConnectorError(error);
+        if (connectorError?.code === 'TIMEOUT') this.telemetry.increment('connector.timeout', 1, { connectorKey: current.connectorKey, capability: input.capability });
+        if (connectorError?.code === 'RATE_LIMIT' || connectorError?.code === 'RATE_LIMITED') this.telemetry.increment('connector.rate_limit', 1, { connectorKey: current.connectorKey, capability: input.capability });
+        if (['CREDENTIAL_INVALID', 'CREDENTIAL_EXPIRED', 'CONNECTION_REVOKED', 'CONNECTION_EXPIRED', 'PERMISSION_REVOKED', 'PERMISSION_EXPIRED'].includes(connectorError?.code ?? '')) {
+          this.telemetry.increment('connector.auth_failure', 1, { connectorKey: current.connectorKey, capability: input.capability, errorCode: connectorError?.code ?? 'unknown' });
+        }
+        if (connectorError?.code === 'PROVIDER_5XX') this.telemetry.increment('connector.provider_5xx', 1, { connectorKey: current.connectorKey, capability: input.capability });
+        await this.handleConnectorFailure(current.id, error);
+        throw mapped;
+      }
+    });
   }
 
   async invokeConsumerRead(userId: string, id: string, input: InvokeConnectorDto) {

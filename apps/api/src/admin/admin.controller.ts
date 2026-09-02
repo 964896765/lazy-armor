@@ -5,6 +5,7 @@ import { DiagnosticsService } from '../diagnostics/diagnostics.service';
 import { CurrentUser } from '../common/auth-context';
 import { ConnectorsService } from '../connectors/connectors.service';
 import { AdminOperationsService } from './admin-operations.service';
+import { OperationalAlertsService } from '../observability/operational-alerts.service';
 
 // 运营只读诊断入口。P0 Final 不开放任何生产写操作（outcome_unknown 人工处置留待 P1）。
 @Controller('admin')
@@ -14,6 +15,7 @@ export class AdminController {
     private readonly audit: AuditService,
     private readonly connectors: ConnectorsService,
     private readonly operations: AdminOperationsService,
+    private readonly alerts: OperationalAlertsService,
   ) {}
 
   @Get('diagnostics')
@@ -70,5 +72,13 @@ export class AdminController {
     const connectors = await this.operations.connectorsSummary();
     await this.audit.append({ actorType: 'user', actorUserId: user.id, action: 'ADMIN_CONNECTOR_HEALTH_VIEWED', resourceType: 'system', resourceId: 'operations-connectors', userId: user.id, source: 'api', result: 'success', changeSummary: `Admin (${user.role}) viewed connector health` });
     return connectors;
+  }
+
+  @Get('operations/alerts')
+  @Roles('super_admin', 'operations_readonly')
+  async viewOperationalAlerts(@CurrentUser() user: AuthenticatedUser) {
+    const alerts = await this.alerts.list();
+    await this.audit.append({ actorType: 'user', actorUserId: user.id, action: 'ADMIN_OPERATIONAL_ALERTS_VIEWED', resourceType: 'system', resourceId: 'operations-alerts', userId: user.id, source: 'api', result: 'success', changeSummary: `Admin (${user.role}) viewed operational alerts` });
+    return alerts;
   }
 }

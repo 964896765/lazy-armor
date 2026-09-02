@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { ConsoleSanitizedCrashReporter, createCrashReporter, sanitizeCrashContext } from './crash-reporter';
+import { ConsoleSanitizedCrashReporter, createCrashBoundaryHandler, createCrashReporter, sanitizeCrashContext } from './crash-reporter';
 
 describe('crash reporter', () => {
   it('redacts forbidden keys from crash context', () => {
@@ -39,5 +39,20 @@ describe('crash reporter', () => {
       captureException: expect.any(Function),
       captureMessage: expect.any(Function),
     });
+  });
+
+  it('creates a crash boundary handler that merges and redacts context', () => {
+    const sink = { error: vi.fn(), log: vi.fn() };
+    const reporter = new ConsoleSanitizedCrashReporter(sink);
+    const boundary = createCrashBoundaryHandler(reporter, { planId: 'plan-1', payload: 'secret-payload' });
+
+    boundary(new Error('boom'), { executionId: 'exec-1', emailBody: 'private mail' });
+
+    const serialized = JSON.stringify(sink.error.mock.calls[0][1]);
+    expect(serialized).toContain('plan-1');
+    expect(serialized).toContain('exec-1');
+    expect(serialized).not.toContain('secret-payload');
+    expect(serialized).not.toContain('private mail');
+    expect(serialized).toContain('[REDACTED]');
   });
 });

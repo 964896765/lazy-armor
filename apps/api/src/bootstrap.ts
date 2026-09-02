@@ -5,11 +5,13 @@ import { json, urlencoded, type NextFunction, type Request, type Response } from
 import { AppModule } from './app.module';
 import { resolveCorrelationId, runWithRequestContext } from './common/request-context';
 import { SafeLoggerService } from './common/safe-logger.service';
+import { ObservabilityService } from './observability/observability.service';
 
 // 构建共享 HTTP 应用（CORS 白名单 + 安全响应头 + 请求体上限 + 校验管道 + 优雅停机）。
 export async function createHttpApp() {
   const app = await NestFactory.create(AppModule, { bodyParser: false, bufferLogs: true });
   const logger = app.get(SafeLoggerService);
+  const telemetry = app.get(ObservabilityService);
   app.useLogger(logger);
   // Base64 adds ~33% overhead. Only the authenticated local-file import path
   // receives the larger parser budget; every other API keeps the tighter cap.
@@ -38,11 +40,15 @@ export async function createHttpApp() {
     res.setHeader('x-correlation-id', correlationId);
     runWithRequestContext({ correlationId }, () => {
       res.on('finish', () => {
-        logger.event('log', 'http_request_completed', {
+        const durationMs = Date.now() - startedAt;
+        telemetry.increment('api.request_count', 1, { method: req.method, statusCode: String(res.statusCode) });
+        telemetry.histogram('api.duration', durationMs, { method: req.method, statusCode: String(res.statusCode) });
+        if (res.statusCode >= 400) telemetry.increment('api.error_count', 1, { method: req.method, statusCode: String(res.statusCode) });
+        telemetry.event(res.statusCode >= 500 ? 'error' : res.statusCode >= 400 ? 'warn' : 'log', 'http_request_completed', {
           method: req.method,
           path: req.originalUrl || req.url,
           statusCode: res.statusCode,
-          durationMs: Date.now() - startedAt,
+          durationMs,
         });
       });
       next();

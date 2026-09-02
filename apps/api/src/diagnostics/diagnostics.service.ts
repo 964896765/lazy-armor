@@ -3,11 +3,12 @@ import { credentialRefs, executions, outboxMessages, sideEffectOperations } from
 import { and, count, eq, gte, lt, or, type SQL } from 'drizzle-orm';
 import type { AnyMySqlTable } from 'drizzle-orm/mysql-core';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
+import { ObservabilityService } from '../observability/observability.service';
 
 // §38/§39：卡死工作检测 + 基础运营指标（只返回聚合计数，不含用户数据）。
 @Injectable()
 export class DiagnosticsService {
-  constructor(@Inject(DATABASE) private readonly db: InjectedDatabase) {}
+  constructor(@Inject(DATABASE) private readonly db: InjectedDatabase, private readonly telemetry: ObservabilityService) {}
 
   async snapshot() {
     const now = new Date();
@@ -23,7 +24,7 @@ export class DiagnosticsService {
       this.count(credentialRefs, and(eq(credentialRefs.status, 'active'), lt(credentialRefs.expiresAt, now))),
       this.count(executions, and(eq(executions.status, 'running'), lt(executions.leaseExpiresAt, now))),
     ]);
-    return {
+    const snapshot = {
       generatedAt: now.toISOString(),
       activeExecutions,
       failedExecutions24h: failedExecutions,
@@ -35,6 +36,11 @@ export class DiagnosticsService {
       staleCredentials,
       stuckExecutions,
     };
+    this.telemetry.gauge('execution.stuck', snapshot.stuckExecutions);
+    this.telemetry.gauge('outbox.pending', snapshot.pendingOutbox);
+    this.telemetry.gauge('outbox.dead', snapshot.deadOutbox);
+    this.telemetry.gauge('outbox.outcome_unknown', snapshot.outcomeUnknown);
+    return snapshot;
   }
 
   private async count(table: AnyMySqlTable, condition: SQL | undefined): Promise<number> {
