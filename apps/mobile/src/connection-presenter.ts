@@ -120,18 +120,29 @@ export function capabilityDescription(providerKey: string, capability: string) {
 }
 
 export function consumerErrorMessage(detail: string | null | undefined) {
-  if (!detail) return '这次处理暂时没有返回更多说明。';
+  if (!detail) return '这次处理暂时没有完成，可以稍后再试。';
   const normalized = detail.trim().toLowerCase();
-  if (normalized.includes('permission_revoked') || normalized.includes('permission revoked')) {
+  if (normalized.includes('permission_revoked') || normalized.includes('permission revoked') || (normalized.includes('permission') && normalized.includes('revoked'))) {
     return '相关授权已经被撤销，计划暂时不能继续读取或执行。';
   }
   if (normalized.includes('outcome_unknown')) {
     return '这次结果暂时无法自动确认，需要你看一下是否已经处理成功。';
   }
   if (
+    normalized.includes('connection expired')
+    || normalized.includes('connection_expired')
+    || normalized.includes('connection has expired')
+  ) {
+    return '连接已经过期，重新连接后这条计划才能继续运行。';
+  }
+  if (
     normalized.includes('oauth token refresh failed')
     || normalized.includes('refresh token is invalid')
     || normalized.includes('credentials revoked')
+    || normalized.includes('credential invalid')
+    || normalized.includes('credential expired')
+    || normalized.includes('credential reference is not active')
+    || normalized.includes('credential reference has expired')
     || normalized.includes('refresh_required')
   ) {
     return '账号登录状态已经失效，需要重新连接后才能继续运行。';
@@ -159,25 +170,48 @@ export function consumerErrorMessage(detail: string | null | undefined) {
   if (normalized.includes('configuration incomplete') || normalized.includes('invalid template config')) {
     return '这条计划还没配置完整，补齐后就能继续运行。';
   }
-  if (normalized.includes('missing connection') || normalized.includes('connection is not available')) {
+  if (
+    normalized.includes('missing connection')
+    || normalized.includes('connection is not available')
+    || normalized.includes('connection unavailable')
+    || normalized.includes('source_connection_required')
+  ) {
     return '这条计划缺少可用连接，补上后就能继续运行。';
   }
-  return detail;
+  if (
+    normalized.includes('unknown internal error')
+    || normalized.includes('internal execution error')
+    || normalized.includes('internal_error')
+  ) {
+    return '这次处理暂时没有完成，可以稍后再试。';
+  }
+  return '这次处理暂时没有完成，可以稍后再试。';
 }
 
 export function consumerErrorNextStep(detail: string | null | undefined) {
-  if (!detail) return '先重新试一次；如果还是失败，再检查连接和权限。';
+  if (!detail) return '如果连续失败，请检查连接和权限。';
   const normalized = detail.trim().toLowerCase();
-  if (normalized.includes('permission_revoked') || normalized.includes('permission revoked')) {
+  if (normalized.includes('permission_revoked') || normalized.includes('permission revoked') || (normalized.includes('permission') && normalized.includes('revoked'))) {
     return '去“我的连接”重新授权后，这条计划会继续工作。';
   }
   if (normalized.includes('outcome_unknown')) {
     return '打开记录确认实际结果；如未成功，再重新执行一次。';
   }
   if (
+    normalized.includes('connection expired')
+    || normalized.includes('connection_expired')
+    || normalized.includes('connection has expired')
+  ) {
+    return '去“我的连接”重新连接后，再回来重试。';
+  }
+  if (
     normalized.includes('oauth token refresh failed')
     || normalized.includes('refresh token is invalid')
     || normalized.includes('credentials revoked')
+    || normalized.includes('credential invalid')
+    || normalized.includes('credential expired')
+    || normalized.includes('credential reference is not active')
+    || normalized.includes('credential reference has expired')
     || normalized.includes('refresh_required')
     || normalized.includes('missing connection')
   ) {
@@ -195,7 +229,21 @@ export function consumerErrorNextStep(detail: string | null | undefined) {
   if (normalized.includes('configuration incomplete') || normalized.includes('invalid template config')) {
     return '回到计划详情补齐设置，再重新启用。';
   }
-  return '先看连接、权限和当前配置是否齐全，再决定是否重试。';
+  if (
+    normalized.includes('connection is not available')
+    || normalized.includes('connection unavailable')
+    || normalized.includes('source_connection_required')
+  ) {
+    return '去“我的连接”补好可用账号后，再回来继续。';
+  }
+  if (
+    normalized.includes('unknown internal error')
+    || normalized.includes('internal execution error')
+    || normalized.includes('internal_error')
+  ) {
+    return '如果连续失败，请检查连接和权限。';
+  }
+  return '如果连续失败，请检查连接和权限。';
 }
 
 const PROVIDER_CAPABILITY_COPY: Record<string, Record<string, { label: string; description: string }>> = {

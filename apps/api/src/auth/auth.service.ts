@@ -73,7 +73,17 @@ export class AuthService {
     try {
       await this.db.transaction(async (tx) => {
         await tx.insert(users).values({ id: userId, status: 'active', role: 'user', createdAt: now, updatedAt: now });
-        await tx.insert(profiles).values({ id: profileId, userId, displayName: input.displayName, timezone: 'Asia/Shanghai', locale: 'zh-CN', createdAt: now, updatedAt: now });
+        await tx.insert(profiles).values({
+          id: profileId,
+          userId,
+          displayName: input.displayName,
+          avatar: null,
+          timezone: 'Asia/Shanghai',
+          locale: 'zh-CN',
+          preferencesJson: null,
+          createdAt: now,
+          updatedAt: now,
+        });
         await tx.insert(authIdentities).values({ id: identityId, userId, email, passwordHash, emailVerifiedAt: null, createdAt: now, updatedAt: now });
       });
     } catch (error) {

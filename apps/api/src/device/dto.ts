@@ -11,6 +11,15 @@ export class CreateDeviceProfileDto {
   @IsString() @IsIn(['manual', 'internal', 'test']) sourceType!: 'manual' | 'internal' | 'test';
 }
 
+export class UpdateDeviceProfileDto {
+  @IsOptional() @IsString() @Length(1, 80) type?: string;
+  @IsOptional() @IsString() @Length(1, 120) brand?: string;
+  @IsOptional() @IsString() @Length(1, 120) model?: string;
+  @IsOptional() @IsDateString() purchasedAt?: string;
+  @IsOptional() @IsDateString() warrantyUntil?: string;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(3650) maintenanceIntervalDays?: number;
+}
+
 export class ListDeviceProfilesDto {
   @IsOptional() @IsString() @Length(1, 80) type?: string;
 }

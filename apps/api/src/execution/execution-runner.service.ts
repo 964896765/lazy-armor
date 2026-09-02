@@ -79,6 +79,7 @@ export class ExecutionRunner {
         }
       } catch (error) {
         const mapped = asRuntimeError(error);
+        await this.emitFailureNotification(execution.userId, executionId, mapped.code, mapped.message);
         return this.fail(executionId, 'running', mapped.code, this.sanitizer.sanitizeText(mapped));
       }
 
@@ -139,6 +140,7 @@ export class ExecutionRunner {
           const finalStatus = completed > 0 ? 'partially_succeeded' : 'failed';
           await this.states.transition(executionId, finalStatus, { resultCode: fallback.resultCode, resultSummary: fallback.resultSummary, errorCode: mapped.code, errorMessage: safeMessage, finishedAt: new Date(), workerToken: null, heartbeatAt: null, leaseExpiresAt: null });
           if (mapped.code === 'SAFETY_GATE_REQUIRES_APPROVAL_AND_IDEMPOTENCY') await this.notifications.emit({ userId: execution.userId, executionId, priority: 'P0', eventType: 'p0_7_safety_gate_blocked', dedupeKey: `safety-gate:${step.id}`, title: '高风险动作已安全阻断', body: '你已批准该动作，但在业务幂等和事务发件箱完成前，系统不会执行真实外部副作用。' });
+          else await this.emitFailureNotification(execution.userId, executionId, mapped.code, mapped.message, step.id);
           return { status: finalStatus };
         }
       }
@@ -157,6 +159,7 @@ export class ExecutionRunner {
       const latest = await this.load(executionId);
       if (EXECUTION_TERMINAL_STATES.has(latest.status as ExecutionStatus)) return { status: latest.status as ExecutionStatus };
       const mapped = asRuntimeError(error);
+      await this.emitFailureNotification(latest.userId, executionId, mapped.code, mapped.message);
       return this.fail(executionId, 'running', mapped.code, this.sanitizer.sanitizeText(mapped));
     }
   }
@@ -190,5 +193,166 @@ export class ExecutionRunner {
     if (EXECUTION_TERMINAL_STATES.has(current)) return { status: current };
     await this.states.transition(id, 'failed', { errorCode: code, errorMessage: this.sanitizer.sanitizeText(message), resultCode: code, resultSummary: 'Execution failed safely', finishedAt: new Date(), workerToken: null, heartbeatAt: null, leaseExpiresAt: null });
     return { status: 'failed' };
+  }
+
+  private async emitFailureNotification(userId: string, executionId: string, code: string, message: string, executionStepId?: string) {
+    const notice = this.failureNotice(code, message);
+    if (!notice) return;
+    await this.notifications.emit({
+      userId,
+      executionId,
+      executionStepId: executionStepId ?? null,
+      priority: notice.priority,
+      eventType: notice.eventType,
+      dedupeKey: `execution-failure:${executionId}:${notice.eventType}`,
+      title: notice.title,
+      body: notice.body,
+      actionRequired: notice.actionRequired,
+    });
+  }
+
+  private failureNotice(code: string, message: string) {
+    const source = this.sourceHint(message);
+    const sourceLabel = sourceLabelFor(source);
+    const connectionLabel = sourceLabel ? `${sourceLabel}连接` : '相关连接';
+    const permissionLabel = sourceLabel ? `${sourceLabel}权限` : '相关权限';
+    switch (code) {
+      case 'PERMISSION_REVOKED':
+      case 'PERMISSION_EXPIRED':
+      case 'CAPABILITY_NOT_GRANTED':
+        return {
+          priority: 'P1' as const,
+          eventType: 'permission_revoked',
+          title: `${permissionLabel}已经撤销`,
+          body: source ? `${source} permission revoked` : 'permission revoked',
+          actionRequired: true,
+        };
+      case 'CONNECTION_REVOKED':
+      case 'CONNECTION_EXPIRED':
+        return {
+          priority: 'P1' as const,
+          eventType: 'connection_reconnect_required',
+          title: `${connectionLabel}需要重新连接`,
+          body: source ? `${source} connection expired` : 'connection expired',
+          actionRequired: true,
+        };
+      case 'CREDENTIAL_INVALID':
+      case 'CREDENTIAL_EXPIRED':
+        return {
+          priority: 'P1' as const,
+          eventType: 'credential_revoked',
+          title: `${connectionLabel}已经失效`,
+          body: source ? `${source} credentials revoked` : 'credentials revoked',
+          actionRequired: true,
+        };
+      case 'SOURCE_CONNECTION_REQUIRED':
+      case 'CONNECTION_UNAVAILABLE':
+      case 'CONNECTION_NOT_OWNED':
+        return {
+          priority: 'P1' as const,
+          eventType: 'missing_connection',
+          title: `${connectionLabel}还没补齐`,
+          body: source ? `${source} missing connection` : 'missing connection',
+          actionRequired: true,
+        };
+      case 'SOURCE_RUNTIME_NOT_IMPLEMENTED':
+      case 'PROVIDER_GATE_DISABLED':
+        return {
+          priority: 'P1' as const,
+          eventType: 'configuration_incomplete',
+          title: '这条计划还没配置完整',
+          body: 'configuration incomplete',
+          actionRequired: true,
+        };
+      case 'TIMEOUT':
+        return {
+          priority: 'P1' as const,
+          eventType: 'provider_timeout',
+          title: sourceLabel ? `${sourceLabel}暂时没有响应` : '服务暂时没有响应',
+          body: source ? `${source} timeout` : 'timeout',
+          actionRequired: false,
+        };
+      case 'RATE_LIMIT':
+      case 'RATE_LIMITED':
+        return {
+          priority: 'P1' as const,
+          eventType: 'rate_limited',
+          title: sourceLabel ? `${sourceLabel}现在有点忙` : '服务现在有点忙',
+          body: source ? `${source} rate limited` : 'rate limited',
+          actionRequired: false,
+        };
+      case 'NETWORK_ERROR':
+        return {
+          priority: 'P1' as const,
+          eventType: 'network_failure',
+          title: '网络暂时不可用',
+          body: 'network failure',
+          actionRequired: false,
+        };
+      case 'PROVIDER_UNAVAILABLE':
+      case 'CONNECTOR_TEMPORARY_ERROR':
+      case 'CREDENTIAL_UNAVAILABLE':
+        return {
+          priority: 'P1' as const,
+          eventType: 'provider_unavailable',
+          title: sourceLabel ? `${sourceLabel}暂时不可用` : '服务暂时不可用',
+          body: source ? `${source} provider unavailable` : 'provider unavailable',
+          actionRequired: false,
+        };
+      case 'OUTCOME_UNKNOWN':
+        return {
+          priority: 'P0' as const,
+          eventType: 'side_effect_outcome_unknown',
+          title: '操作结果待确认',
+          body: 'outcome_unknown',
+          actionRequired: true,
+        };
+      case 'PLAN_FAILED':
+        return {
+          priority: 'P1' as const,
+          eventType: 'plan_failed',
+          title: '这次计划没有按预期完成',
+          body: 'plan failed',
+          actionRequired: false,
+        };
+      case 'PLAN_DEFINITION_INTEGRITY_ERROR':
+      case 'INTERNAL_EXECUTION_ERROR':
+        return {
+          priority: 'P0' as const,
+          eventType: 'unknown_internal_error',
+          title: '这次处理暂时没有完成',
+          body: 'unknown internal error',
+          actionRequired: false,
+        };
+      default:
+        return null;
+    }
+  }
+
+  private sourceHint(message: string) {
+    const normalized = message.trim().toLowerCase();
+    if (normalized.startsWith('calendar:')) return 'calendar';
+    if (normalized.startsWith('email:')) return 'email';
+    if (normalized.startsWith('file:')) return 'file';
+    if (normalized.startsWith('logistics:')) return 'logistics';
+    if (normalized.startsWith('content_platform:') || normalized.startsWith('content:')) return 'content';
+    return null;
+  }
+}
+
+function sourceLabelFor(source: string | null) {
+  switch (source) {
+    case 'calendar':
+      return '日历';
+    case 'email':
+      return '邮件';
+    case 'file':
+      return '文件';
+    case 'logistics':
+      return '物流';
+    case 'content':
+      return '内容平台';
+    default:
+      return '';
   }
 }

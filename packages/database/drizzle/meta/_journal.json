@@ -155,6 +155,13 @@
       "when": 1788328800000,
       "tag": "0021_p3_operational_records",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1788350400000,
+      "tag": "0022_p4_profile_preferences",
+      "breakpoints": true
     }
   ]
 }

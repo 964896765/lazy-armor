@@ -75,7 +75,27 @@ describe('P2 mobile connection presenter', () => {
     expect(consumerErrorMessage('OAuth token refresh failed')).toContain('重新连接');
     expect(consumerErrorMessage('OUTCOME_UNKNOWN')).toContain('无法自动确认');
     expect(consumerErrorMessage('provider timeout')).toContain('响应超时');
+    expect(consumerErrorMessage('TypeError: ConnectorError SQLSTATE[42S22] requestId=abc123')).toBe('这次处理暂时没有完成，可以稍后再试。');
     expect(consumerErrorNextStep('rate limited')).toContain('等一会儿');
+    expect(consumerErrorNextStep('TypeError: ConnectorError SQLSTATE[42S22] requestId=abc123')).toBe('如果连续失败，请检查连接和权限。');
     expect(consumerErrorNextStep('permission revoked')).toContain('重新授权');
+  });
+
+  it.each([
+    ['calendar permission revoked', '相关授权已经被撤销，计划暂时不能继续读取或执行。', '去“我的连接”重新授权后，这条计划会继续工作。'],
+    ['calendar connection expired', '连接已经过期，重新连接后这条计划才能继续运行。', '去“我的连接”重新连接后，再回来重试。'],
+    ['calendar credentials revoked', '账号登录状态已经失效，需要重新连接后才能继续运行。', '重新连接对应账号后，再回来启用或重试。'],
+    ['provider timeout', '服务响应超时，这次暂时没有拿到结果。', '稍后重新检查；如果连续失败，再重新连接一次。'],
+    ['provider unavailable', '服务暂时不可用，稍后可以再试一次。', '稍后重新检查；如果连续失败，再重新连接一次。'],
+    ['rate limited', '服务方临时限制了访问频率，稍后再试即可。', '先等一会儿再试，不需要重复点很多次。'],
+    ['missing connection', '这条计划缺少可用连接，补上后就能继续运行。', '重新连接对应账号后，再回来启用或重试。'],
+    ['configuration incomplete', '这条计划还没配置完整，补齐后就能继续运行。', '回到计划详情补齐设置，再重新启用。'],
+    ['plan failed', '这次计划没有按预期完成。', '如果连续失败，请检查连接和权限。'],
+    ['OUTCOME_UNKNOWN', '这次结果暂时无法自动确认，需要你看一下是否已经处理成功。', '打开记录确认实际结果；如未成功，再重新执行一次。'],
+    ['network failure', '网络暂时不可用，这次没能完成同步。', '先确认网络恢复，再重新加载或手动执行。'],
+    ['unknown internal error', '这次处理暂时没有完成，可以稍后再试。', '如果连续失败，请检查连接和权限。'],
+  ])('covers failure matrix copy for %s', (detail, message, nextStep) => {
+    expect(consumerErrorMessage(detail)).toBe(message);
+    expect(consumerErrorNextStep(detail)).toBe(nextStep);
   });
 });

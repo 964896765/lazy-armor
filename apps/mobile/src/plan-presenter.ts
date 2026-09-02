@@ -87,7 +87,10 @@ export function groupPlanTemplates<T extends { group: string }>(templates: reado
   return groups;
 }
 
-export function consumerPlanGroup(input: { templateKey?: string | null; planCenterKind?: string | null }): ConsumerPlanGroup {
+export function consumerPlanGroup(input: { templateKey?: string | null; planCenterKind?: string | null; consumerGroup?: string | null }): ConsumerPlanGroup {
+  if (input.consumerGroup && ['我的生活', '我的钱', '我的事情', '我的东西', '其他计划'].includes(input.consumerGroup)) {
+    return input.consumerGroup as ConsumerPlanGroup;
+  }
   if (input.templateKey && TEMPLATE_GROUP_BY_KEY[input.templateKey]) return TEMPLATE_GROUP_BY_KEY[input.templateKey];
   switch (input.planCenterKind) {
     case 'logistics':

@@ -9,7 +9,7 @@ import { executionStatusLabel } from '../../src/execution-presenter';
 import { connectionRecoveryAction, connectionStatusExplanation, connectionStatusLabel, connectionStatusNextStep, consumerErrorMessage, consumerErrorNextStep } from '../../src/connection-presenter';
 
 interface ApprovalCard { id: string; executionId: string; riskLevel: string; summary: string; expiresAt: string; planName: string }
-interface AlertCard { id: string; priority: string; title: string; body: string; executionId: string | null; createdAt: string }
+interface AlertCard { id: string; priority: string; title: string; body: string; executionId?: string; createdAt: string; category?: 'attention' | 'exception' | 'summary' }
 interface ProcessedCard { id: string; status: string; resultSummary: string | null; finishedAt: string | null; planName: string; planVersionNumber: number }
 interface ConnectionIssue { connectionId: string; connectionStatus: string; providerKey: string; providerName: string; planId: string; planName: string }
 interface TodayData { pendingApprovals: ApprovalCard[]; connectionIssues: ConnectionIssue[]; alerts: AlertCard[]; processed: ProcessedCard[] }
@@ -64,6 +64,7 @@ export default function Today() {
 }
 
 function classifyAlert(item: AlertCard): PresentableAlert['section'] {
+  if (item.category) return item.category;
   const normalized = `${item.title} ${item.body}`.toLowerCase();
   if (
     item.priority === 'P0'

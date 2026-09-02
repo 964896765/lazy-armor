@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { digitalAccountProfiles, recurringItemProfiles, vehicleProfiles } from '@lazy-armor/database';
+import { digitalAccountProfiles, planVersions, plans, recurringItemProfiles, vehicleProfiles } from '@lazy-armor/database';
 import { newId } from '@lazy-armor/shared';
 import { and, desc, eq } from 'drizzle-orm';
 import { AuditService } from '../audit/audit.service';
@@ -29,6 +29,36 @@ export class ProfilesService {
 
   listVehicles(userId: string) {
     return this.db.select().from(vehicleProfiles).where(eq(vehicleProfiles.userId, userId)).orderBy(desc(vehicleProfiles.createdAt));
+  }
+
+  async vehicleDetail(userId: string, id: string) {
+    return this.getVehicle(userId, id);
+  }
+
+  async listPlansUsingVehicle(userId: string, vehicleId: string) {
+    await this.getVehicle(userId, vehicleId);
+    const rows = await this.db.select({
+      planId: plans.id,
+      planStatus: plans.status,
+      planName: planVersions.name,
+      templateKey: planVersions.templateKey,
+      templateConfig: planVersions.templateConfigJson,
+    })
+      .from(plans)
+      .innerJoin(planVersions, eq(plans.currentVersionId, planVersions.id))
+      .where(eq(plans.userId, userId))
+      .orderBy(desc(plans.updatedAt));
+    return rows
+      .filter((row) => {
+        const config = (row.templateConfig ?? {}) as Record<string, unknown>;
+        return config.profileId === vehicleId;
+      })
+      .map((row) => ({
+        planId: row.planId,
+        planName: row.planName,
+        planStatus: row.planStatus,
+        templateKey: row.templateKey,
+      }));
   }
 
   async updateMileage(userId: string, id: string, input: UpdateVehicleMileageDto) {

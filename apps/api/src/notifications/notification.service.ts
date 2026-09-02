@@ -6,6 +6,7 @@ import { DATABASE, type InjectedDatabase } from '../common/database.module';
 import { NotificationPolicyService } from './notification-policy.service';
 
 export type NotificationPriority = 'P0' | 'P1' | 'P2' | 'P3';
+export type TodayPresentationCategory = 'attention' | 'exception' | 'summary';
 
 export interface NotificationEmitInput {
   userId: string;
@@ -81,13 +82,23 @@ export class NotificationService {
         summary: approvalRequests.actionSummary, expiresAt: approvalRequests.expiresAt, planName: planVersions.name,
       }).from(approvalRequests).innerJoin(planVersions, eq(approvalRequests.planVersionId, planVersions.id))
         .where(and(eq(approvalRequests.userId, userId), eq(approvalRequests.status, 'pending'))).orderBy(desc(approvalRequests.createdAt)).limit(50),
-      this.db.select({ id: notifications.id, priority: notifications.priority, title: notifications.title, body: notifications.body, executionId: notifications.executionId, createdAt: notifications.createdAt })
+      this.db.select({
+        id: notifications.id,
+        priority: notifications.priority,
+        title: notifications.title,
+        body: notifications.body,
+        executionId: notifications.executionId,
+        createdAt: notifications.createdAt,
+        eventType: notifications.eventType,
+        actionRequired: notifications.actionRequired,
+      })
         .from(notifications)
         .where(and(
           eq(notifications.userId, userId),
           eq(notifications.status, 'unread'),
           or(
             inArray(notifications.priority, ['P0', 'P1']),
+            eq(notifications.actionRequired, 1),
             eq(notifications.eventType, 'daily_important_summary'),
           ),
         ))
@@ -113,6 +124,29 @@ export class NotificationService {
     ]);
     const uniqueIssues = new Map<string, typeof sourceIssues[number]>();
     for (const issue of [...sourceIssues, ...actionIssues]) uniqueIssues.set(`${issue.planId}:${issue.connectionId}`, issue);
-    return { pendingApprovals, connectionIssues: [...uniqueIssues.values()], alerts, processed };
+    return {
+      pendingApprovals,
+      connectionIssues: [...uniqueIssues.values()],
+      alerts: alerts.map((item) => ({
+        id: item.id,
+        priority: item.priority,
+        title: item.title,
+        body: item.body,
+        executionId: item.executionId,
+        createdAt: item.createdAt,
+        category: this.classifyTodayCategory(item.eventType, item.priority as NotificationPriority, Boolean(item.actionRequired)),
+      })),
+      processed,
+    };
+  }
+
+  private classifyTodayCategory(eventType: string, priority: NotificationPriority, actionRequired: boolean): TodayPresentationCategory {
+    if (actionRequired) return 'attention';
+    if (eventType === 'daily_important_summary') return 'summary';
+    if (eventType === 'approval_required' || eventType === 'permission_revoked' || eventType === 'connection_reconnect_required') {
+      return 'attention';
+    }
+    if (priority === 'P0' || priority === 'P1') return 'exception';
+    return 'summary';
   }
 }

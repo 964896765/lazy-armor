@@ -5,6 +5,7 @@ import {
   CreateDeviceProfileDto,
   ListDeviceConsumablesDto,
   ListDeviceProfilesDto,
+  UpdateDeviceProfileDto,
   UpdateDeviceConsumableReplacementDto,
 } from './dto';
 import { DeviceService } from './device.service';
@@ -21,6 +22,21 @@ export class DeviceController {
   @Get('device-profiles')
   listProfiles(@CurrentUser() user: AuthenticatedUser, @Query() query: ListDeviceProfilesDto) {
     return this.device.listProfiles(user.id, query.type);
+  }
+
+  @Get('device-profiles/:id')
+  getProfile(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.device.getProfile(user.id, id);
+  }
+
+  @Patch('device-profiles/:id')
+  updateProfile(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() input: UpdateDeviceProfileDto) {
+    return this.device.updateProfile(user.id, id, input);
+  }
+
+  @Get('device-profiles/:id/plans')
+  listPlans(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.device.listPlansUsingProfile(user.id, id);
   }
 
   @Post('device-consumables')

@@ -11,7 +11,7 @@ import { StudyService } from '../study/study.service';
 import { ConnectionsService } from '../connections/connections.service';
 import { ProfilesService } from '../profiles/profiles.service';
 import { OperationsService } from '../operations/operations.service';
-import { ExecutionRuntimeError } from './execution.types';
+import { asRuntimeError, ExecutionRuntimeError } from './execution.types';
 import { RuntimeConnectionGuard } from './runtime-connection-guard.service';
 
 @Injectable()
@@ -45,14 +45,19 @@ export class SourceResolver {
         // Use the same invocation path as the public Connector API so current
         // permission, current credential version and provider availability are
         // checked again for every execution. No historical Plan grant is trusted.
-        await this.guard.assertUsable(userId, source.connectionId, capability);
-        const result = await this.connections.invoke(userId, source.connectionId, {
-          capability,
-          requestId: `${requestId}:source:${source.sortOrder}`,
-          input: source.sourceType === 'file' ? { ...context, ...source.config } : source.config,
-        });
-        if (!result.ok) throw new ExecutionRuntimeError('CONNECTOR_TEMPORARY_ERROR', `${source.sourceType} source read failed`, true);
-        context = { ...context, ...result.data };
+        try {
+          await this.guard.assertUsable(userId, source.connectionId, capability);
+          const result = await this.connections.invoke(userId, source.connectionId, {
+            capability,
+            requestId: `${requestId}:source:${source.sortOrder}`,
+            input: source.sourceType === 'file' ? { ...context, ...source.config } : source.config,
+          });
+          if (!result.ok) throw new ExecutionRuntimeError('CONNECTOR_TEMPORARY_ERROR', `${source.sourceType} source read failed`, true);
+          context = { ...context, ...result.data };
+        } catch (error) {
+          const mapped = asRuntimeError(error);
+          throw new ExecutionRuntimeError(mapped.code, `${source.sourceType}:${mapped.message}`, mapped.retryable);
+        }
         continue;
       }
       if (!source.connectionId) {

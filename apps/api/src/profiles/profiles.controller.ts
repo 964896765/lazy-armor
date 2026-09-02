@@ -9,6 +9,8 @@ export class ProfilesController {
 
   @Post('vehicle-profiles') createVehicle(@CurrentUser() user: AuthenticatedUser, @Body() input: CreateVehicleProfileDto) { return this.profiles.createVehicle(user.id, input); }
   @Get('vehicle-profiles') listVehicles(@CurrentUser() user: AuthenticatedUser) { return this.profiles.listVehicles(user.id); }
+  @Get('vehicle-profiles/:id') getVehicle(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) { return this.profiles.vehicleDetail(user.id, id); }
+  @Get('vehicle-profiles/:id/plans') listVehiclePlans(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) { return this.profiles.listPlansUsingVehicle(user.id, id); }
   @Patch('vehicle-profiles/:id/mileage') updateMileage(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() input: UpdateVehicleMileageDto) { return this.profiles.updateMileage(user.id, id, input); }
 
   @Post('digital-account-profiles') createDigitalAccount(@CurrentUser() user: AuthenticatedUser, @Body() input: CreateDigitalAccountProfileDto) { return this.profiles.createDigitalAccount(user.id, input); }

@@ -499,6 +499,7 @@ export class PlansService {
       description: current?.description ?? active?.description ?? null,
       templateKey: current?.templateKey ?? active?.templateKey ?? null,
       templateVersion: current?.templateVersion ?? active?.templateVersion ?? null,
+      consumerGroup: this.consumerGroupForTemplate(current?.templateKey ?? active?.templateKey ?? null),
       currentVersion: current,
       activeVersion: active,
       latestExecution,
@@ -511,6 +512,15 @@ export class PlansService {
       updatedAt: plan.updatedAt,
       archivedAt: plan.archivedAt,
     };
+  }
+
+  private consumerGroupForTemplate(templateKey: string | null) {
+    if (!templateKey) return '其他计划';
+    try {
+      return resolvePlanTemplate(templateKey)?.manifest.group ?? '其他计划';
+    } catch {
+      return '其他计划';
+    }
   }
 
   private async versionSummary(userId: string, planId: string, versionId: string) {

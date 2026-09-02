@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { Link } from 'expo-router';
+import { Link, type Href } from 'expo-router';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { api } from '../../src/api';
 import { useAuthStore } from '../../src/auth-store';
@@ -40,7 +40,7 @@ export default function Me() {
         </Pressable>
       </Link>
 
-      <Link href="/connections" asChild>
+      <Link href={'/permissions' as Href} asChild>
         <Pressable>
           <View style={styles.card}>
             <Text style={styles.cardTitle}>权限中心</Text>
@@ -49,47 +49,69 @@ export default function Me() {
         </Pressable>
       </Link>
 
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>我的设备</Text>
-        <Text style={styles.cardText}>已记录 {devices.data?.length ?? 0} 台设备，可继续用于耗材提醒和维护类计划。</Text>
-      </View>
+      <Link href={'/devices' as Href} asChild>
+        <Pressable>
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>我的设备</Text>
+            <Text style={styles.cardText}>已记录 {devices.data?.length ?? 0} 台设备，可继续用于耗材提醒和维护类计划。</Text>
+          </View>
+        </Pressable>
+      </Link>
 
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>我的车辆</Text>
-        <Text style={styles.cardText}>已记录 {vehicles.data?.length ?? 0} 台车辆，可继续用于保养、保险和年检提醒。</Text>
-      </View>
+      <Link href={'/vehicles' as Href} asChild>
+        <Pressable>
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>我的车辆</Text>
+            <Text style={styles.cardText}>已记录 {vehicles.data?.length ?? 0} 台车辆，可继续用于保养、保险和年检提醒。</Text>
+          </View>
+        </Pressable>
+      </Link>
 
       <View style={styles.card}>
         <Text style={styles.cardTitle}>家庭</Text>
         <Text style={styles.cardText}>已记录 {recurringItems.data?.length ?? 0} 条周期事项，第一版先保留轻量入口，不做家庭社交系统。</Text>
       </View>
 
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>通知</Text>
-        <Text style={styles.cardText}>还有 {unread.data?.count ?? 0} 条未读通知；后续会在这里补全通知偏好和优先级设置。</Text>
-      </View>
+      <Link href={'/notification-settings' as Href} asChild>
+        <Pressable>
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>通知</Text>
+            <Text style={styles.cardText}>还有 {unread.data?.count ?? 0} 条未读通知；现在可以真正设置异常、摘要和静默偏好。</Text>
+          </View>
+        </Pressable>
+      </Link>
 
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>自动化安全等级</Text>
-        <Text style={styles.cardText}>只提醒我：只告诉你结果，不替你动外部账号。</Text>
-        <Text style={styles.cardText}>替我准备好：先把草稿、清单或结果准备好，再交给你确认。</Text>
-        <Text style={styles.cardText}>确认后执行：涉及外部可见动作时，先问你再继续。</Text>
-      </View>
+      <Link href={'/automation-safety' as Href} asChild>
+        <Pressable>
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>自动化安全等级</Text>
+            <Text style={styles.cardText}>只提醒我、替我准备好、确认后执行等偏好已进入独立说明与设置页面。</Text>
+          </View>
+        </Pressable>
+      </Link>
 
       <View style={styles.card}>
         <Text style={styles.cardTitle}>隐私</Text>
         <Text style={styles.cardText}>只读取计划当前需要的最小数据；连接断开后，相关计划会立即失去对应权限。</Text>
       </View>
 
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>数据管理</Text>
-        <Text style={styles.cardText}>已为导出、删除和账户删除流程预留正式入口，后续会继续补齐自助操作。</Text>
-      </View>
+      <Link href={'/data-management' as Href} asChild>
+        <Pressable>
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>数据管理</Text>
+            <Text style={styles.cardText}>现在可以查看你当前有哪些连接、资料、计划和记录，以及账户删除入口状态。</Text>
+          </View>
+        </Pressable>
+      </Link>
 
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>安全记录</Text>
-        <Text style={styles.cardText}>已记录连接、权限和敏感操作的安全事实；这里先保留正式入口说明，不直接暴露底层审计结构。</Text>
-      </View>
+      <Link href={'/security-activity' as Href} asChild>
+        <Pressable>
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>安全记录</Text>
+            <Text style={styles.cardText}>已记录连接、权限和敏感操作的安全事实，现在可查看消费者安全投影。</Text>
+          </View>
+        </Pressable>
+      </Link>
 
       <View style={styles.card}>
         <Text style={styles.cardTitle}>会员</Text>

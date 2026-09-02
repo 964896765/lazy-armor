@@ -26,6 +26,7 @@ export const profiles = mysqlTable('profiles', {
   avatar: varchar('avatar', { length: 1024 }),
   timezone: varchar('timezone', { length: 64 }).notNull().default('Asia/Shanghai'),
   locale: varchar('locale', { length: 32 }).notNull().default('zh-CN'),
+  preferencesJson: json('preferences_json').$type<Record<string, unknown>>(),
   ...timestamps,
 }, (table) => [uniqueIndex('profiles_user_id_uq').on(table.userId)]);
 

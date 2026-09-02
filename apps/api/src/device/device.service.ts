@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { deviceConsumables, deviceProfiles, preparedShoppingItems } from '@lazy-armor/database';
+import { deviceConsumables, deviceProfiles, planVersions, plans, preparedShoppingItems } from '@lazy-armor/database';
 import { newId } from '@lazy-armor/shared';
 import { and, desc, eq } from 'drizzle-orm';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
@@ -69,6 +69,31 @@ export class DeviceService {
     return rows.map((row) => this.profileResponse(row));
   }
 
+  async getProfile(userId: string, id: string) {
+    return this.getProfileById(userId, id);
+  }
+
+  async updateProfile(userId: string, id: string, input: {
+    type?: string;
+    brand?: string;
+    model?: string;
+    purchasedAt?: string;
+    warrantyUntil?: string;
+    maintenanceIntervalDays?: number;
+  }) {
+    const current = await this.getProfileRow(userId, id);
+    await this.db.update(deviceProfiles).set({
+      type: input.type ?? current.type,
+      brand: input.brand ?? current.brand,
+      model: input.model ?? current.model,
+      purchasedAt: input.purchasedAt ? new Date(input.purchasedAt) : current.purchasedAt,
+      warrantyUntil: input.warrantyUntil ? new Date(input.warrantyUntil) : current.warrantyUntil,
+      maintenanceIntervalDays: input.maintenanceIntervalDays ?? current.maintenanceIntervalDays,
+      updatedAt: new Date(),
+    }).where(eq(deviceProfiles.id, id));
+    return this.getProfileById(userId, id);
+  }
+
   async createConsumable(userId: string, input: {
     deviceProfileId: string;
     name: string;
@@ -103,6 +128,32 @@ export class DeviceService {
       .where(and(...filters))
       .orderBy(desc(deviceConsumables.expectedReplaceAt), desc(deviceConsumables.createdAt));
     return rows.map((row) => this.consumableResponse(row));
+  }
+
+  async listPlansUsingProfile(userId: string, deviceProfileId: string) {
+    await this.assertProfileOwned(userId, deviceProfileId);
+    const rows = await this.db.select({
+      planId: plans.id,
+      planStatus: plans.status,
+      planName: planVersions.name,
+      templateKey: planVersions.templateKey,
+      templateConfig: planVersions.templateConfigJson,
+    })
+      .from(plans)
+      .innerJoin(planVersions, eq(plans.currentVersionId, planVersions.id))
+      .where(eq(plans.userId, userId))
+      .orderBy(desc(plans.updatedAt));
+    return rows
+      .filter((row) => {
+        const config = (row.templateConfig ?? {}) as Record<string, unknown>;
+        return config.deviceProfileId === deviceProfileId;
+      })
+      .map((row) => ({
+        planId: row.planId,
+        planName: row.planName,
+        planStatus: row.planStatus,
+        templateKey: row.templateKey,
+      }));
   }
 
   async updateReplacement(userId: string, consumableId: string, lastReplacedAt: string) {

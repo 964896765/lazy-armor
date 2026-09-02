@@ -23,6 +23,7 @@ interface PlanSummary {
   name: string | null;
   description: string | null;
   templateKey: string | null;
+  consumerGroup?: string | null;
   templateVersion: string | null;
   nextExpectedRunAt: string | null;
   hasMissingConnection: boolean;
@@ -74,6 +75,7 @@ export default function Plans() {
       {plans.data?.length === 0 && <View style={styles.card}><Text style={styles.cardTitle}>暂未创建计划</Text><Text style={styles.cardText}>可从“＋”进入懒人计划库，装上一个正式模板。</Text></View>}
       {consumerGroups.map((consumerGroup) => {
         const plansInGroup = (plans.data ?? []).filter((plan) => consumerPlanGroup({
+          consumerGroup: plan.consumerGroup ?? null,
           templateKey: plan.templateKey,
           planCenterKind: plan.planCenterSummary?.kind ?? null,
         }) === consumerGroup);
