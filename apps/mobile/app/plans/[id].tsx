@@ -1,27 +1,26 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useMemo, useState } from 'react';
-import { ActivityIndicator, Button, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useState } from 'react';
+import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/api';
 import { useAuthStore } from '../../src/auth-store';
 import { executionStatusLabel } from '../../src/execution-presenter';
 import {
   actionSummary,
-  automationLevelLabel,
   boolLabel,
   conditionSummary,
   formatTime,
   notificationPreferenceLabel,
   planCenterStatusLabel,
   planStatusLabel,
-  platformLabel,
-  sourceSummaryLabel,
   sourceTypeLabel,
   templateGroupLabel,
   triggerSummary,
 } from '../../src/plan-presenter';
 import type { TemplateConfigField } from '../../src/template-config-form';
 import { planMutationErrorMessage } from '../../src/membership-presenter';
+import { ActionButton, AttentionCard, EmptyState, Surface, colors, radius, spacing, typography } from '../../src/design';
 
 interface PlanSummary {
   id: string;
@@ -101,6 +100,7 @@ export default function PlanDetailPage() {
   const token = useAuthStore((state) => state.token);
   const client = useQueryClient();
   const [replacementDate, setReplacementDate] = useState('');
+  const [settingsExpanded, setSettingsExpanded] = useState(false);
   const summary = useQuery({
     queryKey: ['plan', id, token],
     queryFn: () => api<PlanSummary>(`/plans/${id}`, token),
@@ -127,10 +127,6 @@ export default function PlanDetailPage() {
     ),
     enabled: Boolean(token && summary.data?.planCenterSummary?.kind === 'device' && deviceProfileId),
   });
-  const selectedConsumable = useMemo(
-    () => deviceConsumables.data?.find((item) => item.id === deviceConsumableId) ?? null,
-    [deviceConsumables.data, deviceConsumableId],
-  );
   const apply = useMutation({
     mutationFn: () => api(`/plans/${id}/versions/${currentVersionNumber}/apply`, token, { method: 'POST' }),
     onSuccess: async () => {
@@ -180,201 +176,116 @@ export default function PlanDetailPage() {
     await Promise.all([summary.refetch(), version.refetch(), template.refetch(), deviceConsumables.refetch()]);
   };
 
-  if (!token) {
-    return (
-      <ScrollView style={local.page} contentContainerStyle={local.content}>
-        <View style={local.card}>
-          <Text style={local.title}>请先登录</Text>
-          <Text style={local.text}>登录后才能查看计划详情。</Text>
-          <Button title="去登录" onPress={() => router.push('/connections')} />
-        </View>
-      </ScrollView>
-    );
-  }
+  if (!token) return (
+    <SafeAreaView style={local.safeArea} edges={['top']}>
+      <Surface><EmptyState icon="🛡️" title="登录后查看计划详情" action={{ label: '去登录', onPress: () => router.push('/connections') }} /></Surface>
+    </SafeAreaView>
+  );
 
   return (
-    <ScrollView
-      style={local.page}
-      contentContainerStyle={local.content}
-      refreshControl={<RefreshControl refreshing={summary.isFetching || version.isFetching} onRefresh={refreshAll} />}
-    >
-      {(summary.isLoading || version.isLoading) && <ActivityIndicator />}
-      {summary.isError && (
-        <View style={local.card}>
-          <Text style={local.title}>计划详情加载失败</Text>
-          <Button title="重新加载" onPress={refreshAll} />
-        </View>
-      )}
-      {summary.data && version.data && (
-        <>
-          <Text style={local.eyebrow}>我的计划</Text>
-          <Text style={local.title}>{summary.data.name ?? version.data.name}</Text>
-          <Text style={local.subtitle}>{summary.data.description ?? version.data.description ?? '这是一份可持续运行的懒人计划。'}</Text>
-
-          <View style={local.card}>
-            <Text style={local.cardTitle}>现在怎么样</Text>
-            <Text style={local.text}>当前状态：{planStatusLabel(summary.data.status)}</Text>
-            <Text style={local.text}>自动化等级：{automationLevelLabel(version.data.automationLevel)}</Text>
-            <Text style={local.text}>下次预计运行：{formatTime(summary.data.nextExpectedRunAt)}</Text>
-            <Text style={local.text}>最近一次执行：{summary.data.latestExecution ? `${formatTime(summary.data.latestExecution.createdAt)} · ${summary.data.latestExecution.resultSummary ?? executionStatusLabel(summary.data.latestExecution.status)}` : '暂未运行'}</Text>
-            <Text style={local.text}>最近异常：{latestExceptionText(summary.data)}</Text>
-          </View>
-
-          {summary.data.planCenterSummary ? (
-            <View style={local.card}>
-              <Text style={local.cardTitle}>当前概况</Text>
-              <Text style={local.text}>这条计划现在会这样帮你：{planCenterStatusLabel(summary.data.planCenterSummary.kind, summary.data.planCenterSummary.currentStatus)}</Text>
-              {summary.data.planCenterSummary.kind === 'logistics' ? (
-                <>
-                  <Text style={local.text}>最近检查：{formatTime(summary.data.planCenterSummary.latestCheckAt)}</Text>
-                  <Text style={local.text}>下次检查：{formatTime(summary.data.planCenterSummary.nextCheckAt)}</Text>
-                  <Text style={local.text}>是否异常：{boolLabel(summary.data.planCenterSummary.isException)}</Text>
-                  {summary.data.planCenterSummary.latestEventSummary ? <Text style={local.text}>最近进展：{summary.data.planCenterSummary.latestEventSummary}</Text> : null}
-                </>
-              ) : null}
-              {summary.data.planCenterSummary.kind === 'household' ? (
-                <>
-                  <Text style={local.text}>预计耗尽：{formatTime(summary.data.planCenterSummary.estimatedRunOutAt)}</Text>
-                  <Text style={local.text}>下次提醒：{formatTime(summary.data.planCenterSummary.nextReminderAt)}</Text>
-                  <Text style={local.text}>下次检查：{formatTime(summary.data.planCenterSummary.nextCheckAt)}</Text>
-                </>
-              ) : null}
-              {summary.data.planCenterSummary.kind === 'content' ? (
-                <>
-                  <Text style={local.text}>目标平台：{(summary.data.planCenterSummary.targetPlatforms ?? []).map((item) => platformLabel(item)).join('、') || '暂未设置'}</Text>
-                  <Text style={local.text}>最近准备版本数：{summary.data.planCenterSummary.latestPreparedVariantCount ?? 0}</Text>
-                  <Text style={local.text}>是否需要确认：{boolLabel(summary.data.planCenterSummary.waitingConfirmation)}</Text>
-                  <Text style={local.text}>当前策略：{summary.data.planCenterSummary.currentStrategy ?? '仅准备草稿'}</Text>
-                </>
-              ) : null}
-              {summary.data.planCenterSummary.kind === 'daily_summary' ? (
-                <>
-                  <Text style={local.text}>摘要时间：{summary.data.planCenterSummary.summaryTime ?? '暂未设置'}</Text>
-                  <Text style={local.text}>数据来源：{(summary.data.planCenterSummary.includedSources ?? []).map((item) => sourceSummaryLabel(item)).join('、') || '暂未设置'}</Text>
-                  <Text style={local.text}>最近摘要时间：{formatTime(summary.data.planCenterSummary.latestSummaryAt)}</Text>
-                  <Text style={local.text}>最近重要事项数：{summary.data.planCenterSummary.latestImportantCount ?? 0}</Text>
-                </>
-              ) : null}
-              {summary.data.planCenterSummary.kind === 'device' ? (
-                <>
-                  <Text style={local.text}>设备：{summary.data.planCenterSummary.deviceName ?? '未命名设备'}</Text>
-                  <Text style={local.text}>耗材：{summary.data.planCenterSummary.consumableName ?? '未命名耗材'}</Text>
-                  <Text style={local.text}>预计更换：{formatTime(summary.data.planCenterSummary.expectedReplaceAt)}</Text>
-                  <Text style={local.text}>剩余时间：{typeof summary.data.planCenterSummary.remainingDays === 'number' ? `${Math.max(summary.data.planCenterSummary.remainingDays, 0)} 天` : '待计算'}</Text>
-                  <Text style={local.text}>最近检查：{formatTime(summary.data.planCenterSummary.latestCheckAt)}</Text>
-                  <Text style={local.text}>下次检查：{formatTime(summary.data.planCenterSummary.nextCheckAt)}</Text>
-                  <Text style={local.text}>是否已准备购买清单：{boolLabel(summary.data.planCenterSummary.shoppingListPrepared)}</Text>
-                  <Text style={local.text}>上次更换：{selectedConsumable ? formatTime(selectedConsumable.lastReplacedAt) : '暂未读取'}</Text>
-                </>
-              ) : null}
+    <SafeAreaView style={local.safeArea} edges={['top']}>
+      <ScrollView style={local.page} contentContainerStyle={local.content} refreshControl={<RefreshControl tintColor={colors.primary} refreshing={summary.isFetching || version.isFetching} onRefresh={refreshAll} />}>
+        {(summary.isLoading || version.isLoading) ? <View style={local.loading}><ActivityIndicator color={colors.primary} /><Text style={local.text}>正在看看这条计划…</Text></View> : null}
+        {summary.isError ? <Surface><EmptyState icon="☁️" title="计划暂时加载失败" description="请稍后再试。" action={{ label: '重新加载', onPress: refreshAll }} /></Surface> : null}
+        {summary.data && version.data ? (
+          <>
+            <View style={local.hero}>
+              <View style={local.heroIcon}><Text style={local.heroEmoji}>{planDetailIcon(summary.data.planCenterSummary?.kind)}</Text></View>
+              <Text style={local.eyebrow}>{planStatusLabel(summary.data.status)}</Text>
+              <Text style={local.title}>{summary.data.name ?? version.data.name}</Text>
+              <Text style={local.subtitle}>{summary.data.description ?? version.data.description ?? '这件事会按你的安排持续运行。'}</Text>
             </View>
-          ) : null}
 
-          <View style={local.card}>
-            <Text style={local.cardTitle}>它会替我做什么</Text>
-            {version.data.definition.actions.map((action, index) => (
-              <Text style={local.text} key={`${action.actionType}-${index}`}>{index + 1}. {actionSummary(action.actionType, action.config)}</Text>
-            ))}
-          </View>
-
-          <View style={local.card}>
-            <Text style={local.cardTitle}>什么时候会叫我</Text>
-            <Text style={local.text}>{notificationText(version.data)}</Text>
-          </View>
-
-          <View style={local.card}>
-            <Text style={local.cardTitle}>当前设置</Text>
-            {renderConfig(version.data.templateConfig, template.data?.configFields)}
-          </View>
-
-          <View style={local.card}>
-            <Text style={local.cardTitle}>数据来源</Text>
-            {version.data.definition.sources.map((source, index) => (
-              <Text style={local.text} key={`${source.sourceType}-${index}`}>
-                {index + 1}. {sourceTypeLabel(source.sourceType)}{source.connectionId ? ' · 已完成连接设置' : ''}
-              </Text>
-            ))}
-            <Text style={local.cardTitle}>当前权限</Text>
-            <Text style={local.text}>{summary.data.hasMissingConnection ? '还有连接或授权没补齐，暂时不能稳定运行。' : '当前所需连接和授权都已经满足。'}</Text>
-            {summary.data.missingConnections.map((connection) => (
-              <Text style={local.text} key={connection.providerKey}>· 还需要：{connection.providerName}</Text>
-            ))}
-            <Text style={local.cardTitle}>运行条件</Text>
-            {version.data.definition.triggers.map((trigger, index) => (
-              <Text style={local.text} key={`${trigger.triggerType}-${index}`}>{index + 1}. {triggerSummary(trigger.triggerType, trigger.config)}</Text>
-            ))}
-            {version.data.definition.conditions.length === 0 ? <Text style={local.text}>无额外门槛，到点就执行。</Text> : null}
-            {version.data.definition.conditions.map((condition, index) => (
-              <Text style={local.text} key={`${condition.fieldPath}-${index}`}>{index + 1}. {conditionSummary(condition.fieldPath, condition.operator, condition.comparisonValue)}</Text>
-            ))}
-          </View>
-
-          {summary.data.missingConnections.length > 0 ? (
-            <View style={local.card}>
-              <Text style={local.cardTitle}>还差 {summary.data.missingConnections.length} 个连接</Text>
-              <Text style={local.text}>计划草稿已经保留。补好连接后再启用，不会删除你已经设置的内容。</Text>
-              {summary.data.missingConnections.map((connection) => (
-                <Text style={local.text} key={connection.providerKey}>· {connection.providerName}</Text>
-              ))}
-              <View style={local.buttonGap} />
-              <Button title="去补连接" onPress={() => router.push('/connections')} />
-              <View style={local.buttonGap} />
-              <Button title={resolveConnections.isPending ? '检查中…' : '我已连接，重新检查'} onPress={() => resolveConnections.mutate()} disabled={resolveConnections.isPending} />
-              {resolveConnections.isError ? <Text style={local.error}>还没有找到可用连接，请先完成连接与授权。</Text> : null}
-            </View>
-          ) : null}
-
-          {summary.data.planCenterSummary?.kind === 'device' && deviceConsumableId ? (
-            <View style={local.card}>
-              <Text style={local.cardTitle}>更新已更换时间</Text>
-              <Text style={local.text}>更换完耗材后，在这里更新日期，系统会重新计算预计更换时间和后续提醒。</Text>
-              <TextInput
-                style={local.input}
-                placeholder="YYYY-MM-DD"
-                value={replacementDate}
-                onChangeText={setReplacementDate}
-              />
-              <Button
-                title={updateReplacement.isPending ? '更新中…' : '确认已更换'}
-                onPress={() => updateReplacement.mutate()}
-                disabled={updateReplacement.isPending || !replacementDate.trim()}
-              />
-              {updateReplacement.isError ? <Text style={local.error}>更新失败，请检查日期格式后重试。</Text> : null}
-            </View>
-          ) : null}
-
-          <View style={local.card}>
-            <Text style={local.cardTitle}>管理这条计划</Text>
-            <Button title="编辑" onPress={() => router.push(`/plans/${id}/edit` as never)} />
-            <View style={local.buttonGap} />
-            <Button
-              title={apply.isPending ? '启用中…' : '启用这次修改'}
-              onPress={() => apply.mutate()}
-              disabled={apply.isPending || !currentVersionNumber || summary.data.hasMissingConnection}
-            />
-            {summary.data.allowedTransitions.map((status) => (
-              <View style={local.buttonGap} key={status}>
-                <Button
-                  title={statusActionLabel(status)}
-                  onPress={() => changeStatus.mutate(status)}
-                  disabled={changeStatus.isPending}
-                  color={status === 'archived' ? '#9A3F3F' : undefined}
-                />
+            <Text style={local.sectionTitle}>它正在帮你</Text>
+            <Surface>
+              <View style={local.helpSteps}>
+                {version.data.definition.triggers.map((trigger, index) => <HelpStep key={`${trigger.triggerType}-${index}`} icon="◷" text={triggerSummary(trigger.triggerType, trigger.config)} />)}
+                {version.data.definition.actions.map((action, index) => <HelpStep key={`${action.actionType}-${index}`} icon="✓" text={actionSummary(action.actionType, action.config)} />)}
+                <HelpStep icon="→" text={summary.data.nextExpectedRunAt ? `下一次预计在 ${formatTime(summary.data.nextExpectedRunAt)}` : '下一次时间正在安排'} />
               </View>
-            ))}
-            {apply.isError || changeStatus.isError ? <Text style={local.error}>{planMutationErrorMessage(changeStatus.error ?? apply.error)}</Text> : null}
-          </View>
+            </Surface>
 
-          <View style={local.card}>
-            <Text style={local.cardTitle}>高级信息</Text>
-            <Text style={local.text}>来自模板：{template.data?.name ?? '已安装模板'}{summary.data.templateVersion ? ` · V${summary.data.templateVersion}` : ''}</Text>
-            <Text style={local.text}>当前修改稿：V{version.data.versionNumber}</Text>
-            <Text style={local.text}>当前运行版本：{summary.data.activeVersion ? `V${summary.data.activeVersion.versionNumber}` : '还没有正式启用'}</Text>
-          </View>
-        </>
-      )}
-    </ScrollView>
+            <Text style={local.sectionTitle}>使用的信息</Text>
+            <Surface>
+              <View style={local.sourceList}>
+                {version.data.definition.sources.map((source, index) => (
+                  <View style={local.sourceChip} key={`${source.sourceType}-${index}`}><Text style={local.sourceText}>{sourceTypeLabel(source.sourceType)}</Text></View>
+                ))}
+              </View>
+              <Text style={local.permissionText}>{summary.data.hasMissingConnection ? '还差一个连接，补好后就能继续。' : '只使用完成这条计划所需的信息。'}</Text>
+            </Surface>
+
+            <Text style={local.sectionTitle}>最近结果</Text>
+            <Surface>
+              <Text style={local.resultDate}>{summary.data.latestExecution ? formatTime(summary.data.latestExecution.createdAt) : '还没有运行记录'}</Text>
+              <Text style={local.resultTitle}>{summary.data.latestExecution?.resultSummary ?? (summary.data.planCenterSummary ? planCenterStatusLabel(summary.data.planCenterSummary.kind, summary.data.planCenterSummary.currentStatus) : '第一次运行后，结果会出现在这里。')}</Text>
+              {summary.data.latestExecution ? <View style={local.inlineAction}><ActionButton label="查看完整记录" tone="quiet" onPress={() => router.push(`/executions/${summary.data?.latestExecution?.id}` as never)} /></View> : null}
+            </Surface>
+
+            {summary.data.missingConnections.length > 0 ? (
+              <View style={local.sectionGap}>
+                <AttentionCard
+                  title={`还需要连接 ${summary.data.missingConnections.map((item) => item.providerName).join('、')}`}
+                  description="计划已经替你保留，连接完成后就能继续运行。"
+                  actionLabel="去连接"
+                  onPress={() => router.push('/connections')}
+                  secondaryAction={{ label: resolveConnections.isPending ? '检查中…' : '重新检查', onPress: () => resolveConnections.mutate() }}
+                />
+                {resolveConnections.isError ? <Text style={local.error}>还没有找到可用连接，请先完成授权。</Text> : null}
+              </View>
+            ) : null}
+
+            <Pressable accessibilityRole="button" accessibilityState={{ expanded: settingsExpanded }} onPress={() => setSettingsExpanded((current) => !current)} style={local.settingsHeader}>
+              <View><Text style={local.sectionTitleNoMargin}>设置</Text><Text style={local.settingsHint}>通知、运行条件与计划管理</Text></View>
+              <Text style={local.chevron}>{settingsExpanded ? '⌃' : '⌄'}</Text>
+            </Pressable>
+
+            {settingsExpanded ? (
+              <View style={local.settingsContent}>
+                <Surface>
+                  <Text style={local.cardTitle}>什么时候会告诉你</Text>
+                  <Text style={local.text}>{notificationText(version.data)}</Text>
+                  <Text style={local.cardTitle}>运行条件</Text>
+                  {version.data.definition.conditions.length === 0 ? <Text style={local.text}>到点就按计划处理。</Text> : null}
+                  {version.data.definition.conditions.map((condition, index) => <Text style={local.text} key={`${condition.fieldPath}-${index}`}>{conditionSummary(condition.fieldPath, condition.operator, condition.comparisonValue)}</Text>)}
+                  <Text style={local.cardTitle}>当前设置</Text>
+                  {renderConfig(version.data.templateConfig, template.data?.configFields)}
+                </Surface>
+
+                {summary.data.planCenterSummary?.kind === 'device' && deviceConsumableId ? (
+                  <Surface>
+                    <Text style={local.cardTitle}>更新耗材更换时间</Text>
+                    <Text style={local.text}>更换后告诉我日期，后续提醒会重新计算。</Text>
+                    <TextInput style={local.input} placeholder="YYYY-MM-DD" placeholderTextColor={colors.textMuted} value={replacementDate} onChangeText={setReplacementDate} />
+                    <ActionButton label={updateReplacement.isPending ? '更新中…' : '确认已更换'} onPress={() => updateReplacement.mutate()} disabled={updateReplacement.isPending || !replacementDate.trim()} />
+                    {updateReplacement.isError ? <Text style={local.error}>日期没有更新成功，请检查后重试。</Text> : null}
+                  </Surface>
+                ) : null}
+
+                <Surface>
+                  <Text style={local.cardTitle}>管理这条计划</Text>
+                  <View style={local.actions}>
+                    <ActionButton label="编辑计划" tone="quiet" onPress={() => router.push(`/plans/${id}/edit` as never)} />
+                    <ActionButton label={apply.isPending ? '启用中…' : '启用修改'} onPress={() => apply.mutate()} disabled={apply.isPending || !currentVersionNumber || summary.data.hasMissingConnection} />
+                    {summary.data.allowedTransitions.map((status) => <ActionButton key={status} label={statusActionLabel(status)} tone={status === 'archived' ? 'danger' : 'quiet'} onPress={() => changeStatus.mutate(status)} disabled={changeStatus.isPending} />)}
+                  </View>
+                  {apply.isError || changeStatus.isError ? <Text style={local.error}>{planMutationErrorMessage(changeStatus.error ?? apply.error)}</Text> : null}
+                </Surface>
+              </View>
+            ) : null}
+          </>
+        ) : null}
+      </ScrollView>
+    </SafeAreaView>
   );
+}
+
+function HelpStep({ icon, text }: { icon: string; text: string }) {
+  return <View style={local.helpStep}><View style={local.helpIcon}><Text style={local.helpIconText}>{icon}</Text></View><Text style={local.helpText}>{text}</Text></View>;
+}
+
+function planDetailIcon(kind?: string | null) {
+  return ({ logistics: '📦', household: '🏠', content: '🎬', daily_summary: '✉️', study: '📚', device: '🖨️' } as Record<string, string>)[kind ?? ''] ?? '🛡️';
 }
 
 function normalizeDateInput(value: string) {
@@ -452,15 +363,38 @@ function statusActionLabel(status: string) {
 }
 
 const local = StyleSheet.create({
-  page: { flex: 1, backgroundColor: '#F5F4EF' },
-  content: { padding: 24, paddingTop: 52 },
-  eyebrow: { color: '#287052', fontSize: 13, fontWeight: '700', letterSpacing: 1 },
-  title: { color: '#17251F', fontSize: 30, fontWeight: '800', marginTop: 8 },
-  subtitle: { color: '#69756F', fontSize: 16, lineHeight: 24, marginTop: 8, marginBottom: 24 },
-  card: { backgroundColor: '#FFFFFF', borderRadius: 16, padding: 18, marginBottom: 12, borderWidth: 1, borderColor: '#E3E7E4' },
-  cardTitle: { fontWeight: '700', fontSize: 16, color: '#24342C', marginTop: 10, marginBottom: 4 },
-  text: { color: '#6B7770', lineHeight: 21 },
-  input: { borderWidth: 1, borderColor: '#D9DEDA', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 11, backgroundColor: '#FAFBFA', marginTop: 10, marginBottom: 10 },
-  buttonGap: { height: 10 },
-  error: { color: '#A63D3D', marginTop: 10 },
+  safeArea: { flex: 1, backgroundColor: colors.background, paddingHorizontal: spacing.page, paddingTop: spacing.xl },
+  page: { flex: 1, backgroundColor: colors.background },
+  content: { paddingHorizontal: spacing.page, paddingTop: spacing.xl, paddingBottom: 72 },
+  loading: { alignItems: 'center', gap: spacing.md, paddingVertical: 64 },
+  hero: { alignItems: 'center', paddingVertical: spacing.lg, marginBottom: spacing.xxl },
+  heroIcon: { width: 68, height: 68, borderRadius: radius.lg, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center', marginBottom: spacing.lg },
+  heroEmoji: { fontSize: 32 },
+  eyebrow: { ...typography.label, color: colors.success, marginBottom: spacing.sm },
+  title: { ...typography.title, color: colors.text, textAlign: 'center' },
+  subtitle: { ...typography.body, color: colors.textSecondary, textAlign: 'center', marginTop: spacing.sm, maxWidth: 320 },
+  sectionTitle: { ...typography.section, color: colors.text, marginTop: spacing.xxxl, marginBottom: spacing.md },
+  sectionTitleNoMargin: { ...typography.section, color: colors.text },
+  helpSteps: { gap: spacing.lg },
+  helpStep: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  helpIcon: { width: 28, height: 28, borderRadius: 14, backgroundColor: colors.successSoft, alignItems: 'center', justifyContent: 'center' },
+  helpIconText: { color: colors.success, fontWeight: '800' },
+  helpText: { ...typography.bodyStrong, color: colors.text, flex: 1 },
+  sourceList: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  sourceChip: { backgroundColor: colors.accentSoft, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: radius.pill },
+  sourceText: { ...typography.bodyStrong, color: colors.primary },
+  permissionText: { ...typography.caption, color: colors.textSecondary, marginTop: spacing.lg },
+  resultDate: { ...typography.caption, color: colors.textMuted },
+  resultTitle: { ...typography.cardTitle, color: colors.text, marginTop: spacing.sm },
+  inlineAction: { alignItems: 'flex-start', marginTop: spacing.lg },
+  sectionGap: { marginTop: spacing.xxxl },
+  settingsHeader: { marginTop: spacing.xxxl, paddingVertical: spacing.md, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  settingsHint: { ...typography.caption, color: colors.textSecondary, marginTop: spacing.xs },
+  chevron: { color: colors.primary, fontSize: 24 },
+  settingsContent: { gap: spacing.md },
+  cardTitle: { ...typography.cardTitle, color: colors.text, marginTop: spacing.md, marginBottom: spacing.xs },
+  text: { ...typography.body, color: colors.textSecondary },
+  input: { ...typography.body, color: colors.text, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: 11, backgroundColor: colors.background, marginTop: spacing.md, marginBottom: spacing.md },
+  actions: { gap: spacing.sm, marginTop: spacing.md },
+  error: { ...typography.caption, color: colors.danger, marginTop: spacing.sm },
 });

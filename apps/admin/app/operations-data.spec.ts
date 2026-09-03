@@ -19,13 +19,13 @@ describe('operations dashboard data loader', () => {
     expect(result.configured).toBe(true);
     expect(fetchMock).toHaveBeenCalledTimes(7);
     expect(fetchMock.mock.calls.map(([input]) => new URL(input.toString()).pathname).sort()).toEqual([
-      '/admin/diagnostics',
-      '/admin/operations/alerts',
-      '/admin/operations/connectors',
-      '/admin/operations/executions',
-      '/admin/operations/outbox',
-      '/admin/operations/overview',
-      '/admin/operations/workers',
+      '/api/admin/diagnostics',
+      '/api/admin/operations/alerts',
+      '/api/admin/operations/connectors',
+      '/api/admin/operations/executions',
+      '/api/admin/operations/outbox',
+      '/api/admin/operations/overview',
+      '/api/admin/operations/workers',
     ]);
     for (const [, init] of fetchMock.mock.calls) {
       expect(init?.headers).toMatchObject({ authorization: 'Bearer server-only-token' });

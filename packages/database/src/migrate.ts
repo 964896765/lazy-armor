@@ -6,7 +6,7 @@ import { createDatabase } from './client';
 function getDatabaseUrl(): string {
   const value = process.env.DATABASE_URL;
   if (value) return value;
-  const envFile = path.resolve(__dirname, '../../.env');
+  const envFile = path.resolve(__dirname, '../../../.env');
   if (!fs.existsSync(envFile)) throw new Error('DATABASE_URL is required');
   const matched = fs
     .readFileSync(envFile, 'utf8')

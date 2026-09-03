@@ -18,14 +18,38 @@ export function planStatusLabel(status: string): string {
     case 'paused':
       return '已暂停';
     case 'degraded':
-      return '降级运行';
+      return '需要留意';
     case 'blocked':
-      return '已阻断';
+      return '暂时停下';
     case 'archived':
       return '已归档';
     default:
       return '暂不可用';
   }
+}
+
+export function planVisualIcon(name: string, kind?: string | null): string {
+  if (kind === 'logistics' || name.includes('快递') || name.includes('包裹')) return '📦';
+  if (kind === 'household' || name.includes('家庭') || name.includes('补给')) return '🏠';
+  if (kind === 'daily_summary' || name.includes('邮件') || name.includes('摘要')) return '✉️';
+  if (kind === 'content' || name.includes('内容') || name.includes('发布')) return '🎬';
+  if (kind === 'study' || name.includes('学习') || name.includes('考试')) return '📚';
+  if (kind === 'device' || name.includes('设备') || name.includes('耗材')) return '🖨️';
+  if (name.includes('账单') || name.includes('消费') || name.includes('订阅')) return '💰';
+  if (name.includes('车辆') || name.includes('保养')) return '🚙';
+  return '🛡️';
+}
+
+export function planStatusTone(status: string): 'success' | 'warning' | 'muted' {
+  if (status === 'active' || status === 'ready') return 'success';
+  if (status === 'paused' || status === 'archived') return 'muted';
+  return 'warning';
+}
+
+export function planNextRunLabel(status: string, nextRunAt: string | null | undefined): string {
+  if (status === 'paused' || status === 'archived') return '需要时可以重新开启';
+  if (!nextRunAt) return '下一次时间正在安排';
+  return `下次 ${formatTime(nextRunAt)}`;
 }
 
 export function automationLevelLabel(level: string): string {

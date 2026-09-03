@@ -12,13 +12,13 @@ export type OperationsDashboardSnapshot = {
 };
 
 const endpoints = {
-  overview: '/admin/operations/overview',
-  workers: '/admin/operations/workers',
-  outbox: '/admin/operations/outbox',
-  executions: '/admin/operations/executions',
-  connectors: '/admin/operations/connectors',
-  alerts: '/admin/operations/alerts',
-  diagnostics: '/admin/diagnostics',
+  overview: '/api/admin/operations/overview',
+  workers: '/api/admin/operations/workers',
+  outbox: '/api/admin/operations/outbox',
+  executions: '/api/admin/operations/executions',
+  connectors: '/api/admin/operations/connectors',
+  alerts: '/api/admin/operations/alerts',
+  diagnostics: '/api/admin/diagnostics',
 } as const;
 
 export async function loadOperationsDashboard(

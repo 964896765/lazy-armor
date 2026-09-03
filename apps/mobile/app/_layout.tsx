@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Stack } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { useAuthStore } from '../src/auth-store';
+import { colors } from '../src/design';
 
 export default function RootLayout() {
   const [client] = useState(() => new QueryClient());
@@ -11,7 +12,7 @@ export default function RootLayout() {
   }, [hydrate]);
   return (
     <QueryClientProvider client={client}>
-      <Stack>
+      <Stack screenOptions={{ contentStyle: { backgroundColor: colors.background }, headerStyle: { backgroundColor: colors.background }, headerShadowVisible: false, headerTintColor: colors.primary, headerTitleStyle: { color: colors.text, fontWeight: '700' } }}>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="membership" options={{ title: '会员' }} />
         <Stack.Screen name="connections" options={{ title: '我的连接' }} />
