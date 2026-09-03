@@ -5,8 +5,9 @@ import { assertProductionSafe, parseEnv } from '@lazy-armor/config';
 import { createPool, type Pool, type RowDataPacket } from 'mysql2/promise';
 import { createHash, createHmac, randomUUID } from 'node:crypto';
 import request from 'supertest';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { AllExceptionsFilter } from '../src/common/http-exception.filter';
+import { SafeLoggerService } from '../src/common/safe-logger.service';
 import { SnapshotSanitizer } from '../src/common/snapshot-sanitizer.service';
 
 interface Session {
@@ -360,7 +361,9 @@ describe.sequential('P0 Final security hardening', () => {
   });
 
   it('never leaks stack traces or internal details from the exception filter', async () => {
-    const filter = new AllExceptionsFilter();
+    const sink = { log: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const logger = new SafeLoggerService().useSink(sink);
+    const filter = new AllExceptionsFilter(logger);
     const response = {
       statusCode: 0,
       payload: undefined as unknown,
@@ -387,5 +390,11 @@ describe.sequential('P0 Final security hardening', () => {
       code: 'INTERNAL_ERROR',
       message: 'Internal server error',
     });
+    const logged = JSON.stringify(sink.error.mock.calls);
+    expect(logged).toContain('unhandled_http_exception');
+    expect(logged).not.toContain('SQLSTATE');
+    expect(logged).not.toContain('/srv/app');
+    expect(logged).not.toContain('abc123');
+    expect(logged).not.toContain('secret');
   });
 });

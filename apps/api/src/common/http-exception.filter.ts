@@ -1,10 +1,11 @@
-import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus, Logger } from '@nestjs/common';
+import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus } from '@nestjs/common';
 import type { Response } from 'express';
+import { SafeLoggerService } from './safe-logger.service';
 
 // 生产错误边界：统一业务错误码 + 安全文案，绝不返回 stack/SQL/路径/凭据。
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
-  private readonly logger = new Logger('ExceptionFilter');
+  constructor(private readonly logger: SafeLoggerService = new SafeLoggerService()) {}
 
   catch(exception: unknown, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
@@ -12,8 +13,15 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const status = exception instanceof HttpException ? exception.getStatus() : HttpStatus.INTERNAL_SERVER_ERROR;
     const safe = this.toSafeBody(exception, status);
 
-    // 内部细节只进受控日志，不回传客户端。
-    if (status >= 500) this.logger.error(exception instanceof Error ? exception.message : 'Internal server error');
+    // Never forward raw exception text or stack frames. They can contain SQL,
+    // filesystem paths, request credentials, or provider response bodies.
+    if (status >= 500) {
+      this.logger.event('error', 'unhandled_http_exception', {
+        statusCode: status,
+        errorType: exception instanceof Error ? exception.name : 'UnknownError',
+        code: safe.code,
+      });
+    }
 
     response.status(status).json(safe);
   }

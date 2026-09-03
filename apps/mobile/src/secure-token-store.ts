@@ -4,6 +4,7 @@ import { resolveTokenStoragePolicy } from './token-storage-policy';
 
 const ACCESS_KEY = 'lazy_armor.access_token';
 const REFRESH_KEY = 'lazy_armor.refresh_token';
+const ONBOARDING_KEY = 'lazy_armor.onboarding_required';
 
 export interface SessionTokens {
   accessToken: string;
@@ -11,6 +12,7 @@ export interface SessionTokens {
 }
 
 let memoryAccessToken: string | undefined;
+let memoryOnboardingRequired = false;
 const nativeStorageOptions: SecureStore.SecureStoreOptions = {
   keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
 };
@@ -47,4 +49,25 @@ export async function clearTokens(): Promise<void> {
   }
   await SecureStore.deleteItemAsync(ACCESS_KEY).catch(() => undefined);
   await SecureStore.deleteItemAsync(REFRESH_KEY).catch(() => undefined);
+}
+
+export async function persistOnboardingRequired(required: boolean): Promise<void> {
+  if (Platform.OS === 'web') {
+    memoryOnboardingRequired = required;
+    return;
+  }
+  await SecureStore.setItemAsync(ONBOARDING_KEY, required ? 'true' : 'false', nativeStorageOptions);
+}
+
+export async function loadOnboardingRequired(): Promise<boolean> {
+  if (Platform.OS === 'web') return memoryOnboardingRequired;
+  return SecureStore.getItemAsync(ONBOARDING_KEY).then((value) => value === 'true').catch(() => false);
+}
+
+export async function clearOnboardingState(): Promise<void> {
+  if (Platform.OS === 'web') {
+    memoryOnboardingRequired = false;
+    return;
+  }
+  await SecureStore.deleteItemAsync(ONBOARDING_KEY).catch(() => undefined);
 }

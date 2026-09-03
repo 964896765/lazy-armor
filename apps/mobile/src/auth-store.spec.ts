@@ -3,15 +3,21 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   api: vi.fn(),
   clearTokens: vi.fn(),
+  clearOnboardingState: vi.fn(),
   loadAccessToken: vi.fn(),
   loadRefreshToken: vi.fn(),
+  loadOnboardingRequired: vi.fn(),
+  persistOnboardingRequired: vi.fn(),
   persistTokens: vi.fn(),
 }));
 
 vi.mock('./secure-token-store', () => ({
   clearTokens: mocks.clearTokens,
+  clearOnboardingState: mocks.clearOnboardingState,
   loadAccessToken: mocks.loadAccessToken,
   loadRefreshToken: mocks.loadRefreshToken,
+  loadOnboardingRequired: mocks.loadOnboardingRequired,
+  persistOnboardingRequired: mocks.persistOnboardingRequired,
   persistTokens: mocks.persistTokens,
 }));
 
@@ -30,7 +36,8 @@ import { useAuthStore } from './auth-store';
 describe('native session restart and rotation', () => {
   beforeEach(() => {
     vi.resetAllMocks();
-    useAuthStore.setState({ token: undefined, refreshToken: undefined, hydrated: false });
+    mocks.loadOnboardingRequired.mockResolvedValue(false);
+    useAuthStore.setState({ token: undefined, refreshToken: undefined, hydrated: false, onboardingRequired: false });
   });
 
   it('rotates persisted tokens after an application restart', async () => {
@@ -79,6 +86,17 @@ describe('native session restart and rotation', () => {
       method: 'POST', body: JSON.stringify({ refreshToken: 'refresh' }),
     }));
     expect(mocks.clearTokens).toHaveBeenCalledOnce();
-    expect(useAuthStore.getState()).toMatchObject({ token: undefined, refreshToken: undefined, hydrated: true });
+    expect(mocks.clearOnboardingState).toHaveBeenCalledOnce();
+    expect(useAuthStore.getState()).toMatchObject({ token: undefined, refreshToken: undefined, hydrated: true, onboardingRequired: false });
+  });
+
+  it('persists onboarding for a new registration and clears it on completion', async () => {
+    await useAuthStore.getState().setSession({ accessToken: 'access', refreshToken: 'refresh' }, { onboardingRequired: true });
+    expect(mocks.persistOnboardingRequired).toHaveBeenCalledWith(true);
+    expect(useAuthStore.getState().onboardingRequired).toBe(true);
+
+    await useAuthStore.getState().completeOnboarding();
+    expect(mocks.persistOnboardingRequired).toHaveBeenCalledWith(false);
+    expect(useAuthStore.getState().onboardingRequired).toBe(false);
   });
 });
