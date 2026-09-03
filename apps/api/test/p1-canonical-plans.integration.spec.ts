@@ -4,6 +4,7 @@ import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ExecutionWorker } from '../src/execution/execution-worker.service';
+import { EntitlementService } from '../src/membership/entitlement.service';
 
 interface Session {
   token: string;
@@ -43,6 +44,8 @@ describe.sequential('P1 canonical plans regression', { timeout: 120000 }, () => 
       .post('/api/auth/register')
       .send({ email, password: 'correct-horse-battery-staple', displayName })
       .expect(201);
+    const me = await request(app.getHttpServer()).get('/api/me').set(auth(response.body.accessToken)).expect(200);
+    await app.get(EntitlementService).setForInternalFixture(me.body.id as string, 'plus', 'active');
     return { token: response.body.accessToken as string };
   }
 

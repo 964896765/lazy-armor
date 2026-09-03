@@ -18,7 +18,7 @@ const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 class RuntimeTestConnector implements Connector {
   readonly calls = new Map<string, number>();
   constructor(private readonly key: string) {}
-  metadata = () => ({ key: this.key, name: 'P0-5 Test Connector', description: 'Only registered inside integration tests', version: '1.0.0-test', connectorSdkVersion: '0.1.0', providerType: 'internal' as const, productionStatus: 'DISABLED' as const, authentication: { type: 'none' as const }, supportsRefresh: false, supportsRevoke: false, supportsWebhook: false, supportsHealthCheck: true, sandboxSupport: 'full' as const, rateLimitStrategy: 'unknown' as const });
+  metadata = () => ({ key: this.key, name: 'P0-5 Test Connector', description: 'Only registered inside integration tests', version: '1.0.0-test', connectorSdkVersion: '0.1.0', providerType: 'internal' as const, productionStatus: 'DRAFT_ONLY' as const, authentication: { type: 'none' as const }, supportsRefresh: false, supportsRevoke: false, supportsWebhook: false, supportsHealthCheck: true, sandboxSupport: 'full' as const, rateLimitStrategy: 'unknown' as const });
   capabilities = () => [{ key: 'TEST_EXECUTE', name: 'Test execute', riskLevel: 'R1' as const, operation: 'execute' as const, requiredPermission: 'TEST_EXECUTE', providerAvailability: 'available' as const }];
   async validateConnection() { return { status: 'healthy' as const, checkedAt: new Date().toISOString() }; }
   async execute(request: ConnectorRequest): Promise<ConnectorResult> {

@@ -4,9 +4,9 @@
 
 ## 当前阶段
 
-`Current Stage = Final Integrated Audit`
+`Current Stage = Release Candidate`
 
-P4 已达到 `DEVELOPMENT COMPLETE`，P5 已达到 `DEVELOPMENT COMPLETE`，普通开发冻结。后续只在集成审计发现 Hard Stop 时修复。
+P0～P5 均达到 `DEVELOPMENT COMPLETE`，Final Integrated Audit 结论为 `PASS_WITH_DEFERRED_GATES`。不再新增普通业务功能，仅允许 Beta installation / 真机验证 / 正式 signing / staging evidence / Provider production enablement / crash-bug 修复 / release checklist。禁止自行创建 P6。
 
 ## 已完成
 

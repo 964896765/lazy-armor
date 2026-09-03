@@ -2,7 +2,7 @@ import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { INestApplication } from '@nestjs/common';
 import type { Pool, RowDataPacket } from 'mysql2/promise';
-import { activatePlan, auth, bootP2App, dispatchPlan, register, type Session } from './p2-test-helpers';
+import { activatePlan, auth, bootP2App, dispatchPlan, register, setPlusMembership, type Session } from './p2-test-helpers';
 
 describe.sequential('P3 reusable Vehicle and Digital Account profiles', () => {
   let app: INestApplication;
@@ -22,6 +22,7 @@ describe.sequential('P3 reusable Vehicle and Digital Account profiles', () => {
     pool = booted.pool;
     worker = booted.worker;
     user = await register(app, `p3-profile-${unique}@example.com`, 'P3 Profile');
+    await setPlusMembership(app, user.userId);
     other = await register(app, `p3-profile-other-${unique}@example.com`, 'P3 Other');
   });
 

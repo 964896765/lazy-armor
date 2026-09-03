@@ -26,6 +26,7 @@ describe.sequential('P5-A membership and entitlement', { timeout: 120000 }, () =
   const unique = Date.now() + '-' + Math.random().toString(16).slice(2);
 
   beforeAll(async () => {
+    process.env.MEMBERSHIP_ENFORCE_PLAN_LIMIT = '1';
     const booted = await bootP2App('p5-membership-' + unique);
     app = booted.app;
     pool = booted.pool;
@@ -35,6 +36,7 @@ describe.sequential('P5-A membership and entitlement', { timeout: 120000 }, () =
   });
 
   afterAll(async () => {
+    delete process.env.MEMBERSHIP_ENFORCE_PLAN_LIMIT;
     await pool?.end();
     await app?.close();
   });

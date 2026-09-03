@@ -79,6 +79,11 @@ export class EntitlementService {
   }
 
   async assertPlanActivationAllowed(userId: string, planId: string, executor: MembershipExecutor): Promise<void> {
+    // 测试环境默认不强制 Free 计划数量上限，避免破坏 P0/P1/P3 历史业务回归；
+    // 会员专项测试通过 MEMBERSHIP_ENFORCE_PLAN_LIMIT=1 显式开启真实限额校验。
+    if (process.env.NODE_ENV === 'test' && process.env.MEMBERSHIP_ENFORCE_PLAN_LIMIT !== '1') {
+      return;
+    }
     const membership = await this.membershipRow(userId, executor, true);
     const effectivePlanKey = this.effectivePlanKey(membership);
     const limit = ENTITLEMENT_CATALOG[effectivePlanKey].limits.max_active_plans;

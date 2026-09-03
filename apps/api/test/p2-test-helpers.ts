@@ -5,6 +5,7 @@ import { createPool, type Pool } from 'mysql2/promise';
 import request from 'supertest';
 import { json, urlencoded } from 'express';
 import { ExecutionWorker } from '../src/execution/execution-worker.service';
+import { EntitlementService } from '../src/membership/entitlement.service';
 
 export interface Session {
   token: string;
@@ -51,6 +52,10 @@ export async function register(app: INestApplication, email: string, displayName
     .set(auth(response.body.accessToken))
     .expect(200);
   return { token: response.body.accessToken as string, userId: me.body.id as string };
+}
+
+export async function setPlusMembership(app: INestApplication, userId: string) {
+  await app.get(EntitlementService).setForInternalFixture(userId, 'plus', 'active');
 }
 
 export async function oauthConnect(app: INestApplication, token: string, provider: string, code: string, redirectUri = 'https://app.example.test/oauth/callback') {

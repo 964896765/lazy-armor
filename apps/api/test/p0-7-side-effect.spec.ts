@@ -23,7 +23,7 @@ class P07TestConnector implements Connector {
   readonly appliedKeys = new Set<string>();
   readonly modes = new Map<string, FaultMode>();
   constructor(private readonly key: string) {}
-  metadata = () => ({ key: this.key, name: 'P0-7 Side Effect Test', description: 'Test process only', version: '1.0.0-test', connectorSdkVersion: '0.1.0', providerType: 'internal' as const, productionStatus: 'DISABLED' as const, authentication: { type: 'none' as const }, supportsRefresh: false, supportsRevoke: false, supportsWebhook: false, supportsHealthCheck: true, sandboxSupport: 'full' as const, rateLimitStrategy: 'unknown' as const });
+  metadata = () => ({ key: this.key, name: 'P0-7 Side Effect Test', description: 'Test process only', version: '1.0.0-test', connectorSdkVersion: '0.1.0', providerType: 'internal' as const, productionStatus: 'DRAFT_ONLY' as const, authentication: { type: 'none' as const }, supportsRefresh: false, supportsRevoke: false, supportsWebhook: false, supportsHealthCheck: true, sandboxSupport: 'full' as const, rateLimitStrategy: 'unknown' as const });
   capabilities = () => [
     { key: 'TEST_R3_EXTERNAL', name: 'R3 external', operation: 'execute' as const, riskLevel: 'R3' as const, requiredPermission: 'TEST_R3_EXTERNAL', sideEffectContract: { supportsIdempotencyKey: true, retrySafety: 'safe' as const } },
     { key: 'TEST_R3_LOOKUP', name: 'R3 lookup', operation: 'execute' as const, riskLevel: 'R3' as const, requiredPermission: 'TEST_R3_LOOKUP', sideEffectContract: { supportsIdempotencyKey: true, supportsOperationLookup: true, retrySafety: 'safe' as const } },
