@@ -5,6 +5,7 @@ import type { Pool, RowDataPacket } from 'mysql2/promise';
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { EntitlementService } from '../src/membership/entitlement.service';
 import { auth, bootP2App, oauthConnect, register, type Session } from './p2-test-helpers';
 
 type MatrixCase = {
@@ -30,6 +31,7 @@ class P4FailureFixtureConnector implements Connector {
       name: 'P4 Failure Fixture',
       description: 'P4 failure matrix only',
       version: '1.0.0-test',
+      connectorSdkVersion: '0.1.0',
       providerType: 'email' as const,
       productionStatus: 'BETA' as const,
       authentication: { type: 'none' as const },
@@ -95,6 +97,7 @@ class P4DisabledCalendarConnector implements Connector {
       name: 'P4 Disabled Calendar',
       description: 'P4 disabled provider gate only',
       version: '1.0.0-test',
+      connectorSdkVersion: '0.1.0',
       providerType: 'calendar' as const,
       productionStatus: 'DISABLED' as const,
       authentication: { type: 'none' as const },
@@ -137,6 +140,7 @@ describe.sequential('P4 failure matrix backend closure', { timeout: 120000 }, ()
     worker = booted.worker;
     outboxWorker = app.get('OUTBOX_WORKER');
     user = await register(app, `p4-failure-${unique}@example.com`, 'P4 Failure Matrix');
+    await app.get(EntitlementService).setForInternalFixture(user.userId, 'plus', 'active');
 
     const registry = app.get<{ register(value: Connector): void }>('CONNECTOR_REGISTRY');
     registry.register(new P4FailureFixtureConnector(fixtureConnectorKey));

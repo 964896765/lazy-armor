@@ -47,6 +47,16 @@ type CanonicalIds = {
   outboxMessageId: string;
   auditSuccessId: string;
   auditFailureId: string;
+  membershipFreePlanId: string;
+  membershipPlusPlanId: string;
+  userMembershipId: string;
+  usageEventId: string;
+  subscriptionCustomerId: string;
+  subscriptionId: string;
+  subscriptionEventId: string;
+  subscriptionCancellationRequestId: string;
+  templateLifecycleId: string;
+  costBudgetId: string;
 };
 
 const DEFAULT_DATABASE_URL = 'mysql://lazy_armor:lazy_armor_dev@127.0.0.1:3307/lazy_armor';
@@ -191,6 +201,16 @@ async function seedCanonicalDataset(databaseUrl: string) {
     outboxMessageId: randomUUID(),
     auditSuccessId: randomUUID(),
     auditFailureId: randomUUID(),
+    membershipFreePlanId: randomUUID(),
+    membershipPlusPlanId: randomUUID(),
+    userMembershipId: randomUUID(),
+    usageEventId: randomUUID(),
+    subscriptionCustomerId: randomUUID(),
+    subscriptionId: randomUUID(),
+    subscriptionEventId: randomUUID(),
+    subscriptionCancellationRequestId: randomUUID(),
+    templateLifecycleId: randomUUID(),
+    costBudgetId: randomUUID(),
   };
 
   const version1Definition = {
@@ -545,6 +565,82 @@ async function seedCanonicalDataset(databaseUrl: string) {
         ids.auditFailureId, ids.sideEffectOperationId, ids.userId, ids.failedExecutionId, ids.failedStepId, ids.approvalRequestId, ids.sideEffectOperationId, ids.outboxMessageId, JSON.stringify({ status: 'outcome_unknown' }), now,
       ],
     );
+
+    // P5 membership / usage / subscription / template / cost canonical dataset
+    // (membership_plans 'free'/'plus' are seeded by migration 0023)
+    await pool.query(
+      `INSERT INTO user_memberships (
+         id, user_id, membership_plan_key, status, started_at, current_period_start, current_period_end,
+         cancel_at_period_end, provider, external_subscription_id, created_at, updated_at
+       )
+       VALUES (
+         UUID_TO_BIN(?), UUID_TO_BIN(?), 'plus', 'active', ?, ?, ?, 0, 'sandbox', 'sbx_sub_backup_001', ?, ?
+       )`,
+      [ids.userMembershipId, ids.userId, now, now, later, now, now],
+    );
+    await pool.query(
+      `INSERT INTO usage_events (
+         id, user_id, usage_type, quantity, unit, provider, resource_type, resource_id,
+         execution_id, side_effect_operation_id, usage_identity, billable, provider_cost_minor, occurred_at, created_at
+       )
+       VALUES (
+         UUID_TO_BIN(?), UUID_TO_BIN(?), 'execution.completed', 1, 'execution', NULL, 'execution', ?,
+         UUID_TO_BIN(?), UUID_TO_BIN(?), 'execution.completed:backup-usage-001', 1, 0, ?, ?
+       )`,
+      [ids.usageEventId, ids.userId, ids.successExecutionId, ids.successExecutionId, ids.sideEffectOperationId, now, now],
+    );
+    await pool.query(
+      `INSERT INTO subscription_customers (
+         id, user_id, provider, external_customer_id, status, created_at, updated_at
+       )
+       VALUES (UUID_TO_BIN(?), UUID_TO_BIN(?), 'sandbox', 'sbx_cus_backup_001', 'active', ?, ?)`,
+      [ids.subscriptionCustomerId, ids.userId, now, now],
+    );
+    await pool.query(
+      `INSERT INTO subscriptions (
+         id, user_id, subscription_customer_id, provider, external_subscription_id, checkout_request_id, external_checkout_id,
+         checkout_url, membership_plan_key, status, current_period_start, current_period_end, cancel_at_period_end,
+         last_applied_occurred_at, created_at, updated_at
+       )
+       VALUES (
+         UUID_TO_BIN(?), UUID_TO_BIN(?), UUID_TO_BIN(?), 'sandbox', 'sbx_sub_backup_001', 'checkout-backup-001', 'sbx_chk_backup_001',
+         'https://sandbox.lazy-armor.invalid/checkout/sbx_chk_backup_001', 'plus', 'active', ?, ?, 0, ?, ?, ?
+       )`,
+      [ids.subscriptionId, ids.userId, ids.subscriptionCustomerId, now, later, now, now, now],
+    );
+    await pool.query(
+      `INSERT INTO subscription_events (
+         id, user_id, subscription_id, provider, external_event_id, event_type, payload_hash, payload_snapshot_json, occurred_at, received_at
+       )
+       VALUES (
+         UUID_TO_BIN(?), UUID_TO_BIN(?), UUID_TO_BIN(?), 'sandbox', 'evt_backup_001', 'subscription.updated', ?, ?, ?, ?
+       )`,
+      [ids.subscriptionEventId, ids.userId, ids.subscriptionId, sha256('backup-subscription-event'), JSON.stringify({ status: 'active' }), now, now],
+    );
+    await pool.query(
+      `INSERT INTO subscription_cancellation_requests (
+         id, user_id, subscription_id, request_id, provider, status, created_at
+       )
+       VALUES (UUID_TO_BIN(?), UUID_TO_BIN(?), UUID_TO_BIN(?), 'cancel-backup-001', 'sandbox', 'requested', ?)`,
+      [ids.subscriptionCancellationRequestId, ids.userId, ids.subscriptionId, now],
+    );
+    await pool.query(
+      `INSERT INTO template_lifecycle_versions (
+         id, template_key, template_version, status, revision, reason, updated_by_user_id,
+         submitted_at, published_at, deprecated_at, suspended_at, created_at, updated_at
+       )
+       VALUES (
+         UUID_TO_BIN(?), 'device-consumable-reminder', '1.0.0', 'published', 2, NULL, UUID_TO_BIN(?), NULL, ?, NULL, NULL, ?, ?
+       )`,
+      [ids.templateLifecycleId, ids.userId, now, now, now],
+    );
+    await pool.query(
+      `INSERT INTO cost_budgets (
+         id, budget_key, scope_type, user_id, provider, monthly_limit_minor, currency, status, created_at, updated_at
+       )
+       VALUES (UUID_TO_BIN(?), 'user:backup-budget', 'user', UUID_TO_BIN(?), NULL, 1000, 'CNY', 'active', ?, ?)`,
+      [ids.costBudgetId, ids.userId, now, now],
+    );
   } finally {
     await pool.end();
   }
@@ -679,6 +775,51 @@ async function verifyRestoredData(sourceUrl: string, restoredUrl: string) {
         FROM audit_logs
        ORDER BY created_at, id
     `, 'audit_logs');
+    const membership = await compareQuery(source, restored, `
+      SELECT BIN_TO_UUID(id) id, plan_key planKey, name, status, version
+        FROM membership_plans
+       ORDER BY plan_key
+    `, 'membership_plans');
+    const userMembership = await compareQuery(source, restored, `
+      SELECT BIN_TO_UUID(id) id, membership_plan_key membershipPlanKey, status, provider, external_subscription_id externalSubscriptionId, cancel_at_period_end cancelAtPeriodEnd
+        FROM user_memberships
+       ORDER BY id
+    `, 'user_memberships');
+    const usage = await compareQuery(source, restored, `
+      SELECT BIN_TO_UUID(id) id, usage_type usageType, quantity, usage_identity usageIdentity, billable, provider_cost_minor providerCostMinor
+        FROM usage_events
+       ORDER BY usage_identity
+    `, 'usage_events');
+    const subscriptionCustomers = await compareQuery(source, restored, `
+      SELECT BIN_TO_UUID(id) id, provider, external_customer_id externalCustomerId, status
+        FROM subscription_customers
+       ORDER BY external_customer_id
+    `, 'subscription_customers');
+    const subscriptionsCompare = await compareQuery(source, restored, `
+      SELECT BIN_TO_UUID(id) id, external_subscription_id externalSubscriptionId, external_checkout_id externalCheckoutId, checkout_request_id checkoutRequestId, membership_plan_key membershipPlanKey, status, cancel_at_period_end cancelAtPeriodEnd
+        FROM subscriptions
+       ORDER BY external_subscription_id
+    `, 'subscriptions');
+    const subscriptionEventsCompare = await compareQuery(source, restored, `
+      SELECT BIN_TO_UUID(id) id, external_event_id externalEventId, event_type eventType, payload_hash payloadHash
+        FROM subscription_events
+       ORDER BY external_event_id
+    `, 'subscription_events');
+    const cancellationRequests = await compareQuery(source, restored, `
+      SELECT BIN_TO_UUID(id) id, request_id requestId, status, provider
+        FROM subscription_cancellation_requests
+       ORDER BY request_id
+    `, 'subscription_cancellation_requests');
+    const templateLifecycle = await compareQuery(source, restored, `
+      SELECT BIN_TO_UUID(id) id, template_key templateKey, template_version templateVersion, status, revision
+        FROM template_lifecycle_versions
+       ORDER BY template_key, template_version
+    `, 'template_lifecycle_versions');
+    const costBudgetsCompare = await compareQuery(source, restored, `
+      SELECT BIN_TO_UUID(id) id, budget_key budgetKey, scope_type scopeType, provider, monthly_limit_minor monthlyLimitMinor, currency, status
+        FROM cost_budgets
+       ORDER BY budget_key
+    `, 'cost_budgets');
     const orphanRows = await countOrphans(restored);
     if (orphanRows !== 0) {
       throw new Error(`Restore verification found orphan rows: ${orphanRows}`);
@@ -694,6 +835,15 @@ async function verifyRestoredData(sourceUrl: string, restoredUrl: string) {
       sideEffects: sideEffects.length,
       outbox: outbox.length,
       audit: audit.length,
+      membershipPlans: membership.length,
+      userMemberships: userMembership.length,
+      usageEvents: usage.length,
+      subscriptionCustomers: subscriptionCustomers.length,
+      subscriptions: subscriptionsCompare.length,
+      subscriptionEvents: subscriptionEventsCompare.length,
+      cancellationRequests: cancellationRequests.length,
+      templateLifecycleVersions: templateLifecycle.length,
+      costBudgets: costBudgetsCompare.length,
     };
   } finally {
     await source.end();
@@ -733,6 +883,15 @@ async function compareTableCounts(source: Pool, restored: Pool) {
     'side_effect_operations',
     'outbox_messages',
     'audit_logs',
+    'membership_plans',
+    'user_memberships',
+    'usage_events',
+    'subscription_customers',
+    'subscriptions',
+    'subscription_events',
+    'subscription_cancellation_requests',
+    'template_lifecycle_versions',
+    'cost_budgets',
   ];
   const result: Record<string, number> = {};
   for (const table of tables) {
@@ -770,6 +929,14 @@ async function countOrphans(pool: Pool) {
     `SELECT COUNT(*) count FROM side_effect_operations so LEFT JOIN executions e ON so.execution_id = e.id LEFT JOIN execution_steps es ON so.execution_step_id = es.id LEFT JOIN plan_actions pa ON so.plan_action_id = pa.id WHERE e.id IS NULL OR es.id IS NULL OR pa.id IS NULL`,
     `SELECT COUNT(*) count FROM outbox_messages om LEFT JOIN users u ON om.user_id = u.id WHERE u.id IS NULL`,
     `SELECT COUNT(*) count FROM audit_logs al LEFT JOIN users u ON al.user_id = u.id LEFT JOIN executions e ON al.execution_id = e.id LEFT JOIN execution_steps es ON al.execution_step_id = es.id LEFT JOIN approval_requests ar ON al.approval_request_id = ar.id LEFT JOIN side_effect_operations so ON al.side_effect_operation_id = so.id LEFT JOIN outbox_messages om ON al.outbox_message_id = om.id WHERE (al.user_id IS NOT NULL AND u.id IS NULL) OR (al.execution_id IS NOT NULL AND e.id IS NULL) OR (al.execution_step_id IS NOT NULL AND es.id IS NULL) OR (al.approval_request_id IS NOT NULL AND ar.id IS NULL) OR (al.side_effect_operation_id IS NOT NULL AND so.id IS NULL) OR (al.outbox_message_id IS NOT NULL AND om.id IS NULL)`,
+    `SELECT COUNT(*) count FROM user_memberships um LEFT JOIN users u ON um.user_id = u.id LEFT JOIN membership_plans mp ON um.membership_plan_key = mp.plan_key WHERE u.id IS NULL OR mp.plan_key IS NULL`,
+    `SELECT COUNT(*) count FROM usage_events ue LEFT JOIN users u ON ue.user_id = u.id LEFT JOIN executions e ON ue.execution_id = e.id LEFT JOIN side_effect_operations so ON ue.side_effect_operation_id = so.id WHERE u.id IS NULL OR (ue.execution_id IS NOT NULL AND e.id IS NULL) OR (ue.side_effect_operation_id IS NOT NULL AND so.id IS NULL)`,
+    `SELECT COUNT(*) count FROM subscription_customers sc LEFT JOIN users u ON sc.user_id = u.id WHERE u.id IS NULL`,
+    `SELECT COUNT(*) count FROM subscriptions s LEFT JOIN users u ON s.user_id = u.id LEFT JOIN subscription_customers sc ON s.subscription_customer_id = sc.id LEFT JOIN membership_plans mp ON s.membership_plan_key = mp.plan_key WHERE u.id IS NULL OR sc.id IS NULL OR mp.plan_key IS NULL`,
+    `SELECT COUNT(*) count FROM subscription_events se LEFT JOIN users u ON se.user_id = u.id LEFT JOIN subscriptions s ON se.subscription_id = s.id WHERE u.id IS NULL OR s.id IS NULL`,
+    `SELECT COUNT(*) count FROM subscription_cancellation_requests scr LEFT JOIN users u ON scr.user_id = u.id LEFT JOIN subscriptions s ON scr.subscription_id = s.id WHERE u.id IS NULL OR s.id IS NULL`,
+    `SELECT COUNT(*) count FROM template_lifecycle_versions tlv LEFT JOIN users u ON tlv.updated_by_user_id = u.id WHERE tlv.updated_by_user_id IS NOT NULL AND u.id IS NULL`,
+    `SELECT COUNT(*) count FROM cost_budgets cb LEFT JOIN users u ON cb.user_id = u.id WHERE cb.user_id IS NOT NULL AND u.id IS NULL`,
   ];
   let total = 0;
   for (const sql of checks) total += await scalar(pool, sql);

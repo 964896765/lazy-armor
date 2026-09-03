@@ -113,3 +113,6 @@ jobs:
 
       - name: P4 journey focused tests
         run: pnpm --filter @lazy-armor/api test -- test/p4-consumer-journeys.integration.spec.ts
+
+      - name: P5 focused tests
+        run: pnpm --filter @lazy-armor/api test -- test/p5-membership-entitlement.integration.spec.ts test/p5-usage-metering.integration.spec.ts test/p5-subscription-billing-sandbox.integration.spec.ts test/p5-template-lifecycle.integration.spec.ts test/p5-connector-contract.spec.ts test/p5-cost-foundation.integration.spec.ts test/p5-scale-foundation.integration.spec.ts test/p5-scale-multi-worker.integration.spec.ts

@@ -72,11 +72,25 @@ export const subscriptions = mysqlTable('subscriptions', {
   currentPeriodStart: datetime('current_period_start', { mode: 'date', fsp: 6 }),
   currentPeriodEnd: datetime('current_period_end', { mode: 'date', fsp: 6 }),
   cancelAtPeriodEnd: int('cancel_at_period_end').notNull().default(0),
+  lastAppliedOccurredAt: datetime('last_applied_occurred_at', { mode: 'date', fsp: 6 }),
   ...timestamps,
 }, (table) => [
   uniqueIndex('subscriptions_provider_external_uq').on(table.provider, table.externalSubscriptionId),
   uniqueIndex('subscriptions_user_checkout_request_uq').on(table.userId, table.checkoutRequestId),
   index('subscriptions_user_status_idx').on(table.userId, table.status, table.updatedAt),
+]);
+
+export const subscriptionCancellationRequests = mysqlTable('subscription_cancellation_requests', {
+  id: uuidBinary('id').primaryKey(),
+  userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  subscriptionId: uuidBinary('subscription_id').notNull().references(() => subscriptions.id, { onDelete: 'restrict' }),
+  requestId: varchar('request_id', { length: 255 }).notNull(),
+  provider: varchar('provider', { length: 64 }).notNull(),
+  status: varchar('status', { length: 32 }).notNull(),
+  createdAt: datetime('created_at', { mode: 'date', fsp: 6 }).notNull(),
+}, (table) => [
+  uniqueIndex('subscription_cancellation_requests_user_request_uq').on(table.userId, table.requestId),
+  index('subscription_cancellation_requests_subscription_idx').on(table.subscriptionId, table.createdAt),
 ]);
 
 export const subscriptionEvents = mysqlTable('subscription_events', {
@@ -963,6 +977,7 @@ export const schema = {
   subscriptionCustomers,
   subscriptions,
   subscriptionEvents,
+  subscriptionCancellationRequests,
   templateLifecycleVersions,
   costBudgets,
   profiles,

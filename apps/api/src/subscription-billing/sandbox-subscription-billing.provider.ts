@@ -9,6 +9,8 @@ export class SandboxSubscriptionBillingProvider extends SubscriptionBillingProvi
   readonly key = 'sandbox';
   readonly production = false;
   private readonly subscriptions = new Map<string, { status: SubscriptionStatus; cancelAtPeriodEnd: boolean }>();
+  private readonly checkouts = new Map<string, { checkoutId: string; checkoutUrl: string; externalSubscriptionId: string }>();
+  private readonly cancelCalls = new Map<string, number>();
 
   constructor(private readonly config: ConfigService) { super(); }
 
@@ -19,14 +21,22 @@ export class SandboxSubscriptionBillingProvider extends SubscriptionBillingProvi
 
   async createCheckout(input: { externalCustomerId: string; planKey: 'plus'; requestId: string }) {
     this.assertEnabled();
+    const existing = this.checkouts.get(input.requestId);
+    if (existing) return existing;
     const checkoutId = 'sbx_chk_' + newId().replaceAll('-', '');
     const externalSubscriptionId = 'sbx_sub_' + newId().replaceAll('-', '');
-    this.subscriptions.set(externalSubscriptionId, { status: 'incomplete', cancelAtPeriodEnd: false });
-    return {
+    const checkout = {
       checkoutId,
       checkoutUrl: 'https://sandbox.lazy-armor.invalid/checkout/' + checkoutId,
       externalSubscriptionId,
     };
+    this.checkouts.set(input.requestId, checkout);
+    this.subscriptions.set(externalSubscriptionId, { status: 'incomplete', cancelAtPeriodEnd: false });
+    return checkout;
+  }
+
+  checkoutCount(requestId: string) {
+    return this.checkouts.has(requestId) ? 1 : 0;
   }
 
   async getSubscription(externalSubscriptionId: string) {
@@ -39,9 +49,14 @@ export class SandboxSubscriptionBillingProvider extends SubscriptionBillingProvi
     this.assertEnabled();
     const found = this.subscriptions.get(externalSubscriptionId);
     if (!found) throw new BadRequestException('Sandbox subscription does not exist');
+    this.cancelCalls.set(externalSubscriptionId, (this.cancelCalls.get(externalSubscriptionId) ?? 0) + 1);
     const next = { ...found, cancelAtPeriodEnd: true };
     this.subscriptions.set(externalSubscriptionId, next);
     return next;
+  }
+
+  cancelCallCount(externalSubscriptionId: string) {
+    return this.cancelCalls.get(externalSubscriptionId) ?? 0;
   }
 
   verifyWebhook(rawBody: string, signature: string, timestamp: string): VerifiedSubscriptionEvent {

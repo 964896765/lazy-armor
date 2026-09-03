@@ -1,4 +1,4 @@
-import { buildConnectorManifest, validateConnectorManifest } from '@lazy-armor/connector-sdk';
+import { buildConnectorManifest, CONNECTOR_SDK_VERSION, validateConnectorManifest } from '@lazy-armor/connector-sdk';
 import { describe, expect, it } from 'vitest';
 import { createConnectorRegistry } from '../src/connectors/connectors.module';
 
@@ -40,3 +40,54 @@ describe('P5-E connector manifest contract harness', () => {
     });
   });
 });
+
+describe('P5-E connector SDK compatibility contract', () => {
+  it('derives a same-major compatibility range by default', () => {
+    const manifest = buildConnectorManifest(compatConnector());
+    expect(manifest.sdkCompatibility).toMatchObject({
+      minVersion: CONNECTOR_SDK_VERSION,
+      maxVersionExclusive: '1.0.0',
+    });
+    expect(() => validateConnectorManifest(compatConnector())).not.toThrow();
+  });
+
+  it('allows a same-major compatible range and rejects an incompatible major fail-closed', () => {
+    expect(() => validateConnectorManifest(compatConnector({
+      minVersion: '0.1.0',
+      maxVersionExclusive: '1.0.0',
+    }))).not.toThrow();
+    expect(() => validateConnectorManifest(compatConnector({
+      minVersion: '1.0.0',
+    }))).toThrow(/incompatible with/);
+  });
+});
+
+function compatConnector(sdkCompatibility?: { minVersion: string; maxVersionExclusive?: string }) {
+  return {
+    metadata: () => ({
+      key: 'compat_test',
+      name: 'Compat Test',
+      description: 'SDK compatibility contract test',
+      version: '1.0.0',
+      connectorSdkVersion: sdkCompatibility?.minVersion ?? CONNECTOR_SDK_VERSION,
+      providerType: 'internal',
+      productionStatus: 'DRAFT_ONLY',
+      authentication: { type: 'none' },
+      supportsRefresh: false,
+      supportsRevoke: false,
+      supportsWebhook: false,
+      supportsHealthCheck: false,
+      sandboxSupport: 'none',
+      rateLimitStrategy: 'unknown',
+      sdkCompatibility,
+    }),
+    capabilities: () => [{
+      key: 'READ_TEST',
+      name: 'Read test',
+      operation: 'read',
+      riskLevel: 'R0',
+      requiredPermission: 'READ_TEST',
+    }],
+    read: async () => ({ ok: true, data: {} }),
+  } as const;
+}

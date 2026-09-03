@@ -1,7 +1,7 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { and, desc, eq } from 'drizzle-orm';
 import { createHash } from 'node:crypto';
-import { subscriptionCustomers, subscriptionEvents, subscriptions } from '@lazy-armor/database';
+import { subscriptionCancellationRequests, subscriptionCustomers, subscriptionEvents, subscriptions } from '@lazy-armor/database';
 import { newId } from '@lazy-armor/shared';
 import { AuditService } from '../audit/audit.service';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
@@ -75,17 +75,32 @@ export class SubscriptionBillingService {
   }
 
   async cancel(userId: string, requestId: string) {
-    const rows = await this.db.select().from(subscriptions)
-      .where(eq(subscriptions.userId, userId))
-      .orderBy(desc(subscriptions.createdAt))
-      .limit(1);
-    const current = rows[0];
+    const current = await this.findLatestSubscriptionRow(userId);
     if (!current) throw new NotFoundException('Subscription does not exist');
+
+    // 已经处于 cancelAtPeriodEnd 时，任何 requestId 都不得再触发 Provider 副作用。
+    if (current.cancelAtPeriodEnd === 1) {
+      await this.reserveCancellation(userId, current.id, requestId, 'already_pending');
+      const refreshed = await this.findById(userId, current.id);
+      if (!refreshed) throw new NotFoundException('Subscription does not exist');
+      return { ...this.serialize(refreshed), cancellationPending: true, duplicate: true };
+    }
+
+    // 先抢占 (userId, requestId) 幂等身份，只有赢家才调用 Provider。
+    const reserved = await this.reserveCancellation(userId, current.id, requestId, 'pending');
+    if (!reserved) {
+      const refreshed = await this.findById(userId, current.id);
+      if (!refreshed) throw new NotFoundException('Subscription does not exist');
+      return { ...this.serialize(refreshed), cancellationPending: refreshed.cancelAtPeriodEnd === 1, duplicate: true };
+    }
+
     await this.provider.cancelSubscription(current.externalSubscriptionId);
     const now = new Date();
     await this.db.transaction(async (tx) => {
       await tx.update(subscriptions).set({ cancelAtPeriodEnd: 1, updatedAt: now })
         .where(and(eq(subscriptions.id, current.id), eq(subscriptions.userId, userId)));
+      await tx.update(subscriptionCancellationRequests).set({ status: 'requested' })
+        .where(and(eq(subscriptionCancellationRequests.userId, userId), eq(subscriptionCancellationRequests.requestId, requestId)));
       await this.audit.append({
         actorType: 'user', actorUserId: userId, action: 'SUBSCRIPTION_CANCELLATION_REQUESTED',
         resourceType: 'subscription', resourceId: current.id, userId, requestId,
@@ -95,7 +110,7 @@ export class SubscriptionBillingService {
     });
     const refreshed = await this.findById(userId, current.id);
     if (!refreshed) throw new NotFoundException('Subscription does not exist');
-    return { ...this.serialize(refreshed), cancellationPending: true };
+    return { ...this.serialize(refreshed), cancellationPending: true, duplicate: false };
   }
 
   async receiveWebhook(rawBody: string, signature: string, timestamp: string) {
@@ -122,6 +137,7 @@ export class SubscriptionBillingService {
           userId: subscriptions.userId,
           customerId: subscriptionCustomers.externalCustomerId,
           planKey: subscriptions.membershipPlanKey,
+          lastAppliedOccurredAt: subscriptions.lastAppliedOccurredAt,
         }).from(subscriptions)
           .innerJoin(subscriptionCustomers, eq(subscriptionCustomers.id, subscriptions.subscriptionCustomerId))
           .where(and(
@@ -150,11 +166,25 @@ export class SubscriptionBillingService {
           occurredAt: event.occurredAt,
           receivedAt,
         });
+
+        // 时序保护：迟到旧事件不得覆盖已应用的新状态（append-only event 仍保留审计痕迹）。
+        if (subscription.lastAppliedOccurredAt && event.occurredAt < subscription.lastAppliedOccurredAt) {
+          await this.audit.append({
+            actorType: 'system', actorUserId: null, action: 'SUBSCRIPTION_WEBHOOK_IGNORED',
+            resourceType: 'subscription_event', resourceId: eventId, userId: subscription.userId,
+            requestId: event.eventId, source: 'api', result: 'success',
+            changeSummary: 'Sandbox subscription event ignored as out-of-order',
+            after: this.eventSnapshot(event),
+          }, tx);
+          return { received: true, duplicate: false, ignored: true, reason: 'out_of_order', eventId: event.eventId };
+        }
+
         await tx.update(subscriptions).set({
           status: event.status,
           currentPeriodStart: event.currentPeriodStart,
           currentPeriodEnd: event.currentPeriodEnd,
           cancelAtPeriodEnd: event.cancelAtPeriodEnd ? 1 : 0,
+          lastAppliedOccurredAt: event.occurredAt,
           updatedAt: receivedAt,
         }).where(eq(subscriptions.id, subscription.id));
         await this.memberships.applySubscriptionState({
@@ -207,6 +237,26 @@ export class SubscriptionBillingService {
     return this.db.select().from(subscriptions)
       .where(and(eq(subscriptions.userId, userId), eq(subscriptions.checkoutRequestId, requestId)))
       .limit(1).then((rows) => rows[0] ?? null);
+  }
+
+  private findLatestSubscriptionRow(userId: string) {
+    return this.db.select().from(subscriptions)
+      .where(eq(subscriptions.userId, userId))
+      .orderBy(desc(subscriptions.createdAt))
+      .limit(1).then((rows) => rows[0] ?? null);
+  }
+
+  private async reserveCancellation(userId: string, subscriptionId: string, requestId: string, status: string) {
+    const now = new Date();
+    try {
+      await this.db.insert(subscriptionCancellationRequests).values({
+        id: newId(), userId, subscriptionId, requestId, provider: this.provider.key, status, createdAt: now,
+      });
+      return true;
+    } catch (error) {
+      if (this.hasDatabaseCode(error, 'ER_DUP_ENTRY')) return false;
+      throw error;
+    }
   }
 
   private findById(userId: string, id: string) {

@@ -200,6 +200,24 @@ describe.sequential('P5-A membership and entitlement', { timeout: 120000 }, () =
     expect(membership.body.usage.activePlans).toBe(3);
   });
 
+  it('blocks reactivating a paused plan once Free already exceeds the active limit', async () => {
+    const active = await request(app.getHttpServer()).get('/api/plans').set(auth(userA.token)).expect(200);
+    const activePlans = active.body.filter((item: { status: string }) => item.status === 'active');
+    expect(activePlans.length).toBe(4);
+    const pausedPlan = activePlans[0];
+    await request(app.getHttpServer())
+      .post('/api/plans/' + pausedPlan.id + '/status')
+      .set(auth(userA.token))
+      .send({ status: 'paused' })
+      .expect(201);
+    const reactivated = await request(app.getHttpServer())
+      .post('/api/plans/' + pausedPlan.id + '/status')
+      .set(auth(userA.token))
+      .send({ status: 'active' })
+      .expect(403);
+    expect(reactivated.body).toMatchObject({ code: 'PLAN_LIMIT_REACHED' });
+  });
+
   async function createPlan(user: Session, name: string) {
     const response = await request(app.getHttpServer())
       .post('/api/plans')

@@ -19,6 +19,12 @@ export type ConnectorErrorCategory =
 
 export const CONNECTOR_SDK_VERSION = '0.1.0';
 
+// 连接器生态兼容契约：同 Major 兼容升级可注册，跨 Major 必须 fail-closed。
+export interface SdkCompatibility {
+  minVersion: string;
+  maxVersionExclusive?: string;
+}
+
 export interface OAuthProviderMetadata {
   authorizationCapability: string;
   supportsRefresh: boolean;
@@ -47,6 +53,7 @@ export interface ConnectorMetadata {
   supportsHealthCheck: boolean;
   sandboxSupport: 'full' | 'limited' | 'none';
   rateLimitStrategy: 'provider_managed' | 'retry_after' | 'fixed_window' | 'unknown';
+  sdkCompatibility?: SdkCompatibility;
 }
 
 // Provider 侧副作用能力契约。未声明的字段一律按最保守处理。
@@ -186,6 +193,7 @@ export interface Connector {
 export interface ConnectorManifest {
   schemaVersion: '1';
   connectorSdkVersion: string;
+  sdkCompatibility: SdkCompatibility;
   metadata: ConnectorMetadata;
   permissions: string[];
   capabilities: Array<ConnectorCapability & { sideEffectContract: SideEffectContract }>;
@@ -197,9 +205,14 @@ export function buildConnectorManifest(connector: Connector): ConnectorManifest 
     ...capability,
     sideEffectContract: resolveSideEffectContract(capability),
   }));
+  const sdkCompatibility = metadata.sdkCompatibility ?? {
+    minVersion: metadata.connectorSdkVersion,
+    maxVersionExclusive: nextMajorExclusive(metadata.connectorSdkVersion),
+  };
   return {
     schemaVersion: '1',
     connectorSdkVersion: metadata.connectorSdkVersion,
+    sdkCompatibility,
     metadata,
     permissions: [...new Set(capabilities.map((item) => item.requiredPermission).filter((item): item is string => Boolean(item)))],
     capabilities,
@@ -213,8 +226,10 @@ export function validateConnectorManifest(connector: Connector): ConnectorManife
   if (!/^[a-z][a-z0-9_-]{1,79}$/.test(metadata.key)) errors.push('metadata.key is invalid');
   if (!metadata.name.trim() || !metadata.description.trim()) errors.push('metadata name/description are required');
   if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(metadata.version)) errors.push('metadata.version must be semver');
-  if (manifest.connectorSdkVersion !== CONNECTOR_SDK_VERSION) {
-    errors.push('connectorSdkVersion ' + manifest.connectorSdkVersion + ' is incompatible with ' + CONNECTOR_SDK_VERSION);
+  if (majorOf(manifest.sdkCompatibility.minVersion) !== majorOf(CONNECTOR_SDK_VERSION)) {
+    errors.push('sdkCompatibility major ' + majorOf(manifest.sdkCompatibility.minVersion) + ' is incompatible with ' + CONNECTOR_SDK_VERSION);
+  } else if (!isVersionInRange(CONNECTOR_SDK_VERSION, manifest.sdkCompatibility.minVersion, manifest.sdkCompatibility.maxVersionExclusive)) {
+    errors.push('sdkCompatibility ' + JSON.stringify(manifest.sdkCompatibility) + ' does not include ' + CONNECTOR_SDK_VERSION);
   }
   if (metadata.authentication.type === 'oauth2' && !metadata.authentication.oauth2) errors.push('oauth2 metadata is required');
   if (metadata.supportsRefresh && metadata.authentication.type !== 'oauth2') errors.push('refresh requires oauth2 authentication');
@@ -254,6 +269,42 @@ export function resolveSideEffectContract(capability: ConnectorCapability): Side
     idempotencyKeyMaxLength: declared.idempotencyKeyMaxLength ?? 128,
     idempotencySemantics: declared.idempotencySemantics ?? 'header',
   };
+}
+
+interface ParsedSemver { major: number; minor: number; patch: number }
+
+function parseSemver(version: string): ParsedSemver | null {
+  const match = /^(\d+)\.(\d+)\.(\d+)(?:-[0-9A-Za-z.-]+)?$/.exec(version);
+  if (!match) return null;
+  return { major: Number(match[1]), minor: Number(match[2]), patch: Number(match[3]) };
+}
+
+function compareSemver(a: ParsedSemver, b: ParsedSemver): number {
+  if (a.major !== b.major) return a.major - b.major;
+  if (a.minor !== b.minor) return a.minor - b.minor;
+  return a.patch - b.patch;
+}
+
+function majorOf(version: string): number {
+  return parseSemver(version)?.major ?? -1;
+}
+
+function nextMajorExclusive(version: string): string | undefined {
+  const parsed = parseSemver(version);
+  return parsed ? `${parsed.major + 1}.0.0` : undefined;
+}
+
+function isVersionInRange(version: string, minVersion: string, maxVersionExclusive?: string): boolean {
+  const current = parseSemver(version);
+  const min = parseSemver(minVersion);
+  if (!current || !min) return false;
+  if (compareSemver(current, min) < 0) return false;
+  if (maxVersionExclusive) {
+    const max = parseSemver(maxVersionExclusive);
+    if (!max) return false;
+    if (compareSemver(current, max) >= 0) return false;
+  }
+  return true;
 }
 
 export class ConnectorRegistry {

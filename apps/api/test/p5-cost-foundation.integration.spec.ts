@@ -65,6 +65,24 @@ describe.sequential('P5-F cost foundation', { timeout: 120000 }, () => {
     expect(String((concurrent.find((result) => result.status === 'rejected') as PromiseRejectedResult).reason?.response?.code)).toBe('COST_BUDGET_EXCEEDED');
   });
 
+  it('serializes a tight 10 budget so two concurrent 8-cost charges allow exactly one', async () => {
+    const userD = await register(app, 'p5-cost-d-' + unique + '@example.com', 'Cost D');
+    await request(app.getHttpServer()).post('/api/costs/admin/budgets').set(auth(admin.token)).send({
+      scopeType: 'user', userId: userD.userId, monthlyLimitMinor: 10, currency: 'cny',
+    }).expect(201);
+    const base = {
+      userId: userD.userId, provider: 'cost-tight-' + unique, capability: 'advanced_ai',
+      category: 'ai' as const, resourceType: 'ai_request', providerCostMinor: 8,
+    };
+    const results = await Promise.allSettled([
+      costs.charge({ ...base, resourceId: 'tight-a', identity: 'tight-a-' + unique }),
+      costs.charge({ ...base, resourceId: 'tight-b', identity: 'tight-b-' + unique }),
+    ]);
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
+    expect(String((results.find((result) => result.status === 'rejected') as PromiseRejectedResult).reason?.response?.code)).toBe('COST_BUDGET_EXCEEDED');
+  });
+
   it('never blocks security operations and separates provider cost from billable usage', async () => {
     await expect(costs.charge({
       userId: userA.userId, provider: providerA, capability: 'permission_revoke', category: 'connector',
@@ -98,6 +116,6 @@ describe.sequential('P5-F cost foundation', { timeout: 120000 }, () => {
     expect(other.body.providerCostMinor).toBe(6);
     expect(other.body.byProvider[providerA]).toBeUndefined();
     const [audits] = await pool.query<RowDataPacket[]>("SELECT id FROM audit_logs WHERE action='COST_BUDGET_SET' AND actor_user_id=UUID_TO_BIN(?)", [admin.userId]);
-    expect(audits).toHaveLength(2);
+    expect(audits).toHaveLength(3);
   });
 });
