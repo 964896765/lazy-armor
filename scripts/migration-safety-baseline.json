@@ -1,0 +1,8 @@
+{
+  "legacyImmutableExceptions": {
+    "0003_execution_policy_and_lease.sql": "9b9c2b17a7b69e6a70718c98905df162d931506347c2a90e4a7f8837a7342490",
+    "0006_p0_6_compliance_extensions.sql": "2a6e2ca7ed62bfd403948c64c7e10a16a561550a4ece3437ddcec6b60f80a4bf",
+    "0007_p0_7_audit_idempotency_outbox.sql": "54d5f3067eb95a93c147edd30604a9ad0e0f11a9cdeb6192b820feeb2008feff",
+    "0010_p0_final_audit_system_user_nullable.sql": "fdb1649beb57dbf6943eee0fb277d96ec30cdf5a23eceb5dc9a761aa47608939"
+  }
+}

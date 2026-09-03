@@ -1,17 +1,22 @@
-name: ci
+name: release-candidate-ci
 
 on:
   push:
     branches:
       - main
   pull_request:
+  workflow_dispatch:
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: release-candidate-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
-  verify:
+  fast-gate:
+    name: PR Fast Gate
     runs-on: ubuntu-latest
     services:
       mysql:
@@ -34,7 +39,6 @@ jobs:
           --health-interval=10s
           --health-timeout=5s
           --health-retries=20
-
     env:
       DATABASE_URL: mysql://root:root@127.0.0.1:3306/lazy_armor_ci_test
       REDIS_URL: redis://127.0.0.1:6379
@@ -46,73 +50,125 @@ jobs:
       EXPO_PUBLIC_APP_ENV: development
 
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1
         with:
           version: 9.12.0
-
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22
           cache: pnpm
-
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-
+      - name: Repository hygiene
+        run: pnpm repository:hygiene
+      - name: Production dependency audit
+        run: pnpm audit:dependencies
       - name: Prepare CI database
         run: pnpm --filter @lazy-armor/database prepare-ci-db
-
-      - name: Migration safety check
-        run: node scripts/check-migration-safety.mjs
-
+      - name: Migration safety gate
+        run: pnpm migration:safety
       - name: Apply migrations
         run: pnpm db:migrate
+      - name: Full typecheck
+        run: pnpm typecheck
+      - name: Focused mobile regression
+        run: pnpm --filter @lazy-armor/mobile test
+      - name: Focused API security and role regression
+        run: pnpm --filter @lazy-armor/api test -- test/rc1-safe-logging.spec.ts test/password-reset-delivery.spec.ts test/app-role.spec.ts test/prepare-app-role.spec.ts
+      - name: Focused P4/P5 regression
+        run: pnpm --filter @lazy-armor/api test -- test/p4-consumer-journeys.integration.spec.ts test/p5-membership-entitlement.integration.spec.ts test/p5-usage-metering.integration.spec.ts test/p5-subscription-billing-sandbox.integration.spec.ts test/p5-template-lifecycle.integration.spec.ts test/p5-connector-contract.spec.ts test/p5-cost-foundation.integration.spec.ts test/p5-scale-foundation.integration.spec.ts test/p5-scale-multi-worker.integration.spec.ts
 
-      - name: Config typecheck
-        run: pnpm --filter @lazy-armor/config typecheck
+  full-rc-gate:
+    name: RC Full Gate
+    needs: fast-gate
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -proot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=20
+      redis:
+        image: redis:7.4
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=20
+    env:
+      DATABASE_URL: mysql://root:root@127.0.0.1:3306/lazy_armor_ci_test
+      REDIS_URL: redis://127.0.0.1:6379
+      JWT_SECRET: test-jwt-secret-that-is-longer-than-thirty-two-characters
+      CREDENTIAL_MASTER_KEY: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+      APP_ENV: development
+      NODE_ENV: test
+      APP_ROLE: api
+      EXPO_PUBLIC_APP_ENV: development
 
-      - name: Config build
-        run: pnpm --filter @lazy-armor/config build
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1
+        with:
+          version: 9.12.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Repository hygiene
+        run: pnpm repository:hygiene
+      - name: Production dependency audit
+        run: pnpm audit:dependencies
+      - name: Prepare CI database
+        run: pnpm --filter @lazy-armor/database prepare-ci-db
+      - name: Migration safety gate
+        run: pnpm migration:safety
+      - name: Apply migrations
+        run: pnpm db:migrate
+      - name: Full monorepo test suite
+        run: pnpm test
+      - name: Backup and restore gate
+        run: pnpm db:backup-restore-gate
+      - name: Full monorepo build
+        run: pnpm build
 
-      - name: Shared build
-        run: pnpm --filter @lazy-armor/shared build
-
-      - name: Database typecheck
-        run: pnpm --filter @lazy-armor/database typecheck
-
-      - name: Database build
-        run: pnpm --filter @lazy-armor/database build
-
-      - name: Plan schema tests
-        run: pnpm --filter @lazy-armor/plan-schema test
-
-      - name: Plan schema build
-        run: pnpm --filter @lazy-armor/plan-schema build
-
-      - name: Connector SDK tests
-        run: pnpm --filter @lazy-armor/connector-sdk test
-
-      - name: Connector SDK build
-        run: pnpm --filter @lazy-armor/connector-sdk build
-
-      - name: API typecheck
-        run: pnpm --filter @lazy-armor/api typecheck
-
-      - name: API build
-        run: pnpm --filter @lazy-armor/api build
-
-      - name: Mobile typecheck
-        run: pnpm --filter @lazy-armor/mobile typecheck
-
-      - name: Mobile tests
-        run: pnpm --filter @lazy-armor/mobile test -- src/api.spec.ts src/auth-store.spec.ts src/token-storage-policy.spec.ts src/p2-mobile-connection-presenter.spec.ts
-
-      - name: P0 security tests
-        run: pnpm --filter @lazy-armor/api test -- test/p0-final-security.spec.ts
-
-      - name: P4 journey focused tests
-        run: pnpm --filter @lazy-armor/api test -- test/p4-consumer-journeys.integration.spec.ts
-
-      - name: P5 focused tests
-        run: pnpm --filter @lazy-armor/api test -- test/p5-membership-entitlement.integration.spec.ts test/p5-usage-metering.integration.spec.ts test/p5-subscription-billing-sandbox.integration.spec.ts test/p5-template-lifecycle.integration.spec.ts test/p5-connector-contract.spec.ts test/p5-cost-foundation.integration.spec.ts test/p5-scale-foundation.integration.spec.ts test/p5-scale-multi-worker.integration.spec.ts
+  android-verification:
+    name: Android Verification Artifact
+    needs: fast-gate
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1
+        with:
+          version: 9.12.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Build debug-signed Android verification artifact
+        shell: pwsh
+        run: ./scripts/android-verification-build.ps1
+      - name: Upload Android verification artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: android-verification-${{ github.sha }}
+          if-no-files-found: error
+          path: |
+            artifacts/android/*.aab
+            artifacts/android/build-artifact-metadata.json

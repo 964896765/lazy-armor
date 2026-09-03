@@ -95,10 +95,14 @@ function Get-AabMetadata {
     throw "AAB not found: $aab"
   }
 
-  $hash = (Get-FileHash -Algorithm SHA256 $aab).Hash
-  $artifact = Get-Item $aab
+  $artifactDirectory = Join-Path $RepoRoot "artifacts\android"
+  $artifactOutputPath = Join-Path $artifactDirectory "lazy-armor-verification-release.aab"
+  New-Item -ItemType Directory -Force -Path $artifactDirectory | Out-Null
+  Copy-Item -LiteralPath $aab -Destination $artifactOutputPath -Force
+  $hash = (Get-FileHash -Algorithm SHA256 $artifactOutputPath).Hash
+  $artifact = Get-Item $artifactOutputPath
   $commit = (git -C $RepoRoot rev-parse HEAD).Trim()
-  $metadataPath = Join-Path $RepoRoot "artifacts\android\build-artifact-metadata.json"
+  $metadataPath = Join-Path $artifactDirectory "build-artifact-metadata.json"
 
   $body = [ordered]@{
     artifactType = "AAB"
