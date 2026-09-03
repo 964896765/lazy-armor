@@ -3,6 +3,7 @@ import { useEffect, type ReactNode } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { useAuthStore } from './auth-store';
 import { colors, spacing, typography } from './design';
+import { resolveAuthDestination } from './auth-routing';
 
 export function AuthGate({ children }: { children: ReactNode }) {
   const router = useRouter();
@@ -10,17 +11,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const token = useAuthStore((state) => state.token);
   const hydrated = useAuthStore((state) => state.hydrated);
   const onboardingRequired = useAuthStore((state) => state.onboardingRequired);
-  const inAuth = segments[0] === 'auth';
-  const inOnboarding = segments[0] === 'onboarding';
-  const destination = !hydrated
-    ? null
-    : !token && !inAuth
-      ? '/auth/login'
-      : token && onboardingRequired && !inOnboarding
-        ? '/onboarding'
-        : token && !onboardingRequired && (inAuth || inOnboarding)
-          ? '/'
-          : null;
+  const destination = resolveAuthDestination({ hydrated, token, onboardingRequired, segment: segments[0] });
 
   useEffect(() => {
     if (destination) router.replace(destination as never);

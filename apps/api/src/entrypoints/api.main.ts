@@ -1,5 +1,7 @@
-process.env.APP_ROLE = 'api';
 import { createHttpApp } from '../bootstrap';
+import { prepareEntrypointRole } from './prepare-app-role';
+
+prepareEntrypointRole('api');
 
 async function bootstrap() {
   const app = await createHttpApp();

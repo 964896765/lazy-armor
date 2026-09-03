@@ -1,4 +1,6 @@
-process.env.APP_ROLE = 'execution-worker';
+import { prepareEntrypointRole } from './prepare-app-role';
 import { bootstrapWorker } from './worker-bootstrap';
+
+prepareEntrypointRole('execution-worker');
 
 void bootstrapWorker();

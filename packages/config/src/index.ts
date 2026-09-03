@@ -4,6 +4,7 @@ const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   APP_ENV: z.enum(['development', 'staging', 'production']).optional(),
   API_PORT: z.coerce.number().int().positive().default(3001),
+  APP_ROLE: z.enum(['api', 'execution-worker', 'outbox-worker']).optional(),
   DATABASE_URL: z.string().min(1),
   REDIS_URL: z.string().min(1),
   REDIS_KEY_PREFIX: z.string().trim().min(1).optional(),
@@ -20,6 +21,8 @@ const envSchema = z.object({
   ACCESS_TOKEN_TTL_SECONDS: z.coerce.number().int().positive().default(900),
   REFRESH_TOKEN_TTL_SECONDS: z.coerce.number().int().positive().default(2_592_000),
   PASSWORD_RESET_TOKEN_TTL_SECONDS: z.coerce.number().int().positive().default(1800),
+  PASSWORD_RESET_DELIVERY_ENDPOINT: z.string().url().optional(),
+  PASSWORD_RESET_DELIVERY_TOKEN: z.string().min(32).optional(),
   PUBLIC_REGISTRATION: z.enum(['true', 'false']).optional(),
   // Production credential provider selection
   CREDENTIAL_PROVIDER: z.enum(['local', 'production']).optional(),
@@ -55,6 +58,7 @@ export function assertProductionSafe(env: AppEnv): void {
   if (env.NODE_ENV === 'production' && env.APP_ENV === 'development') blockers.push('NODE_ENV=production requires APP_ENV=staging or APP_ENV=production');
 
   if (env.APP_ENV === 'staging' || env.APP_ENV === 'production') {
+    if (!env.APP_ROLE) blockers.push(`APP_ROLE must be explicitly set to api, execution-worker, or outbox-worker in ${env.APP_ENV}`);
     if (isLocalTarget(env.DATABASE_URL)) blockers.push(`DATABASE_URL must not point to localhost in ${env.APP_ENV}`);
     if (isLocalTarget(env.REDIS_URL)) blockers.push(`REDIS_URL must not point to localhost in ${env.APP_ENV}`);
     if (!env.REDIS_URL.startsWith('rediss://')) blockers.push(`REDIS_URL must use TLS (rediss://) in ${env.APP_ENV}`);
@@ -66,6 +70,8 @@ export function assertProductionSafe(env: AppEnv): void {
     if (origins.some((origin) => origin === '*')) blockers.push(`ALLOWED_ORIGINS must not contain "*" in ${env.APP_ENV}`);
     if (origins.some((origin) => !isHttpsOrigin(origin))) blockers.push(`ALLOWED_ORIGINS must contain valid HTTPS origins without paths in ${env.APP_ENV}`);
     if (env.JWT_SECRET.includes('replace-with') || env.JWT_SECRET.includes('inject-')) blockers.push(`JWT_SECRET must be a non-placeholder value in ${env.APP_ENV}`);
+    if (!env.PASSWORD_RESET_DELIVERY_ENDPOINT || !isHttpsEndpoint(env.PASSWORD_RESET_DELIVERY_ENDPOINT)) blockers.push(`PASSWORD_RESET_DELIVERY_ENDPOINT must be a valid HTTPS endpoint in ${env.APP_ENV}`);
+    if (!env.PASSWORD_RESET_DELIVERY_TOKEN || env.PASSWORD_RESET_DELIVERY_TOKEN.includes('replace-with') || env.PASSWORD_RESET_DELIVERY_TOKEN.includes('inject-')) blockers.push(`PASSWORD_RESET_DELIVERY_TOKEN must be a non-placeholder value in ${env.APP_ENV}`);
   }
 
   if (env.APP_ENV === 'production') {
@@ -95,6 +101,15 @@ function isHttpsOrigin(value: string) {
   try {
     const url = new URL(value);
     return url.protocol === 'https:' && url.origin === value && url.hostname.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+function isHttpsEndpoint(value: string) {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && url.hostname.length > 0;
   } catch {
     return false;
   }

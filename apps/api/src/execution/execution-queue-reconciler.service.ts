@@ -7,6 +7,7 @@ import { ExecutionEventService } from './execution-event.service';
 import { ExecutionPolicyService } from './execution-policy.service';
 import { ExecutionStateService } from './execution-state.service';
 import { AuditService } from '../audit/audit.service';
+import { workerEnabled } from '../common/app-role';
 
 @Injectable()
 export class ExecutionQueueReconciler implements OnModuleInit, OnApplicationShutdown {
@@ -21,7 +22,9 @@ export class ExecutionQueueReconciler implements OnModuleInit, OnApplicationShut
   ) {}
 
   onModuleInit() {
-    if (process.env.NODE_ENV !== 'test') this.timer = setInterval(() => void this.reconcile().catch(() => undefined), 15_000);
+    if (process.env.NODE_ENV !== 'test' && workerEnabled('execution-worker')) {
+      this.timer = setInterval(() => void this.reconcile().catch(() => undefined), 15_000);
+    }
   }
   onApplicationShutdown() { if (this.timer) clearInterval(this.timer); }
 

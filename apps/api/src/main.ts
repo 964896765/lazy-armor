@@ -1,4 +1,7 @@
 import { createHttpApp } from './bootstrap';
+import { prepareEntrypointRole } from './entrypoints/prepare-app-role';
+
+prepareEntrypointRole('api');
 
 async function bootstrap() {
   const app = await createHttpApp();

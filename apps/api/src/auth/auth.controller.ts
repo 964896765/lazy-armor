@@ -39,8 +39,8 @@ export class AuthController {
 
   @Public()
   @Post('forgot-password')
-  forgotPassword(@Body() input: ForgotPasswordDto) {
-    return this.auth.forgotPassword(input.email);
+  forgotPassword(@Body() input: ForgotPasswordDto, @Ip() ip: string, @Headers('user-agent') userAgent?: string) {
+    return this.auth.forgotPassword(input.email, { ip, userAgent });
   }
 
   @Public()

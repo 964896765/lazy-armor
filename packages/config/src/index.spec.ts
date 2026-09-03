@@ -7,6 +7,7 @@ function deployedEnv(appEnv: 'staging' | 'production') {
   return {
     NODE_ENV: 'production',
     APP_ENV: appEnv,
+    APP_ROLE: 'api',
     DATABASE_URL: `mysql://service:secret@${appEnv}-db.internal:3306/lazy_armor_${appEnv}`,
     REDIS_URL: `rediss://${appEnv}-redis.internal:6379/0`,
     REDIS_KEY_PREFIX: `lazy-armor-${appEnv}`,
@@ -14,6 +15,8 @@ function deployedEnv(appEnv: 'staging' | 'production') {
     CREDENTIAL_MASTER_KEY: key,
     CREDENTIAL_PROVIDER: 'production',
     ALLOWED_ORIGINS: `https://${appEnv}.lazyarmor.example`,
+    PASSWORD_RESET_DELIVERY_ENDPOINT: `https://${appEnv}-notify.lazyarmor.example/v1/messages`,
+    PASSWORD_RESET_DELIVERY_TOKEN: `${appEnv}-password-reset-delivery-${'x'.repeat(40)}`,
   } satisfies NodeJS.ProcessEnv;
 }
 
@@ -40,6 +43,18 @@ describe('deployment environment isolation', () => {
       .toThrow(/valid HTTPS origins without paths/);
     expect(() => assertProductionSafe(parseEnv({ ...deployedEnv(appEnv), JWT_SECRET: `inject-${'x'.repeat(40)}` })))
       .toThrow(/non-placeholder/);
+  });
+
+  it.each(['staging', 'production'] as const)('requires an explicit process role for %s', (appEnv) => {
+    const { APP_ROLE: _role, ...input } = deployedEnv(appEnv);
+    expect(() => assertProductionSafe(parseEnv(input))).toThrow(/APP_ROLE must be explicitly set/);
+  });
+
+  it.each(['staging', 'production'] as const)('requires a complete HTTPS password reset delivery configuration for %s', (appEnv) => {
+    expect(() => assertProductionSafe(parseEnv({ ...deployedEnv(appEnv), PASSWORD_RESET_DELIVERY_ENDPOINT: 'http://notify.internal/reset' })))
+      .toThrow(/PASSWORD_RESET_DELIVERY_ENDPOINT must be a valid HTTPS endpoint/);
+    expect(() => assertProductionSafe(parseEnv({ ...deployedEnv(appEnv), PASSWORD_RESET_DELIVERY_TOKEN: `inject-${'x'.repeat(40)}` })))
+      .toThrow(/PASSWORD_RESET_DELIVERY_TOKEN must be a non-placeholder value/);
   });
 
   it('rejects invalid credential key material before application bootstrap', () => {

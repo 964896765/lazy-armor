@@ -11,6 +11,7 @@ import { AuditService } from '../audit/audit.service';
 import { RateLimiterService } from '../infrastructure/rate-limiter.service';
 import type { AuthenticatedUser, UserRole } from '../common/auth-context';
 import type { ChangePasswordDto, LoginDto, RegisterDto, ResetPasswordDto } from './dto';
+import { PasswordResetDeliveryService } from './password-reset-delivery.service';
 
 const LOGIN_UNIFORM_ERROR = 'Invalid email or password';
 let dummyPasswordHashPromise: Promise<string> | undefined;
@@ -46,6 +47,7 @@ export class AuthService {
     private readonly audit: AuditService,
     private readonly config: ConfigService,
     private readonly rateLimiter: RateLimiterService,
+    private readonly resetDelivery: PasswordResetDeliveryService,
   ) {
     this.accessTtlSeconds = this.config.get<number>('ACCESS_TOKEN_TTL_SECONDS') ?? 900;
     this.refreshTtlSeconds = this.config.get<number>('REFRESH_TOKEN_TTL_SECONDS') ?? 2_592_000;
@@ -191,19 +193,36 @@ export class AuthService {
     return { changed: true };
   }
 
-  async forgotPassword(email: string) {
+  async forgotPassword(email: string, context: RequestContext = {}) {
     const normalized = email.trim().toLowerCase();
+    const ip = context.ip ?? 'unknown';
+    const [accountLimit, ipLimit] = await Promise.all([
+      this.rateLimiter.consume(`password-reset:acct:${normalized}`, 3, 900),
+      this.rateLimiter.consume(`password-reset:ip:${ip}`, 10, 900),
+    ]);
+    // Keep the response uniform for unknown addresses and rate-limited requests.
+    if (!accountLimit.allowed || !ipLimit.allowed) {
+      await this.audit.append({ actorType: 'system', actorUserId: null, action: 'PASSWORD_RESET_RATE_LIMITED', resourceType: 'auth', resourceId: ip, userId: null, source: 'api', result: 'blocked', reasonCode: 'PASSWORD_RESET_RATE_LIMITED', changeSummary: 'Password reset request rate limit exceeded' });
+      return { requested: true };
+    }
+
     const identity = (await this.db.select({ userId: authIdentities.userId }).from(authIdentities).where(eq(authIdentities.email, normalized)).limit(1))[0];
-    // 统一响应，不泄漏账号是否存在。
     if (!identity) return { requested: true };
+
     const raw = randomBytes(32).toString('hex');
     const now = new Date();
+    const expiresAt = new Date(now.getTime() + this.resetTtlSeconds * 1000);
+    const delivery = await this.resetDelivery.deliver({ email: normalized, token: raw, expiresAt });
+    if (delivery !== 'delivered') {
+      await this.audit.append({ actorType: 'system', actorUserId: null, action: 'PASSWORD_RESET_DELIVERY_UNAVAILABLE', resourceType: 'auth', resourceId: normalized, userId: identity.userId, source: 'api', result: delivery === 'unavailable' ? 'blocked' : 'failure', reasonCode: delivery === 'unavailable' ? 'PASSWORD_RESET_DELIVERY_UNAVAILABLE' : 'PASSWORD_RESET_DELIVERY_FAILED', changeSummary: 'Password reset request was not issued because secure delivery was unavailable' });
+      return { requested: true };
+    }
+
     await this.db.insert(passwordResetTokens).values({
       id: newId(), userId: identity.userId, tokenHash: hashToken(raw),
-      expiresAt: new Date(now.getTime() + this.resetTtlSeconds * 1000), usedAt: null, createdAt: now,
+      expiresAt, usedAt: null, createdAt: now,
     });
-    // 本轮无真实邮件 Provider：不持久化明文，仅记录审计；真实投递留待 P1 Email Provider。
-    await this.audit.append({ actorType: 'system', actorUserId: null, action: 'PASSWORD_RESET_REQUESTED', resourceType: 'auth', resourceId: normalized, userId: identity.userId, source: 'api', result: 'success', changeSummary: 'Password reset requested' });
+    await this.audit.append({ actorType: 'system', actorUserId: null, action: 'PASSWORD_RESET_REQUESTED', resourceType: 'auth', resourceId: normalized, userId: identity.userId, source: 'api', result: 'success', changeSummary: 'Password reset token delivered through the configured secure channel' });
     return { requested: true };
   }
 
