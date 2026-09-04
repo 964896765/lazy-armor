@@ -92,3 +92,11 @@ CI #36（run ID `33886273715`，提交 `0ccb6baf50e569bd6396dc2a1e26b356a814260d
 为避免用跳过真进程测试掩盖问题，测试已与相邻的真进程 Worker 测试对齐：保存子进程 stdout/stderr、把仅针对 `/live` 的启动等待扩为 30 秒，并在仍超时时输出子进程日志。该变更不改 Worker、生产运行时、数据库、迁移或 Android 代码；它既降低 CI 冷启动造成的非确定性，也会为后续真实故障提供可审计的根因。API 类型检查已通过。本地针对性运行因 `127.0.0.1:3307` 没有 MySQL 服务而在 Nest 初始化前失败，故不能替代 CI 服务容器中的真实集成验证。
 
 来源：[GitHub Actions Run #36](https://github.com/964896765/lazy-armor/actions/runs/33886273715)。
+
+## CI #37 映射路径最终复核与回退
+
+CI #37（run ID `33886886271`，提交 `250fe67e354d2c149c5a748eb0b5d62e3e372fdc`）的 Fast Gate 已重新成功，说明多 Worker 测试的诊断/启动窗口修复恢复了前置门禁。Android 任务仍在 `settings.gradle:8` 的 `includeBuild` 插件解析阶段以同一 Windows 路径语法错误退出，证明仅替换两处 Node cwd 表达式不足以让 Expo/Gradle 的全部路径解析兼容 `subst` 驱动器。故不再采用逻辑盘映射或改写临时 `settings.gradle`。
+
+验证脚本现改为直接使用一个随机、可删除但保持极短的真实路径 `C:\l-xxxx` 作为工作区根；它比原 `C:\laabuild-xxxxxx` 更短，且不涉及 Windows 跨卷相对路径。pnpm 的 60 字符虚拟存储上限和串行 Gradle 原生任务继续保留。该回退只改变验证工作区位置，未改 Android 应用源代码、Kotlin、Expo 设置、依赖、New Architecture、ABI、数据库或迁移。下轮 CI 将以此真实短路径重新验证 CMake/Ninja 与候选 AAB 产出。
+
+来源：[GitHub Actions Run #37](https://github.com/964896765/lazy-armor/actions/runs/33886886271)。

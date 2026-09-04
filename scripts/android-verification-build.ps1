@@ -1,6 +1,8 @@
 param(
   [string]$SourceRepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path,
-  [string]$TempWorkspaceRoot = "C:\laabuild-$([guid]::NewGuid().ToString('N').Substring(0, 6))",
+  # Verification-only root must stay exceptionally short for React Native CMake/Prefab paths.
+  # Callers may override it, but CI uses this empty disposable directory.
+  [string]$TempWorkspaceRoot = "C:\l-$([guid]::NewGuid().ToString('N').Substring(0, 4))",
   [string]$PnpmStorePath = "C:\v2",
   [switch]$KeepWorkspace
 )
@@ -150,10 +152,7 @@ function Get-AabMetadata {
 }
 
 $workspace = $TempWorkspaceRoot
-$verificationDrive = "L:"
-$driveMapped = $false
-$buildWorkspace = $workspace
-$mobileRoot = Join-Path $buildWorkspace "apps\mobile"
+$mobileRoot = Join-Path $workspace "apps\mobile"
 $androidRoot = Join-Path $mobileRoot "android"
 $appRoot = Join-Path $androidRoot "app"
 $keystorePath = Join-Path $appRoot "debug.keystore"
@@ -165,34 +164,6 @@ try {
 
   Write-Step "Copying repository without Git metadata, env files, credentials, or keystores"
   Copy-RepoTree -Source $SourceRepoRoot -Destination $workspace
-
-  # React Native CMake/Prefab may create deep generated paths. Build through an
-  # ephemeral short drive mapping while metadata continues to reference the
-  # actual temporary workspace. Do not replace an existing drive mapping.
-  if (Get-PSDrive -Name $verificationDrive.TrimEnd(':') -ErrorAction SilentlyContinue) {
-    throw "Verification drive $verificationDrive is already in use"
-  }
-  & subst.exe $verificationDrive $workspace
-  if ($LASTEXITCODE -ne 0) { throw "Unable to map $verificationDrive to $workspace" }
-  $driveMapped = $true
-  $buildWorkspace = "$verificationDrive\"
-  $mobileRoot = Join-Path $buildWorkspace "apps\mobile"
-  $androidRoot = Join-Path $mobileRoot "android"
-  $appRoot = Join-Path $androidRoot "app"
-  $keystorePath = Join-Path $appRoot "debug.keystore"
-
-  # Expo's generated settings resolve process.cwd() to the physical C: path.
-  # Under subst that makes path.relative() cross volumes and emits an invalid
-  # includeBuild path. Patch only the disposable verification copy so Node
-  # retains the logical L: path used by Gradle; repository source is untouched.
-  $settingsGradlePath = Join-Path $androidRoot "settings.gradle"
-  $settingsGradle = Get-Content -LiteralPath $settingsGradlePath -Raw
-  $physicalCwdExpression = "require('fs').realpathSync(process.cwd())"
-  $physicalCwdReferences = ([regex]::Matches($settingsGradle, [regex]::Escape($physicalCwdExpression))).Count
-  if ($physicalCwdReferences -ne 2) {
-    throw "Expected two generated settings.gradle cwd references, found $physicalCwdReferences"
-  }
-  Set-Content -LiteralPath $settingsGradlePath -Value $settingsGradle.Replace($physicalCwdExpression, "process.cwd()") -Encoding UTF8 -NoNewline
 
   New-DebugVerificationKeystore -KeystorePath $keystorePath
 
@@ -224,10 +195,6 @@ try {
   Write-Step "Writing artifact metadata"
   Get-AabMetadata -WorkspaceRoot $workspace -RepoRoot $SourceRepoRoot
 } finally {
-  if ($driveMapped) {
-    Write-Step "Removing temporary short drive mapping"
-    & subst.exe $verificationDrive /D | Out-Null
-  }
   if (-not $KeepWorkspace) {
     Write-Step "Cleaning temporary workspace"
     Remove-IfExists $workspace
