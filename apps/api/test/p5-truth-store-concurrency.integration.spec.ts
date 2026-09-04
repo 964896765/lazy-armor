@@ -45,7 +45,7 @@ describe.skipIf(!enabled).sequential('Truth Store MySQL atomic concurrency', { t
     } as never;
 
     const results = await Promise.all([truthStore.confirmMobileReceipt(user.userId, receipt), truthStore.confirmMobileReceipt(user.userId, receipt)]);
-    expect(new Set(results.map((result) => result.id))).toHaveSize(1);
+    expect([...new Set(results.map((result) => result.id))]).toHaveLength(1);
     const [records] = await pool.query<RowDataPacket[]>(
       `SELECT BIN_TO_UUID(r.id) id, BIN_TO_UUID(r.current_version_id) currentVersionId, COUNT(v.id) versionCount
          FROM truth_records r LEFT JOIN truth_record_versions v ON v.truth_record_id = r.id
