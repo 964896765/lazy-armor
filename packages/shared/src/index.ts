@@ -1,5 +1,13 @@
 import { v7 as uuidv7 } from 'uuid';
 
+export {
+  SUPPORTED_DEVICE_APPS,
+  supportedDeviceApp,
+  type DeviceAppConnectionMode,
+  type SupportedDeviceApp,
+  type SupportedDeviceAppCapability,
+} from './supported-device-apps';
+
 export const newId = (): string => uuidv7();
 
 export const SECRET_KEYS = /password|token|secret|api[-_]?key|authorization|credential|cookie|session|private[-_]?key/i;

@@ -27,6 +27,7 @@ import { AiAdapterModule } from './ai-adapter/ai-adapter.module';
 import { AdminModule } from './admin/admin.module';
 import { StudyModule } from './study/study.module';
 import { DeviceModule } from './device/device.module';
+import { DeviceAppsModule } from './device-apps/device-apps.module';
 import { ProfilesModule } from './profiles/profiles.module';
 import { OperationsModule } from './operations/operations.module';
 import { ObservabilityModule } from './observability/observability.module';
@@ -60,6 +61,7 @@ import { CostModule } from './cost/cost.module';
     HouseholdModule,
     StudyModule,
     DeviceModule,
+    DeviceAppsModule,
     ProfilesModule,
     OperationsModule,
     ObservabilityModule,

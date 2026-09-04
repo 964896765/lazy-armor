@@ -300,6 +300,22 @@ export const connectionPermissions = mysqlTable('connection_permissions', {
   ...timestamps,
 }, (table) => [uniqueIndex('connection_permissions_connection_capability_uq').on(table.connectionId, table.connectorCapabilityId)]);
 
+export const deviceAppConnections = mysqlTable('device_app_connections', {
+  id: uuidBinary('id').primaryKey(),
+  userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  deviceId: varchar('device_id', { length: 128 }).notNull(),
+  packageName: varchar('package_name', { length: 255 }).notNull(),
+  displayName: varchar('display_name', { length: 120 }).notNull(),
+  enabled: int('enabled').notNull().default(1),
+  modesJson: json('modes_json').$type<string[]>().notNull(),
+  trustLevel: varchar('trust_level', { length: 32 }).notNull(),
+  lastSeenAt: datetime('last_seen_at', { mode: 'date', fsp: 6 }),
+  ...timestamps,
+}, (table) => [
+  uniqueIndex('device_app_connections_user_device_package_uq').on(table.userId, table.deviceId, table.packageName),
+  index('device_app_connections_user_updated_idx').on(table.userId, table.updatedAt),
+]);
+
 export const billingRecords = mysqlTable('billing_records', {
   id: uuidBinary('id').primaryKey(),
   userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),

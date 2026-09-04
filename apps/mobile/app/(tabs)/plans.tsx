@@ -4,10 +4,11 @@ import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, View }
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/api';
 import { useAuthStore } from '../../src/auth-store';
-import { AnimatedEntry, EmptyState, PlanCard, Surface, colors, spacing, typography } from '../../src/design';
+import { ActionButton, AnimatedEntry, EmptyState, PlanCard, Surface, colors, spacing, typography } from '../../src/design';
 import {
   consumerPlanGroup,
   consumerPlanGroupSubtitle,
+  planDomainLabel,
   planCenterStatusLabel,
   planNextRunLabel,
   planStatusLabel,
@@ -24,6 +25,7 @@ interface PlanSummary {
   templateKey: string | null;
   consumerGroup?: string | null;
   templateVersion: string | null;
+  domain: string | null;
   nextExpectedRunAt: string | null;
   hasMissingConnection: boolean;
   latestExecution: { id: string; status: string; resultSummary: string | null; createdAt: string } | null;
@@ -35,7 +37,7 @@ interface PlanSummary {
   } | null;
 }
 
-const consumerGroups: ConsumerPlanGroup[] = ['我的生活', '我的钱', '我的事情', '我的东西', '其他计划'];
+const consumerGroups: ConsumerPlanGroup[] = ['我的钱', '我的生活', '我的事情', '我的物品', '其他计划'];
 
 export default function Plans() {
   const token = useAuthStore((store) => store.token);
@@ -54,8 +56,9 @@ export default function Plans() {
         refreshControl={token ? <RefreshControl tintColor={colors.primary} refreshing={plans.isFetching} onRefresh={() => plans.refetch()} /> : undefined}
       >
         <View style={styles.header}>
-          <Text style={styles.title}>我的懒人计划</Text>
+          <View style={styles.headerTitleRow}><View style={styles.headerCopy}><Text style={styles.eyebrow}>懒人装甲</Text><Text style={styles.title}>总览与计划</Text></View><ActionButton label="＋计划" onPress={() => router.push('/create' as never)} /></View>
           <Text style={styles.subtitle}>{activeCount > 0 ? `正在帮你处理 ${activeCount} 件事` : '把麻烦交给我，生活可以轻一点。'}</Text>
+          <View style={styles.workspaceLinks}><ActionButton label="我的领域" tone="quiet" onPress={() => router.push('/domains' as never)} /><ActionButton label="全部记录" tone="quiet" onPress={() => router.push('/records' as never)} /></View>
         </View>
 
         {!token ? (
@@ -70,6 +73,7 @@ export default function Plans() {
         {consumerGroups.map((group, groupIndex) => {
           const items = (plans.data ?? []).filter((plan) => consumerPlanGroup({
             consumerGroup: plan.consumerGroup ?? null,
+            domain: plan.domain,
             templateKey: plan.templateKey,
             planCenterKind: plan.planCenterSummary?.kind ?? null,
           }) === group);
@@ -87,7 +91,7 @@ export default function Plans() {
                         key={plan.id}
                         icon={planVisualIcon(name, plan.planCenterSummary?.kind)}
                         name={name}
-                        description={planDescription(plan)}
+                        description={`${planDomainLabel(plan.domain)} · ${planDescription(plan)}`}
                         status={plan.hasMissingConnection ? '还差一步设置' : planStatusLabel(plan.status)}
                         statusTone={plan.hasMissingConnection ? 'warning' : planStatusTone(plan.status)}
                         nextRun={planNextRunLabel(plan.status, plan.nextExpectedRunAt)}
@@ -119,8 +123,12 @@ const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: colors.background },
   content: { paddingHorizontal: spacing.page, paddingTop: spacing.xl, paddingBottom: 112 },
   header: { marginBottom: spacing.xxl },
-  title: { ...typography.display, color: colors.text },
+  headerTitleRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: spacing.md },
+  headerCopy: { flex: 1 },
+  eyebrow: { ...typography.label, color: colors.primary, letterSpacing: 1 },
+  title: { ...typography.display, color: colors.text, marginTop: spacing.xs },
   subtitle: { ...typography.body, color: colors.textSecondary, marginTop: spacing.sm },
+  workspaceLinks: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.lg },
   loading: { paddingVertical: 64, alignItems: 'center', gap: spacing.md },
   loadingText: { ...typography.body, color: colors.textSecondary },
   group: { marginTop: spacing.xxl },

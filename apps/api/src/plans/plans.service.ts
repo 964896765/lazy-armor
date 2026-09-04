@@ -520,6 +520,9 @@ export class PlansService {
       description: current?.description ?? active?.description ?? null,
       templateKey: current?.templateKey ?? active?.templateKey ?? null,
       templateVersion: current?.templateVersion ?? active?.templateVersion ?? null,
+      // Presentation consumers may map this historical value to the canonical catalog.
+      // Do not normalize or rewrite it here: it is part of the immutable PlanVersion definition.
+      domain: current?.domain ?? active?.domain ?? null,
       consumerGroup: this.consumerGroupForTemplate(current?.templateKey ?? active?.templateKey ?? null),
       currentVersion: current,
       activeVersion: active,

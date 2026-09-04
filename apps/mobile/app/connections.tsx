@@ -8,6 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../src/api';
 import { useAuthStore } from '../src/auth-store';
 import { connectionStartRequest, disconnectRequest, reconnectRequest, validateConnectionRequest } from '../src/connection-api-contract';
+import { openSupportedDeviceApp } from '../src/device-app-bridge';
 import {
   capabilityDescription,
   capabilityLabel,
@@ -28,6 +29,7 @@ interface Connection { id: string; connectorId: string; connectorName: string; e
 interface Permission { capability: string; name: string; riskLevel: string; granted: boolean; expiresAt?: string }
 interface ConnectionPlanUsage { planId: string; planName: string; planStatus: string; requiredCapabilities: string[] }
 interface OAuthStartResult { providerKey: string; authorizationUrl: string; expiresAt: string }
+interface DeviceAppConnection { id: string; packageName: string; displayName: string; enabled: boolean; modes: string[]; lastSeenAt: string | null }
 
 function stringParam(value: string | string[] | undefined) { return Array.isArray(value) ? value[0] : value; }
 
@@ -123,6 +125,36 @@ function ConnectedService({ item, connector, token }: { item: Connection; connec
   );
 }
 
+function DeviceAppService({ item, token }: { item: DeviceAppConnection; token: string }) {
+  const client = useQueryClient();
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const update = useMutation({
+    mutationFn: () => api<DeviceAppConnection>(`/device-app-connections/${item.id}`, token, { method: 'PATCH', body: JSON.stringify({ enabled: !item.enabled }) }),
+    onSuccess: async () => {
+      await Promise.all([
+        client.invalidateQueries({ queryKey: ['device-app-connections', token] }),
+        client.invalidateQueries({ queryKey: ['rail-device-app-connections', token] }),
+      ]);
+    },
+  });
+  async function open() {
+    setFeedback(null);
+    const opened = await openSupportedDeviceApp(item.packageName);
+    setFeedback(opened ? '已打开应用。' : '无法打开该应用：请在 Android 真机确认它仍已安装。');
+  }
+  return (
+    <Surface>
+      <View style={styles.providerHeader}>
+        <View style={styles.providerIcon}><Text style={styles.providerEmoji}>{item.displayName.slice(0, 1)}</Text></View>
+        <View style={styles.providerCopy}><Text style={styles.providerName}>{item.displayName}</Text><Text style={styles.readiness}>{item.enabled ? '已添加到当前设备' : '已停用'}</Text></View>
+      </View>
+      <Text style={styles.providerDescription}>{item.enabled ? `当前已启用：${item.modes.join('、')}。仅使用你确认的能力。` : '停用后不会在空间导航中显示，也不会被计划使用。'}</Text>
+      <View style={styles.deviceActions}><ActionButton label="打开应用" tone="quiet" onPress={() => void open()} disabled={!item.enabled} /><ActionButton label={item.enabled ? '停用连接' : '重新启用'} tone={item.enabled ? 'quiet' : 'primary'} onPress={() => update.mutate()} disabled={update.isPending} /></View>
+      {feedback ? <Text style={styles.feedback}>{feedback}</Text> : null}
+    </Surface>
+  );
+}
+
 function AvailableService({ connector, token }: { connector: Connector; token: string }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
@@ -162,6 +194,7 @@ function AvailableService({ connector, token }: { connector: Connector; token: s
 }
 
 export default function ConnectionsPage() {
+  const router = useRouter();
   const token = useAuthStore((store) => store.token);
   const setSession = useAuthStore((store) => store.setSession);
   const clear = useAuthStore((store) => store.clear);
@@ -169,6 +202,7 @@ export default function ConnectionsPage() {
   const [password, setPassword] = useState('');
   const connectors = useQuery({ queryKey: ['connectors'], queryFn: () => api<Connector[]>('/connectors') });
   const connections = useQuery({ queryKey: ['connections', token], queryFn: () => api<Connection[]>('/connections', token), enabled: Boolean(token) });
+  const deviceApps = useQuery({ queryKey: ['device-app-connections', token], queryFn: () => api<DeviceAppConnection[]>('/device-app-connections', token), enabled: Boolean(token) });
   const login = useMutation({ mutationFn: () => api<{ accessToken: string; refreshToken: string }>('/auth/login', undefined, { method: 'POST', body: JSON.stringify({ email, password }) }), onSuccess: (result) => setSession(result) });
   const consumerConnectors = useMemo(() => connectors.data?.filter((connector) => isConsumerConnector(connector.key)) ?? [], [connectors.data]);
   const activeProviderKeys = new Set((connections.data ?? []).filter((connection) => connection.status !== 'revoked').map((connection) => connection.connectorId));
@@ -191,11 +225,13 @@ export default function ConnectionsPage() {
           <>
             <Text style={styles.sectionTitle}>正在使用</Text>
             {connections.isLoading ? <ActivityIndicator color={colors.primary} /> : null}
-            {connections.data?.length === 0 ? <Surface><EmptyState icon="🔗" title="还没有连接服务" description="连接 Google 后，就能开始整理邮件和日历。" /></Surface> : null}
+            {(connections.data?.length ?? 0) + (deviceApps.data?.length ?? 0) === 0 ? <Surface><EmptyState icon="🔗" title="还没有连接服务" description="可以连接在线服务，或添加已安装的手机应用。" action={{ label: '添加连接', onPress: () => router.push('/connections/add' as Href) }} /></Surface> : null}
             <View style={styles.list}>{connections.data?.map((item) => <ConnectedService key={item.id} item={item} connector={connectorByKey.get(item.connectorId)} token={token} />)}</View>
+            {(deviceApps.data?.length ?? 0) > 0 ? <><Text style={styles.sectionTitle}>手机应用</Text><View style={styles.list}>{deviceApps.data?.map((item) => <DeviceAppService key={item.id} item={item} token={token} />)}</View></> : null}
 
             {available.length > 0 ? <><Text style={styles.sectionTitle}>可以连接</Text><View style={styles.list}>{available.map((connector) => <AvailableService key={connector.key} connector={connector} token={token} />)}</View></> : null}
 
+            <View style={styles.addConnection}><ActionButton label="＋ 添加连接" tone="quiet" onPress={() => router.push('/connections/add' as Href)} /></View>
             <View style={styles.logout}><ActionButton label="退出登录" tone="quiet" onPress={() => void clear()} /></View>
           </>
         )}
@@ -252,5 +288,7 @@ const styles = StyleSheet.create({
   capabilities: { gap: spacing.xs, marginTop: spacing.md },
   capability: { ...typography.caption, color: colors.textSecondary },
   providerAction: { alignItems: 'flex-end', marginTop: spacing.lg },
+  deviceActions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.lg },
+  addConnection: { alignItems: 'center', marginTop: spacing.xxxl },
   logout: { alignItems: 'center', marginTop: spacing.xxxl },
 });

@@ -1,5 +1,22 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
+import { PLAN_DOMAINS } from './domain-catalog';
+
+export {
+  CANONICAL_DOMAIN_CATALOG,
+  CANONICAL_PLAN_DOMAINS,
+  DOMAIN_GROUPS,
+  LEGACY_PLAN_DOMAINS,
+  PLAN_DOMAINS,
+  canonicalPlanDomain,
+  domainDefinition,
+  domainGroupFor,
+  type CanonicalDomainDefinition,
+  type CanonicalPlanDomain,
+  type DomainGroupKey,
+  type LegacyPlanDomain,
+  type PlanDomain,
+} from './domain-catalog';
 
 export const SOURCE_TYPES = ['manual', 'email', 'calendar', 'notification', 'file', 'webhook', 'internal', 'commerce', 'device', 'vehicle', 'billing', 'content_platform'] as const;
 export const TRIGGER_TYPES = ['manual', 'schedule', 'event', 'webhook', 'threshold', 'date_before', 'date_after', 'data_changed'] as const;
@@ -8,8 +25,6 @@ export const ACTION_TYPES = ['record', 'classify', 'summarize', 'compare', 'noti
 export const PLAN_STATES = ['draft', 'ready', 'active', 'paused', 'degraded', 'blocked', 'archived'] as const;
 export const AUTOMATION_LEVELS = ['L0', 'L1', 'L2', 'L3', 'L4'] as const;
 export const RISK_LEVELS = ['R0', 'R1', 'R2', 'R3', 'R4'] as const;
-export const PLAN_DOMAINS = ['general', 'life', 'family', 'housing', 'travel', 'entertainment', 'finance', 'billing', 'work', 'operations', 'content', 'study', 'vehicle', 'device', 'digital_account', 'shopping'] as const;
-
 export type SourceType = typeof SOURCE_TYPES[number];
 export type TriggerType = typeof TRIGGER_TYPES[number];
 export type ConditionOperator = typeof CONDITION_OPERATORS[number];
