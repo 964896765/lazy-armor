@@ -150,7 +150,10 @@ function Get-AabMetadata {
 }
 
 $workspace = $TempWorkspaceRoot
-$mobileRoot = Join-Path $workspace "apps\mobile"
+$verificationDrive = "L:"
+$driveMapped = $false
+$buildWorkspace = $workspace
+$mobileRoot = Join-Path $buildWorkspace "apps\mobile"
 $androidRoot = Join-Path $mobileRoot "android"
 $appRoot = Join-Path $androidRoot "app"
 $keystorePath = Join-Path $appRoot "debug.keystore"
@@ -162,6 +165,21 @@ try {
 
   Write-Step "Copying repository without Git metadata, env files, credentials, or keystores"
   Copy-RepoTree -Source $SourceRepoRoot -Destination $workspace
+
+  # React Native CMake/Prefab may create deep generated paths. Build through an
+  # ephemeral short drive mapping while metadata continues to reference the
+  # actual temporary workspace. Do not replace an existing drive mapping.
+  if (Get-PSDrive -Name $verificationDrive.TrimEnd(':') -ErrorAction SilentlyContinue) {
+    throw "Verification drive $verificationDrive is already in use"
+  }
+  & subst.exe $verificationDrive $workspace
+  if ($LASTEXITCODE -ne 0) { throw "Unable to map $verificationDrive to $workspace" }
+  $driveMapped = $true
+  $buildWorkspace = "$verificationDrive\"
+  $mobileRoot = Join-Path $buildWorkspace "apps\mobile"
+  $androidRoot = Join-Path $mobileRoot "android"
+  $appRoot = Join-Path $androidRoot "app"
+  $keystorePath = Join-Path $appRoot "debug.keystore"
 
   New-DebugVerificationKeystore -KeystorePath $keystorePath
 
@@ -185,12 +203,18 @@ try {
   $env:EXPO_PUBLIC_APP_ENV = "development"
   $env:APP_ENV = "development"
   $env:LAZY_ARMOR_ANDROID_ALLOW_DEBUG_RELEASE = "true"
-  .\gradlew.bat bundleRelease --no-daemon
+  # Isolate native CMake configurations in the verification runner. This does
+  # not alter application code, dependency versions, New Architecture, or ABI policy.
+  .\gradlew.bat bundleRelease --no-daemon --no-parallel --max-workers=1
   Pop-Location
 
   Write-Step "Writing artifact metadata"
   Get-AabMetadata -WorkspaceRoot $workspace -RepoRoot $SourceRepoRoot
 } finally {
+  if ($driveMapped) {
+    Write-Step "Removing temporary short drive mapping"
+    & subst.exe $verificationDrive /D | Out-Null
+  }
   if (-not $KeepWorkspace) {
     Write-Step "Cleaning temporary workspace"
     Remove-IfExists $workspace
