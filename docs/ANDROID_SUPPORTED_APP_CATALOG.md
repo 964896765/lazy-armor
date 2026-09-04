@@ -1,42 +1,37 @@
-# Android 支持应用目录与真机验收
+# Android 应用发现与增强适配
 
-## 目的与边界
+## 产品边界
 
-本目录为移动端的 **最小、可审查应用白名单**。系统仅向 Android PackageManager 查询目录中明确列出的包名；它不申请 `QUERY_ALL_PACKAGES`，不枚举设备上的其他应用，也不提供任意应用点击或自动化能力。当前每个已支持条目只实现用户主动触发的“打开应用”。
+Android 端采用 **真实设备发现 → Generic App Connection → 可选 Enhanced Adapter**。用户在“添加连接”页主动发起发现时，应用只读取 Android 系统返回的可启动应用，并在用户明确选择后才保存该 App 的连接快照。未被用户选中的 App 不会写入服务端、不会进入 Rail，也不会被当作通知来源。
 
-> **添加一个手机应用连接并不等于取得通知、内容、支付或下单权限。** 每项后续读取或操作都必须另行展示用途、取得授权、绑定允许范围，并验证结果。
+> **Catalog 不是应用连接白名单。** 任何当前设备真实发现、可启动且经用户确认的 App 都能成为 Generic App Connection；Catalog 只在匹配时补充可审查的专属适配信息，绝不决定一个 App 是否“允许连接”。
 
-| 应用 | Android application ID | 当前可用 | 后续状态 |
-|---|---|---|---|
-| 中国移动 | `com.greenpoint.android.mc10086.activity` | 用户主动打开应用 | 指定账单通知读取：未实现 |
-| 微信 | `com.tencent.mm` | 用户主动打开应用 | 允许页面跳转：未实现 |
-| 支付宝 | `com.eg.android.AlipayGphone` | 用户主动打开应用 | 页面跳转及支付协作：未实现；支付始终由用户完成 |
-| 淘宝 | `com.taobao.taobao` | 用户主动打开应用 | 商品或订单页面跳转：未实现；不提供自动下单 |
-| Gmail | `com.google.android.gm` | 用户主动打开应用 | 页面跳转：未实现；邮件读取使用独立 OAuth 连接 |
-| Google 日历 | `com.google.android.calendar` | 用户主动打开应用 | 页面跳转：未实现；日历同步使用独立 OAuth 连接 |
-
-Google Calendar、WeChat、Alipay 与 Taobao 的公开应用商店页面都将相应 application ID 置于其页面 URL 中，可作为首次目录录入的外部核验依据。[1] [2] [3] [4]
+Android 11 及以上版本默认限制应用间包可见性；已安装应用列表属于敏感数据。系统应使用 `<queries>` 中最小化的启动器 Intent 需求，不使用 `QUERY_ALL_PACKAGES`，并且只在用户点击“添加连接”后执行发现。[1] [2]
 
 ## 当前实现
 
-Android 原生 `LazyArmorDeviceBridge` 执行两个受控操作。`detectSupportedApps` 仅接收白名单包名并返回该应用是否安装；`openSupportedApp` 仅接受白名单包名并通过系统启动 Intent 打开应用。服务端 `DeviceAppConnection` 仅记录用户、匿名安装标识、包名、展示名、启用状态、当前模式与最后见到时间，并为添加、停用或重新启用写入审计记录。
-
-| 验收项 | 当前结论 | 所需证据 |
+| 层级 | 当前行为 | 不会做的事 |
 |---|---|---|
-| 不枚举全部应用 | 已由静态 Manifest `<queries>` 与原生集合限制 | Android manifest 审查 + 真机日志（不得包含非白名单包名） |
-| 添加、停用与恢复 | 已实现 API 与移动端页面 | 账号 A 添加/停用，账号 B 无法读取或更新其记录 |
-| Rail 状态 | 已实现；仅显示服务端已启用的连接 | 真机添加后，重启 App 仍显示；停用后消失 |
-| 用户主动打开应用 | 已实现原生调用 | 逐个目录应用真机安装/未安装测试 |
-| 通知读取 | **未实现** | 后续须具备专用 Listener、用户系统授权、来源 allowlist、去重、解析、验证、审计与撤销测试 |
-| 支付、转账、下单 | **未实现，且不允许自动执行** | 仅可在用户最终确认、结果可验证及 `OUTCOME_UNKNOWN` 不盲目重试的独立流程中评估 |
+| Device Bridge | 调用 PackageManager 查询当前设备中可启动的应用，并返回真实 `packageName`、显示名称、版本、可启动状态和尺寸受限的图标数据 URI。 | 不预置某些品牌；不在服务端构造 App 名称或图标；不保存整机应用清单。 |
+| Generic App Connection | 用户确认后记录当前 App 快照、设备安装标识、发现指纹、启用状态和已确认操作；当前支持用户主动“打开应用”。 | 不因未命中 Adapter 而拒绝创建；不自动读取内容、支付、下单或修改账户。 |
+| Enhanced Adapter | 只有命中可选 `APP_INTEGRATION_CATALOG` 时才记录增强适配键。 | 不改变计划的品牌中立资源语义；不自动开启深链、读取或操作。 |
+| 通知来源 | 用户需先在系统设置中授权通知访问，再为每个已添加 App 单独开启来源。端侧只暂存包名、时间、事件指纹、内容指纹及“是否有标题/正文”等最小线索。 | 不默认读取通知；不上传标题或正文；不以品牌名称作为通知逻辑分支。 |
+| 服务端收据 | 只接受当前用户、当前连接、当前已授权 App 的最小事件；检查时间窗、限流、去重并写入审计与低基数指标。 | 不将未分类线索直接写成账单、订单或自动化输入；不触发付款、下单或其他自动操作。 |
 
-## 发布前真机步骤
+## 真机验收
 
-首先必须使用包含原生 Bridge 的 Android Debug 或候选发布构建，而不是 Web 导出或 Expo Go。随后在每个目标设备上依次验证：已安装条目显示“已安装”；卸载后的条目显示“未安装”；未列入目录的应用永远不出现；添加后仅能看到“打开应用”；停用连接后应用从 Rail 移除；另一测试账号无法读取或修改该连接。真机编译、安装和这些记录均是本阶段的外部证据，不能由 TypeScript 或 Web 构建替代。
+| 验收项目 | 通过条件 |
+|---|---|
+| 发现真实性 | 在候选 Android 构建中点击“添加连接”后，列表只显示本机实际存在的可启动 App；不存在示例或回退列表。 |
+| 通用连接 | 选择一个不命中 Catalog 的真实 App 后，仍可创建、显示、停用/重新启用并由用户主动打开该 App。 |
+| Adapter 可选性 | 命中 Adapter 与未命中 Adapter 的 App 均可完成 Generic Connection；两者差异仅为后续经审查的附加操作。 |
+| 通知授权 | 未打开系统通知访问或未单独启用某 App 时，该 App 的事件不会收集、上传或进入消息中心。 |
+| 最小化入站 | 端侧与服务端日志、收据、指标均不含通知标题、正文、用户 ID、完整应用清单或示例金额。 |
+| 撤销 | 停止某 App 的通知来源后，端侧清除该 App 的待同步线索，服务端连接不再将其作为来源。 |
+
+在真机构建、安装和双账号隔离测试完成前，真实发现、图标渲染、通知授权状态与后台回调均不得宣称已获得生产证据。Web、iOS 和 Expo Go 显示“无法读取设备应用/通知来源”是故意的安全降级，不应以 Fixture 替代。
 
 ## References
 
-[1]: https://play.google.com/store/apps/details?id=com.google.android.calendar "Google Calendar — Google Play"
-[2]: https://play.google.com/store/apps/details?id=com.tencent.mm "WeChat — Google Play"
-[3]: https://play.google.com/store/apps/details?id=com.eg.android.AlipayGphone "Alipay — Google Play"
-[4]: https://play.google.com/store/apps/details?id=com.taobao.taobao "Taobao — Google Play"
+[1]: https://developer.android.com/training/package-visibility "Package visibility filtering on Android"
+[2]: https://developer.android.com/training/package-visibility/declaring "Declare package visibility needs"

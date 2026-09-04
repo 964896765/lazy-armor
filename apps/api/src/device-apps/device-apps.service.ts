@@ -1,13 +1,12 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { deviceAppConnections } from '@lazy-armor/database';
-import { newId, supportedDeviceApp, type DeviceAppConnectionMode } from '@lazy-armor/shared';
+import { deviceAppCapabilities, deviceAppIntegration, isGenericDeviceAppMode, newId, type DeviceAppConnectionMode } from '@lazy-armor/shared';
 import { and, desc, eq } from 'drizzle-orm';
 import { AuditService } from '../audit/audit.service';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
 import type { CreateDeviceAppConnectionDto, UpdateDeviceAppConnectionDto } from './dto';
 
-const IMPLEMENTED_MODES = new Set<DeviceAppConnectionMode>(['open_app']);
-const ALLOWED_MODES = new Set<DeviceAppConnectionMode>(['open_app', 'deep_link', 'notification_read']);
+const IMPLEMENTED_MODES = new Set<DeviceAppConnectionMode>(['open_app', 'notification_read']);
 
 @Injectable()
 export class DeviceAppsService {
@@ -24,9 +23,11 @@ export class DeviceAppsService {
   }
 
   async create(userId: string, input: CreateDeviceAppConnectionDto) {
-    const app = supportedDeviceApp(input.packageName);
-    if (!app) throw new BadRequestException('This Android app is not in the supported catalog');
-    const modes = this.validateModes(input.packageName, input.modes);
+    if (!input.launchable) throw new BadRequestException('Only a launchable app discovered on this device can be connected');
+    const packageName = input.packageName.trim();
+    const displayName = input.displayName.trim();
+    const modes = this.validateModes(packageName, input.modes);
+    const integration = deviceAppIntegration(packageName);
     const now = new Date();
     const id = newId();
     try {
@@ -34,11 +35,17 @@ export class DeviceAppsService {
         id,
         userId,
         deviceId: input.deviceId.trim(),
-        packageName: app.packageName,
-        displayName: app.displayName,
+        packageName,
+        displayName,
+        connectionType: integration ? 'enhanced' : 'generic',
+        integrationKey: integration?.integrationKey ?? null,
+        versionName: input.versionName?.trim() || null,
+        versionCode: input.versionCode ?? null,
+        launchable: 1,
+        discoveryFingerprint: input.discoveryFingerprint,
         enabled: 1,
         modesJson: modes,
-        trustLevel: 'user_selected',
+        trustLevel: 'device_reported',
         lastSeenAt: now,
         createdAt: now,
         updatedAt: now,
@@ -55,7 +62,7 @@ export class DeviceAppsService {
       resourceId: id,
       userId,
       correlationId: id,
-      changeSummary: `Added ${app.displayName} from the supported Android app catalog with modes: ${modes.join(', ')}`,
+      changeSummary: integration ? `Created a device-reported app connection with optional adapter ${integration.integrationKey}` : 'Created a device-reported generic app connection',
       source: 'api',
       result: 'success',
     });
@@ -79,7 +86,7 @@ export class DeviceAppsService {
       resourceId: id,
       userId,
       correlationId: id,
-      changeSummary: `Updated ${current.displayName} Android app connection`,
+      changeSummary: 'Updated a device app connection state or user-selected permissions',
       source: 'api',
       result: 'success',
     });
@@ -99,16 +106,15 @@ export class DeviceAppsService {
   }
 
   private validateModes(packageName: string, requested: string[]): DeviceAppConnectionMode[] {
-    const app = supportedDeviceApp(packageName);
-    if (!app) throw new BadRequestException('This Android app is not in the supported catalog');
     const unique = [...new Set(requested)] as DeviceAppConnectionMode[];
-    if (unique.length === 0) throw new BadRequestException('Select at least one available capability');
+    if (unique.length === 0) throw new BadRequestException('Select at least one available operation');
+    const capabilities = new Map(deviceAppCapabilities(packageName).map((item) => [item.mode, item]));
     for (const mode of unique) {
-      if (!ALLOWED_MODES.has(mode)) throw new BadRequestException('Unsupported device app capability');
-      const capability = app.capabilities.find((item) => item.mode === mode);
+      const capability = capabilities.get(mode);
       if (!capability || capability.availability !== 'available' || !IMPLEMENTED_MODES.has(mode)) {
-        throw new BadRequestException(`Capability ${mode} is not available for this app`);
+        throw new BadRequestException(`Operation ${mode} is not currently available for this app`);
       }
+      if (!isGenericDeviceAppMode(mode)) throw new BadRequestException('Enhanced app operations are not currently available');
     }
     return unique;
   }
@@ -119,6 +125,11 @@ export class DeviceAppsService {
       deviceId: row.deviceId,
       packageName: row.packageName,
       displayName: row.displayName,
+      connectionType: row.connectionType,
+      integrationKey: row.integrationKey,
+      versionName: row.versionName,
+      versionCode: row.versionCode,
+      launchable: row.launchable === 1,
       enabled: row.enabled === 1,
       modes: row.modesJson,
       trustLevel: row.trustLevel,

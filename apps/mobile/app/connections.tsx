@@ -8,7 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../src/api';
 import { useAuthStore } from '../src/auth-store';
 import { connectionStartRequest, disconnectRequest, reconnectRequest, validateConnectionRequest } from '../src/connection-api-contract';
-import { openSupportedDeviceApp } from '../src/device-app-bridge';
+import { openDeviceApp, setNotificationSourceEnabled } from '../src/device-app-bridge';
 import {
   capabilityDescription,
   capabilityLabel,
@@ -126,10 +126,14 @@ function ConnectedService({ item, connector, token }: { item: Connection; connec
 }
 
 function DeviceAppService({ item, token }: { item: DeviceAppConnection; token: string }) {
+  const router = useRouter();
   const client = useQueryClient();
   const [feedback, setFeedback] = useState<string | null>(null);
   const update = useMutation({
-    mutationFn: () => api<DeviceAppConnection>(`/device-app-connections/${item.id}`, token, { method: 'PATCH', body: JSON.stringify({ enabled: !item.enabled }) }),
+    mutationFn: async () => {
+      if (item.enabled) await setNotificationSourceEnabled(item.packageName, false);
+      return api<DeviceAppConnection>(`/device-app-connections/${item.id}`, token, { method: 'PATCH', body: JSON.stringify({ enabled: !item.enabled, ...(item.enabled ? { modes: item.modes.filter((mode) => mode !== 'notification_read') } : {}) }) });
+    },
     onSuccess: async () => {
       await Promise.all([
         client.invalidateQueries({ queryKey: ['device-app-connections', token] }),
@@ -139,7 +143,7 @@ function DeviceAppService({ item, token }: { item: DeviceAppConnection; token: s
   });
   async function open() {
     setFeedback(null);
-    const opened = await openSupportedDeviceApp(item.packageName);
+    const opened = await openDeviceApp(item.packageName);
     setFeedback(opened ? '已打开应用。' : '无法打开该应用：请在 Android 真机确认它仍已安装。');
   }
   return (
@@ -148,8 +152,8 @@ function DeviceAppService({ item, token }: { item: DeviceAppConnection; token: s
         <View style={styles.providerIcon}><Text style={styles.providerEmoji}>{item.displayName.slice(0, 1)}</Text></View>
         <View style={styles.providerCopy}><Text style={styles.providerName}>{item.displayName}</Text><Text style={styles.readiness}>{item.enabled ? '已添加到当前设备' : '已停用'}</Text></View>
       </View>
-      <Text style={styles.providerDescription}>{item.enabled ? `当前已启用：${item.modes.join('、')}。仅使用你确认的能力。` : '停用后不会在空间导航中显示，也不会被计划使用。'}</Text>
-      <View style={styles.deviceActions}><ActionButton label="打开应用" tone="quiet" onPress={() => void open()} disabled={!item.enabled} /><ActionButton label={item.enabled ? '停用连接' : '重新启用'} tone={item.enabled ? 'quiet' : 'primary'} onPress={() => update.mutate()} disabled={update.isPending} /></View>
+      <Text style={styles.providerDescription}>{item.enabled ? `当前已启用：${item.modes.map(deviceAppOperationLabel).join('、')}。仅使用你确认的操作。` : '停用后不会在空间导航中显示，也不会被计划使用。'}</Text>
+      <View style={styles.deviceActions}><ActionButton label="打开应用" tone="quiet" onPress={() => void open()} disabled={!item.enabled} />{item.enabled ? <ActionButton label="通知来源" tone="quiet" onPress={() => router.push('/connections/notification-sources' as Href)} /> : null}<ActionButton label={item.enabled ? '停用连接' : '重新启用'} tone={item.enabled ? 'quiet' : 'primary'} onPress={() => update.mutate()} disabled={update.isPending} /></View>
       {feedback ? <Text style={styles.feedback}>{feedback}</Text> : null}
     </Surface>
   );
@@ -244,6 +248,13 @@ function connectionDisplayName(key: string, fallback: string) {
   if (key === 'gmail') return 'Google 邮箱';
   if (key === 'google_calendar' || key === 'calendar') return 'Google 日历';
   return fallback;
+}
+
+function deviceAppOperationLabel(mode: string) {
+  if (mode === 'open_app') return '打开应用';
+  if (mode === 'receive_share') return '接收分享内容';
+  if (mode === 'notification_read') return '读取指定通知';
+  return '额外适配操作';
 }
 
 function providerIcon(key: string) {

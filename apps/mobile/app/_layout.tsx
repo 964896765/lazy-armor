@@ -22,6 +22,7 @@ export default function RootLayout() {
         <Stack.Screen name="membership" options={{ title: '会员' }} />
           <Stack.Screen name="connections" options={{ title: '我的连接' }} />
           <Stack.Screen name="connections/add" options={{ title: '添加连接' }} />
+          <Stack.Screen name="connections/notification-sources" options={{ title: '通知来源' }} />
           <Stack.Screen name="commerce" options={{ title: '懒人商城' }} />
           <Stack.Screen name="domains" options={{ title: '我的领域' }} />
           <Stack.Screen name="domains/[domain]" options={{ title: '领域' }} />

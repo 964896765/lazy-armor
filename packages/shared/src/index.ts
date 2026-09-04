@@ -1,11 +1,14 @@
 import { v7 as uuidv7 } from 'uuid';
 
 export {
-  SUPPORTED_DEVICE_APPS,
-  supportedDeviceApp,
+  APP_INTEGRATION_CATALOG,
+  GENERIC_APP_CAPABILITIES,
+  deviceAppCapabilities,
+  deviceAppIntegration,
+  isGenericDeviceAppMode,
+  type AppIntegrationCapability,
+  type AppIntegrationCatalogEntry,
   type DeviceAppConnectionMode,
-  type SupportedDeviceApp,
-  type SupportedDeviceAppCapability,
 } from './supported-device-apps';
 
 export const newId = (): string => uuidv7();

@@ -211,6 +211,20 @@
       "when": 1788480000000,
       "tag": "0029_device_app_connections",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1788480600000,
+      "tag": "0030_mobile_notification_receipts",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1788481200000,
+      "tag": "0031_generic_device_app_connections",
+      "breakpoints": true
     }
   ]
 }

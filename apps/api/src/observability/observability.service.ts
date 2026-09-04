@@ -43,6 +43,9 @@ const TAG_ALLOWLIST: Record<string, string[]> = {
   'connector.auth_failure': ['connectorKey', 'capability', 'errorCode'],
   'connector.provider_5xx': ['connectorKey', 'capability', 'errorCode'],
   'connector.duration': ['connectorKey', 'capability', 'operation'],
+  'mobile_notification.received': ['source', 'status'],
+  'mobile_notification.rejected': ['reason'],
+  'mobile_notification.duplicate': ['source'],
 };
 
 const FORBIDDEN_TAG_KEYS = /userId|planId|planVersionId|executionId|executionStepId|requestId|correlationId|sideEffectOperationId|email|url|path|route|errorMessage/i;

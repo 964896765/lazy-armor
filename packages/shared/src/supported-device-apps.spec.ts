@@ -1,23 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import { SUPPORTED_DEVICE_APPS, supportedDeviceApp } from './supported-device-apps';
+import { APP_INTEGRATION_CATALOG, GENERIC_APP_CAPABILITIES, deviceAppCapabilities, deviceAppIntegration, isGenericDeviceAppMode } from './supported-device-apps';
 
-describe('supported device app catalog', () => {
-  it('is a small allowlist with unique Android package names', () => {
-    expect(SUPPORTED_DEVICE_APPS).toHaveLength(6);
-    expect(new Set(SUPPORTED_DEVICE_APPS.map((app) => app.packageName)).size).toBe(SUPPORTED_DEVICE_APPS.length);
-    expect(supportedDeviceApp('com.example.unlisted')).toBeNull();
+describe('app integration catalog', () => {
+  it('is an optional enhancement directory, not a device connection allowlist', () => {
+    expect(APP_INTEGRATION_CATALOG.map((entry) => entry.integrationKey)).toEqual(['gmail', 'google_calendar']);
+    expect(deviceAppIntegration('com.example.local-bank')).toBeNull();
+    expect(deviceAppCapabilities('com.example.local-bank')).toEqual(GENERIC_APP_CAPABILITIES);
   });
 
-  it('exposes only the reviewed open-app operation as currently available', () => {
-    for (const app of SUPPORTED_DEVICE_APPS) {
-      expect(app.capabilities.filter((capability) => capability.availability === 'available').map((capability) => capability.mode)).toEqual(['open_app']);
-    }
+  it('preserves generic base operations for both catalog and non-catalog apps', () => {
+    expect(deviceAppCapabilities('com.google.android.gm').map((item) => item.mode)).toEqual(['open_app', 'receive_share', 'notification_read', 'deep_link']);
+    expect(deviceAppCapabilities('com.example.local-bank').map((item) => item.mode)).toEqual(['open_app', 'receive_share', 'notification_read']);
   });
 
-  it('keeps high-risk payment and commerce actions unavailable for automatic execution', () => {
-    const alipay = supportedDeviceApp('com.eg.android.AlipayGphone');
-    const taobao = supportedDeviceApp('com.taobao.taobao');
-    expect(alipay?.capabilities.find((capability) => capability.mode === 'deep_link')).toMatchObject({ availability: 'planned', riskLevel: 'R4' });
-    expect(taobao?.capabilities.find((capability) => capability.mode === 'deep_link')).toMatchObject({ availability: 'planned', riskLevel: 'R4' });
+  it('marks only reviewed generic operations as currently implemented', () => {
+    expect(GENERIC_APP_CAPABILITIES.filter((item) => item.availability === 'available').map((item) => item.mode)).toEqual(['open_app', 'notification_read']);
+    expect(isGenericDeviceAppMode('open_app')).toBe(true);
+    expect(isGenericDeviceAppMode('deep_link')).toBe(false);
   });
 });

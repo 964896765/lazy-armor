@@ -10,6 +10,7 @@
     "test": "turbo test",
     "migration:safety": "node scripts/check-migration-safety.mjs",
     "repository:hygiene": "node scripts/check-repository-hygiene.mjs",
+    "data:truth": "node scripts/check-production-data-truth.mjs",
     "audit:dependencies": "pnpm audit --prod --audit-level=high",
     "db:migrate": "pnpm --filter @lazy-armor/database migrate",
     "db:backup-restore-gate": "pnpm --filter @lazy-armor/database backup-restore-gate",

@@ -62,6 +62,8 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Repository hygiene
         run: pnpm repository:hygiene
+      - name: Production data truth gate
+        run: pnpm data:truth
       - name: Production dependency audit
         run: pnpm audit:dependencies
       - name: Prepare CI database
@@ -128,6 +130,8 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Repository hygiene
         run: pnpm repository:hygiene
+      - name: Production data truth gate
+        run: pnpm data:truth
       - name: Production dependency audit
         run: pnpm audit:dependencies
       - name: Prepare CI database

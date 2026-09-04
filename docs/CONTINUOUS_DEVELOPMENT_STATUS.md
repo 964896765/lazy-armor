@@ -6,6 +6,8 @@
 
 `Current Stage = Release Candidate`
 
+> **架构约束优先级：** `docs/TASK_BOOK.md` 是移动端互联和生产数据真实性的强制任务书。任何具体 Provider/App 只能作为 Connector/Adapter/Catalog 的可选增强，不能成为核心业务前提；任何生产 UI 无真实来源数据时必须显示空态，Fixture/Mock 仅允许测试或显式 Demo 环境。
+
 P0～P5 均达到 `DEVELOPMENT COMPLETE`，Final Integrated Audit 结论为 `PASS_WITH_DEFERRED_GATES`。不再新增普通业务功能，仅允许 Beta installation / 真机验证 / 正式 signing / staging evidence / Provider production enablement / crash-bug 修复 / release checklist。禁止自行创建 P6。
 
 ## 已完成
@@ -28,13 +30,14 @@ P0～P5 均达到 `DEVELOPMENT COMPLETE`，Final Integrated Audit 结论为 `PAS
 - 移动端与全域互联设计的第一批兼容基础已落地（用户于 2026-09-04 明确授权，不创建 P6）：计划 Schema 新增 19 个规范领域，同时保留 `general`、`billing`、`shopping` 历史值。展示层通过别名映射将旧记录归入新目录，未修改任何既存 PlanVersion、Definition 或 DefinitionHash；旧“我的东西”仅在 UI 中显示为“我的物品”。
 - 新移动端 Shell 已落地：固定 Connection Rail 提供消息、懒人装甲、懒人商城、真实已启用连接、添加连接和“我的”入口；新增 19 领域目录与单领域工作区（概览/计划/资料/动态），复用已有 `/plans` 与资料页数据，未伪造资源实时状态。
 - 懒人商城空间已建立为第一方只读/准备入口：可从现有计划中显示待购买事项，明确真实商品、价格、支付、下单与物流仍需经过已连接服务、审批与结果验证；当前不创建订单、不支付、不自动下单。
-- DeviceAppConnection Beta Foundation 已落地：新增前向 `0029_device_app_connections` 迁移、用户隔离 API、添加/启用/停用记录和 append-only 审计。首批 Android 目录是有限 allowlist（中国移动、微信、支付宝、淘宝、Gmail、Google 日历），不使用 `QUERY_ALL_PACKAGES`；当前已实现的唯一操作是用户主动打开已安装应用。
-- Android `LazyArmorDeviceBridge` 已提供受限 PackageManager 安装检测与启动 Intent；移动端添加连接页会明确区分“已安装 / 未安装 / 无法检测”，仅在 Android 真机检测为已安装时允许添加。通知读取、页面跳转、支付协作、任意 Accessibility 点击与自动下单均未实现、未授权且保持失败关闭。操作说明见 `docs/ANDROID_SUPPORTED_APP_CATALOG.md`。
-- 本轮静态与定向验证通过：Plan Schema 2 files / 7 tests，Shared 2 files / 6 tests，DeviceAppConnection API 策略 3 tests，Mobile 12 files / 89 tests，Monorepo typecheck 8/8 packages，Monorepo build 8/8 packages；迁移安全检查通过（30 files，新增迁移 destructive=0），仓库卫生检查通过（423 个已跟踪文件）。
+- DeviceAppConnection 已依照 `docs/TASK_BOOK.md` 从过渡期白名单重构为真实发现的 Generic App Connection：前向 `0029_device_app_connections` 只建立初始记录，`0031_generic_device_app_connections` 追加连接类型、真实显示名称/版本/可启动状态、发现指纹和可选 Adapter 键。用户隔离、添加/启用/停用与 append-only 审计均保留；Catalog 仅记录可选 Enhanced Adapter，绝不决定任意真实可启动 App 的创建资格。
+- Android `LazyArmorDeviceBridge` 现在仅按启动器 Intent 向 PackageManager 读取当前设备真实可启动应用，并返回名称、版本、启动状态、尺寸受限图标与发现指纹；添加连接页面不再预置品牌或安装状态，Web、iOS、Expo Go 与发现失败时显示诚实空态。Manifest 不使用 `QUERY_ALL_PACKAGES`，也不维护具体品牌包名 `queries`。
+- 通知来源 Beta Foundation 已采用通用模型：`0030_mobile_notification_receipts` 只保存用户授权连接的包名、时间、事件/内容指纹和存在性布尔字段，永不保存标题或正文；端侧监听器按用户逐项选择的任意 App 过滤，服务端执行连接授权、时间窗、限流、去重、审计、低基数指标与待核实应用内消息。它不会将线索解析为账单、订单或自动化输入，更不会触发任何外部操作。
+- 本轮静态与定向验证通过：Shared 2 files / 6 tests，DeviceAppConnection/通用通知 API 策略 2 files / 7 tests，Mobile 12 files / 90 tests，Monorepo typecheck 8/8 packages，Monorepo build 8/8 packages；生产数据真实性、迁移安全检查通过（32 files，新增迁移 destructive=0），仓库卫生检查通过（423 个已跟踪文件）。
 
 ## 当前 Workstream
 
-`Release Candidate W1 / RC-7 Observability`（仍待远程可观测性与 GitHub 运行证据）并行推进“移动端与全域互联”Beta Foundation：下一项是 Android 真机构建/安装检测验证，之后才可评估中国移动通知读取 → 话费守护 → 消息的首条真实闭环。
+`Release Candidate W1 / RC-7 Observability`（仍待远程可观测性与 GitHub 运行证据）并行推进“移动端与全域互联”Beta Foundation：下一项是 Android 真机构建/安装检测和 Generic App Connection 验证，其后才可在可信设备与用户授权前提下评估“通用通知来源 → 分类/验证 → 品牌中立资源 → 消息”的首条真实闭环。
 
 ## Deferred Gate
 
@@ -45,8 +48,9 @@ P0～P5 均达到 `DEVELOPMENT COMPLETE`，Final Integrated Audit 结论为 `PAS
 - 密码重置投递网关尚未提供 staging/production 凭据与实投证据；代码已失败关闭，保持 `DEFERRED_GATE`，不得将其标记为真实生产投递已完成。
 - 本轮执行器未安装 Docker，无法在该执行器重启 MySQL/Redis 后完成 API 全量集成测试与 backup/restore gate；全量类型检查、构建、迁移安全、仓库卫生与生产依赖审计均已通过，集成验证需在具备 Docker 的 CI 或本地环境继续执行。
 - 新增的 Fast Gate、RC Full Gate 与 Windows Android artifact workflow 尚未在 GitHub Actions 实跑；在获得 main/手动运行记录前，不得将 RC-4 记为 CI evidence complete。
-- `0029_device_app_connections` 仅已作为前向迁移和 Schema/API 代码通过静态、策略测试与迁移安全检查；尚未在 MySQL 中实际执行，仍需 Docker CI 或本地完整集成验证。
-- Android Bridge 在此执行器中无法完成 App Kotlin 编译：Gradle Wrapper 与 Expo/React Native Gradle 插件配置已启动，但环境没有 Android SDK（未设置有效 `ANDROID_HOME`/`sdk.dir`），在 `:app` 配置阶段失败，尚未进入 Bridge 源码编译。不得将其标为 Android 构建已通过。
-- DeviceAppConnection 的真实安装检测、添加后 Rail 回流、停用后的撤销、跨账号隔离，均需在包含该原生模块的 Android Debug/候选发布包与两组测试账号上验收；Web、iOS 或 Expo Go 的“无法检测”是设计内安全降级，不是安装状态。
-- 中国移动通知读取、账单解析/验证/去重、话费守护消息闭环仍未实现。后续必须先取得独立的系统通知访问授权，完成来源 allowlist、隐私最小化、Source Acquisition、验证、审计与撤销测试，禁止以通知读取或 Accessibility 泛化为任意 App 自动操作。
+- `0029_device_app_connections`、`0030_mobile_notification_receipts` 与 `0031_generic_device_app_connections` 仅作为前向迁移和 Schema/API 代码通过静态、策略测试与迁移安全检查；尚未在 MySQL 中实际执行，仍需 Docker CI 或本地完整集成验证。
+- Android Bridge 在此执行器中无法完成 App Kotlin 编译：Gradle Wrapper 与 Expo/React Native Gradle 插件配置已启动，但环境没有 Android SDK（未设置有效 `ANDROID_HOME`/`sdk.dir`），在 `:app` 配置阶段失败，尚未进入 Bridge 源码编译。不得将真实发现、图标转换、通知监听或 Android 构建标为已通过。
+- Generic App Connection 的真实启动器发现、图标渲染、添加后 Rail 回流、停用撤销、通用通知系统授权、按 App 授权/撤销、后台回调与两账号隔离，均需在包含原生模块的 Android Debug/候选发布包中验收。Web、iOS 或 Expo Go 的“无法读取设备应用/通知来源”是设计内安全降级，不是设备状态。
+- 通用通知的端侧最小化收集、服务端去重与待核实消息已具备代码和策略测试，但 Generic Parser / Classifier / Normalizer、可信设备注册或设备证明、领域资源验证以及计划引擎消费均未实现；在取得这些证据前，所有通知线索必须保持 `received_unclassified`，不得显示为真实账单、订单、车辆、家庭或设备事实。
 - 本轮对 npm 生产依赖审计的复跑受 npm audit API `ERR_SOCKET_TIMEOUT` 影响而中止；先前已记录的无高危审计结果不能替代下一次 CI 的真实审计运行。
+- 过渡期的 Catalog 创建白名单与单一 Provider 通知逻辑已从核心路径移除，并由 `docs/TASK_BOOK.md`、`docs/ANDROID_SUPPORTED_APP_CATALOG.md` 与 `pnpm data:truth` 约束持续回归；真机、可信设备与 GitHub CI 证据缺失时，Generic Connection/通知来源不得被宣称为生产完成。

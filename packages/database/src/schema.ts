@@ -1,4 +1,4 @@
-import { char, customType, datetime, index, int, json, mysqlTable, text, uniqueIndex, varchar } from 'drizzle-orm/mysql-core';
+import { bigint, char, customType, datetime, index, int, json, mysqlTable, text, uniqueIndex, varchar } from 'drizzle-orm/mysql-core';
 import { parse as parseUuid, stringify as stringifyUuid } from 'uuid';
 
 export const uuidBinary = customType<{ data: string; driverData: Buffer }>({
@@ -306,6 +306,12 @@ export const deviceAppConnections = mysqlTable('device_app_connections', {
   deviceId: varchar('device_id', { length: 128 }).notNull(),
   packageName: varchar('package_name', { length: 255 }).notNull(),
   displayName: varchar('display_name', { length: 120 }).notNull(),
+  connectionType: varchar('connection_type', { length: 32 }).notNull().default('generic'),
+  integrationKey: varchar('integration_key', { length: 120 }),
+  versionName: varchar('version_name', { length: 120 }),
+  versionCode: bigint('version_code', { mode: 'number' }),
+  launchable: int('launchable').notNull().default(1),
+  discoveryFingerprint: char('discovery_fingerprint', { length: 64 }),
   enabled: int('enabled').notNull().default(1),
   modesJson: json('modes_json').$type<string[]>().notNull(),
   trustLevel: varchar('trust_level', { length: 32 }).notNull(),
@@ -314,6 +320,24 @@ export const deviceAppConnections = mysqlTable('device_app_connections', {
 }, (table) => [
   uniqueIndex('device_app_connections_user_device_package_uq').on(table.userId, table.deviceId, table.packageName),
   index('device_app_connections_user_updated_idx').on(table.userId, table.updatedAt),
+]);
+
+export const mobileNotificationReceipts = mysqlTable('mobile_notification_receipts', {
+  id: uuidBinary('id').primaryKey(),
+  userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  deviceAppConnectionId: uuidBinary('device_app_connection_id').notNull().references(() => deviceAppConnections.id, { onDelete: 'restrict' }),
+  eventId: char('event_id', { length: 64 }).notNull(),
+  payloadHash: char('payload_hash', { length: 64 }).notNull(),
+  sourcePackage: varchar('source_package', { length: 255 }).notNull(),
+  postedAt: datetime('posted_at', { mode: 'date', fsp: 6 }).notNull(),
+  amountMinor: int('amount_minor'),
+  status: varchar('status', { length: 32 }).notNull(),
+  snapshotJson: json('snapshot_json').$type<Record<string, unknown>>().notNull(),
+  receivedAt: datetime('received_at', { mode: 'date', fsp: 6 }).notNull(),
+  verifiedAt: datetime('verified_at', { mode: 'date', fsp: 6 }),
+}, (table) => [
+  uniqueIndex('mobile_notification_receipts_connection_event_uq').on(table.deviceAppConnectionId, table.eventId),
+  index('mobile_notification_receipts_user_received_idx').on(table.userId, table.receivedAt),
 ]);
 
 export const billingRecords = mysqlTable('billing_records', {
