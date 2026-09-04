@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { canonicalPlanDomain, domainDefinition } from '@lazy-armor/plan-schema';
+import { canonicalPlanDomain, domainDefinition } from '@lazy-armor/plan-schema/mobile';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';

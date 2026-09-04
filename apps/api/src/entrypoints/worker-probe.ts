@@ -61,30 +61,43 @@ export class WorkerProbe {
     const pool = this.app.get<Pool>(MYSQL_POOL);
     const timeoutMs = this.readinessTimeoutMs();
     const [mysql, queue, worker] = await Promise.all([
-      this.withTimeout(pool.query('SELECT 1'), timeoutMs, 'mysql_timeout').then(() => 'ready').catch(() => 'unavailable'),
-      this.withTimeout(this.app.get(QueueService).health(), timeoutMs, 'queue_timeout').catch(() => ({ redis: 'unavailable', bullmq: 'unavailable', counts: {} })),
+      this.withTimeout(pool.query('SELECT 1'), timeoutMs, 'mysql_timeout')
+        .then(() => ({ status: 'ready' as const, timedOut: false }))
+        .catch((error) => ({ status: 'unavailable' as const, timedOut: error instanceof Error && error.message === 'mysql_timeout' })),
+      this.withTimeout(this.app.get(QueueService).health(), timeoutMs, 'queue_timeout')
+        .then((health) => ({ health, timedOut: false }))
+        .catch((error) => ({
+          health: { redis: 'unavailable', bullmq: 'unavailable', counts: {} },
+          timedOut: error instanceof Error && error.message === 'queue_timeout',
+        })),
       this.withTimeout(Promise.resolve(role === 'execution-worker'
         ? this.app.get<{ readiness(): Promise<WorkerHealth> }>(EXECUTION_WORKER).readiness()
         : this.app.get<{ readiness(): WorkerHealth }>(OUTBOX_WORKER).readiness()), timeoutMs, 'worker_timeout')
-        .catch((error) => ({ ready: false, reason: error instanceof Error ? error.message : 'worker_readiness_failed' })),
+        .then((health) => ({ health, timedOut: false }))
+        .catch((error) => ({
+          health: { ready: false, reason: error instanceof Error ? error.message : 'worker_readiness_failed' },
+          timedOut: error instanceof Error && error.message === 'worker_timeout',
+        })),
     ]);
-    const ready = mysql === 'ready' && queue.redis === 'PONG' && queue.bullmq === 'ready' && worker.ready;
+    const ready = mysql.status === 'ready' && queue.health.redis === 'PONG' && queue.health.bullmq === 'ready' && worker.health.ready;
     const reason = ready
       ? null
-      : mysql !== 'ready'
-        ? 'mysql_dependency_unavailable'
-        : queue.redis !== 'PONG' || queue.bullmq !== 'ready'
-          ? 'redis_or_bullmq_dependency_unavailable'
-          : worker.reason ?? 'worker_not_ready';
+      : mysql.timedOut || queue.timedOut || worker.timedOut
+        ? 'readiness_timeout'
+        : mysql.status !== 'ready'
+          ? 'mysql_dependency_unavailable'
+          : queue.health.redis !== 'PONG' || queue.health.bullmq !== 'ready'
+            ? 'redis_or_bullmq_dependency_unavailable'
+            : worker.health.reason ?? 'worker_not_ready';
     return {
       status: ready ? 'ready' : 'not_ready',
       role,
       checkedAt: new Date().toISOString(),
-      mysql,
-      redis: queue.redis,
-      bullmq: queue.bullmq,
-      queueCounts: queue.counts,
-      worker,
+      mysql: mysql.status,
+      redis: queue.health.redis,
+      bullmq: queue.health.bullmq,
+      queueCounts: queue.health.counts,
+      worker: worker.health,
       reason,
     };
   }

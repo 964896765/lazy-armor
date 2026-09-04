@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { CANONICAL_DOMAIN_CATALOG, DOMAIN_GROUPS, type DomainGroupKey, canonicalPlanDomain } from '@lazy-armor/plan-schema';
+import { CANONICAL_DOMAIN_CATALOG, DOMAIN_GROUPS, type DomainGroupKey, canonicalPlanDomain } from '@lazy-armor/plan-schema/mobile';
 import { router } from 'expo-router';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';

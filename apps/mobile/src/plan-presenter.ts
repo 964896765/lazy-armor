@@ -1,5 +1,5 @@
 export type PlanListStatus = '运行中' | '需要设置' | '已暂停';
-import { domainDefinition, domainGroupFor } from '@lazy-armor/plan-schema';
+import { domainDefinition, domainGroupFor } from '@lazy-armor/plan-schema/mobile';
 
 export type ConsumerPlanGroup = '我的生活' | '我的钱' | '我的事情' | '我的物品' | '其他计划';
 

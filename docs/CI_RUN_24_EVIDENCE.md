@@ -50,3 +50,11 @@ CI #27 的 `PR Fast Gate` 已成功：内部 API 依赖闭包构建、移动端 
 CI #29 的 Fast Gate 已通过，且 RC Full Gate 已真实成功执行 `Prepare CI database` 和 `MySQL 8.4 migration and backup/restore evidence`。这首次提供了 MySQL 8.4、全量迁移、前向迁移和备份恢复的实际运行证据。随后完整测试因两个独立问题失败：一是 Truth Store 并发确认触发底层 mysql2 `ER_DUP_ENTRY`，但 Drizzle 包装错误未被幂等处理；二是历史 Worker 故障注入测试尝试 `docker compose` 管理 GitHub Actions service containers。前者已改为识别 `cause.code=ER_DUP_ENTRY` 并重读已提交完整事实；后者只在本地 Compose 运行，CI 保留真实 Worker/Redis/MySQL 正常路径。CI #29 因后续提交被并发策略取消，Android 工件未形成完成结论。
 
 来源：[GitHub Actions Run #24](https://github.com/964896765/lazy-armor/actions/runs/33868047169)；[GitHub Actions Run #26](https://github.com/964896765/lazy-armor/actions/runs/33871515930)；[GitHub Actions Run #27](https://github.com/964896765/lazy-armor/actions/runs/33872113846)；[GitHub Actions Run #29](https://github.com/964896765/lazy-armor/actions/runs/33873822580)
+
+## CI #32 数据库门槛通过与冻结记录
+
+CI #32 的 `PR Fast Gate` 已成功，并上传 `mysql84-migration-evidence-cf7df177b3a8bf15236d6b6479629a41f631938a`。下载的原始 JSON 证据记录：MySQL 为 **8.4.11**，目标数据库为 `lazy_armor_ci_test`，Drizzle 迁移总数为 **36**，并实际确认 `trusted_devices`、`trusted_device_challenges`、`trusted_device_request_sessions`、`trusted_device_request_proofs`、`device_app_connections`、`mobile_notification_receipts`、`truth_records` 和 `truth_record_versions` 均存在。RC Full Gate 中，`p5-truth-store-concurrency.integration.spec.ts` 不再位于失败清单，说明其针对同一收据的并发确认已在 MySQL 8.4 实例中实际通过；此前 `ER_DUP_ENTRY` 幂等恢复路径和断言 API 均已获覆盖。
+
+因此，**冻结数据库功能范围**：后续不得新增、修改或重写任何 Drizzle migration、数据库表、Truth Store 事实字段或设备会话字段。后续工作仅可读取既有数据库事实，并转入 Android 候选包、真实设备发现、可信设备、通知授权、用户确认与双账号隔离验收。CI #32 的 RC Full Gate 仍因历史执行/连接集成套件失败而未整体通过，该问题不改变上述 MySQL 8.4 迁移、备份恢复和 Truth Store 并发的已获得运行证据。
+
+来源：[GitHub Actions Run #32](https://github.com/964896765/lazy-armor/actions/runs/33877999692)，artifact `mysql84-migration-evidence-cf7df177b3a8bf15236d6b6479629a41f631938a`。
