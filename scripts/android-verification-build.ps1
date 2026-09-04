@@ -103,6 +103,18 @@ function Get-AabMetadata {
   $artifact = Get-Item $artifactOutputPath
   $commit = (git -C $RepoRoot rev-parse HEAD).Trim()
   $metadataPath = Join-Path $artifactDirectory "build-artifact-metadata.json"
+  $nativeEvidencePaths = @(
+    "apps\mobile\android\app\src\main\AndroidManifest.xml",
+    "apps\mobile\android\app\src\main\java\com\lazyarmor\app\DeviceAppBridgeModule.kt",
+    "apps\mobile\android\app\src\main\java\com\lazyarmor\app\DeviceAppBridgePackage.kt",
+    "apps\mobile\android\app\src\main\java\com\lazyarmor\app\GenericNotificationNormalizer.kt",
+    "apps\mobile\android\app\src\main\java\com\lazyarmor\app\LazyArmorNotificationListener.kt"
+  )
+  $nativeSourceEvidence = @($nativeEvidencePaths | ForEach-Object {
+    $sourcePath = Join-Path $WorkspaceRoot $_
+    if (-not (Test-Path $sourcePath)) { throw "Required Android source evidence file is missing: $sourcePath" }
+    [ordered]@{ path = $_; sha256 = (Get-FileHash -Algorithm SHA256 $sourcePath).Hash }
+  })
 
   $body = [ordered]@{
     artifactType = "AAB"
@@ -118,6 +130,15 @@ function Get-AabMetadata {
       type = "short_ascii_verification_workspace"
       path = $WorkspaceRoot
       pnpmStorePath = $PnpmStorePath
+    }
+    nativeSourceEvidence = $nativeSourceEvidence
+    acceptance = @{
+      requiresRealDevice = $true
+      requiresDeviceGeneratedKeystoreProof = $true
+      requiresPackageManagerDiscovery = $true
+      requiresNotificationConsentAndCallback = $true
+      providerHardcodingAllowed = $false
+      productionMockAllowed = $false
     }
   } | ConvertTo-Json -Depth 6
 

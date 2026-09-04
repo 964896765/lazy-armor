@@ -14,6 +14,8 @@
     "audit:dependencies": "pnpm audit --prod --audit-level=high",
     "db:migrate": "pnpm --filter @lazy-armor/database migrate",
     "db:backup-restore-gate": "pnpm --filter @lazy-armor/database backup-restore-gate",
+    "db:mysql84-verify": "node scripts/verify-mysql84-integration.mjs",
+    "db:rc-integration": "pnpm migration:safety && pnpm db:migrate && pnpm db:mysql84-verify && pnpm db:backup-restore-gate",
     "docker:up": "docker compose -f infra/docker/docker-compose.yml up -d",
     "docker:down": "docker compose -f infra/docker/docker-compose.yml down"
   },

@@ -41,10 +41,12 @@ P0～P5 均达到 `DEVELOPMENT COMPLETE`，Final Integrated Audit 结论为 `PAS
 - Truth Store 已从三个独立写入收口为单个 Drizzle 事务：事实记录、不可变版本与 `currentVersionId` 必须同生同灭。新增策略测试覆盖版本/指针失败不审计成功、重复确认幂等、唯一键并发竞争返回已完成事实及遗留半记录失败关闭。
 - Trusted Device Request Session 已通过前向 `0035_trusted_device_request_sessions` 增加：密钥挑战成功后签发 15 分钟会话；真实 Android Keystore 为每个连接创建和通知收据生成一次性随机请求 ID、正文 SHA-256、时间戳与 ECDSA 签名。服务端验证会话未撤销/未过期、设备密钥、端点、正文哈希和 90 秒时钟窗口，并在同一会话拒绝重放请求 ID；创建连接与收据写入还会校验签名设备就是连接绑定设备。
 - Rail 与消息空间继续仅使用真实 API 数据：Rail 为待确认收据显示真实计数徽标，并按 API 返回的可信设备状态显示连接需重新验证；消息页展示待确认候选并直达用户确认路径。Rail 已移除对具体 Connector 名称的符号硬编码。
+- MySQL 8.4 真实执行路径已收口：本地 `infra/docker/docker-compose.yml` 已升级至 `mysql:8.4`；`pnpm db:rc-integration` 固定执行迁移安全、真实迁移、MySQL 8.4 版本/表存在性检查与备份恢复。Fast Gate 在 `db:migrate` 后执行 `db:mysql84-verify`；Full Gate 使用 `db:rc-integration`，并为备份恢复注入正确的 CI root admin URL。
+- Fast Gate 已纳入迁移分段、可信设备会话、Generic Connection、通知收据、Truth Store 与 Plan Source Resolver 的定向策略测试。Android verification artifact metadata 现在包含 Manifest、Device Bridge、Generic Normalizer 与 Notification Listener 的源码 SHA-256 证据，以及明确的真机/Keystore/通知授权要求；该 artifact 仍为不可发布的 DEBUG_VERIFICATION_ONLY。
 
 ## 当前 Workstream
 
-`Release Candidate W1 / RC-7 Observability` 已完成本轮优先级最高的迁移分段防护、Truth Store 原子事务、短期签名会话与真实消息/Rail 回流代码收口。下一项仍是 Android 真机构建、双账号真机验收、MySQL 8.4 全量与前向迁移和 GitHub/远程可观测性运行证据；在证据前，不得将该链路标记为生产完成。
+`Release Candidate W1 / RC-7 Observability` 已完成迁移分段防护、Truth Store 原子事务、短期签名会话、真实消息/Rail 回流以及 MySQL 8.4 本地/CI 执行路径收口。下一项仍是 MySQL 8.4 实际运行（全量迁移、备份恢复、并发事务）、Android 真机构建与双账号验收、GitHub/远程可观测性运行证据；在证据前，不得将该链路标记为生产完成。
 
 ## Deferred Gate
 
@@ -53,7 +55,7 @@ P0～P5 均达到 `DEVELOPMENT COMPLETE`，Final Integrated Audit 结论为 `PAS
 - Android 正式 Beta 仍需正式 release keystore 与真机 SecureStore 验证。
 - 尚未获得 Production Evidence 的 Provider 继续 `DEFERRED`。
 - 密码重置投递网关尚未提供 staging/production 凭据与实投证据；代码已失败关闭，保持 `DEFERRED_GATE`，不得将其标记为真实生产投递已完成。
-- 本轮执行器未安装 Docker，无法在该执行器重启 MySQL/Redis 后完成 API 全量集成测试与 backup/restore gate；全量类型检查、构建、迁移安全、仓库卫生与生产依赖审计均已通过，集成验证需在具备 Docker 的 CI 或本地环境继续执行。
+- 本轮执行器未安装 Docker，且无 MySQL server，无法在该执行器重启 MySQL/Redis 后完成 API 全量集成测试、MySQL 8.4 前向迁移、真实事务并发与 backup/restore gate；项目已提供 `pnpm db:rc-integration` 和 CI 8.4 service 路径，集成证据仍需在具备 Docker 的 CI 或本地环境继续执行。
 - 新增的 Fast Gate、RC Full Gate 与 Windows Android artifact workflow 尚未在 GitHub Actions 实跑；在获得 main/手动运行记录前，不得将 RC-4 记为 CI evidence complete。
 - `0029_device_app_connections` 至 `0035_trusted_device_request_sessions` 已通过 Drizzle 实际分段读取、静态、策略与迁移安全检查；尚未在 MySQL 8.4 中实际执行，仍需 Docker CI 或本地完整集成验证。`0032` 与 `0034` 的单文件多 DDL 风险已经原地拆分，但在获得真实执行记录前不得将该问题标为完整关闭。
 - Android Bridge 在此执行器中无法完成 App Kotlin 编译：Gradle Wrapper 与 Expo/React Native Gradle 插件配置已启动，但环境没有 Android SDK（未设置有效 `ANDROID_HOME`/`sdk.dir`），在 `:app` 配置阶段失败，尚未进入 Bridge 源码编译。不得将真实发现、图标转换、通知监听或 Android 构建标为已通过。
