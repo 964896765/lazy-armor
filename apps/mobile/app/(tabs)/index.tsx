@@ -25,6 +25,7 @@ interface AlertCard { id: string; priority: string; title: string; body: string;
 interface ProcessedCard { id: string; status: string; resultSummary: string | null; finishedAt: string | null; planName: string; planVersionNumber: number }
 interface ConnectionIssue { connectionId: string; connectionStatus: string; providerKey: string; providerName: string; planId: string; planName: string }
 interface TodayData { pendingApprovals: ApprovalCard[]; connectionIssues: ConnectionIssue[]; alerts: AlertCard[]; processed: ProcessedCard[] }
+interface PendingNotificationCandidate { id: string; candidateResource: string | null; candidateConfidence: number; amountMinor: number | null; currency: string | null; postedAt: string }
 interface Profile { displayName: string }
 interface PresentableAlert extends AlertCard { section: 'attention' | 'exception' | 'summary' }
 
@@ -36,6 +37,12 @@ export default function Today() {
     queryFn: () => api<TodayData>('/today', token),
     enabled: Boolean(token),
     refetchInterval: 5000,
+  });
+  const pendingNotificationCandidates = useQuery({
+    queryKey: ['rail-pending-notification-receipts', token],
+    queryFn: () => api<PendingNotificationCandidate[]>('/device-app-connections/notification-receipts', token),
+    enabled: Boolean(token),
+    refetchInterval: 20_000,
   });
   const profile = useQuery({
     queryKey: ['me', token],
@@ -57,6 +64,7 @@ export default function Today() {
   const summaryAlerts = alerts.filter((item) => item.section === 'summary');
   const attentionCount = (today.data?.pendingApprovals.length ?? 0)
     + (today.data?.connectionIssues.length ?? 0)
+    + (pendingNotificationCandidates.data?.length ?? 0)
     + attentionAlerts.length
     + exceptionAlerts.length;
   const totalCount = attentionCount + summaryAlerts.length + (today.data?.processed.length ?? 0);
@@ -137,6 +145,16 @@ export default function Today() {
                         actionLabel="确认继续"
                         onPress={() => confirm(item, 'approve')}
                         secondaryAction={{ label: '暂不处理', onPress: () => confirm(item, 'reject') }}
+                      />
+                    ))}
+                    {(pendingNotificationCandidates.data ?? []).map((item) => (
+                      <AttentionCard
+                        key={`notification:${item.id}`}
+                        title="有一条应用通知等待核实"
+                        description={notificationCandidateSummary(item)}
+                        detail={`来自你已授权的应用 · ${new Date(item.postedAt).toLocaleString('zh-CN')}`}
+                        actionLabel="查看并核实"
+                        onPress={() => router.push('/connections/notification-sources' as never)}
                       />
                     ))}
                     {today.data?.connectionIssues.map((item) => (
@@ -225,6 +243,11 @@ function classifyAlert(item: AlertCard): PresentableAlert['section'] {
   if (item.priority === 'P0' || normalized.includes('需要你') || normalized.includes('等待你') || normalized.includes('重新连接') || normalized.includes('重新授权') || normalized.includes('确认')) return 'attention';
   if (item.priority === 'P2' || normalized.includes('摘要') || normalized.includes('重点')) return 'summary';
   return 'exception';
+}
+
+function notificationCandidateSummary(item: PendingNotificationCandidate) {
+  if (item.candidateResource === 'mobile.billing.transaction' && item.amountMinor !== null && item.currency === 'CNY') return `检测到一条可能的消费线索，金额为 ${(item.amountMinor / 100).toFixed(2)} 元。确认前不会记录为账单。`;
+  return item.candidateConfidence > 0 ? '检测到一条可能与账户相关的线索。确认前不会记录为任何事实。' : '收到一条待分类的应用通知线索。不会触发自动操作。';
 }
 
 function greetingText(displayName?: string) {

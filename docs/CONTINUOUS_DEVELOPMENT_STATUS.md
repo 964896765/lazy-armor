@@ -37,10 +37,14 @@ P0～P5 均达到 `DEVELOPMENT COMPLETE`，Final Integrated Audit 结论为 `PAS
 - Brand-neutral Truth Store 已通过 `0034_truth_store` 落地：用户在通知来源页显式确认语义一致的账单候选后，才写入 `truth_records` 与不可变 `truth_record_versions`（`resourceKey`、验证方法、来源收据、值/证据哈希、当前版本）。未知或不完整候选、用户拒绝与设备失活均不能生成事实。`TruthStoreService` 已被 `SourceResolver` 消费，内部资源 `mobile.billing.transaction` 仅向 Plan Engine 提供已验证记录与真实金额汇总，不包含包名、Provider、适配器键或通知原文。
 - 移动端真实状态闭环已补齐：可信设备页显示 API 返回的密钥证明摘要并支持用户撤销；通知来源页显示真实待确认候选并允许“确认事实/拒绝”；已验证事实页仅查询 `/truth-records`。连接 Rail 仍只读取用户真实已启用连接，不使用 Fixture 或生产 Mock。真机流程与隐私留存模板见 `docs/ANDROID_TRUSTED_DEVICE_ACCEPTANCE.md`。
 - 本轮定向验证通过：可信设备、Generic Connection、通用通知、Truth Store 与 Plan Source Resolver 5 files / 15 tests；Mobile 12 files / 90 tests；API、Database、Mobile 类型检查通过。此前通过的生产数据真实性、迁移安全与仓库卫生门槛保持适用；新增迁移 `0032`–`0034` 均为前向追加、非 destructive。
+- RC 高优先级阻塞修复：`0032_trusted_devices.sql` 与 `0034_truth_store.sql` 已原地添加 Drizzle `statement-breakpoint`，并新增 `scripts/check-drizzle-migration-segments.mjs`。该检查实际调用已安装的 Drizzle `readMigrationFiles`，确认 35 个迁移可读且 `0032`/`0034` 分别分成 3 段；缺失必要分段、Journal 不一致与触发器内部合法分号均由 4 项回归测试覆盖。
+- Truth Store 已从三个独立写入收口为单个 Drizzle 事务：事实记录、不可变版本与 `currentVersionId` 必须同生同灭。新增策略测试覆盖版本/指针失败不审计成功、重复确认幂等、唯一键并发竞争返回已完成事实及遗留半记录失败关闭。
+- Trusted Device Request Session 已通过前向 `0035_trusted_device_request_sessions` 增加：密钥挑战成功后签发 15 分钟会话；真实 Android Keystore 为每个连接创建和通知收据生成一次性随机请求 ID、正文 SHA-256、时间戳与 ECDSA 签名。服务端验证会话未撤销/未过期、设备密钥、端点、正文哈希和 90 秒时钟窗口，并在同一会话拒绝重放请求 ID；创建连接与收据写入还会校验签名设备就是连接绑定设备。
+- Rail 与消息空间继续仅使用真实 API 数据：Rail 为待确认收据显示真实计数徽标，并按 API 返回的可信设备状态显示连接需重新验证；消息页展示待确认候选并直达用户确认路径。Rail 已移除对具体 Connector 名称的符号硬编码。
 
 ## 当前 Workstream
 
-`Release Candidate W1 / RC-7 Observability` 继续推进“移动端与全域互联”Beta Foundation：代码已覆盖“可信设备 → 通用端侧候选 → 用户确认验证 → Truth Store → Plan Source Resolver → 通知/事实界面”。下一项是 Android 真机构建、双账号真机验收、MySQL 前向迁移和 GitHub/远程可观测性运行证据；在证据前，不得将该链路标记为生产完成。
+`Release Candidate W1 / RC-7 Observability` 已完成本轮优先级最高的迁移分段防护、Truth Store 原子事务、短期签名会话与真实消息/Rail 回流代码收口。下一项仍是 Android 真机构建、双账号真机验收、MySQL 8.4 全量与前向迁移和 GitHub/远程可观测性运行证据；在证据前，不得将该链路标记为生产完成。
 
 ## Deferred Gate
 
@@ -51,7 +55,7 @@ P0～P5 均达到 `DEVELOPMENT COMPLETE`，Final Integrated Audit 结论为 `PAS
 - 密码重置投递网关尚未提供 staging/production 凭据与实投证据；代码已失败关闭，保持 `DEFERRED_GATE`，不得将其标记为真实生产投递已完成。
 - 本轮执行器未安装 Docker，无法在该执行器重启 MySQL/Redis 后完成 API 全量集成测试与 backup/restore gate；全量类型检查、构建、迁移安全、仓库卫生与生产依赖审计均已通过，集成验证需在具备 Docker 的 CI 或本地环境继续执行。
 - 新增的 Fast Gate、RC Full Gate 与 Windows Android artifact workflow 尚未在 GitHub Actions 实跑；在获得 main/手动运行记录前，不得将 RC-4 记为 CI evidence complete。
-- `0029_device_app_connections` 至 `0034_truth_store` 仅作为前向迁移和 Schema/API 代码通过静态、策略测试与迁移安全检查；尚未在 MySQL 中实际执行，仍需 Docker CI 或本地完整集成验证。
+- `0029_device_app_connections` 至 `0035_trusted_device_request_sessions` 已通过 Drizzle 实际分段读取、静态、策略与迁移安全检查；尚未在 MySQL 8.4 中实际执行，仍需 Docker CI 或本地完整集成验证。`0032` 与 `0034` 的单文件多 DDL 风险已经原地拆分，但在获得真实执行记录前不得将该问题标为完整关闭。
 - Android Bridge 在此执行器中无法完成 App Kotlin 编译：Gradle Wrapper 与 Expo/React Native Gradle 插件配置已启动，但环境没有 Android SDK（未设置有效 `ANDROID_HOME`/`sdk.dir`），在 `:app` 配置阶段失败，尚未进入 Bridge 源码编译。不得将真实发现、图标转换、通知监听或 Android 构建标为已通过。
 - Generic App Connection 的真实启动器发现、图标渲染、可信设备 Keystore 挑战签名、添加后 Rail 回流、停用/设备撤销、通用通知系统授权、按 App 授权/撤销、端侧候选队列、后台回调与两账号隔离，均需按 `docs/ANDROID_TRUSTED_DEVICE_ACCEPTANCE.md` 在包含原生模块的 Android Debug/候选发布包中验收。Web、iOS 或 Expo Go 的“无法读取设备应用/通知来源”是设计内安全降级，不是设备状态。
 - 通用端侧 Parser / Classifier / Normalizer、可信设备挑战证明、用户确认验证、Truth Store 与 `mobile.billing.transaction` Plan Source Resolver 已实现并通过策略测试，但 Android Kotlin 代码尚无候选包/真机编译运行证据，MySQL Schema 尚未实迁，且该首版确定性 Parser 只产生候选而非自动真相。未经用户确认，所有通知线索仍必须保持 `received_unclassified`；不得显示为真实账单、订单、车辆、家庭或设备事实。

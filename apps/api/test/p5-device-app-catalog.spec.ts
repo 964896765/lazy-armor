@@ -35,7 +35,7 @@ function fixture() {
 describe('Generic App Connection safety policy', () => {
   it('accepts a user-confirmed, launchable app discovery even when no enhanced adapter exists', async () => {
     const { service, values, audit, trustedDevices } = fixture();
-    const response = await service.create('user-1', genericDiscoveredApp);
+    const response = await service.create('user-1', genericDiscoveredApp, 'trusted-device-1');
     expect(values).toHaveBeenCalledWith(expect.objectContaining({
       userId: 'user-1', deviceId: 'device-1', trustedDeviceId: 'trusted-device-1', packageName: 'com.example.localbank', displayName: '本地银行', connectionType: 'generic', integrationKey: null, versionName: '1.2.3', versionCode: 1203, launchable: 1, discoveryFingerprint: 'a'.repeat(64), modesJson: ['open_app'], trustLevel: 'key_proven',
     }));
@@ -46,15 +46,15 @@ describe('Generic App Connection safety policy', () => {
 
   it('records a catalog match as optional enhancement rather than an admission requirement', async () => {
     const { service, values } = fixture();
-    await service.create('user-1', { ...genericDiscoveredApp, packageName: 'com.google.android.gm', displayName: 'Gmail', discoveryFingerprint: 'b'.repeat(64) });
+    await service.create('user-1', { ...genericDiscoveredApp, packageName: 'com.google.android.gm', displayName: 'Gmail', discoveryFingerprint: 'b'.repeat(64) }, 'trusted-device-1');
     expect(values).toHaveBeenCalledWith(expect.objectContaining({ connectionType: 'enhanced', integrationKey: 'gmail' }));
   });
 
   it('allows notification reading only as an explicit generic operation, while unimplemented sharing stays closed', async () => {
     const { service, values } = fixture();
-    await expect(service.create('user-1', { ...genericDiscoveredApp, launchable: false })).rejects.toThrow('Only a launchable');
-    await expect(service.create('user-1', { ...genericDiscoveredApp, modes: ['receive_share'] })).rejects.toThrow('not currently available');
-    await expect(service.create('user-1', { ...genericDiscoveredApp, modes: ['notification_read'] })).resolves.toMatchObject({ modes: ['notification_read'] });
+    await expect(service.create('user-1', { ...genericDiscoveredApp, launchable: false }, 'trusted-device-1')).rejects.toThrow('Only a launchable');
+    await expect(service.create('user-1', { ...genericDiscoveredApp, modes: ['receive_share'] }, 'trusted-device-1')).rejects.toThrow('not currently available');
+    await expect(service.create('user-1', { ...genericDiscoveredApp, modes: ['notification_read'] }, 'trusted-device-1')).resolves.toMatchObject({ modes: ['notification_read'] });
     expect(values).toHaveBeenCalledTimes(1);
   });
 });

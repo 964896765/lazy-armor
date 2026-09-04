@@ -29,8 +29,13 @@ export class MobileNotificationReceiptsService {
     private readonly truthStore: TruthStoreService,
   ) {}
 
-  async receive(userId: string, connectionId: string, input: CreateMobileNotificationReceiptDto) {
+  async receive(userId: string, connectionId: string, input: CreateMobileNotificationReceiptDto, signedTrustedDeviceId: string) {
     const connection = await this.getConnection(userId, connectionId);
+    if (connection.trustedDeviceId !== signedTrustedDeviceId) {
+      await this.block(userId, connectionId, 'SIGNED_DEVICE_MISMATCH');
+      this.telemetry.increment('mobile_notification.rejected', 1, { reason: 'SIGNED_DEVICE_MISMATCH' });
+      throw new ForbiddenException('A notification receipt must be signed by the trusted device bound to this connection');
+    }
     if (!connection.trustedDeviceId) {
       await this.block(userId, connectionId, 'TRUSTED_DEVICE_REQUIRED');
       this.telemetry.increment('mobile_notification.rejected', 1, { reason: 'TRUSTED_DEVICE_REQUIRED' });

@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/api';
 import { useAuthStore } from '../../src/auth-store';
 import { createMobileNotificationReceiptRequest } from '../../src/device-app-api-contract';
+import { deviceBoundApi } from '../../src/trusted-device-api';
 import { acknowledgeNotificationPreviews, deviceDiscoveryStatus, drainNotificationPreviews, notificationSourceStatus, openNotificationAccessSettings, setNotificationSourceEnabled } from '../../src/device-app-bridge';
 import { ActionButton, EmptyState, Surface, colors, spacing, typography } from '../../src/design';
 
@@ -50,7 +51,7 @@ export default function NotificationSourcesPage() {
         const connection = byPackage.get(preview.sourcePackage);
         const request = createMobileNotificationReceiptRequest(preview);
         if (!connection || !request) continue;
-        const result = await api<ReceiptResult>(`/device-app-connections/${connection.id}/notification-receipts`, token, { method: 'POST', body: JSON.stringify(request) });
+        const result = await deviceBoundApi<ReceiptResult>(`/device-app-connections/${connection.id}/notification-receipts`, token ?? null, { method: 'POST', body: JSON.stringify(request) });
         if (result.receiptId) acknowledged.push(preview.eventId);
       }
       await acknowledgeNotificationPreviews(acknowledged);

@@ -9,7 +9,7 @@ import { useAuthStore } from '../../src/auth-store';
 import { createDeviceAppConnectionRequest } from '../../src/device-app-api-contract';
 import { deviceDiscoveryStatus, discoverLaunchableApps, type DiscoveredDeviceApp } from '../../src/device-app-bridge';
 import { deviceInstallationId } from '../../src/device-installation-id';
-import { ensureTrustedDevice } from '../../src/trusted-device-api';
+import { deviceBoundApi, ensureTrustedDevice } from '../../src/trusted-device-api';
 import { ActionButton, EmptyState, Surface, colors, radius, spacing, typography } from '../../src/design';
 
 interface DeviceAppConnection { id: string; packageName: string; displayName: string; enabled: boolean; modes: DeviceAppConnectionMode[] }
@@ -31,7 +31,7 @@ export default function AddConnectionPage() {
       const trustedDevice = await ensureTrustedDevice(token);
       const request = createDeviceAppConnectionRequest(deviceId, trustedDevice.id, app);
       if (!request) throw new Error('当前应用的发现或设备证明信息不完整。');
-      return api<DeviceAppConnection>('/device-app-connections', token, { method: 'POST', body: JSON.stringify(request) });
+      return deviceBoundApi<DeviceAppConnection>('/device-app-connections', token, { method: 'POST', body: JSON.stringify(request) });
     },
     onSuccess: async () => {
       await Promise.all([

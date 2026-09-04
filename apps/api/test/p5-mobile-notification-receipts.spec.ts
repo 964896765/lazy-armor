@@ -29,7 +29,7 @@ function fixture(results: unknown[][] = [[connection], []]) {
 describe('generic mobile notification receipt policy', () => {
   it('records only minimal generic evidence from a user-authorized app source', async () => {
     const { service, values, notifications, telemetry, trustedDevices } = fixture();
-    const response = await service.receive('user-1', 'connection-1', event);
+    const response = await service.receive('user-1', 'connection-1', event, 'trusted-device-1');
     expect(response).toMatchObject({ duplicate: false, status: 'received_unclassified' });
     expect(values).toHaveBeenCalledWith(expect.objectContaining({
       userId: 'user-1', deviceAppConnectionId: 'connection-1', eventId: event.eventId, payloadHash: expect.stringMatching(/^[a-f0-9]{64}$/), sourcePackage: 'com.example.localbank', amountMinor: null, status: 'received_unclassified',
@@ -41,9 +41,17 @@ describe('generic mobile notification receipt policy', () => {
     expect(trustedDevices.assertActive).toHaveBeenCalledWith('user-1', 'trusted-device-1', 'device-1');
   });
 
+  it('rejects a request signed by another trusted device before it can read or persist a notification source', async () => {
+    const { service, values, audit, limiter } = fixture();
+    await expect(service.receive('user-1', 'connection-1', event, 'other-trusted-device')).rejects.toThrow('must be signed by the trusted device bound');
+    expect(values).not.toHaveBeenCalled();
+    expect(limiter.consume).not.toHaveBeenCalled();
+    expect(audit.append).toHaveBeenCalledWith(expect.objectContaining({ action: 'MOBILE_NOTIFICATION_RECEIPT_REJECTED', result: 'blocked', reasonCode: 'SIGNED_DEVICE_MISMATCH' }));
+  });
+
   it('rejects an app source that the user has not separately enabled', async () => {
     const { service, values, audit, limiter } = fixture([[{ ...connection, modesJson: ['open_app'] }]]);
-    await expect(service.receive('user-1', 'connection-1', event)).rejects.toThrow('not authorized');
+    await expect(service.receive('user-1', 'connection-1', event, 'trusted-device-1')).rejects.toThrow('not authorized');
     expect(values).not.toHaveBeenCalled();
     expect(limiter.consume).not.toHaveBeenCalled();
     expect(audit.append).toHaveBeenCalledWith(expect.objectContaining({ action: 'MOBILE_NOTIFICATION_RECEIPT_REJECTED', result: 'blocked', reasonCode: 'SOURCE_NOT_AUTHORIZED' }));
@@ -52,7 +60,7 @@ describe('generic mobile notification receipt policy', () => {
   it('rejects a receipt when the bound trusted device is no longer active', async () => {
     const { service, values, audit, limiter, trustedDevices } = fixture();
     trustedDevices.assertActive.mockRejectedValueOnce(new Error('Device is not currently trusted'));
-    await expect(service.receive('user-1', 'connection-1', event)).rejects.toThrow('not currently trusted');
+    await expect(service.receive('user-1', 'connection-1', event, 'trusted-device-1')).rejects.toThrow('not currently trusted');
     expect(values).not.toHaveBeenCalled();
     expect(limiter.consume).not.toHaveBeenCalled();
     expect(audit.append).toHaveBeenCalledWith(expect.objectContaining({ action: 'MOBILE_NOTIFICATION_RECEIPT_REJECTED', result: 'blocked', reasonCode: 'TRUSTED_DEVICE_NOT_ACTIVE' }));
@@ -60,7 +68,7 @@ describe('generic mobile notification receipt policy', () => {
 
   it('rejects an incoherent candidate before persistence instead of trusting a client supplied resource', async () => {
     const { service, values, audit, limiter } = fixture();
-    await expect(service.receive('user-1', 'connection-1', { ...event, candidateKind: 'billing_transaction_candidate', candidateResource: 'mobile.billing.transaction', candidateConfidence: 70, amountMinor: null, currency: 'CNY' })).rejects.toThrow('not a valid generic normalized signal');
+    await expect(service.receive('user-1', 'connection-1', { ...event, candidateKind: 'billing_transaction_candidate', candidateResource: 'mobile.billing.transaction', candidateConfidence: 70, amountMinor: null, currency: 'CNY' }, 'trusted-device-1')).rejects.toThrow('not a valid generic normalized signal');
     expect(values).not.toHaveBeenCalled();
     expect(limiter.consume).not.toHaveBeenCalled();
     expect(audit.append).toHaveBeenCalledWith(expect.objectContaining({ action: 'MOBILE_NOTIFICATION_RECEIPT_REJECTED', result: 'blocked', reasonCode: 'INVALID_NORMALIZED_CANDIDATE' }));
@@ -68,7 +76,7 @@ describe('generic mobile notification receipt policy', () => {
 
   it('rejects a stale capture before persistence and records the reason without notification content', async () => {
     const { service, values, audit, limiter } = fixture();
-    await expect(service.receive('user-1', 'connection-1', { ...event, capturedAt: new Date(Date.now() - 11 * 60 * 1000).toISOString() })).rejects.toThrow('outside the accepted time window');
+    await expect(service.receive('user-1', 'connection-1', { ...event, capturedAt: new Date(Date.now() - 11 * 60 * 1000).toISOString() }, 'trusted-device-1')).rejects.toThrow('outside the accepted time window');
     expect(values).not.toHaveBeenCalled();
     expect(limiter.consume).not.toHaveBeenCalled();
     expect(audit.append).toHaveBeenCalledWith(expect.objectContaining({ action: 'MOBILE_NOTIFICATION_RECEIPT_REJECTED', result: 'blocked', reasonCode: 'STALE_EVENT' }));
@@ -77,7 +85,7 @@ describe('generic mobile notification receipt policy', () => {
   it('treats an identical event as a duplicate and does not emit a second user message', async () => {
     const payloadHash = createHash('sha256').update(JSON.stringify(event)).digest('hex');
     const { service, values, notifications, telemetry } = fixture([[connection], [{ id: 'receipt-1', payloadHash, status: 'received_unclassified' }]]);
-    await expect(service.receive('user-1', 'connection-1', event)).resolves.toEqual({ receiptId: 'receipt-1', duplicate: true, status: 'received_unclassified' });
+    await expect(service.receive('user-1', 'connection-1', event, 'trusted-device-1')).resolves.toEqual({ receiptId: 'receipt-1', duplicate: true, status: 'received_unclassified' });
     expect(values).not.toHaveBeenCalled();
     expect(notifications.emit).not.toHaveBeenCalled();
     expect(telemetry.increment).toHaveBeenCalledWith('mobile_notification.duplicate', 1, { source: 'generic' });

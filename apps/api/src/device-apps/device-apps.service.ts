@@ -24,8 +24,9 @@ export class DeviceAppsService {
     return rows.map((row) => this.toResponse(row));
   }
 
-  async create(userId: string, input: CreateDeviceAppConnectionDto) {
+  async create(userId: string, input: CreateDeviceAppConnectionDto, signedTrustedDeviceId: string) {
     if (!input.launchable) throw new BadRequestException('Only a launchable app discovered on this device can be connected');
+    if (input.trustedDeviceId !== signedTrustedDeviceId) throw new ForbiddenException('A device app connection must be created by the same trusted device named in its signed request');
     const deviceId = input.deviceId.trim();
     const trustedDevice = await this.trustedDevices.assertActive(userId, input.trustedDeviceId, deviceId);
     const packageName = input.packageName.trim();

@@ -17,7 +17,7 @@ CREATE TABLE truth_records (
   CONSTRAINT truth_records_user_id_fk FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE RESTRICT,
   CONSTRAINT truth_records_source_receipt_id_fk FOREIGN KEY (source_receipt_id) REFERENCES mobile_notification_receipts (id) ON DELETE RESTRICT
 );
-
+--> statement-breakpoint
 CREATE TABLE truth_record_versions (
   id BINARY(16) NOT NULL,
   truth_record_id BINARY(16) NOT NULL,
@@ -32,6 +32,6 @@ CREATE TABLE truth_record_versions (
   KEY truth_record_versions_record_created_idx (truth_record_id, created_at),
   CONSTRAINT truth_record_versions_record_id_fk FOREIGN KEY (truth_record_id) REFERENCES truth_records (id) ON DELETE RESTRICT
 );
-
+--> statement-breakpoint
 ALTER TABLE truth_records
   ADD CONSTRAINT truth_records_current_version_id_fk FOREIGN KEY (current_version_id) REFERENCES truth_record_versions (id) ON DELETE RESTRICT;

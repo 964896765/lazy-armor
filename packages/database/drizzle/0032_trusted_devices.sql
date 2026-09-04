@@ -17,7 +17,7 @@ CREATE TABLE trusted_devices (
   KEY trusted_devices_user_status_idx (user_id, status),
   CONSTRAINT trusted_devices_user_id_fk FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE RESTRICT
 );
-
+--> statement-breakpoint
 CREATE TABLE trusted_device_challenges (
   id BINARY(16) NOT NULL,
   user_id BINARY(16) NOT NULL,
@@ -33,7 +33,7 @@ CREATE TABLE trusted_device_challenges (
   KEY trusted_device_challenges_user_device_idx (user_id, device_id, expires_at),
   CONSTRAINT trusted_device_challenges_user_id_fk FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE RESTRICT
 );
-
+--> statement-breakpoint
 ALTER TABLE device_app_connections
   ADD COLUMN trusted_device_id BINARY(16) NULL AFTER device_id,
   ADD KEY device_app_connections_trusted_device_idx (trusted_device_id),

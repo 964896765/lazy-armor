@@ -1,6 +1,6 @@
 import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { createHash, randomBytes, verify } from 'node:crypto';
-import { deviceAppConnections, trustedDeviceChallenges, trustedDevices } from '@lazy-armor/database';
+import { deviceAppConnections, trustedDeviceChallenges, trustedDeviceRequestProofs, trustedDeviceRequestSessions, trustedDevices } from '@lazy-armor/database';
 import { newId } from '@lazy-armor/shared';
 import { and, desc, eq, gt, isNull } from 'drizzle-orm';
 import { AuditService } from '../audit/audit.service';
@@ -8,7 +8,17 @@ import { DATABASE, type InjectedDatabase } from '../common/database.module';
 import type { CreateTrustedDeviceChallengeDto, VerifyTrustedDeviceChallengeDto } from './dto';
 
 const CHALLENGE_TTL_MS = 5 * 60 * 1000;
+const DEVICE_SESSION_TTL_MS = 15 * 60 * 1000;
+const REQUEST_CLOCK_SKEW_MS = 90 * 1000;
 const TRUST_LEVEL = 'key_proven';
+
+export interface TrustedDeviceRequestEnvelope {
+  sessionId: string;
+  requestId: string;
+  signedAt: string;
+  payloadHash: string;
+  signature: string;
+}
 
 @Injectable()
 export class TrustedDevicesService {
@@ -70,31 +80,72 @@ export class TrustedDevicesService {
         publicKeyFingerprint: challenge.publicKeyFingerprint, trustLevel: TRUST_LEVEL, status: 'active', lastProvedAt: now, revokedAt: null, createdAt: now, updatedAt: now,
       });
     }
+    const deviceSession = await this.createRequestSession(userId, trustedDeviceId, now);
     await this.audit.append({
       actorType: 'user', actorUserId: userId, action: 'TRUSTED_DEVICE_PROOF_VERIFIED', resourceType: 'trusted_device', resourceId: trustedDeviceId,
-      userId, correlationId: id, changeSummary: 'Verified a device-owned signing key and activated trusted device access', source: 'api', result: 'success',
+      userId, correlationId: id, changeSummary: 'Verified a device-owned signing key, activated trusted access, and issued a short-lived device session', source: 'api', result: 'success',
     });
-    return this.get(userId, trustedDeviceId);
+    return { ...await this.get(userId, trustedDeviceId), deviceSession };
+  }
+
+  async assertSignedRequest(userId: string, envelope: TrustedDeviceRequestEnvelope, method: string, requestPath: string, payload: unknown) {
+    const signedAt = new Date(envelope.signedAt);
+    const now = new Date();
+    if (!isSha256(envelope.requestId) || !isSha256(envelope.payloadHash) || !isBase64(envelope.signature) || Number.isNaN(signedAt.getTime()) || Math.abs(now.getTime() - signedAt.getTime()) > REQUEST_CLOCK_SKEW_MS) {
+      throw new ForbiddenException('Trusted device request envelope is invalid or stale');
+    }
+    const actualPayloadHash = hash(payload);
+    if (actualPayloadHash !== envelope.payloadHash) throw new ForbiddenException('Trusted device request payload hash mismatch');
+    const sessions = await this.db.select().from(trustedDeviceRequestSessions)
+      .where(and(eq(trustedDeviceRequestSessions.id, envelope.sessionId), eq(trustedDeviceRequestSessions.userId, userId), isNull(trustedDeviceRequestSessions.revokedAt), gt(trustedDeviceRequestSessions.expiresAt, now))).limit(1);
+    const session = sessions[0];
+    if (!session) throw new ForbiddenException('Trusted device session is missing, expired, or revoked');
+    const device = await this.assertActive(userId, session.trustedDeviceId, undefined);
+    const payloadToVerify = requestPayload(session.id, envelope.requestId, method, requestPath, envelope.payloadHash, signedAt);
+    const valid = verify('sha256', Buffer.from(payloadToVerify, 'utf8'), {
+      key: Buffer.from(device.publicKeySpki, 'base64'), format: 'der', type: 'spki', dsaEncoding: 'der',
+    }, Buffer.from(envelope.signature, 'base64'));
+    if (!valid) throw new ForbiddenException('Trusted device request signature is invalid');
+    try {
+      await this.db.insert(trustedDeviceRequestProofs).values({
+        id: newId(), trustedDeviceSessionId: session.id, requestId: envelope.requestId, requestMethod: method, requestPath,
+        payloadHash: envelope.payloadHash, signedAt, expiresAt: session.expiresAt, createdAt: now,
+      });
+    } catch (error) {
+      if (isDuplicate(error)) throw new ConflictException('Trusted device request was already processed; create a new signed request envelope before retrying');
+      throw error;
+    }
+    return { trustedDeviceId: device.id, deviceId: device.deviceId, sessionId: session.id };
   }
 
   async revoke(userId: string, id: string) {
     const current = await this.getRow(userId, id);
     if (current.status === 'revoked') return this.toResponse(current);
     const now = new Date();
-    await this.db.update(trustedDevices).set({ status: 'revoked', revokedAt: now, updatedAt: now }).where(and(eq(trustedDevices.id, id), eq(trustedDevices.userId, userId)));
-    await this.db.update(deviceAppConnections).set({ enabled: 0, modesJson: ['open_app'], updatedAt: now })
-      .where(and(eq(deviceAppConnections.userId, userId), eq(deviceAppConnections.trustedDeviceId, id)));
+    await this.db.transaction(async (tx) => {
+      await tx.update(trustedDevices).set({ status: 'revoked', revokedAt: now, updatedAt: now }).where(and(eq(trustedDevices.id, id), eq(trustedDevices.userId, userId)));
+      await tx.update(trustedDeviceRequestSessions).set({ revokedAt: now }).where(and(eq(trustedDeviceRequestSessions.userId, userId), eq(trustedDeviceRequestSessions.trustedDeviceId, id), isNull(trustedDeviceRequestSessions.revokedAt)));
+      await tx.update(deviceAppConnections).set({ enabled: 0, modesJson: ['open_app'], updatedAt: now })
+        .where(and(eq(deviceAppConnections.userId, userId), eq(deviceAppConnections.trustedDeviceId, id)));
+    });
     await this.audit.append({
       actorType: 'user', actorUserId: userId, action: 'TRUSTED_DEVICE_REVOKED', resourceType: 'trusted_device', resourceId: id,
-      userId, correlationId: id, changeSummary: 'Revoked trusted device proof and disabled bound device app connections', source: 'api', result: 'success',
+      userId, correlationId: id, changeSummary: 'Revoked trusted device proof, request sessions, and bound device app connections', source: 'api', result: 'success',
     });
     return this.get(userId, id);
   }
 
-  async assertActive(userId: string, trustedDeviceId: string, deviceId: string) {
+  async assertActive(userId: string, trustedDeviceId: string, expectedDeviceId?: string) {
     const row = await this.getRow(userId, trustedDeviceId);
-    if (row.status !== 'active' || row.trustLevel !== TRUST_LEVEL || row.deviceId !== deviceId) throw new ForbiddenException('Device is not currently trusted for this connection');
+    if (row.status !== 'active' || row.trustLevel !== TRUST_LEVEL || (expectedDeviceId !== undefined && row.deviceId !== expectedDeviceId)) throw new ForbiddenException('Device is not currently trusted for this connection');
     return row;
+  }
+
+  private async createRequestSession(userId: string, trustedDeviceId: string, now: Date) {
+    const id = newId();
+    const expiresAt = new Date(now.getTime() + DEVICE_SESSION_TTL_MS);
+    await this.db.insert(trustedDeviceRequestSessions).values({ id, userId, trustedDeviceId, expiresAt, revokedAt: null, createdAt: now });
+    return { id, expiresAt: expiresAt.toISOString() };
   }
 
   private async get(userId: string, id: string) { return this.toResponse(await this.getRow(userId, id)); }
@@ -110,10 +161,10 @@ export class TrustedDevicesService {
   }
 }
 
-function challengePayload(challengeId: string, nonce: string, expiresAt: Date, fingerprint: string) {
-  return `lazy-armor-device-proof-v1|${challengeId}|${nonce}|${expiresAt.toISOString()}|${fingerprint}`;
-}
-
-function sha256Base64(value: string) {
-  return createHash('sha256').update(Buffer.from(value, 'base64')).digest('hex');
-}
+function challengePayload(challengeId: string, nonce: string, expiresAt: Date, fingerprint: string) { return `lazy-armor-device-proof-v1|${challengeId}|${nonce}|${expiresAt.toISOString()}|${fingerprint}`; }
+function requestPayload(sessionId: string, requestId: string, method: string, requestPath: string, payloadHash: string, signedAt: Date) { return `lazy-armor-device-request-v1|${sessionId}|${requestId}|${method}|${requestPath}|${payloadHash}|${signedAt.toISOString()}`; }
+function sha256Base64(value: string) { return createHash('sha256').update(Buffer.from(value, 'base64')).digest('hex'); }
+function hash(value: unknown) { return createHash('sha256').update(JSON.stringify(value)).digest('hex'); }
+function isSha256(value: string) { return /^[a-f0-9]{64}$/.test(value); }
+function isBase64(value: string) { return /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value); }
+function isDuplicate(error: unknown) { return typeof error === 'object' && error !== null && 'code' in error && (error as { code?: string }).code === 'ER_DUP_ENTRY'; }

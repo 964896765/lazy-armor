@@ -19,7 +19,12 @@ import java.security.KeyPair
 import java.security.KeyPairGenerator
 import java.security.KeyStore
 import java.security.MessageDigest
+import java.security.SecureRandom
 import java.security.Signature
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
 
 /**
  * Device-level bridge for user-initiated Generic App Connection flows.
@@ -63,6 +68,60 @@ class DeviceAppBridgeModule(reactContext: ReactApplicationContext) : ReactContex
       promise.resolve(Base64.encodeToString(signature.sign(), Base64.NO_WRAP))
     } catch (error: Exception) {
       promise.reject("E_TRUSTED_DEVICE_SIGN_FAILED", "无法完成设备密钥证明。", error)
+    }
+  }
+
+  @ReactMethod
+  fun signTrustedDeviceRequest(payload: String, promise: Promise) {
+    if (!payload.startsWith("lazy-armor-device-request-v1|") || payload.length > 1024) {
+      promise.reject("E_TRUSTED_DEVICE_REQUEST_INVALID", "设备请求签名内容无效。")
+      return
+    }
+    try {
+      val signature = Signature.getInstance("SHA256withECDSA")
+      signature.initSign(trustedDeviceKeyPair().private)
+      signature.update(payload.toByteArray(Charsets.UTF_8))
+      promise.resolve(Base64.encodeToString(signature.sign(), Base64.NO_WRAP))
+    } catch (error: Exception) {
+      promise.reject("E_TRUSTED_DEVICE_REQUEST_SIGN_FAILED", "无法完成设备请求签名。", error)
+    }
+  }
+
+  @ReactMethod
+  fun createTrustedDeviceRequestEnvelope(sessionId: String, method: String, requestPath: String, payloadJson: String, promise: Promise) {
+    if (sessionId.isBlank() || sessionId.length > 128 || method !in setOf("POST") || !requestPath.startsWith("/") || requestPath.length > 255 || payloadJson.length > 65_536) {
+      promise.reject("E_TRUSTED_DEVICE_REQUEST_ENVELOPE_INVALID", "设备请求内容无效。")
+      return
+    }
+    try {
+      val requestIdBytes = ByteArray(32)
+      SecureRandom().nextBytes(requestIdBytes)
+      val requestId = requestIdBytes.joinToString("") { "%02x".format(it) }
+      val signedAt = isoUtcNow()
+      val payloadHash = sha256Bytes(payloadJson.toByteArray(Charsets.UTF_8))
+      val signedPayload = "lazy-armor-device-request-v1|$sessionId|$requestId|$method|$requestPath|$payloadHash|$signedAt"
+      val signature = Signature.getInstance("SHA256withECDSA")
+      signature.initSign(trustedDeviceKeyPair().private)
+      signature.update(signedPayload.toByteArray(Charsets.UTF_8))
+      val result = Arguments.createMap()
+      result.putString("requestId", requestId)
+      result.putString("signedAt", signedAt)
+      result.putString("payloadHash", payloadHash)
+      result.putString("signature", Base64.encodeToString(signature.sign(), Base64.NO_WRAP))
+      promise.resolve(result)
+    } catch (error: Exception) {
+      promise.reject("E_TRUSTED_DEVICE_REQUEST_ENVELOPE_FAILED", "无法完成设备请求签名。", error)
+    }
+  }
+
+  @ReactMethod
+  fun createTrustedDeviceRequestId(promise: Promise) {
+    try {
+      val bytes = ByteArray(32)
+      SecureRandom().nextBytes(bytes)
+      promise.resolve(bytes.joinToString("") { "%02x".format(it) })
+    } catch (error: Exception) {
+      promise.reject("E_TRUSTED_DEVICE_REQUEST_ID_FAILED", "无法创建设备请求标识。", error)
     }
   }
 
@@ -209,6 +268,8 @@ class DeviceAppBridgeModule(reactContext: ReactApplicationContext) : ReactContex
   }
 
   private fun sha256Bytes(value: ByteArray): String = MessageDigest.getInstance("SHA-256").digest(value).joinToString("") { "%02x".format(it) }
+
+  private fun isoUtcNow(): String = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply { timeZone = TimeZone.getTimeZone("UTC") }.format(Date())
 
   private fun discoveryFingerprint(packageName: String, displayName: String, versionName: String?, versionCode: Long): String {
     val data = "$packageName|$displayName|${versionName ?: ""}|$versionCode|launchable"

@@ -20,7 +20,11 @@ interface RailDeviceAppConnection {
   packageName: string;
   displayName: string;
   enabled: boolean;
+  trustedDeviceId: string | null;
 }
+
+interface RailTrustedDevice { id: string; status: 'active' | 'revoked'; }
+interface RailPendingNotification { id: string; }
 
 interface RailConnectionSpace {
   id: string;
@@ -51,9 +55,22 @@ export function ConnectionRail({ state, navigation }: BottomTabBarProps) {
     enabled: Boolean(token),
     staleTime: 30_000,
   });
+  const trustedDevices = useQuery({
+    queryKey: ['rail-trusted-devices', token],
+    queryFn: () => api<RailTrustedDevice[]>('/trusted-devices', token),
+    enabled: Boolean(token),
+    staleTime: 30_000,
+  });
+  const pendingNotifications = useQuery({
+    queryKey: ['rail-pending-notification-receipts', token],
+    queryFn: () => api<RailPendingNotification[]>('/device-app-connections/notification-receipts', token),
+    enabled: Boolean(token),
+    staleTime: 20_000,
+  });
+  const activeTrustedDeviceIds = new Set((trustedDevices.data ?? []).filter((device) => device.status === 'active').map((device) => device.id));
   const visibleConnections: RailConnectionSpace[] = [
     ...(connections.data ?? []).filter((connection) => connection.status !== 'revoked').map((connection) => ({ id: connection.id, key: connection.connectorId, label: connection.connectorName, status: connection.status })),
-    ...(deviceApps.data ?? []).filter((connection) => connection.enabled).map((connection) => ({ id: connection.id, key: connection.packageName, label: connection.displayName, status: 'connected' })),
+    ...(deviceApps.data ?? []).filter((connection) => connection.enabled).map((connection) => ({ id: connection.id, key: connection.packageName, label: connection.displayName, status: connection.trustedDeviceId && activeTrustedDeviceIds.has(connection.trustedDeviceId) ? 'connected' : 'needs_reauth' })),
   ].slice(0, 7);
 
   function selectTab(routeName: string) {
@@ -69,7 +86,7 @@ export function ConnectionRail({ state, navigation }: BottomTabBarProps) {
       <View style={styles.topArea}>
         {state.routes.filter((route) => tabItems[route.name]).map((route) => {
           const item = tabItems[route.name]!;
-          return <RailItem key={route.key} label={item.label} symbol={item.symbol} selected={state.routes[state.index]?.key === route.key} tone={item.tone} onPress={() => selectTab(route.name)} />;
+          return <RailItem key={route.key} label={item.label} symbol={item.symbol} badgeCount={route.name === 'index' ? (pendingNotifications.data?.length ?? 0) : 0} selected={state.routes[state.index]?.key === route.key} tone={item.tone} onPress={() => selectTab(route.name)} />;
         })}
         <RailItem label="懒人商城" symbol="□" tone="commerce" onPress={() => router.push('/commerce' as never)} />
         <View style={styles.divider} />
@@ -77,7 +94,7 @@ export function ConnectionRail({ state, navigation }: BottomTabBarProps) {
           <RailItem
             key={connection.id}
             label={connection.label}
-            symbol={connectionSymbol(connection.key)}
+            symbol={connectionSymbol(connection.label)}
             status={connection.status}
             onPress={() => router.push('/connections' as never)}
           />
@@ -90,12 +107,13 @@ export function ConnectionRail({ state, navigation }: BottomTabBarProps) {
   );
 }
 
-function RailItem({ label, symbol, selected = false, tone, status, action = false, account = false, onPress }: {
+function RailItem({ label, symbol, selected = false, tone, status, badgeCount = 0, action = false, account = false, onPress }: {
   label: string;
   symbol: string;
   selected?: boolean;
   tone?: 'brand' | 'commerce';
   status?: string;
+  badgeCount?: number;
   action?: boolean;
   account?: boolean;
   onPress: () => void;
@@ -108,19 +126,16 @@ function RailItem({ label, symbol, selected = false, tone, status, action = fals
       <View style={[styles.icon, tone === 'brand' && styles.brandIcon, tone === 'commerce' && styles.commerceIcon, action && styles.addIcon, account && styles.accountIcon, offline && styles.iconOffline]}>
         <Text style={[styles.symbol, tone === 'brand' && styles.brandSymbol, action && styles.addSymbol]}>{symbol}</Text>
         {status ? <View style={[styles.statusDot, offline ? styles.statusOffline : expiring ? styles.statusWarning : styles.statusHealthy]}><Text style={styles.statusText}>{expiring ? '!' : ''}</Text></View> : null}
+        {badgeCount > 0 ? <View style={styles.badge}><Text style={styles.badgeText}>{badgeCount > 9 ? '9+' : badgeCount}</Text></View> : null}
       </View>
       <Text numberOfLines={1} style={[styles.label, selected && styles.labelSelected, offline && styles.labelOffline]}>{label}</Text>
     </Pressable>
   );
 }
 
-function connectionSymbol(connectorKey: string): string {
-  if (connectorKey === 'gmail') return 'M';
-  if (connectorKey === 'google_calendar' || connectorKey === 'calendar') return '日';
-  if (connectorKey === 'file_provider') return '文';
-  if (connectorKey.includes('vehicle')) return '车';
-  if (connectorKey.includes('device') || connectorKey.includes('home')) return '设';
-  return '连';
+function connectionSymbol(label: string): string {
+  const first = Array.from(label.trim())[0];
+  return first && !/[\s\W_]/u.test(first) ? first.toUpperCase() : '连';
 }
 
 export const shellLayout = { railWidth: RAIL_WIDTH } as const;
@@ -149,6 +164,8 @@ const styles = StyleSheet.create({
   statusWarning: { backgroundColor: colors.warning },
   statusOffline: { backgroundColor: '#8A948F' },
   statusText: { color: '#FFFFFF', fontSize: 7, fontWeight: '800', lineHeight: 7 },
+  badge: { position: 'absolute', left: -5, top: -5, minWidth: 16, height: 16, paddingHorizontal: 3, borderRadius: 8, backgroundColor: colors.danger, borderWidth: 1, borderColor: '#1D2B26', alignItems: 'center', justifyContent: 'center' },
+  badgeText: { color: '#FFFFFF', fontSize: 8, fontWeight: '800', lineHeight: 10 },
   divider: { width: 34, height: 1, backgroundColor: '#526359', marginVertical: 1 },
   more: { ...typography.caption, color: '#AAB4AE', fontSize: 9, marginTop: -3 },
 });

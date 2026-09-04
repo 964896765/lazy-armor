@@ -16,6 +16,13 @@ export interface TrustedDeviceIdentity {
   publicKeyFingerprint: string;
 }
 
+export interface TrustedDeviceRequestEnvelope {
+  requestId: string;
+  signedAt: string;
+  payloadHash: string;
+  signature: string;
+}
+
 export interface NotificationSourceStatus {
   accessGranted: boolean;
   enabledPackageCount: number;
@@ -42,6 +49,9 @@ export interface MobileNotificationPreview {
 interface NativeDeviceBridge {
   getTrustedDeviceIdentity(): Promise<TrustedDeviceIdentity>;
   signTrustedDeviceChallenge(payload: string): Promise<string>;
+  signTrustedDeviceRequest(payload: string): Promise<string>;
+  createTrustedDeviceRequestEnvelope(sessionId: string, method: string, requestPath: string, payloadJson: string): Promise<TrustedDeviceRequestEnvelope>;
+  createTrustedDeviceRequestId(): Promise<string>;
   discoverLaunchableApps(): Promise<DiscoveredDeviceApp[]>;
   openApp(packageName: string): Promise<boolean>;
   getNotificationSourceStatus(): Promise<NotificationSourceStatus>;
@@ -80,6 +90,42 @@ export async function signTrustedDeviceChallenge(payload: string): Promise<strin
   try {
     const signature = await native.signTrustedDeviceChallenge(payload);
     return /^[A-Za-z0-9+/]+={0,2}$/.test(signature) ? signature : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function signTrustedDeviceRequest(payload: string): Promise<string | null> {
+  if (!payload.startsWith('lazy-armor-device-request-v1|') || payload.length > 1024) return null;
+  const native = bridge();
+  if (!native || typeof native.signTrustedDeviceRequest !== 'function') return null;
+  try {
+    const signature = await native.signTrustedDeviceRequest(payload);
+    return /^[A-Za-z0-9+/]+={0,2}$/.test(signature) ? signature : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function createTrustedDeviceRequestEnvelope(sessionId: string, method: 'POST', requestPath: string, payloadJson: string): Promise<TrustedDeviceRequestEnvelope | null> {
+  if (!sessionId || requestPath.length === 0 || requestPath.length > 255 || payloadJson.length > 65_536) return null;
+  const native = bridge();
+  if (!native || typeof native.createTrustedDeviceRequestEnvelope !== 'function') return null;
+  try {
+    const envelope = await native.createTrustedDeviceRequestEnvelope(sessionId, method, requestPath, payloadJson);
+    if (!/^[a-f0-9]{64}$/.test(envelope?.requestId) || !/^[a-f0-9]{64}$/.test(envelope?.payloadHash) || !/^[A-Za-z0-9+/]+={0,2}$/.test(envelope?.signature) || Number.isNaN(new Date(envelope?.signedAt).getTime())) return null;
+    return envelope;
+  } catch {
+    return null;
+  }
+}
+
+export async function createTrustedDeviceRequestId(): Promise<string | null> {
+  const native = bridge();
+  if (!native || typeof native.createTrustedDeviceRequestId !== 'function') return null;
+  try {
+    const requestId = await native.createTrustedDeviceRequestId();
+    return /^[a-f0-9]{64}$/.test(requestId) ? requestId : null;
   } catch {
     return null;
   }

@@ -21,8 +21,8 @@ export class TruthStoreService {
 
   async confirmMobileReceipt(userId: string, receipt: typeof mobileNotificationReceipts.$inferSelect) {
     const candidate = this.candidateFrom(receipt);
-    const existing = (await this.db.select().from(truthRecords).where(and(eq(truthRecords.userId, userId), eq(truthRecords.sourceReceiptId, receipt.id))).limit(1))[0];
-    if (existing) return this.toResponse(existing);
+    const existing = await this.findByReceipt(this.db, userId, receipt.id);
+    if (existing) return this.completedResponse(existing);
 
     const now = new Date();
     const truthId = newId();
@@ -30,21 +30,30 @@ export class TruthStoreService {
     const value = { resource: candidate.resource, amountMinor: receipt.amountMinor, currency: candidate.currency, occurredAt: receipt.postedAt.toISOString() };
     const valueHash = hash(value);
     const evidenceHash = hash({ receiptId: receipt.id, payloadHash: receipt.payloadHash, candidateResource: candidate.resource, parserVersion: candidate.parserVersion });
+
+    let result: { created: true } | { created: false; row: typeof truthRecords.$inferSelect };
     try {
-      await this.db.insert(truthRecords).values({
-        id: truthId, userId, resourceKey: candidate.resource, subjectKey: receipt.id, status: 'verified', currentVersionId: null,
-        sourceReceiptId: receipt.id, verifiedBy: 'user_confirmation', verifiedAt: now, revokedAt: null, createdAt: now, updatedAt: now,
+      result = await this.db.transaction(async (tx) => {
+        const raced = await this.findByReceipt(tx, userId, receipt.id);
+        if (raced) return { created: false as const, row: raced };
+        await tx.insert(truthRecords).values({
+          id: truthId, userId, resourceKey: candidate.resource, subjectKey: receipt.id, status: 'verified', currentVersionId: null,
+          sourceReceiptId: receipt.id, verifiedBy: 'user_confirmation', verifiedAt: now, revokedAt: null, createdAt: now, updatedAt: now,
+        });
+        await tx.insert(truthRecordVersions).values({
+          id: versionId, truthRecordId: truthId, versionNumber: 1, valueJson: value, valueHash, verificationMethod: 'user_confirmation_after_device_key_proof', evidenceHash, createdAt: now,
+        });
+        await tx.update(truthRecords).set({ currentVersionId: versionId, updatedAt: now }).where(eq(truthRecords.id, truthId));
+        return { created: true as const };
       });
-      await this.db.insert(truthRecordVersions).values({
-        id: versionId, truthRecordId: truthId, versionNumber: 1, valueJson: value, valueHash, verificationMethod: 'user_confirmation_after_device_key_proof', evidenceHash, createdAt: now,
-      });
-      await this.db.update(truthRecords).set({ currentVersionId: versionId, updatedAt: now }).where(eq(truthRecords.id, truthId));
     } catch (error) {
       if (!isDuplicate(error)) throw error;
-      const raced = (await this.db.select().from(truthRecords).where(and(eq(truthRecords.userId, userId), eq(truthRecords.sourceReceiptId, receipt.id))).limit(1))[0];
+      const raced = await this.findByReceipt(this.db, userId, receipt.id);
       if (!raced) throw new ConflictException('Truth record confirmation conflicted; retry safely');
-      return this.toResponse(raced);
+      return this.completedResponse(raced);
     }
+
+    if (!result.created) return this.completedResponse(result.row);
     await this.audit.append({
       actorType: 'user', actorUserId: userId, action: 'TRUTH_RECORD_VERIFIED', resourceType: 'truth_record', resourceId: truthId,
       userId, correlationId: receipt.id, changeSummary: `Confirmed a brand-neutral ${candidate.resource} fact from a device notification candidate`, source: 'api', result: 'success',
@@ -75,7 +84,18 @@ export class TruthStoreService {
     const rows = await this.db.select().from(truthRecords)
       .where(resourceKey ? and(eq(truthRecords.userId, userId), eq(truthRecords.resourceKey, resourceKey), eq(truthRecords.status, 'verified')) : and(eq(truthRecords.userId, userId), eq(truthRecords.status, 'verified')))
       .orderBy(desc(truthRecords.verifiedAt));
-    return rows.map((row) => this.toResponse(row));
+    return rows.map((row) => this.completedResponse(row));
+  }
+
+  private async findByReceipt(db: Pick<InjectedDatabase, 'select'>, userId: string, receiptId: string) {
+    return (await db.select().from(truthRecords).where(and(eq(truthRecords.userId, userId), eq(truthRecords.sourceReceiptId, receiptId))).limit(1))[0];
+  }
+
+  private completedResponse(row: typeof truthRecords.$inferSelect) {
+    if (row.status !== 'verified' || !row.currentVersionId) {
+      throw new ConflictException('Truth record is incomplete and cannot be consumed; manual recovery is required');
+    }
+    return this.toResponse(row);
   }
 
   private candidateFrom(receipt: typeof mobileNotificationReceipts.$inferSelect) {

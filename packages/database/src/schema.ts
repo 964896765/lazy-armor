@@ -334,6 +334,33 @@ export const trustedDeviceChallenges = mysqlTable('trusted_device_challenges', {
   index('trusted_device_challenges_user_device_idx').on(table.userId, table.deviceId, table.expiresAt),
 ]);
 
+export const trustedDeviceRequestSessions = mysqlTable('trusted_device_request_sessions', {
+  id: uuidBinary('id').primaryKey(),
+  userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  trustedDeviceId: uuidBinary('trusted_device_id').notNull().references(() => trustedDevices.id, { onDelete: 'restrict' }),
+  expiresAt: datetime('expires_at', { mode: 'date', fsp: 6 }).notNull(),
+  revokedAt: datetime('revoked_at', { mode: 'date', fsp: 6 }),
+  createdAt: datetime('created_at', { mode: 'date', fsp: 6 }).notNull(),
+}, (table) => [
+  index('trusted_device_request_sessions_user_expires_idx').on(table.userId, table.expiresAt),
+  index('trusted_device_request_sessions_device_expires_idx').on(table.trustedDeviceId, table.expiresAt),
+]);
+
+export const trustedDeviceRequestProofs = mysqlTable('trusted_device_request_proofs', {
+  id: uuidBinary('id').primaryKey(),
+  trustedDeviceSessionId: uuidBinary('trusted_device_session_id').notNull().references(() => trustedDeviceRequestSessions.id, { onDelete: 'restrict' }),
+  requestId: char('request_id', { length: 64 }).notNull(),
+  requestMethod: varchar('request_method', { length: 12 }).notNull(),
+  requestPath: varchar('request_path', { length: 255 }).notNull(),
+  payloadHash: char('payload_hash', { length: 64 }).notNull(),
+  signedAt: datetime('signed_at', { mode: 'date', fsp: 6 }).notNull(),
+  expiresAt: datetime('expires_at', { mode: 'date', fsp: 6 }).notNull(),
+  createdAt: datetime('created_at', { mode: 'date', fsp: 6 }).notNull(),
+}, (table) => [
+  uniqueIndex('trusted_device_request_proofs_session_request_uq').on(table.trustedDeviceSessionId, table.requestId),
+  index('trusted_device_request_proofs_session_created_idx').on(table.trustedDeviceSessionId, table.createdAt),
+]);
+
 export const deviceAppConnections = mysqlTable('device_app_connections', {
   id: uuidBinary('id').primaryKey(),
   userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),

@@ -32,6 +32,7 @@ for (let index = 0; index < migrationFiles.length; index += 1) {
   if (!entry || entry.idx !== index || entry.tag !== expectedTag) {
     throw new Error(`Journal mismatch at index ${index}: expected ${expectedTag}, got ${JSON.stringify(entry)}`);
   }
+  validateStatementBreakpoints(file, readFileSync(path.join(drizzleDir, file), 'utf8'), entry);
 }
 
 const baseline = readJson(baselinePath, 'migration safety baseline');
@@ -70,6 +71,21 @@ function readJson(filePath, label) {
 
 function digest(value) {
   return createHash('sha256').update(value).digest('hex');
+}
+
+function validateStatementBreakpoints(file, sql, entry) {
+  const normalized = sql
+    .replace(/--[^\n]*/g, ' ')
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/^\s*-->\s*statement-breakpoint\s*$/gm, ' ');
+  const topLevelDdlCount = (normalized.match(/(?:^|;)\s*(?:CREATE\s+(?:TABLE|TRIGGER|INDEX|DATABASE)\b|ALTER\s+TABLE\b|DROP\s+(?:TABLE|DATABASE|INDEX|TRIGGER)\b|RENAME\s+TABLE\b|TRUNCATE(?:\s+TABLE)?\b)/gim) ?? []).length;
+  const markers = (sql.match(/^\s*-->\s*statement-breakpoint\s*$/gm) ?? []).length;
+  if (markers > 0 && entry.breakpoints !== true) {
+    throw new Error(`Migration ${file} contains statement breakpoints but its journal entry does not enable breakpoints.`);
+  }
+  if (entry.breakpoints === true && topLevelDdlCount > 1 && markers < topLevelDdlCount - 1) {
+    throw new Error(`Migration ${file} contains ${topLevelDdlCount} top-level DDL statements but ${markers} Drizzle statement breakpoints; requires at least ${topLevelDdlCount - 1}.`);
+  }
 }
 
 function findDestructiveStatements(sql) {
