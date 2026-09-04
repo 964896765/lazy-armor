@@ -30,7 +30,10 @@ class RuntimeTestConnector implements Connector {
     if (behavior === 'timeout_once' && calls === 1) throw new ExecutionRuntimeError('TIMEOUT', 'temporary network failure', true);
     if (behavior === 'always_temporary') return { ok: false, data: {} };
     if (behavior === 'slow') await wait(80);
-    if (behavior === 'longer_than_test_lease') await wait(1_300);
+    // The test lease is 1 s and the competing worker observes at 1.1 s.
+    // Keep a full 0.9 s margin after that observation under loaded CI runners,
+    // while still requiring the worker heartbeat to hold the same lease.
+    if (behavior === 'longer_than_test_lease') await wait(2_000);
     if (behavior === 'secret_output') return { ok: true, data: { token: 'output-token-must-not-leak', nested: { credential: 'credential-must-not-leak' } } };
     if (behavior === 'secret_error') throw new Error('upstream failed token=raw-secret authorization=Bearer-secret');
     return { ok: true, data: { testExecuted: true, calls } };

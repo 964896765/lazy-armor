@@ -132,3 +132,13 @@ CI #41（run ID `33895165275`，提交 `14d3150d398f45a6c8b1afdd005166740b078efe
 同一 run 的 RC Full Gate job `101096638787` 完整原始日志显示其首个失败用例为 `test/p0-execution.integration.spec.ts` 第 19 项“只重试失败步骤且不重复已成功步骤”。该测试把语义为 `timeout_once` 的连接器故障以普通 `Error` 抛出；产品错误分类对未结构化异常安全地映射为不可重试 `INTERNAL_EXECUTION_ERROR`，所以执行进入 `partially_succeeded`，而不是测试所断言的 `retry_wait`。既有 P0-7 测试已采用结构化 `ExecutionRuntimeError('TIMEOUT', ..., true)` 表示真实的瞬态超时。故仅修正该测试连接器的故障模拟为同一标准 `TIMEOUT` 契约，原有状态、重试次数、事件与幂等断言不变；不扩大普通异常的自动重试范围，避免将未知错误不安全地重试。API 类型检查已实际通过。本机针对性集成测试在使用 CI 等效 `APP_ENV=development` 后因本机 `127.0.0.1:3307` MySQL 不存在而在 Nest 初始化前失败，未将该本机环境缺失误报为测试通过；最终以 CI MySQL 8.4 服务执行为准。
 
 来源：[GitHub Actions Run #41](https://github.com/964896765/lazy-armor/actions/runs/33895165275)。
+
+## Current Main RC Gate：结构化超时修复后的首个真实失败
+
+基线 `23f6c8cdae69c136f9be714fd71a10c1c16eb8b6` 对应 workflow `33902030416` 的 Fast Gate 已成功，RC Full Gate 在“Full monorepo test suite including real database concurrency”步骤返回非零，故 Full monorepo build 被正确阻断，不能表述为全绿。已直接下载完成的 RC Full Gate job `101118741384` 原始日志；上一轮第 19 项结构化 `TIMEOUT` 重试断言不再列入失败项，表明该首因已通过。
+
+本轮全量测试按输出顺序出现的第一项失败是 `test/p0-execution.integration.spec.ts` 第 28 项，断言第二竞争 Worker 在第 1.1 秒观察点返回 `running`，实际得到 `succeeded`。该测试的租约仅为 1 秒，而模拟连接器原先仅阻塞 1.3 秒，因此在 CI 负载抖动下只剩约 200 毫秒观察裕量；其余关键断言（两 Worker 只产生一次连接器调用、首个 Worker 成功、长任务期间心跳持有同一租约）均仍要求保留。该问题分类为 **C：并发/时序测试夹具竞态**，不应修改产品租约、幂等或安全语义。
+
+修复仅将 `longer_than_test_lease` 夹具延迟从 1.3 秒扩至 2 秒，为同一 1.1 秒观察点提供 0.9 秒裕量；测试继续验证真实 MySQL 下的租约排他、心跳续租和副作用只执行一次。API 类型检查已通过；本机没有测试所需的 MySQL `127.0.0.1:3307`，针对性集成测试在服务初始化时以 `ECONNREFUSED` 结束，因此最终仍以新 CI 的 MySQL 8.4 服务运行结果为唯一通过证据。
+
+来源：[GitHub Actions Run #42](https://github.com/964896765/lazy-armor/actions/runs/33902030416)。
