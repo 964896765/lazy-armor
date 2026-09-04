@@ -124,3 +124,11 @@ CI #40（run ID `33892812415`，提交 `2c776214f85da5aef3d7e8e7dfb7817bceed3ecd
 验证脚本下一轮将同一独占外置虚拟存储的 `virtual-store-dir-max-length` 从 60 收紧为 **33**。pnpm 的目录压缩算法会把超过该上限的目录收敛为哈希后缀；以 CI #40 的实际 263 字符路径计算，目录缩短 27 字符后的预计路径为 **236**，低于 Windows 260 字符限制。成功元数据将同时记录外置虚拟存储路径和该 33 字符上限。改动仍仅作用于可清理的验证安装布局，不改应用依赖、lockfile、Android 源码、New Architecture、ABI、数据库或迁移。
 
 来源：[GitHub Actions Run #40](https://github.com/964896765/lazy-armor/actions/runs/33892812415)。
+
+## CI #41 Android 假红与 RC Full Gate 首因
+
+CI #41（run ID `33895165275`，提交 `14d3150d398f45a6c8b1afdd005166740b078efe`）的 Android job `101096638693` 已真实完成 Gradle Android bundle，日志显示 **`BUILD SUCCESSFUL`** 与 **`533 actionable tasks: 533 executed`**；随后 `android-verification-14d3150d398f45a6c8b1afdd005166740b078efe` 工件上传成功。任务最终变红发生在上传之后的 `Post Run actions/setup-node`：`Path Validation Error: Path(s) specified in the action for caching do(es) not exist`。原因是验证脚本使用并清理独占的外置 pnpm 虚拟存储，而 Android job 的 `setup-node` 在 post-job 缓存保存时再校验缓存路径。Android job 不依赖该缓存保证正确性，因此只移除此 job 的 `cache: pnpm` 配置；Node 安装、冻结依赖安装、AAB 构建、源码哈希元数据和 artifact 上传均保留，未使用 `continue-on-error` 或任何失败掩盖。
+
+同一 run 的 RC Full Gate job `101096638787` 完整原始日志显示其首个失败用例为 `test/p0-execution.integration.spec.ts` 第 19 项“只重试失败步骤且不重复已成功步骤”。该测试把语义为 `timeout_once` 的连接器故障以普通 `Error` 抛出；产品错误分类对未结构化异常安全地映射为不可重试 `INTERNAL_EXECUTION_ERROR`，所以执行进入 `partially_succeeded`，而不是测试所断言的 `retry_wait`。既有 P0-7 测试已采用结构化 `ExecutionRuntimeError('TIMEOUT', ..., true)` 表示真实的瞬态超时。故仅修正该测试连接器的故障模拟为同一标准 `TIMEOUT` 契约，原有状态、重试次数、事件与幂等断言不变；不扩大普通异常的自动重试范围，避免将未知错误不安全地重试。API 类型检查已实际通过。本机针对性集成测试在使用 CI 等效 `APP_ENV=development` 后因本机 `127.0.0.1:3307` MySQL 不存在而在 Nest 初始化前失败，未将该本机环境缺失误报为测试通过；最终以 CI MySQL 8.4 服务执行为准。
+
+来源：[GitHub Actions Run #41](https://github.com/964896765/lazy-armor/actions/runs/33895165275)。

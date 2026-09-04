@@ -166,10 +166,12 @@ jobs:
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1
         with:
           version: 9.12.0
+      # The verification script uses and removes a per-run external pnpm store.
+      # Do not register setup-node cache for this disposable Windows job: its post-job
+      # cache save otherwise fails path validation after a successful AAB upload.
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22
-          cache: pnpm
       - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
         with:
           distribution: temurin

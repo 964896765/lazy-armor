@@ -6,6 +6,7 @@ import { createPool, type Pool } from 'mysql2/promise';
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { ExecutionRuntimeError } from '../dist/execution/execution.types.js';
 
 interface Session { token: string; userId: string }
 interface WorkerFacade { processExecution(id: string): Promise<{ status: string; retryScheduled?: boolean }> }
@@ -26,7 +27,7 @@ class RuntimeTestConnector implements Connector {
     const behavior = context.behavior;
     const calls = (this.calls.get(request.requestId) ?? 0) + 1;
     this.calls.set(request.requestId, calls);
-    if (behavior === 'timeout_once' && calls === 1) throw new Error('temporary network failure');
+    if (behavior === 'timeout_once' && calls === 1) throw new ExecutionRuntimeError('TIMEOUT', 'temporary network failure', true);
     if (behavior === 'always_temporary') return { ok: false, data: {} };
     if (behavior === 'slow') await wait(80);
     if (behavior === 'longer_than_test_lease') await wait(1_300);
