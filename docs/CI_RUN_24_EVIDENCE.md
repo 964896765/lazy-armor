@@ -76,3 +76,11 @@ CI #34（run ID `33882779556`，提交 `ac83e2d3716cc16142a1d4a0394b70cf3675eb58
 根据 React Native Worklets 的 Windows 构建指南，CMake/Ninja 原生任务需要短、无空格路径，并应避免用禁用 New Architecture、降级 AGP 或降级依赖的方式规避问题。[官方指南](https://docs.swmansion.com/react-native-reanimated/docs/guides/building-on-windows/) 还明确指出应使用足够短的项目路径，并处理 Windows 原生 CMake/Ninja 的路径限制。下一次只在验证脚本中把已复制的短 ASCII 临时目录临时映射为 `L:`，在此驱动器下执行 Gradle，并使用 `--no-parallel --max-workers=1` 隔离并发的 CMake 配置；真实 ABI、New Architecture、依赖版本、生产源码与数据库冻结范围均不改变。工件元数据仍记录真实临时工作区和源码 SHA-256，映射会在 `finally` 中移除。
 
 来源：[GitHub Actions Run #34](https://github.com/964896765/lazy-armor/actions/runs/33882779556)。
+
+## CI #35 短驱动器映射兼容性复核
+
+CI #35（run ID `33885162457`，提交 `8f3a6c9150d3be75e6a45831aef0698bda6be6dd`）证明 `L:` 临时映射已建立，但 Gradle 在 `settings.gradle:8` 的插件 `includeBuild` 解析阶段以 `java.io.IOException: The filename, directory name, or volume label syntax is incorrect` 退出，尚未进入 CMake 编译。根因是 Expo 生成的设置脚本将 `process.cwd()` 通过 `fs.realpathSync` 解析回真实 `C:` 临时目录，再对仍位于 `L:` 的 Node 依赖目标做 `path.relative()`；Windows 跨卷相对路径无效，最终传给 `includeBuild` 的路径语法错误。
+
+修复不改仓库的 `settings.gradle`：验证脚本只在已复制、会在 `finally` 删除的工作区副本中，以计数断言确认两处生成表达式后，把 cwd 基准替换为逻辑 `L:` 路径。这样仍可通过短驱动器映射执行 Gradle 和 CMake，同时避免跨卷相对路径；源代码、依赖、New Architecture、ABI、数据库和最终可发布构建配置保持不变。下一次 CI 仍须生成可下载 AAB 才构成 Android 候选工件证据。
+
+来源：[GitHub Actions Run #35](https://github.com/964896765/lazy-armor/actions/runs/33885162457)。

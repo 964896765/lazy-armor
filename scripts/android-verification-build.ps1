@@ -181,6 +181,19 @@ try {
   $appRoot = Join-Path $androidRoot "app"
   $keystorePath = Join-Path $appRoot "debug.keystore"
 
+  # Expo's generated settings resolve process.cwd() to the physical C: path.
+  # Under subst that makes path.relative() cross volumes and emits an invalid
+  # includeBuild path. Patch only the disposable verification copy so Node
+  # retains the logical L: path used by Gradle; repository source is untouched.
+  $settingsGradlePath = Join-Path $androidRoot "settings.gradle"
+  $settingsGradle = Get-Content -LiteralPath $settingsGradlePath -Raw
+  $physicalCwdExpression = "require('fs').realpathSync(process.cwd())"
+  $physicalCwdReferences = ([regex]::Matches($settingsGradle, [regex]::Escape($physicalCwdExpression))).Count
+  if ($physicalCwdReferences -ne 2) {
+    throw "Expected two generated settings.gradle cwd references, found $physicalCwdReferences"
+  }
+  Set-Content -LiteralPath $settingsGradlePath -Value $settingsGradle.Replace($physicalCwdExpression, "process.cwd()") -Encoding UTF8 -NoNewline
+
   New-DebugVerificationKeystore -KeystorePath $keystorePath
 
   Write-Step "Configuring short pnpm store"
