@@ -19,6 +19,7 @@ interface Session {
 interface WorkerProcess {
   child: ChildProcess;
   probePort: number;
+  output: string[];
 }
 
 const auth = (token: string) => ({ authorization: `Bearer ${token}` });
@@ -168,6 +169,7 @@ async function waitForExecutionStatus(app: INestApplication, token: string, exec
 
 async function startExecutionWorker(): Promise<WorkerProcess> {
   const probePort = portCursor++;
+  const output: string[] = [];
   const env = {
     ...process.env,
     NODE_ENV: 'development',
@@ -189,8 +191,10 @@ async function startExecutionWorker(): Promise<WorkerProcess> {
     env,
     stdio: ['ignore', 'pipe', 'pipe'],
   });
-  const worker = { child, probePort };
-  await waitForLive(probePort);
+  child.stdout?.on('data', (chunk) => output.push(String(chunk)));
+  child.stderr?.on('data', (chunk) => output.push(String(chunk)));
+  const worker = { child, probePort, output };
+  await waitForLive(worker);
   activeWorkers.push(worker);
   return worker;
 }
@@ -230,16 +234,16 @@ async function waitForExit(child: ChildProcess, timeoutMs: number) {
   });
 }
 
-async function waitForLive(port: number, timeoutMs = 20_000) {
+async function waitForLive(worker: WorkerProcess, timeoutMs = 30_000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {
-      const response = await fetch(`http://127.0.0.1:${port}/live`);
+      const response = await fetch(`http://127.0.0.1:${worker.probePort}/live`);
       if (response.status === 200) return;
     } catch {}
     await sleep(250);
   }
-  throw new Error(`Worker /live did not reach HTTP 200 on port ${port}`);
+  throw new Error(`Worker /live did not reach HTTP 200 on port ${worker.probePort}. Logs:\n${worker.output.join('')}`);
 }
 
 async function isChildProcessAlive(child: ChildProcess) {

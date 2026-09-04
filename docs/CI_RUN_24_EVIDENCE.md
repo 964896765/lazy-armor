@@ -84,3 +84,11 @@ CI #35（run ID `33885162457`，提交 `8f3a6c9150d3be75e6a45831aef0698bda6be6dd
 修复不改仓库的 `settings.gradle`：验证脚本只在已复制、会在 `finally` 删除的工作区副本中，以计数断言确认两处生成表达式后，把 cwd 基准替换为逻辑 `L:` 路径。这样仍可通过短驱动器映射执行 Gradle 和 CMake，同时避免跨卷相对路径；源代码、依赖、New Architecture、ABI、数据库和最终可发布构建配置保持不变。下一次 CI 仍须生成可下载 AAB 才构成 Android 候选工件证据。
 
 来源：[GitHub Actions Run #35](https://github.com/964896765/lazy-armor/actions/runs/33885162457)。
+
+## CI #36 多 Worker 启动诊断修复
+
+CI #36（run ID `33886273715`，提交 `0ccb6baf50e569bd6396dc2a1e26b356a814260d`）在 Fast Gate 的 `p5-scale-multi-worker.integration.spec.ts` 失败，因此 RC Full Gate 与 Android 验证按依赖关系被跳过。失败信息为第二个真实执行 Worker 的 `/live` 在固定 **20 秒**窗口内未返回 HTTP 200；该测试已显式设置 `APP_ROLE=execution-worker`，不是此前的 API 角色继承问题。该套件原先未采集子进程 stdout/stderr，因此现有日志无法判断冷启动超时、端口监听或启动异常。
+
+为避免用跳过真进程测试掩盖问题，测试已与相邻的真进程 Worker 测试对齐：保存子进程 stdout/stderr、把仅针对 `/live` 的启动等待扩为 30 秒，并在仍超时时输出子进程日志。该变更不改 Worker、生产运行时、数据库、迁移或 Android 代码；它既降低 CI 冷启动造成的非确定性，也会为后续真实故障提供可审计的根因。API 类型检查已通过。本地针对性运行因 `127.0.0.1:3307` 没有 MySQL 服务而在 Nest 初始化前失败，故不能替代 CI 服务容器中的真实集成验证。
+
+来源：[GitHub Actions Run #36](https://github.com/964896765/lazy-armor/actions/runs/33886273715)。
