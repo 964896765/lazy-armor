@@ -40,6 +40,10 @@ const activeWorkers: WorkerProcess[] = [];
 let portCursor = 35210;
 let sharedInternalConnectionId = '';
 let poolRef: Pool;
+// GitHub Actions 的 service containers 由 Runner 管理，测试不可安全 stop/start。
+// 本地 Compose 保留故障注入验证；CI 继续执行真实多进程消费与健康路径。
+const supportsLocalComposeFaultInjection = process.env.CI !== 'true';
+const faultInjectionIt = supportsLocalComposeFaultInjection ? it : it.skip;
 
 describe.sequential('P0-H4 execution worker true-process reliability', { timeout: 180000 }, () => {
   let app: INestApplication;
@@ -91,8 +95,10 @@ describe.sequential('P0-H4 execution worker true-process reliability', { timeout
     while (activeWorkers.length) {
       await stopWorker(activeWorkers.pop()!);
     }
-    await ensureContainerRunning('lazy-armor-p0-redis-1');
-    await ensureContainerRunning('lazy-armor-p0-mysql-1');
+    if (supportsLocalComposeFaultInjection) {
+      await ensureContainerRunning('lazy-armor-p0-redis-1');
+      await ensureContainerRunning('lazy-armor-p0-mysql-1');
+    }
   });
 
   afterAll(async () => {
@@ -127,7 +133,7 @@ describe.sequential('P0-H4 execution worker true-process reliability', { timeout
     expect(detail.steps.map((step: { status: string }) => step.status)).toEqual(['succeeded']);
   });
 
-  it('keeps /live up, returns /ready=503 during Redis outage, and recovers after Redis restart', async () => {
+  faultInjectionIt('keeps /live up, returns /ready=503 during Redis outage, and recovers after Redis restart', async () => {
     const worker = await startExecutionWorker();
     await waitForReady(worker.probePort, 200);
 
@@ -147,7 +153,7 @@ describe.sequential('P0-H4 execution worker true-process reliability', { timeout
     expect((await waitForExecutionStatus(app, user.token, executionId, 'succeeded')).status).toBe('succeeded');
   });
 
-  it('keeps /live up, returns /ready=503 during MySQL outage, and recovers after MySQL restart', async () => {
+  faultInjectionIt('keeps /live up, returns /ready=503 during MySQL outage, and recovers after MySQL restart', async () => {
     const worker = await startExecutionWorker();
     await waitForReady(worker.probePort, 200);
 

@@ -112,4 +112,10 @@ export class TruthStoreService {
 }
 
 function hash(value: unknown) { return createHash('sha256').update(JSON.stringify(value)).digest('hex'); }
-function isDuplicate(error: unknown) { return typeof error === 'object' && error !== null && 'code' in error && (error as { code?: string }).code === 'ER_DUP_ENTRY'; }
+function isDuplicate(error: unknown) {
+  // Drizzle 会将 mysql2 的错误包裹为 DrizzleQueryError；真实并发路径的
+  // ER_DUP_ENTRY 位于 cause，而非最外层错误对象。仅识别该精确数据库码，
+  // 然后重新读取已提交的完整事实，绝不将其他写入错误降级为成功。
+  const candidate = error as { code?: unknown; cause?: { code?: unknown } } | null;
+  return candidate?.code === 'ER_DUP_ENTRY' || candidate?.cause?.code === 'ER_DUP_ENTRY';
+}
