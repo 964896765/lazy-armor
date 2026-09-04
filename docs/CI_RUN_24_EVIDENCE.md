@@ -108,3 +108,11 @@ CI #38（run ID `33887742617`，提交 `1b98369d00282b067c50eedd207080a29c6ce5e1
 pnpm 官方 Node Modules 设置明确支持为 Windows 长路径问题设置独立 `virtualStoreDir`，并要求该虚拟存储不得在项目间共享。[官方文档](https://pnpm.io/settings/node-modules) 同时允许进一步缩短 `virtualStoreDirMaxLength`。因此，验证脚本下一轮会给每次 CI 使用随机、独占、可清理的 `C:\p-xxxx` 外置虚拟存储，并仍限制虚拟包目录名为 60 字符；虚拟存储不再嵌套于工作区 `node_modules`。候选构建完成后脚本会删除该存储；元数据记录其路径以及内容存储路径，保持运行可追溯。此措施只变更 CI 验证安装布局，不改 lockfile、生产安装策略、依赖版本、Android 源码、ABI、New Architecture 或数据库冻结内容。
 
 来源：[GitHub Actions Run #38](https://github.com/964896765/lazy-armor/actions/runs/33887742617)。
+
+## CI #39 外置虚拟存储后的 Ninja 工具链复核
+
+CI #39（run ID `33890402687`，提交 `8871cdf423584fdda150c5bf7bd375f7bf86b9f8`）已实际使用外置短虚拟存储；日志中的 Worklets 原生路径为 `C:\p-a9a1\…`，CI #38 所见的 `CMAKE_OBJECT_PATH_MAX=250` 对象路径警告不再出现。构建仍在 Worklets 的 `armeabi-v7a` `buildCMakeRelWithDebInfo` 中以 `build.ninja still dirty after 100 tries` 结束，故外置路径已消除一项可量化根因，但尚未形成 AAB。
+
+已检查安装的 React Native `0.86.3` 构建脚本，其默认 `CMAKE_VERSION` 为 `3.30.5`；同时 Expo 根项目插件明确支持在 `gradle.properties` 通过 `android.cmakeVersion` 将所有 Android application/library 子项目统一到该版本。下一轮脚本只在销毁的临时副本追加此属性，并同时设置 `CMAKE_VERSION=3.30.5`，使 ReactAndroid、Worklets 与 Expo 子项目使用同一较新 CMake/Ninja 工具链。仓库的 `gradle.properties` 不会修改；此变更不禁用 New Architecture、不降级 AGP/依赖、不改变 ABI，也不影响数据库冻结范围。CMake 版本会写入成功工件元数据，供后续验收核对。
+
+来源：[GitHub Actions Run #39](https://github.com/964896765/lazy-armor/actions/runs/33890402687)。

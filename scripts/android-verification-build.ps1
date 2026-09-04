@@ -128,6 +128,7 @@ function Get-AabMetadata {
     sizeBytes = $artifact.Length
     sha256 = $hash
     buildEnvironment = "development"
+    cmakeVersion = $verificationCmakeVersion
     signingMode = "DEBUG_VERIFICATION_ONLY"
     publishable = $false
     buildTimestamp = $artifact.LastWriteTimeUtc.ToString("o")
@@ -155,6 +156,7 @@ function Get-AabMetadata {
 }
 
 $workspace = $TempWorkspaceRoot
+$verificationCmakeVersion = "3.30.5"
 $virtualStoreCreated = $false
 $mobileRoot = Join-Path $workspace "apps\mobile"
 $androidRoot = Join-Path $mobileRoot "android"
@@ -189,9 +191,16 @@ try {
   pnpm --filter @lazy-armor/plan-schema build
   Pop-Location
 
+  Write-Step "Configuring verification CMake toolchain"
+  # React Native 0.86 uses 3.30.5 by default. Expo applies android.cmakeVersion
+  # to each native subproject, keeping Worklets and ReactAndroid on one toolchain.
+  # This is appended only to the disposable copy, not repository gradle.properties.
+  Add-Content -LiteralPath (Join-Path $androidRoot "gradle.properties") -Value "`nandroid.cmakeVersion=$verificationCmakeVersion"
+
   Write-Step "Running Android verification bundle"
   Push-Location $androidRoot
   $env:JAVA_TOOL_OPTIONS = "-Dfile.encoding=UTF-8"
+  $env:CMAKE_VERSION = $verificationCmakeVersion
   $env:EXPO_PUBLIC_APP_ENV = "development"
   $env:APP_ENV = "development"
   $env:LAZY_ARMOR_ANDROID_ALLOW_DEBUG_RELEASE = "true"
