@@ -142,3 +142,11 @@ CI #41（run ID `33895165275`，提交 `14d3150d398f45a6c8b1afdd005166740b078efe
 修复仅将 `longer_than_test_lease` 夹具延迟从 1.3 秒扩至 2 秒，为同一 1.1 秒观察点提供 0.9 秒裕量；测试继续验证真实 MySQL 下的租约排他、心跳续租和副作用只执行一次。API 类型检查已通过；本机没有测试所需的 MySQL `127.0.0.1:3307`，针对性集成测试在服务初始化时以 `ECONNREFUSED` 结束，因此最终仍以新 CI 的 MySQL 8.4 服务运行结果为唯一通过证据。
 
 来源：[GitHub Actions Run #42](https://github.com/964896765/lazy-armor/actions/runs/33902030416)。
+
+### 首因复核：显式夹具控制而非继续延长载荷延迟
+
+对下一轮 run `33906619810`（提交 `e19e21281e14616ab013d5c4e0871f4cba9bbcf6`）的 RC Full Gate 原始日志复核表明，第 28 项仍在第 1.1 秒观察点得到 `succeeded`。日志行号已经反映 2 秒延迟改动被加载，因此不能再假设简单延长 `triggerPayload.behavior` 会形成所需的测试阻塞。根因收敛为 **B/C：测试夹具对普通触发载荷中测试控制字段的隐式依赖，使租约竞争观察无法确定地建立**；不属于生产 ExecutionLease、心跳、权限或 MySQL 行为缺陷。
+
+修复将 `RuntimeTestConnector` 的一次性异步延迟改为测试进程内显式设置：并行获取租约前设置 80 毫秒以保证竞争交叠，心跳验证前设置 2 秒以跨过 1 秒测试租约和 1.1 秒观察点。连接器执行后立即清除该延迟，避免污染后续用例。所有原有断言保持：一个连接器调用、第二 Worker 不能接管有效租约、首 Worker 成功、无重复副作用。API 类型检查已通过。本轮基线的 Android verification job `101133611652` 也已最终成功，说明 Windows AAB 构建与 artifact 上传在关闭 cache post-job 后不再假红。
+
+来源：[GitHub Actions Run #43](https://github.com/964896765/lazy-armor/actions/runs/33906619810)。
