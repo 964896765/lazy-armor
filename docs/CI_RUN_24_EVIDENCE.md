@@ -116,3 +116,11 @@ CI #39（run ID `33890402687`，提交 `8871cdf423584fdda150c5bf7bd375f7bf86b9f8
 已检查安装的 React Native `0.86.3` 构建脚本，其默认 `CMAKE_VERSION` 为 `3.30.5`；同时 Expo 根项目插件明确支持在 `gradle.properties` 通过 `android.cmakeVersion` 将所有 Android application/library 子项目统一到该版本。下一轮脚本只在销毁的临时副本追加此属性，并同时设置 `CMAKE_VERSION=3.30.5`，使 ReactAndroid、Worklets 与 Expo 子项目使用同一较新 CMake/Ninja 工具链。仓库的 `gradle.properties` 不会修改；此变更不禁用 New Architecture、不降级 AGP/依赖、不改变 ABI，也不影响数据库冻结范围。CMake 版本会写入成功工件元数据，供后续验收核对。
 
 来源：[GitHub Actions Run #39](https://github.com/964896765/lazy-armor/actions/runs/33890402687)。
+
+## CI #40 260 字符 Prefab 路径收敛
+
+CI #40（run ID `33892812415`，提交 `2c776214f85da5aef3d7e8e7dfb7817bceed3ecd`）已确认临时 CMake 统一配置生效，并推进到 `react-native-reanimated` 原生构建。新的精确失败为 Ninja 对 Prefab 依赖配置文件执行 `Stat(...)` 时报告 **Filename longer than 260 characters**；日志中的实际路径长度为 **263**。其中 `react-native-reanimated@…` 虚拟包目录名为 60 字符。该错误解释了即使外置短根目录后仍出现 Ninja 重生成循环的原因，且再次证明问题位于 Windows 原生依赖布局，不在应用 Kotlin/JavaScript/业务层。
+
+验证脚本下一轮将同一独占外置虚拟存储的 `virtual-store-dir-max-length` 从 60 收紧为 **33**。pnpm 的目录压缩算法会把超过该上限的目录收敛为哈希后缀；以 CI #40 的实际 263 字符路径计算，目录缩短 27 字符后的预计路径为 **236**，低于 Windows 260 字符限制。成功元数据将同时记录外置虚拟存储路径和该 33 字符上限。改动仍仅作用于可清理的验证安装布局，不改应用依赖、lockfile、Android 源码、New Architecture、ABI、数据库或迁移。
+
+来源：[GitHub Actions Run #40](https://github.com/964896765/lazy-armor/actions/runs/33892812415)。

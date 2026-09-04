@@ -138,6 +138,7 @@ function Get-AabMetadata {
       path = $WorkspaceRoot
       pnpmStorePath = $PnpmStorePath
       virtualStorePath = $VirtualStorePath
+      virtualStoreDirMaxLength = $virtualStoreDirMaxLength
     }
     nativeSourceEvidence = $nativeSourceEvidence
     acceptance = @{
@@ -156,6 +157,7 @@ function Get-AabMetadata {
 }
 
 $workspace = $TempWorkspaceRoot
+$virtualStoreDirMaxLength = 33
 $verificationCmakeVersion = "3.30.5"
 $virtualStoreCreated = $false
 $mobileRoot = Join-Path $workspace "apps\mobile"
@@ -182,10 +184,11 @@ try {
 
   Write-Step "Installing dependencies with frozen lockfile and an external Windows-safe virtual store"
   Push-Location $workspace
-  # React Native Prefab builds native objects below the virtual store. Keep both
-  # its root and package names short without changing the production linker.
+  # React Native Prefab builds native objects below the virtual store. CI #40
+  # measured a 263-character Prefab config path at 60; 33 leaves 27 characters
+  # of Windows headroom without changing the production linker.
   $virtualStoreCreated = $true
-  pnpm install --frozen-lockfile --config.virtual-store-dir=$VirtualStorePath --config.virtual-store-dir-max-length=60
+  pnpm install --frozen-lockfile --config.virtual-store-dir=$VirtualStorePath --config.virtual-store-dir-max-length=$virtualStoreDirMaxLength
   Write-Step "Building mobile runtime workspace dependencies"
   pnpm --filter @lazy-armor/shared build
   pnpm --filter @lazy-armor/plan-schema build
