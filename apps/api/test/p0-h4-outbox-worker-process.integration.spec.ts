@@ -68,6 +68,9 @@ let poolRef: Pool;
 let executionWorkerRef: WorkerFacade;
 let userRef: Session;
 let operationsRef: AdminOperationsService;
+// CI 的 Redis/MySQL 由 GitHub Actions 管理；仅本地 Compose 可安全执行停启故障注入。
+const supportsLocalComposeFaultInjection = process.env.CI !== 'true';
+const faultInjectionIt = supportsLocalComposeFaultInjection ? it : it.skip;
 
 describe.sequential('P0-H4 outbox worker true-process reliability', { timeout: 240000 }, () => {
   let outbox: { claim(batch: number, workerId: string, leaseMs?: number): Promise<OutboxRow[]> };
@@ -115,8 +118,10 @@ describe.sequential('P0-H4 outbox worker true-process reliability', { timeout: 2
     await ensurePermissionsGranted(appRef, userRef.token, sharedConnectionId);
     await ensureConnectionConnected();
     resetHarnessState();
-    await ensureContainerRunning('lazy-armor-p0-redis-1');
-    await ensureContainerRunning('lazy-armor-p0-mysql-1');
+    if (supportsLocalComposeFaultInjection) {
+      await ensureContainerRunning('lazy-armor-p0-redis-1');
+      await ensureContainerRunning('lazy-armor-p0-mysql-1');
+    }
   });
 
   afterAll(async () => {
@@ -148,7 +153,7 @@ describe.sequential('P0-H4 outbox worker true-process reliability', { timeout: 2
     expect(sideEffects('TEST_OUTBOX_SAFE')).toBe(1);
   });
 
-  it('keeps /live up, returns /ready=503 during Redis outage, and recovers after Redis restart', async () => {
+  faultInjectionIt('keeps /live up, returns /ready=503 during Redis outage, and recovers after Redis restart', async () => {
     const worker = await startOutboxWorker();
     await waitForReady(worker.probePort, 200);
 
@@ -161,7 +166,7 @@ describe.sequential('P0-H4 outbox worker true-process reliability', { timeout: 2
     expect((await waitForReady(worker.probePort, 200, 30_000)).status).toBe('ready');
   });
 
-  it('keeps /live up, returns /ready=503 during MySQL outage, and recovers after MySQL restart', async () => {
+  faultInjectionIt('keeps /live up, returns /ready=503 during MySQL outage, and recovers after MySQL restart', async () => {
     const worker = await startOutboxWorker();
     await waitForReady(worker.probePort, 200);
 
@@ -288,7 +293,7 @@ describe.sequential('P0-H4 outbox worker true-process reliability', { timeout: 2
     expect(detail.events.some((event: { eventType: string }) => event.eventType === 'side_effect_failed')).toBe(true);
   });
 
-  it('never re-dispatches a dead_letter after worker or dependency restarts', async () => {
+  faultInjectionIt('never re-dispatches a dead_letter after worker or dependency restarts', async () => {
     const waiting = await prepareWaitingDispatch('dead-letter-boundary', 'TEST_OUTBOX_SAFE', 'provider-5xx-always');
     await startOutboxWorker();
     await accelerateOutboxRetries();

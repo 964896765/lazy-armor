@@ -45,4 +45,8 @@ CI #27 的 `PR Fast Gate` 已成功：内部 API 依赖闭包构建、移动端 
 
 同次运行中 `Android Verification Artifact` 在开始 Gradle 前失败：PowerShell 脚本只复制了仓库顶层目录，临时工作区没有 `apps\\mobile\\android`。复制逻辑现已改为递归复制，同时保留对 `.git`、环境文件、密钥与生成工件的排除。多 Worker 进程测试还发现父 API 角色会被 Worker 子进程继承，因此两个执行 Worker 测试均已显式使用 `APP_ROLE=execution-worker`。
 
-来源：[GitHub Actions Run #24](https://github.com/964896765/lazy-armor/actions/runs/33868047169)；[GitHub Actions Run #26](https://github.com/964896765/lazy-armor/actions/runs/33871515930)；[GitHub Actions Run #27](https://github.com/964896765/lazy-armor/actions/runs/33872113846)
+## CI #29 首次真实数据库证据
+
+CI #29 的 Fast Gate 已通过，且 RC Full Gate 已真实成功执行 `Prepare CI database` 和 `MySQL 8.4 migration and backup/restore evidence`。这首次提供了 MySQL 8.4、全量迁移、前向迁移和备份恢复的实际运行证据。随后完整测试因两个独立问题失败：一是 Truth Store 并发确认触发底层 mysql2 `ER_DUP_ENTRY`，但 Drizzle 包装错误未被幂等处理；二是历史 Worker 故障注入测试尝试 `docker compose` 管理 GitHub Actions service containers。前者已改为识别 `cause.code=ER_DUP_ENTRY` 并重读已提交完整事实；后者只在本地 Compose 运行，CI 保留真实 Worker/Redis/MySQL 正常路径。CI #29 因后续提交被并发策略取消，Android 工件未形成完成结论。
+
+来源：[GitHub Actions Run #24](https://github.com/964896765/lazy-armor/actions/runs/33868047169)；[GitHub Actions Run #26](https://github.com/964896765/lazy-armor/actions/runs/33871515930)；[GitHub Actions Run #27](https://github.com/964896765/lazy-armor/actions/runs/33872113846)；[GitHub Actions Run #29](https://github.com/964896765/lazy-armor/actions/runs/33873822580)

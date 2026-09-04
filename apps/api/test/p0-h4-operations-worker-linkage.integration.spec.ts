@@ -20,6 +20,10 @@ const entries: Record<WorkerRole, string> = {
 const portBase = 36500 + Math.floor(Math.random() * 500);
 const ports: Record<WorkerRole, number> = { 'execution-worker': portBase, 'outbox-worker': portBase + 1 };
 const activeWorkers: WorkerProcess[] = [];
+// GitHub Actions service containers 由 Runner 生命周期管理；该用例故意停启
+// Redis/MySQL，仅能在本地 Compose 中运行。CI 的正常 Worker 路径由其他真进程测试覆盖。
+const supportsLocalComposeFaultInjection = process.env.CI !== 'true';
+const localFaultInjectionIt = supportsLocalComposeFaultInjection ? it : it.skip;
 
 describe.sequential('P0-H4 Operations to true-process worker linkage', { timeout: 300000 }, () => {
   let app: INestApplication;
@@ -29,8 +33,10 @@ describe.sequential('P0-H4 Operations to true-process worker linkage', { timeout
     for (const entry of Object.values(entries)) {
       if (!existsSync(entry)) throw new Error('Worker dist entrypoint is missing. Run the API build before this focused gate.');
     }
-    await ensureContainerRunning('lazy-armor-p0-mysql-1');
-    await ensureContainerRunning('lazy-armor-p0-redis-1');
+    if (supportsLocalComposeFaultInjection) {
+      await ensureContainerRunning('lazy-armor-p0-mysql-1');
+      await ensureContainerRunning('lazy-armor-p0-redis-1');
+    }
     process.env.NODE_ENV = 'development';
     process.env.APP_ENV = 'development';
     process.env.APP_ROLE = 'api';
@@ -53,12 +59,14 @@ describe.sequential('P0-H4 Operations to true-process worker linkage', { timeout
 
   afterAll(async () => {
     while (activeWorkers.length) await stopWorker(activeWorkers.pop()!);
-    await ensureContainerRunning('lazy-armor-p0-redis-1');
-    await ensureContainerRunning('lazy-armor-p0-mysql-1');
+    if (supportsLocalComposeFaultInjection) {
+      await ensureContainerRunning('lazy-armor-p0-redis-1');
+      await ensureContainerRunning('lazy-armor-p0-mysql-1');
+    }
     await app?.close();
   });
 
-  it('reports DOWN, UP, dependency DEGRADED, process restart, and truthful metric availability for both workers', async () => {
+  localFaultInjectionIt('reports DOWN, UP, dependency DEGRADED, process restart, and truthful metric availability for both workers', async () => {
     const before = await operations.workers();
     expect(before.executionWorker).toMatchObject({ processStatus: 'DOWN', status: 'DOWN' });
     expect(before.outboxWorker).toMatchObject({ processStatus: 'DOWN', status: 'DOWN' });

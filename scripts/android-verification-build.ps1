@@ -172,6 +172,9 @@ try {
   Write-Step "Installing dependencies with frozen lockfile"
   Push-Location $workspace
   pnpm install --frozen-lockfile
+  Write-Step "Building mobile runtime workspace dependencies"
+  pnpm --filter @lazy-armor/shared build
+  pnpm --filter @lazy-armor/plan-schema build
   Pop-Location
 
   Write-Step "Running Android verification bundle"
