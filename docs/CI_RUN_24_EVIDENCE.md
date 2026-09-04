@@ -100,3 +100,11 @@ CI #37（run ID `33886886271`，提交 `250fe67e354d2c149c5a748eb0b5d62e3e372fdc
 验证脚本现改为直接使用一个随机、可删除但保持极短的真实路径 `C:\l-xxxx` 作为工作区根；它比原 `C:\laabuild-xxxxxx` 更短，且不涉及 Windows 跨卷相对路径。pnpm 的 60 字符虚拟存储上限和串行 Gradle 原生任务继续保留。该回退只改变验证工作区位置，未改 Android 应用源代码、Kotlin、Expo 设置、依赖、New Architecture、ABI、数据库或迁移。下轮 CI 将以此真实短路径重新验证 CMake/Ninja 与候选 AAB 产出。
 
 来源：[GitHub Actions Run #37](https://github.com/964896765/lazy-armor/actions/runs/33886886271)。
+
+## CI #38 CMake 对象路径证据与外置虚拟存储
+
+CI #38（run ID `33887742617`，提交 `1b98369d00282b067c50eedd207080a29c6ce5e1`）在短真实工作区 `C:\l-7621` 中已越过 Gradle 设置解析并实际进入 CMake。日志给出可量化根因：Worklets 的 CMake 对象目录已有 **198** 个字符，CMake 明确警告其生成对象文件超过 `CMAKE_OBJECT_PATH_MAX=250`，随后 Ninja 以 `manifest 'build.ninja' still dirty after 100 tries` 失败。该证据确认根因仍是原生构建路径，而不是 Kotlin、Metro、业务代码、数据库或真机行为。
+
+pnpm 官方 Node Modules 设置明确支持为 Windows 长路径问题设置独立 `virtualStoreDir`，并要求该虚拟存储不得在项目间共享。[官方文档](https://pnpm.io/settings/node-modules) 同时允许进一步缩短 `virtualStoreDirMaxLength`。因此，验证脚本下一轮会给每次 CI 使用随机、独占、可清理的 `C:\p-xxxx` 外置虚拟存储，并仍限制虚拟包目录名为 60 字符；虚拟存储不再嵌套于工作区 `node_modules`。候选构建完成后脚本会删除该存储；元数据记录其路径以及内容存储路径，保持运行可追溯。此措施只变更 CI 验证安装布局，不改 lockfile、生产安装策略、依赖版本、Android 源码、ABI、New Architecture 或数据库冻结内容。
+
+来源：[GitHub Actions Run #38](https://github.com/964896765/lazy-armor/actions/runs/33887742617)。

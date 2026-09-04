@@ -3,6 +3,8 @@ param(
   # Verification-only root must stay exceptionally short for React Native CMake/Prefab paths.
   # Callers may override it, but CI uses this empty disposable directory.
   [string]$TempWorkspaceRoot = "C:\l-$([guid]::NewGuid().ToString('N').Substring(0, 4))",
+  # A per-run virtual store is kept outside node_modules to shorten native CMake paths.
+  [string]$VirtualStorePath = "C:\p-$([guid]::NewGuid().ToString('N').Substring(0, 4))",
   [string]$PnpmStorePath = "C:\v2",
   [switch]$KeepWorkspace
 )
@@ -134,6 +136,7 @@ function Get-AabMetadata {
       type = "short_ascii_verification_workspace"
       path = $WorkspaceRoot
       pnpmStorePath = $PnpmStorePath
+      virtualStorePath = $VirtualStorePath
     }
     nativeSourceEvidence = $nativeSourceEvidence
     acceptance = @{
@@ -152,6 +155,7 @@ function Get-AabMetadata {
 }
 
 $workspace = $TempWorkspaceRoot
+$virtualStoreCreated = $false
 $mobileRoot = Join-Path $workspace "apps\mobile"
 $androidRoot = Join-Path $mobileRoot "android"
 $appRoot = Join-Path $androidRoot "app"
@@ -167,15 +171,19 @@ try {
 
   New-DebugVerificationKeystore -KeystorePath $keystorePath
 
-  Write-Step "Configuring short pnpm store"
+  Write-Step "Configuring short pnpm content and virtual stores"
   New-Item -ItemType Directory -Force -Path $PnpmStorePath | Out-Null
   $env:PNPM_STORE_DIR = $PnpmStorePath
+  if (Test-Path -LiteralPath $VirtualStorePath) {
+    throw "Verification virtual store already exists: $VirtualStorePath"
+  }
 
-  Write-Step "Installing dependencies with frozen lockfile and a Windows-safe virtual store path"
+  Write-Step "Installing dependencies with frozen lockfile and an external Windows-safe virtual store"
   Push-Location $workspace
-  # React Native Prefab invokes generated .bat files below the pnpm virtual store.
-  # Keep virtual package directory names short so the command remains executable on Windows.
-  pnpm install --frozen-lockfile --config.virtual-store-dir-max-length=60
+  # React Native Prefab builds native objects below the virtual store. Keep both
+  # its root and package names short without changing the production linker.
+  $virtualStoreCreated = $true
+  pnpm install --frozen-lockfile --config.virtual-store-dir=$VirtualStorePath --config.virtual-store-dir-max-length=60
   Write-Step "Building mobile runtime workspace dependencies"
   pnpm --filter @lazy-armor/shared build
   pnpm --filter @lazy-armor/plan-schema build
@@ -195,6 +203,10 @@ try {
   Write-Step "Writing artifact metadata"
   Get-AabMetadata -WorkspaceRoot $workspace -RepoRoot $SourceRepoRoot
 } finally {
+  if (-not $KeepWorkspace -and $virtualStoreCreated) {
+    Write-Step "Cleaning temporary virtual store"
+    Remove-IfExists $VirtualStorePath
+  }
   if (-not $KeepWorkspace) {
     Write-Step "Cleaning temporary workspace"
     Remove-IfExists $workspace
