@@ -39,4 +39,10 @@ CI #25 已验证移动端在干净环境解析 `@lazy-armor/plan-schema` 入口�
 
 CI #26 随后失败于 `p5-scale-multi-worker.integration.spec.ts`：子进程 `/live` 未在 20 秒内返回 HTTP 200。因此 Fast Gate 停止，MySQL 8.4 证据工件、RC Full Gate 与 Android 验证均被跳过。根因是该集成测试的父进程明确设为 `APP_ROLE=api`，而生成 Worker 子进程时继承了此角色；入口逻辑会尊重已声明角色，WorkerProbe 因不是 `execution-worker` 而拒绝启动。测试现已显式传递 `APP_ROLE=execution-worker`，这是测试进程角色隔离修复，不改变生产入口的显式部署角色策略。
 
-来源：[GitHub Actions Run #24](https://github.com/964896765/lazy-armor/actions/runs/33868047169)；[GitHub Actions Run #26](https://github.com/964896765/lazy-armor/actions/runs/33871515930)
+## CI #27 根因与修复记录
+
+CI #27 的 `PR Fast Gate` 已成功：内部 API 依赖闭包构建、移动端 90 项测试、API 安全/可信设备/Truth Store 回归均已放行。`RC Full Gate` 失败不是 MySQL 8.4 服务不可用，而是 `pnpm test` 经 Turbo 严格环境运行时未声明 `DATABASE_URL` 等必要输入，集成测试回落至开发机默认的 `127.0.0.1:3307` 并被拒绝连接；同时该任务先前只构建依赖而未构建被测 API 本身，令动态 `dist` 安全回归入口缺失。现已将必要环境列入 `globalEnv`，并令 `test` 同时依赖 `build` 与 `^build`。
+
+同次运行中 `Android Verification Artifact` 在开始 Gradle 前失败：PowerShell 脚本只复制了仓库顶层目录，临时工作区没有 `apps\\mobile\\android`。复制逻辑现已改为递归复制，同时保留对 `.git`、环境文件、密钥与生成工件的排除。多 Worker 进程测试还发现父 API 角色会被 Worker 子进程继承，因此两个执行 Worker 测试均已显式使用 `APP_ROLE=execution-worker`。
+
+来源：[GitHub Actions Run #24](https://github.com/964896765/lazy-armor/actions/runs/33868047169)；[GitHub Actions Run #26](https://github.com/964896765/lazy-armor/actions/runs/33871515930)；[GitHub Actions Run #27](https://github.com/964896765/lazy-armor/actions/runs/33872113846)

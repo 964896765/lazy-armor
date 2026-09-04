@@ -466,6 +466,8 @@ async function startExecutionWorker(explicitProbePort?: number): Promise<WorkerP
     ...process.env,
     NODE_ENV: 'development',
     APP_ENV: 'development',
+    // 父进程是 API 测试上下文；生成的独立进程必须以目标 Worker 角色运行。
+    APP_ROLE: 'execution-worker',
     DATABASE_URL: process.env.DATABASE_URL!,
     REDIS_URL: process.env.REDIS_URL!,
     JWT_SECRET: process.env.JWT_SECRET!,

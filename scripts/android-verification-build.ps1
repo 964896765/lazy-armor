@@ -42,7 +42,9 @@ function Copy-RepoTree {
     "apps\mobile\android\app\debug.keystore"
   )
 
-  Get-ChildItem -Force -LiteralPath $Source | ForEach-Object {
+  # 必须递归复制源码树；只复制顶层目录会生成空 apps\ 目录，
+  # 导致 Windows CI 找不到 apps\mobile\android 与 Gradle Wrapper。
+  Get-ChildItem -Force -LiteralPath $Source -Recurse | ForEach-Object {
     $relative = $_.FullName.Substring($Source.Length).TrimStart('\')
     if (-not $relative) { return }
 

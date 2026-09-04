@@ -1,5 +1,17 @@
 {
   "$schema": "https://turbo.build/schema.json",
+  "globalEnv": [
+    "DATABASE_URL",
+    "MYSQL_ADMIN_URL",
+    "REDIS_URL",
+    "JWT_SECRET",
+    "CREDENTIAL_MASTER_KEY",
+    "APP_ENV",
+    "NODE_ENV",
+    "APP_ROLE",
+    "EXPO_PUBLIC_APP_ENV",
+    "RUN_REAL_DB_INTEGRATION"
+  ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
@@ -13,7 +25,7 @@
       "dependsOn": ["^typecheck"]
     },
     "test": {
-      "dependsOn": ["^build"]
+      "dependsOn": ["build", "^build"]
     }
   }
 }
