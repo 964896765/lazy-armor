@@ -172,6 +172,9 @@ async function startExecutionWorker(): Promise<WorkerProcess> {
     ...process.env,
     NODE_ENV: 'development',
     APP_ENV: 'development',
+    // 父测试进程以 API 角色引导；真实独立 Worker 必须显式覆盖，
+    // 否则 prepareEntrypointRole 会尊重继承的 api 角色并拒绝启动 WorkerProbe。
+    APP_ROLE: 'execution-worker',
     DATABASE_URL: process.env.DATABASE_URL!,
     REDIS_URL: process.env.REDIS_URL!,
     JWT_SECRET: process.env.JWT_SECRET!,

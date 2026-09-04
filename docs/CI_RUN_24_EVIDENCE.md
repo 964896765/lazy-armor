@@ -33,4 +33,10 @@
 
 2026-09-04 11:59，尝试 #2 的 `PR Fast Gate` 在 1 分 25 秒后失败。Job Summary 显示 12 个测试文件中 11 个通过、1 个失败，85 个已执行测试均通过；失败发生在 `apps/mobile/src/plan-presenter.spec.ts` 加载 `@lazy-armor/plan-schema` 时，报错为 package entry (`main/module/exports`) 无法解析。因 Fast Gate 在移动端测试步骤停止，`RC Full Gate`、`Android Verification Artifact`、MySQL 8.4、迁移、备份恢复与真实并发均**未执行**，也未产生工件。该运行另有 Node 20 Action runtime 弃用警告，但不是已确认失败根因。
 
-来源：[GitHub Actions Run #24](https://github.com/964896765/lazy-armor/actions/runs/33868047169)
+## 后续 CI #25 与 #26 根因记录
+
+CI #25 已验证移动端在干净环境解析 `@lazy-armor/plan-schema` 入口的缺口；在测试前构建内部 API 依赖闭包后，CI #26 的该步骤、Mobile 90 项测试及 API 安全/设备/Truth Store 聚焦回归均通过。
+
+CI #26 随后失败于 `p5-scale-multi-worker.integration.spec.ts`：子进程 `/live` 未在 20 秒内返回 HTTP 200。因此 Fast Gate 停止，MySQL 8.4 证据工件、RC Full Gate 与 Android 验证均被跳过。根因是该集成测试的父进程明确设为 `APP_ROLE=api`，而生成 Worker 子进程时继承了此角色；入口逻辑会尊重已声明角色，WorkerProbe 因不是 `execution-worker` 而拒绝启动。测试现已显式传递 `APP_ROLE=execution-worker`，这是测试进程角色隔离修复，不改变生产入口的显式部署角色策略。
+
+来源：[GitHub Actions Run #24](https://github.com/964896765/lazy-armor/actions/runs/33868047169)；[GitHub Actions Run #26](https://github.com/964896765/lazy-armor/actions/runs/33871515930)
