@@ -58,3 +58,13 @@ CI #32 的 `PR Fast Gate` 已成功，并上传 `mysql84-migration-evidence-cf7d
 因此，**冻结数据库功能范围**：后续不得新增、修改或重写任何 Drizzle migration、数据库表、Truth Store 事实字段或设备会话字段。后续工作仅可读取既有数据库事实，并转入 Android 候选包、真实设备发现、可信设备、通知授权、用户确认与双账号隔离验收。CI #32 的 RC Full Gate 仍因历史执行/连接集成套件失败而未整体通过，该问题不改变上述 MySQL 8.4 迁移、备份恢复和 Truth Store 并发的已获得运行证据。
 
 来源：[GitHub Actions Run #32](https://github.com/964896765/lazy-armor/actions/runs/33877999692)，artifact `mysql84-migration-evidence-cf7df177b3a8bf15236d6b6479629a41f631938a`。
+
+## CI #33 Android 候选包失败根因与重试修复
+
+CI #33（run ID `33879809798`，提交 `19d582b6d81aad593c72364d0bdee35703de0038`）的 `PR Fast Gate` 已成功；`RC Full Gate` 的 `Prepare CI database` 和 `MySQL 8.4 migration and backup/restore evidence` 也均实际成功。其完整套件失败仍来自既有执行 Worker、Outbox Worker、连接候选与 operations 时序断言，**不是** MySQL 8.4、迁移、备份恢复或 Truth Store 并发门禁失败。
+
+同次 `Android Verification Artifact` 已在 Windows 环境完成冻结依赖安装、共享运行时依赖预构建并进入真实 Gradle `bundleRelease`；失败发生于 React Native Worklets 的 CMake/Prefab 阶段。日志确认生成的 `prefab_command.bat` 位于深层 pnpm 虚拟存储路径，Java 启动该批处理文件时收到 `CreateProcess error=2`，随后脚本因没有生成 AAB 而在元数据阶段报告 `AAB not found`。这不是 Android SDK/Kotlin 编译成功证据，也不构成真机验收。
+
+针对该真实 Windows 路径限制，验证脚本现在只在短 ASCII 临时工作区的**冻结安装**命令上追加 `--config.virtual-store-dir-max-length=60`，以压缩 pnpm 虚拟包目录名并缩短 Prefab 命令路径；不改 lockfile、生产依赖、Android 原生业务逻辑或数据库。同期还修复 Outbox Worker 真进程测试显式传递 `APP_ROLE=outbox-worker`，防止其从测试父进程继承 `api` 角色后无法启动 `/live` 健康探针。后续 CI 必须重新生成并下载 `DEBUG_VERIFICATION_ONLY` AAB 和 `build-artifact-metadata.json`，核对提交 SHA、工件 SHA-256 与 Android 源文件 SHA-256 后，才能声称已取得 Android 候选工件证据。
+
+来源：[GitHub Actions Run #33](https://github.com/964896765/lazy-armor/actions/runs/33879809798)。

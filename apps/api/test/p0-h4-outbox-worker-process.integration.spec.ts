@@ -570,6 +570,7 @@ async function startOutboxWorker(): Promise<WorkerProcess> {
     ...process.env,
     NODE_ENV: 'development',
     APP_ENV: 'development',
+    APP_ROLE: 'outbox-worker',
     DATABASE_URL: process.env.DATABASE_URL!,
     REDIS_URL: process.env.REDIS_URL!,
     JWT_SECRET: process.env.JWT_SECRET!,

@@ -169,9 +169,11 @@ try {
   New-Item -ItemType Directory -Force -Path $PnpmStorePath | Out-Null
   $env:PNPM_STORE_DIR = $PnpmStorePath
 
-  Write-Step "Installing dependencies with frozen lockfile"
+  Write-Step "Installing dependencies with frozen lockfile and a Windows-safe virtual store path"
   Push-Location $workspace
-  pnpm install --frozen-lockfile
+  # React Native Prefab invokes generated .bat files below the pnpm virtual store.
+  # Keep virtual package directory names short so the command remains executable on Windows.
+  pnpm install --frozen-lockfile --config.virtual-store-dir-max-length=60
   Write-Step "Building mobile runtime workspace dependencies"
   pnpm --filter @lazy-armor/shared build
   pnpm --filter @lazy-armor/plan-schema build
