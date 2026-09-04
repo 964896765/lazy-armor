@@ -77,8 +77,8 @@ jobs:
         run: pnpm db:mysql84-verify
       - name: Full typecheck
         run: pnpm typecheck
-      - name: Build mobile test dependency entrypoints
-        run: pnpm --filter @lazy-armor/plan-schema build
+      - name: Build internal test dependency entrypoints
+        run: pnpm --filter @lazy-armor/api... build
       - name: Focused mobile regression
         run: pnpm --filter @lazy-armor/mobile test
       - name: Focused API security, device trust and truth regression
