@@ -1,9 +1,10 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { deviceAppConnections } from '@lazy-armor/database';
 import { deviceAppCapabilities, deviceAppIntegration, isGenericDeviceAppMode, newId, type DeviceAppConnectionMode } from '@lazy-armor/shared';
 import { and, desc, eq } from 'drizzle-orm';
 import { AuditService } from '../audit/audit.service';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
+import { TrustedDevicesService } from '../trusted-devices/trusted-devices.service';
 import type { CreateDeviceAppConnectionDto, UpdateDeviceAppConnectionDto } from './dto';
 
 const IMPLEMENTED_MODES = new Set<DeviceAppConnectionMode>(['open_app', 'notification_read']);
@@ -13,6 +14,7 @@ export class DeviceAppsService {
   constructor(
     @Inject(DATABASE) private readonly db: InjectedDatabase,
     private readonly audit: AuditService,
+    private readonly trustedDevices: TrustedDevicesService,
   ) {}
 
   async list(userId: string) {
@@ -24,6 +26,8 @@ export class DeviceAppsService {
 
   async create(userId: string, input: CreateDeviceAppConnectionDto) {
     if (!input.launchable) throw new BadRequestException('Only a launchable app discovered on this device can be connected');
+    const deviceId = input.deviceId.trim();
+    const trustedDevice = await this.trustedDevices.assertActive(userId, input.trustedDeviceId, deviceId);
     const packageName = input.packageName.trim();
     const displayName = input.displayName.trim();
     const modes = this.validateModes(packageName, input.modes);
@@ -34,7 +38,8 @@ export class DeviceAppsService {
       await this.db.insert(deviceAppConnections).values({
         id,
         userId,
-        deviceId: input.deviceId.trim(),
+        deviceId,
+        trustedDeviceId: trustedDevice.id,
         packageName,
         displayName,
         connectionType: integration ? 'enhanced' : 'generic',
@@ -45,7 +50,7 @@ export class DeviceAppsService {
         discoveryFingerprint: input.discoveryFingerprint,
         enabled: 1,
         modesJson: modes,
-        trustLevel: 'device_reported',
+        trustLevel: trustedDevice.trustLevel,
         lastSeenAt: now,
         createdAt: now,
         updatedAt: now,
@@ -72,6 +77,10 @@ export class DeviceAppsService {
   async update(userId: string, id: string, input: UpdateDeviceAppConnectionDto) {
     const current = await this.getRow(userId, id);
     const nextModes = input.modes === undefined ? current.modesJson : this.validateModes(current.packageName, input.modes);
+    if (nextModes.includes('notification_read')) {
+      if (!current.trustedDeviceId) throw new ForbiddenException('Notification sources require a trusted device');
+      await this.trustedDevices.assertActive(userId, current.trustedDeviceId, current.deviceId);
+    }
     const now = new Date();
     await this.db.update(deviceAppConnections).set({
       ...(input.enabled === undefined ? {} : { enabled: input.enabled ? 1 : 0 }),
@@ -123,6 +132,7 @@ export class DeviceAppsService {
     return {
       id: row.id,
       deviceId: row.deviceId,
+      trustedDeviceId: row.trustedDeviceId,
       packageName: row.packageName,
       displayName: row.displayName,
       connectionType: row.connectionType,

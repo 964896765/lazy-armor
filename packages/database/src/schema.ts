@@ -300,10 +300,45 @@ export const connectionPermissions = mysqlTable('connection_permissions', {
   ...timestamps,
 }, (table) => [uniqueIndex('connection_permissions_connection_capability_uq').on(table.connectionId, table.connectorCapabilityId)]);
 
+export const trustedDevices = mysqlTable('trusted_devices', {
+  id: uuidBinary('id').primaryKey(),
+  userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  deviceId: varchar('device_id', { length: 128 }).notNull(),
+  keyId: varchar('key_id', { length: 128 }).notNull(),
+  publicKeySpki: text('public_key_spki').notNull(),
+  publicKeyFingerprint: char('public_key_fingerprint', { length: 64 }).notNull(),
+  trustLevel: varchar('trust_level', { length: 32 }).notNull(),
+  status: varchar('status', { length: 32 }).notNull(),
+  lastProvedAt: datetime('last_proved_at', { mode: 'date', fsp: 6 }).notNull(),
+  revokedAt: datetime('revoked_at', { mode: 'date', fsp: 6 }),
+  ...timestamps,
+}, (table) => [
+  uniqueIndex('trusted_devices_user_device_uq').on(table.userId, table.deviceId),
+  uniqueIndex('trusted_devices_user_key_uq').on(table.userId, table.keyId),
+  index('trusted_devices_user_status_idx').on(table.userId, table.status),
+]);
+
+export const trustedDeviceChallenges = mysqlTable('trusted_device_challenges', {
+  id: uuidBinary('id').primaryKey(),
+  userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  deviceId: varchar('device_id', { length: 128 }).notNull(),
+  keyId: varchar('key_id', { length: 128 }).notNull(),
+  publicKeySpki: text('public_key_spki').notNull(),
+  publicKeyFingerprint: char('public_key_fingerprint', { length: 64 }).notNull(),
+  nonce: char('nonce', { length: 64 }).notNull(),
+  expiresAt: datetime('expires_at', { mode: 'date', fsp: 6 }).notNull(),
+  consumedAt: datetime('consumed_at', { mode: 'date', fsp: 6 }),
+  createdAt: datetime('created_at', { mode: 'date', fsp: 6 }).notNull(),
+}, (table) => [
+  uniqueIndex('trusted_device_challenges_nonce_uq').on(table.nonce),
+  index('trusted_device_challenges_user_device_idx').on(table.userId, table.deviceId, table.expiresAt),
+]);
+
 export const deviceAppConnections = mysqlTable('device_app_connections', {
   id: uuidBinary('id').primaryKey(),
   userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
   deviceId: varchar('device_id', { length: 128 }).notNull(),
+  trustedDeviceId: uuidBinary('trusted_device_id').references(() => trustedDevices.id, { onDelete: 'restrict' }),
   packageName: varchar('package_name', { length: 255 }).notNull(),
   displayName: varchar('display_name', { length: 120 }).notNull(),
   connectionType: varchar('connection_type', { length: 32 }).notNull().default('generic'),
@@ -338,6 +373,37 @@ export const mobileNotificationReceipts = mysqlTable('mobile_notification_receip
 }, (table) => [
   uniqueIndex('mobile_notification_receipts_connection_event_uq').on(table.deviceAppConnectionId, table.eventId),
   index('mobile_notification_receipts_user_received_idx').on(table.userId, table.receivedAt),
+]);
+
+export const truthRecords = mysqlTable('truth_records', {
+  id: uuidBinary('id').primaryKey(),
+  userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  resourceKey: varchar('resource_key', { length: 120 }).notNull(),
+  subjectKey: varchar('subject_key', { length: 255 }).notNull(),
+  status: varchar('status', { length: 32 }).notNull(),
+  currentVersionId: uuidBinary('current_version_id'),
+  sourceReceiptId: uuidBinary('source_receipt_id').notNull().references(() => mobileNotificationReceipts.id, { onDelete: 'restrict' }),
+  verifiedBy: varchar('verified_by', { length: 32 }).notNull(),
+  verifiedAt: datetime('verified_at', { mode: 'date', fsp: 6 }).notNull(),
+  revokedAt: datetime('revoked_at', { mode: 'date', fsp: 6 }),
+  ...timestamps,
+}, (table) => [
+  uniqueIndex('truth_records_user_receipt_uq').on(table.userId, table.sourceReceiptId),
+  index('truth_records_user_resource_status_idx').on(table.userId, table.resourceKey, table.status, table.verifiedAt),
+]);
+
+export const truthRecordVersions = mysqlTable('truth_record_versions', {
+  id: uuidBinary('id').primaryKey(),
+  truthRecordId: uuidBinary('truth_record_id').notNull().references(() => truthRecords.id, { onDelete: 'restrict' }),
+  versionNumber: int('version_number').notNull(),
+  valueJson: json('value_json').$type<Record<string, unknown>>().notNull(),
+  valueHash: char('value_hash', { length: 64 }).notNull(),
+  verificationMethod: varchar('verification_method', { length: 64 }).notNull(),
+  evidenceHash: char('evidence_hash', { length: 64 }).notNull(),
+  createdAt: datetime('created_at', { mode: 'date', fsp: 6 }).notNull(),
+}, (table) => [
+  uniqueIndex('truth_record_versions_record_version_uq').on(table.truthRecordId, table.versionNumber),
+  index('truth_record_versions_record_created_idx').on(table.truthRecordId, table.createdAt),
 ]);
 
 export const billingRecords = mysqlTable('billing_records', {

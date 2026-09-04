@@ -236,6 +236,7 @@ export default function ConnectionsPage() {
             {available.length > 0 ? <><Text style={styles.sectionTitle}>可以连接</Text><View style={styles.list}>{available.map((connector) => <AvailableService key={connector.key} connector={connector} token={token} />)}</View></> : null}
 
             <View style={styles.addConnection}><ActionButton label="＋ 添加连接" tone="quiet" onPress={() => router.push('/connections/add' as Href)} /></View>
+            <View style={styles.addConnection}><ActionButton label="管理可信设备" tone="quiet" onPress={() => router.push('/connections/trusted-devices' as Href)} /></View>
             <View style={styles.logout}><ActionButton label="退出登录" tone="quiet" onPress={() => void clear()} /></View>
           </>
         )}

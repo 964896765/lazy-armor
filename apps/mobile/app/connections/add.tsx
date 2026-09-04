@@ -9,6 +9,7 @@ import { useAuthStore } from '../../src/auth-store';
 import { createDeviceAppConnectionRequest } from '../../src/device-app-api-contract';
 import { deviceDiscoveryStatus, discoverLaunchableApps, type DiscoveredDeviceApp } from '../../src/device-app-bridge';
 import { deviceInstallationId } from '../../src/device-installation-id';
+import { ensureTrustedDevice } from '../../src/trusted-device-api';
 import { ActionButton, EmptyState, Surface, colors, radius, spacing, typography } from '../../src/design';
 
 interface DeviceAppConnection { id: string; packageName: string; displayName: string; enabled: boolean; modes: DeviceAppConnectionMode[] }
@@ -25,8 +26,11 @@ export default function AddConnectionPage() {
   const alreadyAdded = selected ? (existing.data ?? []).some((item) => item.packageName === selected.packageName) : false;
   const add = useMutation({
     mutationFn: async (app: DiscoveredDeviceApp) => {
-      const request = createDeviceAppConnectionRequest(await deviceInstallationId(), app);
-      if (!request) throw new Error('当前应用的发现信息不完整。');
+      if (!token) throw new Error('AUTH_REQUIRED');
+      const deviceId = await deviceInstallationId();
+      const trustedDevice = await ensureTrustedDevice(token);
+      const request = createDeviceAppConnectionRequest(deviceId, trustedDevice.id, app);
+      if (!request) throw new Error('当前应用的发现或设备证明信息不完整。');
       return api<DeviceAppConnection>('/device-app-connections', token, { method: 'POST', body: JSON.stringify(request) });
     },
     onSuccess: async () => {
@@ -81,7 +85,7 @@ function ConnectionPreview({ app, alreadyAdded, pending, hasError, onAdd }: { ap
   const integration = deviceAppIntegration(app.packageName);
   const operations = deviceAppCapabilities(app.packageName);
   return <View style={styles.preview}><Text style={styles.sectionTitle}>添加 {app.displayName}</Text><Surface>
-    <Text style={styles.previewIntro}>基础连接只保存你确认的应用快照，并且只能在你主动操作时打开应用。它不会读取该应用内容或通知。</Text>
+    <Text style={styles.previewIntro}>确认前会由这台设备的安全密钥完成一次证明。基础连接只保存你确认的应用快照，并且只能在你主动操作时打开应用。它不会读取该应用内容或通知。</Text>
     {integration ? <Text style={styles.adapterNote}>此应用可在后续获得额外适配；额外读取或操作仍需单独说明与授权。</Text> : <Text style={styles.adapterNote}>这是通用应用连接。即使没有专属适配，也可以安全地加入你的空间导航。</Text>}
     <View style={styles.capabilityList}>{operations.map((operation, index) => <OperationRow key={operation.mode} operation={operation} last={index === operations.length - 1} />)}</View>
     <View style={styles.previewAction}>{alreadyAdded ? <Text style={styles.addedText}>此应用已添加到当前设备。请返回连接中心管理它。</Text> : <ActionButton label={pending ? '正在添加…' : '确认添加'} onPress={onAdd} disabled={pending} />}</View>

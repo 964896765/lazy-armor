@@ -5,6 +5,8 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.drawable.Drawable
 import android.os.Build
+import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyProperties
 import android.util.Base64
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
@@ -13,7 +15,11 @@ import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.ReadableArray
 import java.io.ByteArrayOutputStream
+import java.security.KeyPair
+import java.security.KeyPairGenerator
+import java.security.KeyStore
 import java.security.MessageDigest
+import java.security.Signature
 
 /**
  * Device-level bridge for user-initiated Generic App Connection flows.
@@ -24,8 +30,41 @@ class DeviceAppBridgeModule(reactContext: ReactApplicationContext) : ReactContex
   private val maxDiscoveryResults = 200
   private val iconSizePx = 48
   private val maxIconBytes = 24_000
+  private val trustedDeviceKeyAlias = "lazy_armor_trusted_device_key_v1"
 
   override fun getName(): String = "LazyArmorDeviceBridge"
+
+  @ReactMethod
+  fun getTrustedDeviceIdentity(promise: Promise) {
+    try {
+      val keyPair = trustedDeviceKeyPair()
+      val publicKeySpki = Base64.encodeToString(keyPair.public.encoded, Base64.NO_WRAP)
+      val publicKeyFingerprint = sha256Bytes(keyPair.public.encoded)
+      val result = Arguments.createMap()
+      result.putString("keyId", "android-keystore-${publicKeyFingerprint.take(24)}")
+      result.putString("publicKeySpki", publicKeySpki)
+      result.putString("publicKeyFingerprint", publicKeyFingerprint)
+      promise.resolve(result)
+    } catch (error: Exception) {
+      promise.reject("E_TRUSTED_DEVICE_KEY_FAILED", "无法准备此设备的安全密钥。", error)
+    }
+  }
+
+  @ReactMethod
+  fun signTrustedDeviceChallenge(payload: String, promise: Promise) {
+    if (!payload.startsWith("lazy-armor-device-proof-v1|") || payload.length > 512) {
+      promise.reject("E_TRUSTED_DEVICE_CHALLENGE_INVALID", "设备证明请求无效。")
+      return
+    }
+    try {
+      val signature = Signature.getInstance("SHA256withECDSA")
+      signature.initSign(trustedDeviceKeyPair().private)
+      signature.update(payload.toByteArray(Charsets.UTF_8))
+      promise.resolve(Base64.encodeToString(signature.sign(), Base64.NO_WRAP))
+    } catch (error: Exception) {
+      promise.reject("E_TRUSTED_DEVICE_SIGN_FAILED", "无法完成设备密钥证明。", error)
+    }
+  }
 
   @ReactMethod
   fun discoverLaunchableApps(promise: Promise) {
@@ -155,9 +194,25 @@ class DeviceAppBridgeModule(reactContext: ReactApplicationContext) : ReactContex
     }
   }
 
+  private fun trustedDeviceKeyPair(): KeyPair {
+    val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+    val existingPrivate = keyStore.getKey(trustedDeviceKeyAlias, null) as? java.security.PrivateKey
+    val existingPublic = keyStore.getCertificate(trustedDeviceKeyAlias)?.publicKey
+    if (existingPrivate != null && existingPublic != null) return KeyPair(existingPublic, existingPrivate)
+    val generator = KeyPairGenerator.getInstance(KeyProperties.KEY_ALGORITHM_EC, "AndroidKeyStore")
+    val spec = KeyGenParameterSpec.Builder(trustedDeviceKeyAlias, KeyProperties.PURPOSE_SIGN or KeyProperties.PURPOSE_VERIFY)
+      .setDigests(KeyProperties.DIGEST_SHA256)
+      .setAlgorithmParameterSpec(java.security.spec.ECGenParameterSpec("secp256r1"))
+      .build()
+    generator.initialize(spec)
+    return generator.generateKeyPair()
+  }
+
+  private fun sha256Bytes(value: ByteArray): String = MessageDigest.getInstance("SHA-256").digest(value).joinToString("") { "%02x".format(it) }
+
   private fun discoveryFingerprint(packageName: String, displayName: String, versionName: String?, versionCode: Long): String {
     val data = "$packageName|$displayName|${versionName ?: ""}|$versionCode|launchable"
-    return MessageDigest.getInstance("SHA-256").digest(data.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
+    return sha256Bytes(data.toByteArray(Charsets.UTF_8))
   }
 
   private fun iconDataUri(drawable: Drawable): String? {

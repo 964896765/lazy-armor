@@ -4,6 +4,9 @@ const ANDROID_PACKAGE_NAME = /^[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+
 const SHA256_HEX = /^[a-f0-9]{64}$/;
 
 export class CreateDeviceAppConnectionDto {
+  @IsString() @Length(1, 64)
+  trustedDeviceId!: string;
+
   @IsString() @Length(1, 128)
   deviceId!: string;
 

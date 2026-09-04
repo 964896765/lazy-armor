@@ -39,6 +39,7 @@ import { ConnectionsModule } from '../connections/connections.module';
 import { ProfilesModule } from '../profiles/profiles.module';
 import { OperationsModule } from '../operations/operations.module';
 import { UsageModule } from '../usage/usage.module';
+import { TruthStoreModule } from '../truth-store/truth-store.module';
 
 export const EXECUTION_WORKER = 'EXECUTION_WORKER';
 export const EXECUTION_RECONCILER = 'EXECUTION_RECONCILER';
@@ -51,7 +52,7 @@ export const SIDE_EFFECT_OPERATIONS_SERVICE = 'SIDE_EFFECT_OPERATIONS_SERVICE';
 export const OUTBOX_SERVICE = 'OUTBOX_SERVICE';
 
 @Module({
-  imports: [PlansModule, ConnectorsModule, ConnectionsModule, RiskModule, NotificationsModule, AuditModule, CredentialsModule, BillingModule, ContentModule, DailySummaryModule, LogisticsModule, HouseholdModule, StudyModule, DeviceModule, ProfilesModule, OperationsModule, UsageModule],
+  imports: [PlansModule, ConnectorsModule, ConnectionsModule, RiskModule, NotificationsModule, AuditModule, CredentialsModule, BillingModule, ContentModule, DailySummaryModule, LogisticsModule, HouseholdModule, StudyModule, DeviceModule, ProfilesModule, OperationsModule, UsageModule, TruthStoreModule],
   controllers: [ExecutionsController],
   providers: [
     SnapshotSanitizer,

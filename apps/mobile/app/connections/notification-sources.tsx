@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useFocusEffect } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { useCallback } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -11,12 +11,14 @@ import { ActionButton, EmptyState, Surface, colors, spacing, typography } from '
 
 interface DeviceAppConnection { id: string; packageName: string; displayName: string; enabled: boolean; modes: string[] }
 interface ReceiptResult { receiptId: string; duplicate: boolean; status: string }
+interface PendingReceipt { id: string; connectionId: string; status: string; postedAt: string; receivedAt: string; candidateKind: 'unknown' | 'billing_transaction_candidate' | 'account_notification_candidate'; candidateResource: 'mobile.billing.transaction' | 'mobile.account.notification' | null; candidateConfidence: number; amountMinor: number | null; currency: 'CNY' | null }
 
 export default function NotificationSourcesPage() {
   const token = useAuthStore((store) => store.token);
   const client = useQueryClient();
   const nativeStatus = useQuery({ queryKey: ['notification-source-status'], queryFn: notificationSourceStatus, enabled: Boolean(token), staleTime: 0 });
   const connections = useQuery({ queryKey: ['device-app-connections', token], queryFn: () => api<DeviceAppConnection[]>('/device-app-connections', token), enabled: Boolean(token) });
+  const pendingReceipts = useQuery({ queryKey: ['mobile-notification-receipts', token], queryFn: () => api<PendingReceipt[]>('/device-app-connections/notification-receipts', token), enabled: Boolean(token) });
   useFocusEffect(useCallback(() => { void nativeStatus.refetch(); }, [nativeStatus]));
 
   const toggle = useMutation({
@@ -59,6 +61,12 @@ export default function NotificationSourcesPage() {
     },
   });
 
+  const decideReceipt = useMutation({
+    mutationFn: ({ receipt, confirmed }: { receipt: PendingReceipt; confirmed: boolean }) => api(`/device-app-connections/${receipt.connectionId}/notification-receipts/${receipt.id}/verify`, token, { method: 'POST', body: JSON.stringify({ confirmed }) }),
+    onSuccess: async () => {
+      await Promise.all([client.invalidateQueries({ queryKey: ['mobile-notification-receipts', token] }), client.invalidateQueries({ queryKey: ['today', token] }), client.invalidateQueries({ queryKey: ['notifications', token] })]);
+    },
+  });
   const available = (connections.data ?? []).filter((connection) => connection.enabled);
   const nativeUnavailable = deviceDiscoveryStatus() === 'unavailable';
   return <SafeAreaView style={styles.safeArea} edges={['top']}><ScrollView style={styles.page} contentContainerStyle={styles.content}>
@@ -73,10 +81,27 @@ export default function NotificationSourcesPage() {
       {available.length === 0 && !connections.isLoading ? <Surface><EmptyState icon="＋" title="还没有可管理的应用" description="请先从当前设备的真实可启动应用中添加连接。" /></Surface> : null}
       <View style={styles.list}>{available.map((connection) => <NotificationSourceRow key={connection.id} connection={connection} accessGranted={Boolean(nativeStatus.data?.accessGranted)} pending={toggle.isPending} onToggle={(enabled) => toggle.mutate({ connection, enabled })} />)}</View>
       {toggle.isError ? <Text style={styles.error}>设置暂时没有保存。系统不会在未明确启用时上传通知。</Text> : null}
-      <Text style={styles.safetyText}>已同步的线索不会直接驱动账单、订单或其他自动操作。它们必须经过后续的通用分类、验证和计划规则检查。</Text>
+      <Text style={styles.sectionTitle}>待确认的资源线索</Text>
+      {pendingReceipts.isLoading ? <ActivityIndicator color={colors.primary} /> : null}
+      {!pendingReceipts.isLoading && (pendingReceipts.data?.length ?? 0) === 0 ? <Text style={styles.quietText}>当前没有等待确认的线索。</Text> : null}
+      <View style={styles.list}>{pendingReceipts.data?.map((receipt) => <PendingReceiptCard key={receipt.id} receipt={receipt} pending={decideReceipt.isPending} onDecide={(confirmed) => decideReceipt.mutate({ receipt, confirmed })} />)}</View>
+      {decideReceipt.isError ? <Text style={styles.error}>这次确认没有保存。系统不会把线索当作真实事实；你可以稍后重试。</Text> : null}
+      <View style={styles.action}><ActionButton label="查看已验证事实" tone="quiet" onPress={() => router.push('/truth-store')} /></View>
+      <Text style={styles.safetyText}>已同步的线索不会直接驱动账单、订单或其他自动操作。只有你明确确认且服务端验证语义一致时，品牌中立资源事实才会写入；计划仍需独立检查资源要求。</Text>
     </> : null}
   </ScrollView></SafeAreaView>;
 }
+
+function PendingReceiptCard({ receipt, pending, onDecide }: { receipt: PendingReceipt; pending: boolean; onDecide: (confirmed: boolean) => void }) {
+  const label = receipt.candidateKind === 'billing_transaction_candidate'
+    ? `金额候选${receipt.amountMinor !== null ? `：${formatMoney(receipt.amountMinor, receipt.currency)}` : ''}`
+    : receipt.candidateKind === 'account_notification_candidate' ? '账号提醒候选' : '未归类通知线索';
+  const confirmable = receipt.candidateKind === 'billing_transaction_candidate' && receipt.candidateResource === 'mobile.billing.transaction' && receipt.amountMinor !== null && receipt.currency === 'CNY';
+  return <Surface><Text style={styles.rowTitle}>{label}</Text><Text style={styles.rowDescription}>来源已授权；端侧分类置信度 {receipt.candidateConfidence}%。收到时间：{formatTime(receipt.postedAt)}。</Text>{confirmable ? <View style={styles.receiptActions}><ActionButton label={pending ? '正在保存…' : '确认这条资源事实'} onPress={() => onDecide(true)} disabled={pending} /><ActionButton label="不是这项事实" tone="quiet" onPress={() => onDecide(false)} disabled={pending} /></View> : <Text style={styles.quietText}>无法自动验证的线索不会被写入资源事实。你可以停止该来源，或忽略此线索。</Text>}</Surface>;
+}
+
+function formatMoney(amountMinor: number, currency: 'CNY' | null) { return currency === 'CNY' ? `¥${(amountMinor / 100).toFixed(2)}` : '金额不可用'; }
+function formatTime(value: string) { const date = new Date(value); return Number.isNaN(date.getTime()) ? '时间不可用' : date.toLocaleString('zh-CN'); }
 
 function NotificationSourceRow({ connection, accessGranted, pending, onToggle }: { connection: DeviceAppConnection; accessGranted: boolean; pending: boolean; onToggle: (enabled: boolean) => void }) {
   const enabled = connection.modes.includes('notification_read');
@@ -84,5 +109,5 @@ function NotificationSourceRow({ connection, accessGranted, pending, onToggle }:
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: colors.background }, page: { flex: 1, backgroundColor: colors.background }, content: { paddingHorizontal: spacing.page, paddingTop: spacing.xl, paddingBottom: 48, gap: spacing.md }, header: { marginBottom: spacing.lg }, title: { ...typography.display, color: colors.text }, subtitle: { ...typography.body, color: colors.textSecondary, marginTop: spacing.sm, lineHeight: 22 }, cardTitle: { ...typography.cardTitle, color: colors.text }, cardCopy: { ...typography.body, color: colors.textSecondary, marginTop: spacing.sm, lineHeight: 21 }, action: { alignItems: 'flex-start', marginTop: spacing.lg }, quietText: { ...typography.caption, color: colors.textMuted, marginTop: spacing.md }, sectionTitle: { ...typography.section, color: colors.text, marginTop: spacing.xl, marginBottom: spacing.xs }, list: { gap: spacing.md }, row: { flexDirection: 'row', alignItems: 'center', gap: spacing.md }, rowCopy: { flex: 1 }, rowTitle: { ...typography.bodyStrong, color: colors.text }, rowDescription: { ...typography.caption, color: colors.textSecondary, marginTop: spacing.xs, lineHeight: 18 }, error: { ...typography.caption, color: colors.danger, lineHeight: 18 }, safetyText: { ...typography.caption, color: colors.textMuted, lineHeight: 18, marginTop: spacing.md },
+  safeArea: { flex: 1, backgroundColor: colors.background }, page: { flex: 1, backgroundColor: colors.background }, content: { paddingHorizontal: spacing.page, paddingTop: spacing.xl, paddingBottom: 48, gap: spacing.md }, header: { marginBottom: spacing.lg }, title: { ...typography.display, color: colors.text }, subtitle: { ...typography.body, color: colors.textSecondary, marginTop: spacing.sm, lineHeight: 22 }, cardTitle: { ...typography.cardTitle, color: colors.text }, cardCopy: { ...typography.body, color: colors.textSecondary, marginTop: spacing.sm, lineHeight: 21 }, action: { alignItems: 'flex-start', marginTop: spacing.lg }, quietText: { ...typography.caption, color: colors.textMuted, marginTop: spacing.md }, sectionTitle: { ...typography.section, color: colors.text, marginTop: spacing.xl, marginBottom: spacing.xs }, list: { gap: spacing.md }, receiptActions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.md }, row: { flexDirection: 'row', alignItems: 'center', gap: spacing.md }, rowCopy: { flex: 1 }, rowTitle: { ...typography.bodyStrong, color: colors.text }, rowDescription: { ...typography.caption, color: colors.textSecondary, marginTop: spacing.xs, lineHeight: 18 }, error: { ...typography.caption, color: colors.danger, lineHeight: 18 }, safetyText: { ...typography.caption, color: colors.textMuted, lineHeight: 18, marginTop: spacing.md },
 });

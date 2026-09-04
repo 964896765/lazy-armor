@@ -100,6 +100,7 @@ class LazyArmorNotificationListener : NotificationListenerService() {
     val capturedAt = System.currentTimeMillis()
     val eventId = sha256("${notification.packageName}|${notification.key}|${notification.postTime}")
     val contentHash = sha256("$title\n$body")
+    val candidate = GenericNotificationNormalizer.normalize(title, body)
     val preview = JSONObject()
     preview.put("eventId", eventId)
     preview.put("contentHash", contentHash)
@@ -108,6 +109,13 @@ class LazyArmorNotificationListener : NotificationListenerService() {
     preview.put("capturedAt", capturedAt)
     preview.put("hasTitle", title.isNotBlank())
     preview.put("hasText", body.isNotBlank())
+    preview.put("candidateKind", candidate.kind)
+    preview.put("candidateResource", candidate.resource)
+    preview.put("candidateConfidence", candidate.confidence)
+    preview.put("amountMinor", candidate.amountMinor)
+    preview.put("currency", candidate.currency)
+    preview.put("parserVersion", candidate.parserVersion)
+    preview.put("status", "received_unclassified")
     appendPreview(applicationContext, preview)
   }
 }

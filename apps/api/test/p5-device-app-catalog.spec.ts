@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { DeviceAppsService } from '../src/device-apps/device-apps.service';
 
 const genericDiscoveredApp = {
+  trustedDeviceId: 'trusted-device-1',
   deviceId: 'device-1',
   packageName: 'com.example.localbank',
   displayName: '本地银行',
@@ -27,18 +28,20 @@ function fixture() {
     })),
   };
   const audit = { append: vi.fn(async () => undefined) };
-  return { service: new DeviceAppsService(db as never, audit as never), values, audit };
+  const trustedDevices = { assertActive: vi.fn(async () => ({ id: 'trusted-device-1', deviceId: 'device-1', trustLevel: 'key_proven', status: 'active' })) };
+  return { service: new DeviceAppsService(db as never, audit as never, trustedDevices as never), values, audit, trustedDevices };
 }
 
 describe('Generic App Connection safety policy', () => {
   it('accepts a user-confirmed, launchable app discovery even when no enhanced adapter exists', async () => {
-    const { service, values, audit } = fixture();
+    const { service, values, audit, trustedDevices } = fixture();
     const response = await service.create('user-1', genericDiscoveredApp);
     expect(values).toHaveBeenCalledWith(expect.objectContaining({
-      userId: 'user-1', deviceId: 'device-1', packageName: 'com.example.localbank', displayName: '本地银行', connectionType: 'generic', integrationKey: null, versionName: '1.2.3', versionCode: 1203, launchable: 1, discoveryFingerprint: 'a'.repeat(64), modesJson: ['open_app'], trustLevel: 'device_reported',
+      userId: 'user-1', deviceId: 'device-1', trustedDeviceId: 'trusted-device-1', packageName: 'com.example.localbank', displayName: '本地银行', connectionType: 'generic', integrationKey: null, versionName: '1.2.3', versionCode: 1203, launchable: 1, discoveryFingerprint: 'a'.repeat(64), modesJson: ['open_app'], trustLevel: 'key_proven',
     }));
     expect(response).toMatchObject({ packageName: 'com.example.localbank', displayName: '本地银行', connectionType: 'generic', launchable: true, modes: ['open_app'] });
     expect(audit.append).toHaveBeenCalledWith(expect.objectContaining({ action: 'DEVICE_APP_CONNECTION_CREATED', source: 'api', result: 'success', userId: 'user-1' }));
+    expect(trustedDevices.assertActive).toHaveBeenCalledWith('user-1', 'trusted-device-1', 'device-1');
   });
 
   it('records a catalog match as optional enhancement rather than an admission requirement', async () => {

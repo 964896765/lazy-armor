@@ -11,6 +11,7 @@ import { StudyService } from '../study/study.service';
 import { ConnectionsService } from '../connections/connections.service';
 import { ProfilesService } from '../profiles/profiles.service';
 import { OperationsService } from '../operations/operations.service';
+import { TruthStoreService } from '../truth-store/truth-store.service';
 import { asRuntimeError, ExecutionRuntimeError } from './execution.types';
 import { RuntimeConnectionGuard } from './runtime-connection-guard.service';
 
@@ -29,6 +30,7 @@ export class SourceResolver {
     private readonly study: StudyService,
     private readonly profiles: ProfilesService,
     private readonly operations: OperationsService,
+    private readonly truthStore: TruthStoreService,
   ) {}
 
   async resolve(userId: string, sources: NormalizedSource[], triggerPayload: Record<string, unknown>, requestId: string): Promise<Record<string, unknown>> {
@@ -95,6 +97,10 @@ export class SourceResolver {
         }
         if (source.config.resource === 'operational_records') {
           context = await this.operations.resolveInternal(userId, source.config, context);
+          continue;
+        }
+        if (source.config.resource === 'mobile.billing.transaction') {
+          context = await this.truthStore.resolveMobileBillingTransactions(userId, context);
           continue;
         }
         throw new ExecutionRuntimeError('SOURCE_CONNECTION_REQUIRED', 'Internal source requires a connection');

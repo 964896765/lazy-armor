@@ -28,6 +28,8 @@ import { AdminModule } from './admin/admin.module';
 import { StudyModule } from './study/study.module';
 import { DeviceModule } from './device/device.module';
 import { DeviceAppsModule } from './device-apps/device-apps.module';
+import { TrustedDevicesModule } from './trusted-devices/trusted-devices.module';
+import { TruthStoreModule } from './truth-store/truth-store.module';
 import { ProfilesModule } from './profiles/profiles.module';
 import { OperationsModule } from './operations/operations.module';
 import { ObservabilityModule } from './observability/observability.module';
@@ -61,6 +63,8 @@ import { CostModule } from './cost/cost.module';
     HouseholdModule,
     StudyModule,
     DeviceModule,
+    TrustedDevicesModule,
+    TruthStoreModule,
     DeviceAppsModule,
     ProfilesModule,
     OperationsModule,
