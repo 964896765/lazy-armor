@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 
@@ -5,6 +6,7 @@ const repoRoot = process.cwd();
 const databaseRequire = createRequire(path.join(repoRoot, 'packages', 'database', 'package.json'));
 const mysql = databaseRequire('mysql2/promise');
 const databaseUrl = process.env.DATABASE_URL ?? 'mysql://lazy_armor:lazy_armor_dev@127.0.0.1:3307/lazy_armor';
+const evidencePath = process.env.MYSQL84_EVIDENCE_PATH ?? path.join(repoRoot, 'artifacts', 'rc-evidence', 'mysql84-migration-evidence.json');
 const target = new URL(databaseUrl);
 const pool = mysql.createPool({
   host: target.hostname,
@@ -29,7 +31,10 @@ try {
   const missing = requiredTables.filter((table) => !found.has(table));
   if (missing.length > 0) throw new Error(`MySQL 8.4 migration evidence is incomplete; missing tables: ${missing.join(', ')}`);
   const [migrationRows] = await pool.query('SELECT COUNT(*) AS count FROM __drizzle_migrations');
-  console.log(JSON.stringify({ ok: true, mysqlVersion: version, database: target.pathname.slice(1), requiredTables, drizzleMigrationCount: Number(migrationRows[0]?.count ?? 0) }, null, 2));
+  const evidence = { schema: 'lazy-armor.mysql84-migration-evidence.v1', generatedAt: new Date().toISOString(), ok: true, mysqlVersion: version, database: target.pathname.slice(1), requiredTables, drizzleMigrationCount: Number(migrationRows[0]?.count ?? 0) };
+  fs.mkdirSync(path.dirname(evidencePath), { recursive: true });
+  fs.writeFileSync(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`, 'utf8');
+  console.log(JSON.stringify({ ...evidence, evidencePath }, null, 2));
 } finally {
   await pool.end();
 }

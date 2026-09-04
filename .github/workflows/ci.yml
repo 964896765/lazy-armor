@@ -83,6 +83,13 @@ jobs:
         run: pnpm --filter @lazy-armor/api test -- test/rc1-safe-logging.spec.ts test/password-reset-delivery.spec.ts test/app-role.spec.ts test/prepare-app-role.spec.ts test/p5-migration-breakpoints.spec.ts test/p5-trusted-devices.spec.ts test/p5-device-app-catalog.spec.ts test/p5-mobile-notification-receipts.spec.ts test/p5-truth-store.spec.ts test/p5-truth-store-source-resolver.spec.ts
       - name: Focused P4/P5 regression
         run: pnpm --filter @lazy-armor/api test -- test/p4-consumer-journeys.integration.spec.ts test/p5-membership-entitlement.integration.spec.ts test/p5-usage-metering.integration.spec.ts test/p5-subscription-billing-sandbox.integration.spec.ts test/p5-template-lifecycle.integration.spec.ts test/p5-connector-contract.spec.ts test/p5-cost-foundation.integration.spec.ts test/p5-scale-foundation.integration.spec.ts test/p5-scale-multi-worker.integration.spec.ts
+      - name: Upload MySQL 8.4 migration evidence
+        if: success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: mysql84-migration-evidence-${{ github.sha }}
+          if-no-files-found: error
+          path: artifacts/rc-evidence/mysql84-migration-evidence.json
 
   full-rc-gate:
     name: RC Full Gate
@@ -142,8 +149,8 @@ jobs:
         run: pnpm --filter @lazy-armor/database prepare-ci-db
       - name: MySQL 8.4 migration and backup/restore evidence
         run: pnpm db:rc-integration
-      - name: Full monorepo test suite
-        run: pnpm test
+      - name: Full monorepo test suite including real database concurrency
+        run: RUN_REAL_DB_INTEGRATION=1 pnpm test
       - name: Full monorepo build
         run: pnpm build
 
