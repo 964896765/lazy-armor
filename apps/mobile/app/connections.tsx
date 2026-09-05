@@ -9,6 +9,7 @@ import { api } from '../src/api';
 import { useAuthStore } from '../src/auth-store';
 import { connectionStartRequest, disconnectRequest, reconnectRequest, validateConnectionRequest } from '../src/connection-api-contract';
 import { openDeviceApp, setNotificationSourceEnabled } from '../src/device-app-bridge';
+import { ensureTrustedDevice } from '../src/trusted-device-api';
 import {
   capabilityDescription,
   capabilityLabel,
@@ -29,7 +30,8 @@ interface Connection { id: string; connectorId: string; connectorName: string; e
 interface Permission { capability: string; name: string; riskLevel: string; granted: boolean; expiresAt?: string }
 interface ConnectionPlanUsage { planId: string; planName: string; planStatus: string; requiredCapabilities: string[] }
 interface OAuthStartResult { providerKey: string; authorizationUrl: string; expiresAt: string }
-interface DeviceAppConnection { id: string; packageName: string; displayName: string; enabled: boolean; modes: string[]; lastSeenAt: string | null }
+interface DeviceAppConnection { id: string; trustedDeviceId: string | null; packageName: string; displayName: string; enabled: boolean; modes: string[]; lastSeenAt: string | null }
+interface TrustedDeviceSummary { id: string; status: 'active' | 'revoked' }
 
 function stringParam(value: string | string[] | undefined) { return Array.isArray(value) ? value[0] : value; }
 
@@ -125,13 +127,15 @@ function ConnectedService({ item, connector, token }: { item: Connection; connec
   );
 }
 
-function DeviceAppService({ item, token }: { item: DeviceAppConnection; token: string }) {
+function DeviceAppService({ item, token, trustedDeviceStatus }: { item: DeviceAppConnection; token: string; trustedDeviceStatus?: TrustedDeviceSummary['status'] }) {
   const router = useRouter();
   const client = useQueryClient();
   const [feedback, setFeedback] = useState<string | null>(null);
   const update = useMutation({
     mutationFn: async () => {
+      setFeedback(null);
       if (item.enabled) await setNotificationSourceEnabled(item.packageName, false);
+      else if (trustedDeviceStatus === 'revoked') await ensureTrustedDevice(token, { force: true });
       return api<DeviceAppConnection>(`/device-app-connections/${item.id}`, token, { method: 'PATCH', body: JSON.stringify({ enabled: !item.enabled, ...(item.enabled ? { modes: item.modes.filter((mode) => mode !== 'notification_read') } : {}) }) });
     },
     onSuccess: async () => {
@@ -139,12 +143,28 @@ function DeviceAppService({ item, token }: { item: DeviceAppConnection; token: s
         client.invalidateQueries({ queryKey: ['device-app-connections', token] }),
         client.invalidateQueries({ queryKey: ['rail-device-app-connections', token] }),
       ]);
+      setFeedback(item.enabled ? '连接已停用。' : '设备已重新验证，连接已启用。');
     },
+    onError: () => setFeedback('这台设备暂时无法重新验证，连接仍保持停用。请稍后再试。'),
   });
   async function open() {
     setFeedback(null);
     const opened = await openDeviceApp(item.packageName);
     setFeedback(opened ? '已打开应用。' : '无法打开该应用：请在 Android 真机确认它仍已安装。');
+  }
+  function changeEnabled() {
+    if (item.enabled || trustedDeviceStatus !== 'revoked') {
+      update.mutate();
+      return;
+    }
+    Alert.alert(
+      '这台设备此前已被撤销',
+      '重新使用此连接前，需要重新验证设备。',
+      [
+        { text: '取消', style: 'cancel' },
+        { text: '重新验证并启用', onPress: () => update.mutate() },
+      ],
+    );
   }
   return (
     <Surface>
@@ -153,7 +173,7 @@ function DeviceAppService({ item, token }: { item: DeviceAppConnection; token: s
         <View style={styles.providerCopy}><Text style={styles.providerName}>{item.displayName}</Text><Text style={styles.readiness}>{item.enabled ? '已添加到当前设备' : '已停用'}</Text></View>
       </View>
       <Text style={styles.providerDescription}>{item.enabled ? `当前已启用：${item.modes.map(deviceAppOperationLabel).join('、')}。仅使用你确认的操作。` : '停用后不会在空间导航中显示，也不会被计划使用。'}</Text>
-      <View style={styles.deviceActions}><ActionButton label="打开应用" tone="quiet" onPress={() => void open()} disabled={!item.enabled} />{item.enabled ? <ActionButton label="通知来源" tone="quiet" onPress={() => router.push('/connections/notification-sources' as Href)} /> : null}<ActionButton label={item.enabled ? '停用连接' : '重新启用'} tone={item.enabled ? 'quiet' : 'primary'} onPress={() => update.mutate()} disabled={update.isPending} /></View>
+      <View style={styles.deviceActions}><ActionButton label="打开应用" tone="quiet" onPress={() => void open()} disabled={!item.enabled} />{item.enabled ? <ActionButton label="通知来源" tone="quiet" onPress={() => router.push('/connections/notification-sources' as Href)} /> : null}<ActionButton label={item.enabled ? '停用连接' : trustedDeviceStatus === 'revoked' ? '重新验证并启用' : '重新启用'} tone={item.enabled ? 'quiet' : 'primary'} onPress={changeEnabled} disabled={update.isPending} /></View>
       {feedback ? <Text style={styles.feedback}>{feedback}</Text> : null}
     </Surface>
   );
@@ -207,6 +227,7 @@ export default function ConnectionsPage() {
   const connectors = useQuery({ queryKey: ['connectors'], queryFn: () => api<Connector[]>('/connectors') });
   const connections = useQuery({ queryKey: ['connections', token], queryFn: () => api<Connection[]>('/connections', token), enabled: Boolean(token) });
   const deviceApps = useQuery({ queryKey: ['device-app-connections', token], queryFn: () => api<DeviceAppConnection[]>('/device-app-connections', token), enabled: Boolean(token) });
+  const trustedDevices = useQuery({ queryKey: ['trusted-devices', token], queryFn: () => api<TrustedDeviceSummary[]>('/trusted-devices', token), enabled: Boolean(token) });
   const login = useMutation({ mutationFn: () => api<{ accessToken: string; refreshToken: string }>('/auth/login', undefined, { method: 'POST', body: JSON.stringify({ email, password }) }), onSuccess: (result) => setSession(result) });
   const consumerConnectors = useMemo(() => connectors.data?.filter((connector) => isConsumerConnector(connector.key)) ?? [], [connectors.data]);
   const activeProviderKeys = new Set((connections.data ?? []).filter((connection) => connection.status !== 'revoked').map((connection) => connection.connectorId));
@@ -231,7 +252,7 @@ export default function ConnectionsPage() {
             {connections.isLoading ? <ActivityIndicator color={colors.primary} /> : null}
             {(connections.data?.length ?? 0) + (deviceApps.data?.length ?? 0) === 0 ? <Surface><EmptyState icon="🔗" title="还没有连接服务" description="可以连接在线服务，或添加已安装的手机应用。" action={{ label: '添加连接', onPress: () => router.push('/connections/add' as Href) }} /></Surface> : null}
             <View style={styles.list}>{connections.data?.map((item) => <ConnectedService key={item.id} item={item} connector={connectorByKey.get(item.connectorId)} token={token} />)}</View>
-            {(deviceApps.data?.length ?? 0) > 0 ? <><Text style={styles.sectionTitle}>手机应用</Text><View style={styles.list}>{deviceApps.data?.map((item) => <DeviceAppService key={item.id} item={item} token={token} />)}</View></> : null}
+            {(deviceApps.data?.length ?? 0) > 0 ? <><Text style={styles.sectionTitle}>手机应用</Text><View style={styles.list}>{deviceApps.data?.map((item) => <DeviceAppService key={item.id} item={item} token={token} trustedDeviceStatus={trustedDevices.data?.find((device) => device.id === item.trustedDeviceId)?.status} />)}</View></> : null}
 
             {available.length > 0 ? <><Text style={styles.sectionTitle}>可以连接</Text><View style={styles.list}>{available.map((connector) => <AvailableService key={connector.key} connector={connector} token={token} />)}</View></> : null}
 

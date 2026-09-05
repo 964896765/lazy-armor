@@ -78,8 +78,8 @@ export class DeviceAppsService {
   async update(userId: string, id: string, input: UpdateDeviceAppConnectionDto) {
     const current = await this.getRow(userId, id);
     const nextModes = input.modes === undefined ? current.modesJson : this.validateModes(current.packageName, input.modes);
-    if (nextModes.includes('notification_read')) {
-      if (!current.trustedDeviceId) throw new ForbiddenException('Notification sources require a trusted device');
+    if (input.enabled === true || nextModes.includes('notification_read')) {
+      if (!current.trustedDeviceId) throw new ForbiddenException('Enabling a device app connection requires a trusted device');
       await this.trustedDevices.assertActive(userId, current.trustedDeviceId, current.deviceId);
     }
     const now = new Date();

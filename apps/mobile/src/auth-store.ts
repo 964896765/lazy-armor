@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { api, ApiError } from './api';
 import { clearOnboardingState, clearTokens, loadAccessToken, loadOnboardingRequired, loadRefreshToken, persistOnboardingRequired, persistTokens, type SessionTokens } from './secure-token-store';
+import { clearTrustedDeviceSession } from './trusted-device-api';
 
 interface AuthState {
   token?: string;
@@ -21,6 +22,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   setSession: async (tokens, options) => {
     const onboardingRequired = options?.onboardingRequired ?? false;
     await Promise.all([persistTokens(tokens), persistOnboardingRequired(onboardingRequired)]);
+    clearTrustedDeviceSession();
     set({ token: tokens.accessToken, refreshToken: tokens.refreshToken, hydrated: true, onboardingRequired });
   },
   hydrate: async () => {
@@ -33,12 +35,14 @@ export const useAuthStore = create<AuthState>((set) => ({
         body: JSON.stringify({ refreshToken }),
       });
       await persistTokens(rotated);
+      clearTrustedDeviceSession();
       set({ token: rotated.accessToken, refreshToken: rotated.refreshToken, hydrated: true, onboardingRequired });
     } catch (error) {
       // Invalid/revoked refresh credentials are terminal; transient network
       // failures keep the locally restored session so the app can retry later.
       if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
         await clearTokens();
+        clearTrustedDeviceSession();
         set({ token: undefined, refreshToken: undefined, hydrated: true, onboardingRequired: false });
       }
     }
@@ -53,6 +57,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       await api('/auth/logout', undefined, { method: 'POST', body: JSON.stringify({ refreshToken }) }).catch(() => undefined);
     }
     await Promise.all([clearTokens(), clearOnboardingState()]);
+    clearTrustedDeviceSession();
     set({ token: undefined, refreshToken: undefined, hydrated: true, onboardingRequired: false });
   },
 }));

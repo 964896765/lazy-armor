@@ -9,7 +9,10 @@ const mocks = vi.hoisted(() => ({
   loadOnboardingRequired: vi.fn(),
   persistOnboardingRequired: vi.fn(),
   persistTokens: vi.fn(),
+  clearTrustedDeviceSession: vi.fn(),
 }));
+
+vi.mock('./trusted-device-api', () => ({ clearTrustedDeviceSession: mocks.clearTrustedDeviceSession }));
 
 vi.mock('./secure-token-store', () => ({
   clearTokens: mocks.clearTokens,
@@ -87,12 +90,14 @@ describe('native session restart and rotation', () => {
     }));
     expect(mocks.clearTokens).toHaveBeenCalledOnce();
     expect(mocks.clearOnboardingState).toHaveBeenCalledOnce();
+    expect(mocks.clearTrustedDeviceSession).toHaveBeenCalledOnce();
     expect(useAuthStore.getState()).toMatchObject({ token: undefined, refreshToken: undefined, hydrated: true, onboardingRequired: false });
   });
 
   it('persists onboarding for a new registration and clears it on completion', async () => {
     await useAuthStore.getState().setSession({ accessToken: 'access', refreshToken: 'refresh' }, { onboardingRequired: true });
     expect(mocks.persistOnboardingRequired).toHaveBeenCalledWith(true);
+    expect(mocks.clearTrustedDeviceSession).toHaveBeenCalledOnce();
     expect(useAuthStore.getState().onboardingRequired).toBe(true);
 
     await useAuthStore.getState().completeOnboarding();

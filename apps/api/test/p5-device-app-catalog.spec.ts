@@ -16,8 +16,11 @@ const genericDiscoveredApp = {
 function fixture() {
   let inserted: Record<string, unknown> | null = null;
   const values = vi.fn(async (value: Record<string, unknown>) => { inserted = value; });
+  const updateWhere = vi.fn(async (value: Record<string, unknown>) => { inserted = inserted ? { ...inserted, ...value } : inserted; });
+  const updateSet = vi.fn((value: Record<string, unknown>) => ({ where: () => updateWhere(value) }));
   const db = {
     insert: vi.fn(() => ({ values })),
+    update: vi.fn(() => ({ set: updateSet })),
     select: vi.fn(() => ({
       from: vi.fn(() => ({
         where: vi.fn(() => ({
@@ -29,7 +32,7 @@ function fixture() {
   };
   const audit = { append: vi.fn(async () => undefined) };
   const trustedDevices = { assertActive: vi.fn(async () => ({ id: 'trusted-device-1', deviceId: 'device-1', trustLevel: 'key_proven', status: 'active' })) };
-  return { service: new DeviceAppsService(db as never, audit as never, trustedDevices as never), values, audit, trustedDevices };
+  return { service: new DeviceAppsService(db as never, audit as never, trustedDevices as never), values, updateSet, audit, trustedDevices };
 }
 
 describe('Generic App Connection safety policy', () => {
@@ -56,5 +59,16 @@ describe('Generic App Connection safety policy', () => {
     await expect(service.create('user-1', { ...genericDiscoveredApp, modes: ['receive_share'] }, 'trusted-device-1')).rejects.toThrow('not currently available');
     await expect(service.create('user-1', { ...genericDiscoveredApp, modes: ['notification_read'] }, 'trusted-device-1')).resolves.toMatchObject({ modes: ['notification_read'] });
     expect(values).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a revoked trusted device from re-enabling its bound app connection', async () => {
+    const { service, updateSet, trustedDevices } = fixture();
+    const created = await service.create('user-1', genericDiscoveredApp, 'trusted-device-1');
+    await service.update('user-1', created.id, { enabled: false });
+    expect(updateSet).toHaveBeenCalledWith(expect.objectContaining({ enabled: 0 }));
+
+    trustedDevices.assertActive.mockRejectedValueOnce(new Error('Device is not currently trusted'));
+    await expect(service.update('user-1', created.id, { enabled: true })).rejects.toThrow('Device is not currently trusted');
+    expect(updateSet).toHaveBeenCalledTimes(1);
   });
 });

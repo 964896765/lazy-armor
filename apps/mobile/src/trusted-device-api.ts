@@ -25,12 +25,13 @@ export interface TrustedDevice {
 }
 
 type EnrolledTrustedDevice = TrustedDevice & { deviceSession: TrustedDeviceSession };
-let activeSession: EnrolledTrustedDevice | null = null;
+let activeSession: { token: string; device: EnrolledTrustedDevice } | null = null;
 
-export async function ensureTrustedDevice(token: string | null): Promise<EnrolledTrustedDevice> {
+export async function ensureTrustedDevice(token: string | null, options?: { force?: boolean }): Promise<EnrolledTrustedDevice> {
   if (!token) throw new Error('AUTH_REQUIRED');
   const deviceId = await deviceInstallationId();
-  if (activeSession?.deviceId === deviceId && activeSession.status === 'active' && Date.parse(activeSession.deviceSession.expiresAt) - Date.now() > 30_000) return activeSession;
+  const cached = activeSession?.token === token ? activeSession.device : null;
+  if (!options?.force && cached?.deviceId === deviceId && cached.status === 'active' && Date.parse(cached.deviceSession.expiresAt) - Date.now() > 30_000) return cached;
   const identity = await trustedDeviceIdentity();
   if (!identity) throw new Error('DEVICE_KEY_UNAVAILABLE');
   const challenge = await api<TrustedDeviceChallenge>('/trusted-devices/challenges', token, {
@@ -42,7 +43,7 @@ export async function ensureTrustedDevice(token: string | null): Promise<Enrolle
   if (!signature) throw new Error('DEVICE_PROOF_UNAVAILABLE');
   const enrolled = await api<EnrolledTrustedDevice>(`/trusted-devices/challenges/${challenge.challengeId}/verify`, token, { method: 'POST', body: JSON.stringify({ signature }) });
   if (enrolled.status !== 'active' || !enrolled.deviceSession?.id || Date.parse(enrolled.deviceSession.expiresAt) <= Date.now()) throw new Error('DEVICE_SESSION_INVALID');
-  activeSession = enrolled;
+  activeSession = { token, device: enrolled };
   return enrolled;
 }
 
