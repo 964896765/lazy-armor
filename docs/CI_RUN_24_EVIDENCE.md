@@ -150,3 +150,13 @@ CI #41（run ID `33895165275`，提交 `14d3150d398f45a6c8b1afdd005166740b078efe
 修复将 `RuntimeTestConnector` 的一次性异步延迟改为测试进程内显式设置：并行获取租约前设置 80 毫秒以保证竞争交叠，心跳验证前设置 2 秒以跨过 1 秒测试租约和 1.1 秒观察点。连接器执行后立即清除该延迟，避免污染后续用例。所有原有断言保持：一个连接器调用、第二 Worker 不能接管有效租约、首 Worker 成功、无重复副作用。API 类型检查已通过。本轮基线的 Android verification job `101133611652` 也已最终成功，说明 Windows AAB 构建与 artifact 上传在关闭 cache post-job 后不再假红。
 
 来源：[GitHub Actions Run #43](https://github.com/964896765/lazy-armor/actions/runs/33906619810)。
+
+## Current Main RC Gate：P0-7 防篡改消息可认领时间
+
+run `33910823132`（提交 `7c81b654c80e1e4e005fd96f6bc4131d94c2e827`）的 Fast Gate 已通过，真实 MySQL 8.4 migration 与 backup/restore 前置步骤已执行成功；RC Full Gate 的全量真实数据库并发测试仍返回非零，故 Full monorepo build 被正确跳过，当前状态**不是** CI FULL GREEN。该 run 的 Android verification job `101147241434` 已成功，Android artifact `android-verification-7c81b654c80e1e4e005fd96f6bc4131d94c2e827`（artifact ID `9952620207`）已上传。
+
+从完成的 RC Full Gate job `101147241262` 原始日志按失败输出顺序读取，首项为 P0-7 测试 `42/43/44 stores a payload hash, blocks tampered payloads and never persists secrets`：预期手工插入的篡改 Outbox 消息被轮询后标记 `dead`，实际仍为 `pending`。测试插入时使用 MySQL `UTC_TIMESTAMP(6)` 作为 `next_attempt_at`，轮询认领条件则使用 Node 的 `new Date()`；在 CI 中两者可存在毫秒级时钟差，从而使刚插入行在第一次 poll 时尚未满足 `next_attempt_at <= now`。这属于 **C/D：测试数据可认领时间与跨进程时钟时序问题**，不属于 Outbox 完整性保护、死信或真实业务状态机缺陷。
+
+修复只将该**故意篡改测试行**的 `next_attempt_at` 明确设置为数据库当前时间前一秒，保证它应被本次真实 MySQL 轮询认领；payload hash 仍保持伪造、测试仍要求 `SECURITY_PAYLOAD_INTEGRITY_FAILURE`、仍要求出站 connector 零调用，且所有 dead-letter/append-only 断言保持不变。未改生产代码、数据库 Schema、迁移、`RUN_REAL_DB_INTEGRATION` 或任何门禁。
+
+来源：[GitHub Actions Run #44](https://github.com/964896765/lazy-armor/actions/runs/33910823132)。
