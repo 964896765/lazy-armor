@@ -93,23 +93,25 @@ describe.sequential('P2 Gmail connector', () => {
       .expect(200);
     expect(degraded.body.status).toBe('degraded');
 
+    const unavailableConnection = await oauthConnect(app, user.token, 'gmail', `gmail-unavailable-${unique}`);
     await request(app.getHttpServer())
-      .post(`/api/connections/${gmailConnectionId}/invoke`)
+      .post(`/api/connections/${unavailableConnection.connection.id}/invoke`)
       .set(auth(user.token))
       .send({ capability: 'READ_EMAIL', requestId: `gmail-unavailable-${unique}`, input: { mode: 'provider_unavailable' } })
       .expect(400);
     const unavailable = await request(app.getHttpServer())
-      .get(`/api/connections/${gmailConnectionId}`)
+      .get(`/api/connections/${unavailableConnection.connection.id}`)
       .set(auth(user.token))
       .expect(200);
     expect(unavailable.body.status).toBe('provider_error');
   });
 
   it('syncs Gmail messages into important_item_candidates for Daily Summary', async () => {
+    const syncConnection = await oauthConnect(app, user.token, 'gmail', `gmail-sync-${unique}`);
     const synced = await request(app.getHttpServer())
       .post('/api/important-item-candidates/sync')
       .set(auth(user.token))
-      .send({ connectionId: gmailConnectionId, sourceType: 'email' })
+      .send({ connectionId: syncConnection.connection.id, sourceType: 'email' })
       .expect(201);
     expect(synced.body.length).toBeGreaterThan(0);
     const listed = await request(app.getHttpServer())

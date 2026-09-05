@@ -5,7 +5,7 @@ import { authIdentities, authSessions, passwordResetTokens, profiles, userMember
 import { newId } from '@lazy-armor/shared';
 import { compare, hash } from 'bcryptjs';
 import { createHash, randomBytes } from 'node:crypto';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, gt, isNull } from 'drizzle-orm';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
 import { AuditService } from '../audit/audit.service';
 import { RateLimiterService } from '../infrastructure/rate-limiter.service';
@@ -169,6 +169,10 @@ export class AuthService {
     if (session.expiresAt <= new Date()) throw new UnauthorizedException('Refresh token expired');
     const now = new Date();
     const rotated = await this.rotateSession(session, now, context);
+    if (!rotated) {
+      await this.audit.append({ actorType: 'system', actorUserId: null, action: 'REFRESH_ROTATION_CONFLICT', resourceType: 'auth_session', resourceId: session.id, userId: session.userId, source: 'api', result: 'blocked', reasonCode: 'REFRESH_ALREADY_ROTATED', changeSummary: 'Concurrent refresh rotation lost the atomic session claim' });
+      throw new UnauthorizedException('Refresh token already rotated');
+    }
     return this.issueAccessAndRefresh(rotated.sessionId, rotated.refreshToken, session.userId);
   }
 
@@ -258,18 +262,22 @@ export class AuthService {
     return { accessToken, refreshToken, tokenType: 'Bearer', expiresIn: this.accessTtlSeconds };
   }
 
-  private async rotateSession(session: typeof authSessions.$inferSelect, now: Date, context: RequestContext): Promise<{ sessionId: string; refreshToken: string }> {
+  private async rotateSession(session: typeof authSessions.$inferSelect, now: Date, context: RequestContext): Promise<{ sessionId: string; refreshToken: string } | null> {
     const refreshToken = randomBytes(32).toString('hex');
     const sessionId = newId();
-    await this.db.transaction(async (tx) => {
-      await tx.update(authSessions).set({ revokedAt: now, revokeReason: 'rotated', lastUsedAt: now }).where(eq(authSessions.id, session.id));
+    const rotated = await this.db.transaction(async (tx) => {
+      const [claim] = await tx.update(authSessions)
+        .set({ revokedAt: now, revokeReason: 'rotated', lastUsedAt: now })
+        .where(and(eq(authSessions.id, session.id), isNull(authSessions.revokedAt), gt(authSessions.expiresAt, now)));
+      if (claim.affectedRows !== 1) return false;
       await tx.insert(authSessions).values({
         id: sessionId, userId: session.userId, refreshTokenHash: hashToken(refreshToken), familyId: session.familyId,
         clientMetadataJson: { ...(session.clientMetadataJson ?? {}), ...(context.ip ? { ip: context.ip } : {}), ...(context.userAgent ? { userAgent: context.userAgent } : {}) },
         createdAt: now, expiresAt: session.expiresAt, lastUsedAt: null, revokedAt: null, revokeReason: null,
       });
+      return true;
     });
-    return { sessionId, refreshToken };
+    return rotated ? { sessionId, refreshToken } : null;
   }
 
   private async revokeFamily(familyId: string, reason: string) {

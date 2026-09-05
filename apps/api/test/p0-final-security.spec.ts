@@ -106,6 +106,34 @@ describe.sequential('P0 Final security hardening', () => {
       .expect(401);
   });
 
+  it('allows exactly one winner when the same refresh token is rotated concurrently', async () => {
+    const session = await register(`refresh-race-${unique}@example.com`);
+    const responses = await Promise.all([
+      request(app.getHttpServer()).post('/api/auth/refresh').send({ refreshToken: session.refreshToken }),
+      request(app.getHttpServer()).post('/api/auth/refresh').send({ refreshToken: session.refreshToken }),
+    ]);
+
+    expect(responses.map((response) => response.status).sort()).toEqual([201, 401]);
+    const winner = responses.find((response) => response.status === 201)!;
+    const loser = responses.find((response) => response.status === 401)!;
+    expect(loser.body.message).toBe('Refresh token already rotated');
+
+    const tokenHash = createHash('sha256').update(session.refreshToken).digest('hex');
+    const [familyRows] = await pool.query<RowDataPacket[]>(
+      `SELECT COUNT(*) AS total, SUM(revoked_at IS NULL) AS active
+         FROM auth_sessions
+        WHERE family_id = (SELECT family_id FROM auth_sessions WHERE refresh_token_hash = ?)`,
+      [tokenHash],
+    );
+    expect(Number(familyRows[0].total)).toBe(2);
+    expect(Number(familyRows[0].active)).toBe(1);
+
+    await request(app.getHttpServer())
+      .post('/api/auth/refresh')
+      .send({ refreshToken: winner.body.refreshToken })
+      .expect(201);
+  });
+
   it('revokes the current session on logout and invalidates the access token', async () => {
     const session = await register(`logout-${unique}@example.com`);
     await request(app.getHttpServer())

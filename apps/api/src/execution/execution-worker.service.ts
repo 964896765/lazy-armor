@@ -13,6 +13,7 @@ const WORKER_ID = () => `execution-${process.pid}`;
 export class ExecutionWorker implements OnModuleInit, OnApplicationShutdown {
   private worker?: Worker<{ executionId: string }>;
   private redis?: IORedis;
+  private readonly activeExecutions = new Set<string>();
 
   constructor(
     private readonly config: ConfigService,
@@ -34,17 +35,22 @@ export class ExecutionWorker implements OnModuleInit, OnApplicationShutdown {
 
   async processExecution(executionId: string) {
     const workerId = WORKER_ID();
-    const lease = await this.lease.acquire(executionId, workerId);
-    if (!lease.acquired) {
-      this.telemetry.event('warn', 'execution_worker_lease_skipped', { executionId, status: lease.status, workerId });
-      return { status: lease.status };
+    if (this.activeExecutions.has(executionId)) {
+      this.telemetry.event('warn', 'execution_worker_lease_skipped', { executionId, status: 'running', workerId });
+      return { status: 'running' as const };
     }
-    const heartbeat = setInterval(() => {
-      void this.lease.heartbeat(executionId, lease.workerToken).catch(() => undefined);
-    }, Math.max(100, Math.floor(this.lease.leaseDurationMs / 3)));
-    heartbeat.unref();
+    this.activeExecutions.add(executionId);
+    let heartbeat: ReturnType<typeof setInterval> | undefined;
     try {
-      return this.telemetry.runWithContext({
+      const lease = await this.lease.acquire(executionId, workerId);
+      if (!lease.acquired) {
+        this.telemetry.event('warn', 'execution_worker_lease_skipped', { executionId, status: lease.status, workerId });
+        return { status: lease.status };
+      }
+      heartbeat = setInterval(() => {
+        void this.lease.heartbeat(executionId, lease.workerToken).catch(() => undefined);
+      }, Math.max(100, Math.floor(this.lease.leaseDurationMs / 4)));
+      return await this.telemetry.runWithContext({
         executionId,
         requestId: executionId,
         workerId,
@@ -61,7 +67,8 @@ export class ExecutionWorker implements OnModuleInit, OnApplicationShutdown {
         return outcome;
       });
     } finally {
-      clearInterval(heartbeat);
+      if (heartbeat) clearInterval(heartbeat);
+      this.activeExecutions.delete(executionId);
     }
   }
 

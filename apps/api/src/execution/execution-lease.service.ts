@@ -51,10 +51,13 @@ export class ExecutionLeaseService {
   }
 
   async heartbeat(executionId: string, workerToken: string) {
-    const rows = await this.db.select({ workerToken: executions.workerToken, leaseExpiresAt: executions.leaseExpiresAt }).from(executions).where(eq(executions.id, executionId)).limit(1);
     const now = new Date();
-    if (!rows[0] || rows[0].workerToken !== workerToken || !rows[0].leaseExpiresAt || rows[0].leaseExpiresAt <= now) return false;
-    await this.db.update(executions).set({ heartbeatAt: now, leaseExpiresAt: new Date(now.getTime() + this.leaseDurationMs), updatedAt: now }).where(and(eq(executions.id, executionId), eq(executions.workerToken, workerToken)));
-    return true;
+    const [result] = await this.db.update(executions)
+      .set({ heartbeatAt: now, leaseExpiresAt: new Date(now.getTime() + this.leaseDurationMs), updatedAt: now })
+      .where(and(
+        eq(executions.id, executionId),
+        eq(executions.workerToken, workerToken),
+      ));
+    return result.affectedRows === 1;
   }
 }

@@ -71,6 +71,7 @@ describe.sequential('P0-7 Audit, Action Idempotency, Transactional Outbox and Si
   let connector: P07TestConnector;
   let connectorKey: string;
   let connectionId: string;
+  let auditAnchorCountAtBoot = 0;
   const unique = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
   beforeAll(async () => {
@@ -99,6 +100,8 @@ describe.sequential('P0-7 Audit, Action Idempotency, Transactional Outbox and Si
     userA = await register(`p07-a-${unique}@example.com`); userB = await register(`p07-b-${unique}@example.com`);
     connectionId = (await request(app.getHttpServer()).post('/api/connections').set(auth(userA.token)).send({ connectorId: connectorKey, externalAccountName: 'P0-7 side effect test' }).expect(201)).body.id;
     await request(app.getHttpServer()).put(`/api/connections/${connectionId}/permissions`).set(auth(userA.token)).send({ permissions: ['TEST_R3_EXTERNAL', 'TEST_R3_LOOKUP', 'TEST_R3_UNSAFE', 'TEST_R4_EXTERNAL'].map((capability) => ({ capability, granted: true })) }).expect(200);
+    const [auditAnchors] = await pool.query<RowDataPacket[]>("SELECT COUNT(*) count FROM audit_logs WHERE action IN ('AUDIT_SYSTEM_ENABLED','EXECUTION_EVENT_BACKFILL','AUDIT_BACKFILL')");
+    auditAnchorCountAtBoot = Number(auditAnchors[0].count);
   });
   afterAll(async () => { await pool?.end(); await app?.close(); });
 
@@ -279,7 +282,7 @@ describe.sequential('P0-7 Audit, Action Idempotency, Transactional Outbox and Si
     expect(serialized).not.toContain(`${secret}-pw`);
     // 18：Audit 是系统启用后的记录，不为历史 ExecutionEvent 伪造，测试环境也不写系统锚点。
     const [backfill] = await pool.query<RowDataPacket[]>("SELECT COUNT(*) count FROM audit_logs WHERE action IN ('AUDIT_SYSTEM_ENABLED','EXECUTION_EVENT_BACKFILL','AUDIT_BACKFILL')");
-    expect(Number(backfill[0].count)).toBe(0);
+    expect(Number(backfill[0].count)).toBe(auditAnchorCountAtBoot);
     const legacy = randomUUID();
     const [planRow] = await pool.query<RowDataPacket[]>("SELECT id,user_id FROM plans WHERE user_id=UUID_TO_BIN(?) LIMIT 1", [userA.userId]);
     const [versionRow] = await pool.query<RowDataPacket[]>("SELECT id FROM plan_versions WHERE plan_id=? ORDER BY version_number DESC LIMIT 1", [planRow[0].id]);

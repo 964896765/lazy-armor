@@ -29,7 +29,7 @@ export default function DomainsDirectory() {
           <Text style={styles.subtitle}>先看你的真实生活对象，再安排需要持续帮你留意的事。</Text>
         </View>
         {plans.isLoading ? <View style={styles.loading}><ActivityIndicator color={colors.primary} /><Text style={styles.loadingText}>正在整理领域…</Text></View> : null}
-        {!token ? <Surface><EmptyState icon="◆" title="登录后查看你的领域" description="计划、资源与动态只会显示在你的账号内。" action={{ label: '去登录', onPress: () => router.push('/auth/login') }} /></Surface> : null}
+        {!token ? <Surface><EmptyState icon="◆" title="登录后查看你的领域" description="计划、资源与动态只会显示在你的账号内。" action={{ label: '去登录', onPress: () => router.push('/auth/login' as never) }} /></Surface> : null}
         {token ? GROUP_ORDER.map((group) => {
           const definition = DOMAIN_GROUPS[group];
           const domains = CANONICAL_DOMAIN_CATALOG.filter((domain) => domain.group === group);

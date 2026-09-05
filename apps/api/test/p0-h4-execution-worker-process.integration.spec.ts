@@ -42,8 +42,10 @@ let sharedInternalConnectionId = '';
 let poolRef: Pool;
 // GitHub Actions 的 service containers 由 Runner 管理，测试不可安全 stop/start。
 // 本地 Compose 保留故障注入验证；CI 继续执行真实多进程消费与健康路径。
-const supportsLocalComposeFaultInjection = process.env.CI !== 'true';
-const faultInjectionIt = supportsLocalComposeFaultInjection ? it : it.skip;
+const supportsRedisFaultInjection = process.env.CI !== 'true' && isContainerRunning('lazy-armor-p0-redis-1');
+const supportsMysqlFaultInjection = process.env.CI !== 'true' && isContainerRunning('lazy-armor-p0-mysql-1');
+const redisFaultInjectionIt = supportsRedisFaultInjection ? it : it.skip;
+const mysqlFaultInjectionIt = supportsMysqlFaultInjection ? it : it.skip;
 
 describe.sequential('P0-H4 execution worker true-process reliability', { timeout: 180000 }, () => {
   let app: INestApplication;
@@ -60,7 +62,7 @@ describe.sequential('P0-H4 execution worker true-process reliability', { timeout
     if (!existsSync(executionWorkerEntry)) {
       throw new Error('Execution worker dist entrypoint is missing. Run `pnpm --filter @lazy-armor/api build` before the true-process worker tests.');
     }
-    process.env.NODE_ENV = 'development';
+    process.env.NODE_ENV = 'test';
     process.env.APP_ENV = 'development';
     process.env.APP_ROLE = 'api';
     process.env.DATABASE_URL ??= 'mysql://lazy_armor:lazy_armor_dev@127.0.0.1:3307/lazy_armor_test';
@@ -95,8 +97,10 @@ describe.sequential('P0-H4 execution worker true-process reliability', { timeout
     while (activeWorkers.length) {
       await stopWorker(activeWorkers.pop()!);
     }
-    if (supportsLocalComposeFaultInjection) {
+    if (supportsRedisFaultInjection) {
       await ensureContainerRunning('lazy-armor-p0-redis-1');
+    }
+    if (supportsMysqlFaultInjection) {
       await ensureContainerRunning('lazy-armor-p0-mysql-1');
     }
   });
@@ -133,7 +137,7 @@ describe.sequential('P0-H4 execution worker true-process reliability', { timeout
     expect(detail.steps.map((step: { status: string }) => step.status)).toEqual(['succeeded']);
   });
 
-  faultInjectionIt('keeps /live up, returns /ready=503 during Redis outage, and recovers after Redis restart', async () => {
+  redisFaultInjectionIt('keeps /live up, returns /ready=503 during Redis outage, and recovers after Redis restart', async () => {
     const worker = await startExecutionWorker();
     await waitForReady(worker.probePort, 200);
 
@@ -153,7 +157,7 @@ describe.sequential('P0-H4 execution worker true-process reliability', { timeout
     expect((await waitForExecutionStatus(app, user.token, executionId, 'succeeded')).status).toBe('succeeded');
   });
 
-  faultInjectionIt('keeps /live up, returns /ready=503 during MySQL outage, and recovers after MySQL restart', async () => {
+  mysqlFaultInjectionIt('keeps /live up, returns /ready=503 during MySQL outage, and recovers after MySQL restart', async () => {
     const worker = await startExecutionWorker();
     await waitForReady(worker.probePort, 200);
 
@@ -605,6 +609,14 @@ async function isChildProcessAlive(child: ChildProcess) {
 
 function stopContainer(name: string) {
   execFileSync('docker', ['stop', '--time', '1', name], { cwd: repoRoot, stdio: 'ignore' });
+}
+
+function isContainerRunning(name: string) {
+  try {
+    return execFileSync('docker', ['inspect', '-f', '{{.State.Status}}', name], { cwd: repoRoot, encoding: 'utf8' }).trim() === 'running';
+  } catch {
+    return false;
+  }
 }
 
 function startContainer(name: string) {

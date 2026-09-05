@@ -46,7 +46,7 @@ export default function AddConnectionPage() {
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <ScrollView style={styles.page} contentContainerStyle={styles.content}>
         <View style={styles.header}><Text style={styles.title}>添加连接</Text><Text style={styles.subtitle}>从这台手机的真实可启动应用中选择。你未选择的应用不会被保存，也不会出现在你的空间导航中。</Text></View>
-        {!token ? <Surface><EmptyState icon="＋" title="请先登录" description="添加连接前需要确认这是你的账号与设备。" action={{ label: '去登录', onPress: () => router.push('/auth/login') }} /></Surface> : null}
+        {!token ? <Surface><EmptyState icon="＋" title="请先登录" description="添加连接前需要确认这是你的账号与设备。" action={{ label: '去登录', onPress: () => router.push('/auth/login' as never) }} /></Surface> : null}
         {token ? <>
           <View style={styles.kindTabs}>{([['mobile_app', '手机应用'], ['online_service', '在线服务'], ['device', '设备、车辆与家庭']] as const).map(([value, label]) => <Pressable key={value} accessibilityRole="button" onPress={() => setKind(value)} style={[styles.kindTab, kind === value && styles.kindTabSelected]}><Text style={[styles.kindText, kind === value && styles.kindTextSelected]}>{label}</Text></Pressable>)}</View>
           {kind === 'mobile_app' ? <MobileAppDiscovery selected={selected} apps={discovery.data ?? []} discoveryLoading={discovery.isLoading} discoveryError={discovery.isError} alreadyAdded={alreadyAdded} addPending={add.isPending} addError={add.isError} onSelect={setSelectedPackage} onAdd={() => selected && add.mutate(selected)} /> : null}

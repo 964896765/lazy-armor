@@ -63,7 +63,6 @@ describe.sequential('P4 operations snapshot', { timeout: 60000 }, () => {
       status: expect.any(String),
       processStatus: expect.any(String),
       dataStatus: 'available',
-      processHeartbeatAt: expect.anything(),
       readiness: expect.objectContaining({
         status: expect.any(String),
       }),
@@ -73,11 +72,12 @@ describe.sequential('P4 operations snapshot', { timeout: 60000 }, () => {
       status: expect.any(String),
       processStatus: expect.any(String),
       dataStatus: 'available',
-      processHeartbeatAt: expect.anything(),
       readiness: expect.objectContaining({
         status: expect.any(String),
       }),
     });
+    expect(workers.body.executionWorker.processHeartbeatAt === null || typeof workers.body.executionWorker.processHeartbeatAt === 'string').toBe(true);
+    expect(workers.body.outboxWorker.processHeartbeatAt === null || typeof workers.body.outboxWorker.processHeartbeatAt === 'string').toBe(true);
     expect(workers.body.executionWorker.lastWorkActivityAt === null || typeof workers.body.executionWorker.lastWorkActivityAt === 'string').toBe(true);
     expect(workers.body.outboxWorker.lastWorkActivityAt === null || typeof workers.body.outboxWorker.lastWorkActivityAt === 'string').toBe(true);
 

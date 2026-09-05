@@ -42,7 +42,7 @@ export default function CommerceSpace() {
           <Text style={styles.subtitle}>只根据你的资源、计划和偏好准备建议；不会替你支付或下单。</Text>
         </View>
 
-        {!token ? <Surface><EmptyState icon="□" title="登录后查看你的补给与待购买事项" description="商城只会使用你允许的计划与资源信息。" action={{ label: '去登录', onPress: () => router.push('/auth/login') }} /></Surface> : null}
+        {!token ? <Surface><EmptyState icon="□" title="登录后查看你的补给与待购买事项" description="商城只会使用你允许的计划与资源信息。" action={{ label: '去登录', onPress: () => router.push('/auth/login' as never) }} /></Surface> : null}
         {plans.isLoading ? <View style={styles.loading}><ActivityIndicator color={colors.primary} /><Text style={styles.loadingText}>正在整理补给事项…</Text></View> : null}
         {token && !plans.isLoading ? (
           <>

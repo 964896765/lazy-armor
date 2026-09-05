@@ -22,7 +22,9 @@ const ports: Record<WorkerRole, number> = { 'execution-worker': portBase, 'outbo
 const activeWorkers: WorkerProcess[] = [];
 // GitHub Actions service containers 由 Runner 生命周期管理；该用例故意停启
 // Redis/MySQL，仅能在本地 Compose 中运行。CI 的正常 Worker 路径由其他真进程测试覆盖。
-const supportsLocalComposeFaultInjection = process.env.CI !== 'true';
+const supportsLocalComposeFaultInjection = process.env.CI !== 'true'
+  && isContainerRunning('lazy-armor-p0-mysql-1')
+  && isContainerRunning('lazy-armor-p0-redis-1');
 const localFaultInjectionIt = supportsLocalComposeFaultInjection ? it : it.skip;
 
 describe.sequential('P0-H4 Operations to true-process worker linkage', { timeout: 300000 }, () => {
@@ -37,7 +39,7 @@ describe.sequential('P0-H4 Operations to true-process worker linkage', { timeout
       await ensureContainerRunning('lazy-armor-p0-mysql-1');
       await ensureContainerRunning('lazy-armor-p0-redis-1');
     }
-    process.env.NODE_ENV = 'development';
+    process.env.NODE_ENV = 'test';
     process.env.APP_ENV = 'development';
     process.env.APP_ROLE = 'api';
     process.env.DATABASE_URL ??= 'mysql://lazy_armor:lazy_armor_dev@127.0.0.1:3307/lazy_armor_test';
@@ -220,3 +222,11 @@ async function ensureContainerHealthy(name: string, timeoutMs = 30_000) {
 }
 
 function sleep(ms: number) { return new Promise((resolve) => setTimeout(resolve, ms)); }
+
+function isContainerRunning(name: string) {
+  try {
+    return execFileSync('docker', ['inspect', '-f', '{{.State.Status}}', name], { cwd: repoRoot, encoding: 'utf8' }).trim() === 'running';
+  } catch {
+    return false;
+  }
+}

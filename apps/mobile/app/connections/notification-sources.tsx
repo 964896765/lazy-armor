@@ -87,7 +87,7 @@ export default function NotificationSourcesPage() {
       {!pendingReceipts.isLoading && (pendingReceipts.data?.length ?? 0) === 0 ? <Text style={styles.quietText}>当前没有等待确认的线索。</Text> : null}
       <View style={styles.list}>{pendingReceipts.data?.map((receipt) => <PendingReceiptCard key={receipt.id} receipt={receipt} pending={decideReceipt.isPending} onDecide={(confirmed) => decideReceipt.mutate({ receipt, confirmed })} />)}</View>
       {decideReceipt.isError ? <Text style={styles.error}>这次确认没有保存。系统不会把线索当作真实事实；你可以稍后重试。</Text> : null}
-      <View style={styles.action}><ActionButton label="查看已验证事实" tone="quiet" onPress={() => router.push('/truth-store')} /></View>
+      <View style={styles.action}><ActionButton label="查看已验证事实" tone="quiet" onPress={() => router.push('/truth-store' as never)} /></View>
       <Text style={styles.safetyText}>已同步的线索不会直接驱动账单、订单或其他自动操作。只有你明确确认且服务端验证语义一致时，品牌中立资源事实才会写入；计划仍需独立检查资源要求。</Text>
     </> : null}
   </ScrollView></SafeAreaView>;

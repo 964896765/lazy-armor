@@ -19,8 +19,14 @@ const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 class RuntimeTestConnector implements Connector {
   readonly calls = new Map<string, number>();
   private nextExecuteDelayMs = 0;
+  private nextExecuteGate: Promise<void> | null = null;
   constructor(private readonly key: string) {}
   delayNextExecute(ms: number) { this.nextExecuteDelayMs = ms; }
+  holdNextExecute() {
+    let release = () => undefined;
+    this.nextExecuteGate = new Promise<void>((resolve) => { release = resolve; });
+    return release;
+  }
   metadata = () => ({ key: this.key, name: 'P0-5 Test Connector', description: 'Only registered inside integration tests', version: '1.0.0-test', connectorSdkVersion: '0.1.0', providerType: 'internal' as const, productionStatus: 'DRAFT_ONLY' as const, authentication: { type: 'none' as const }, supportsRefresh: false, supportsRevoke: false, supportsWebhook: false, supportsHealthCheck: true, sandboxSupport: 'full' as const, rateLimitStrategy: 'unknown' as const });
   capabilities = () => [{ key: 'TEST_EXECUTE', name: 'Test execute', riskLevel: 'R1' as const, operation: 'execute' as const, requiredPermission: 'TEST_EXECUTE', providerAvailability: 'available' as const }];
   async validateConnection() { return { status: 'healthy' as const, checkedAt: new Date().toISOString() }; }
@@ -31,8 +37,11 @@ class RuntimeTestConnector implements Connector {
     this.calls.set(request.requestId, calls);
     if (behavior === 'timeout_once' && calls === 1) throw new ExecutionRuntimeError('TIMEOUT', 'temporary network failure', true);
     if (behavior === 'always_temporary') return { ok: false, data: {} };
-    const delayMs = this.nextExecuteDelayMs;
+    const delayMs = behavior === 'slow' ? 250 : this.nextExecuteDelayMs;
     this.nextExecuteDelayMs = 0;
+    const gate = this.nextExecuteGate;
+    this.nextExecuteGate = null;
+    if (gate) await gate;
     if (delayMs > 0) await wait(delayMs);
     if (behavior === 'secret_output') return { ok: true, data: { token: 'output-token-must-not-leak', nested: { credential: 'credential-must-not-leak' } } };
     if (behavior === 'secret_error') throw new Error('upstream failed token=raw-secret authorization=Bearer-secret');
@@ -341,12 +350,16 @@ describe.sequential('P0-5 Execution Engine integration and security', () => {
     const heartbeatPlan = await createPlan(userA.token, definition('持续心跳', [testAction()]));
     // The test lease is 1 s and the competing worker observes at 1.1 s.
     // Hold the connector call for a further 0.9 s to test the heartbeat margin.
-    testConnector.delayNextExecute(2_000);
+    const releaseConnector = testConnector.holdNextExecute();
     const longRunning = await dispatch(userA.token, heartbeatPlan.id, { amount: 300 }).expect(201);
     const firstWorker = worker.processExecution(longRunning.body.id);
     await waitForConnectorCall(`${longRunning.body.id}:0`);
     await wait(1_100);
-    expect((await worker.processExecution(longRunning.body.id)).status).toBe('running');
+    try {
+      expect((await worker.processExecution(longRunning.body.id)).status).toBe('running');
+    } finally {
+      releaseConnector();
+    }
     expect((await firstWorker).status).toBe('succeeded');
     expect(testConnector.calls.get(`${longRunning.body.id}:0`)).toBe(1);
   });

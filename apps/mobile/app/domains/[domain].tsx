@@ -52,7 +52,7 @@ export default function DomainWorkspace() {
           <Text style={styles.subtitle}>计划、资料与最近动态都会集中在这里。手工、离线或待接入状态会如实标注。</Text>
         </View>
         <View style={styles.tabs}>{TABS.map((item) => <Pressable key={item} accessibilityRole="button" onPress={() => setTab(item)} style={[styles.tab, item === tab && styles.tabSelected]}><Text style={[styles.tabText, item === tab && styles.tabTextSelected]}>{item}</Text></Pressable>)}</View>
-        {!token ? <Surface><EmptyState icon="◆" title="登录后查看你的领域" description="只有你本人可查看与管理自己的计划和资料。" action={{ label: '去登录', onPress: () => router.push('/auth/login') }} /></Surface> : null}
+        {!token ? <Surface><EmptyState icon="◆" title="登录后查看你的领域" description="只有你本人可查看与管理自己的计划和资料。" action={{ label: '去登录', onPress: () => router.push('/auth/login' as never) }} /></Surface> : null}
         {token && plans.isLoading ? <View style={styles.loading}><ActivityIndicator color={colors.primary} /><Text style={styles.loadingText}>正在读取{definition.label}…</Text></View> : null}
         {token && !plans.isLoading && tab === '概览' ? <Overview activePlans={activePlans.length} planCount={domainPlans.length} latest={latest} /> : null}
         {token && !plans.isLoading && tab === '计划' ? <PlansSection plans={domainPlans} label={definition.label} /> : null}

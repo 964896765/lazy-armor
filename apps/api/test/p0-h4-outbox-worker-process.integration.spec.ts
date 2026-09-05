@@ -8,6 +8,7 @@ import type { INestApplication } from '@nestjs/common';
 import { createPool, type Pool, type RowDataPacket } from 'mysql2/promise';
 import request from 'supertest';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { ProviderCircuitBreakerService } from '../src/infrastructure/provider-circuit-breaker.service';
 import { AdminOperationsService } from '../src/admin/admin-operations.service';
 
 interface Session {
@@ -68,9 +69,14 @@ let poolRef: Pool;
 let executionWorkerRef: WorkerFacade;
 let userRef: Session;
 let operationsRef: AdminOperationsService;
+let circuitsRef: ProviderCircuitBreakerService;
 // CI 的 Redis/MySQL 由 GitHub Actions 管理；仅本地 Compose 可安全执行停启故障注入。
-const supportsLocalComposeFaultInjection = process.env.CI !== 'true';
-const faultInjectionIt = supportsLocalComposeFaultInjection ? it : it.skip;
+const supportsRedisFaultInjection = process.env.CI !== 'true' && isContainerRunning('lazy-armor-p0-redis-1');
+const supportsMysqlFaultInjection = process.env.CI !== 'true' && isContainerRunning('lazy-armor-p0-mysql-1');
+const supportsCombinedFaultInjection = supportsRedisFaultInjection && supportsMysqlFaultInjection;
+const redisFaultInjectionIt = supportsRedisFaultInjection ? it : it.skip;
+const mysqlFaultInjectionIt = supportsMysqlFaultInjection ? it : it.skip;
+const combinedFaultInjectionIt = supportsCombinedFaultInjection ? it : it.skip;
 
 describe.sequential('P0-H4 outbox worker true-process reliability', { timeout: 240000 }, () => {
   let outbox: { claim(batch: number, workerId: string, leaseMs?: number): Promise<OutboxRow[]> };
@@ -80,7 +86,7 @@ describe.sequential('P0-H4 outbox worker true-process reliability', { timeout: 2
     if (!existsSync(outboxWorkerEntry)) {
       throw new Error('Outbox worker dist entrypoint is missing. Run `pnpm --filter @lazy-armor/api build` before the true-process outbox tests.');
     }
-    process.env.NODE_ENV = 'development';
+    process.env.NODE_ENV = 'test';
     process.env.APP_ENV = 'development';
     process.env.APP_ROLE = 'api';
     process.env.DATABASE_URL ??= 'mysql://lazy_armor:lazy_armor_dev@127.0.0.1:3307/lazy_armor_test';
@@ -104,6 +110,8 @@ describe.sequential('P0-H4 outbox worker true-process reliability', { timeout: 2
     executionWorkerRef = appRef.get('EXECUTION_WORKER');
     outbox = appRef.get('OUTBOX_SERVICE');
     operationsRef = appRef.get(AdminOperationsService);
+    circuitsRef = appRef.get(ProviderCircuitBreakerService);
+    await circuitsRef.resetForTest('true_process_test');
 
     userRef = await register(appRef, `h4-outbox-${unique}@example.com`, 'H4 Outbox');
     sharedConnectionId = await createConnection(appRef, userRef.token, 'true_process_test', `True Process Connector-${unique}`);
@@ -117,9 +125,12 @@ describe.sequential('P0-H4 outbox worker true-process reliability', { timeout: 2
     }
     await ensurePermissionsGranted(appRef, userRef.token, sharedConnectionId);
     await ensureConnectionConnected();
+    await circuitsRef.resetForTest('true_process_test');
     resetHarnessState();
-    if (supportsLocalComposeFaultInjection) {
+    if (supportsRedisFaultInjection) {
       await ensureContainerRunning('lazy-armor-p0-redis-1');
+    }
+    if (supportsMysqlFaultInjection) {
       await ensureContainerRunning('lazy-armor-p0-mysql-1');
     }
   });
@@ -153,7 +164,7 @@ describe.sequential('P0-H4 outbox worker true-process reliability', { timeout: 2
     expect(sideEffects('TEST_OUTBOX_SAFE')).toBe(1);
   });
 
-  faultInjectionIt('keeps /live up, returns /ready=503 during Redis outage, and recovers after Redis restart', async () => {
+  redisFaultInjectionIt('keeps /live up, returns /ready=503 during Redis outage, and recovers after Redis restart', async () => {
     const worker = await startOutboxWorker();
     await waitForReady(worker.probePort, 200);
 
@@ -166,7 +177,7 @@ describe.sequential('P0-H4 outbox worker true-process reliability', { timeout: 2
     expect((await waitForReady(worker.probePort, 200, 30_000)).status).toBe('ready');
   });
 
-  faultInjectionIt('keeps /live up, returns /ready=503 during MySQL outage, and recovers after MySQL restart', async () => {
+  mysqlFaultInjectionIt('keeps /live up, returns /ready=503 during MySQL outage, and recovers after MySQL restart', async () => {
     const worker = await startOutboxWorker();
     await waitForReady(worker.probePort, 200);
 
@@ -293,7 +304,7 @@ describe.sequential('P0-H4 outbox worker true-process reliability', { timeout: 2
     expect(detail.events.some((event: { eventType: string }) => event.eventType === 'side_effect_failed')).toBe(true);
   });
 
-  faultInjectionIt('never re-dispatches a dead_letter after worker or dependency restarts', async () => {
+  combinedFaultInjectionIt('never re-dispatches a dead_letter after worker or dependency restarts', async () => {
     const waiting = await prepareWaitingDispatch('dead-letter-boundary', 'TEST_OUTBOX_SAFE', 'provider-5xx-always');
     await startOutboxWorker();
     await accelerateOutboxRetries();
@@ -370,6 +381,7 @@ describe.sequential('P0-H4 outbox worker true-process reliability', { timeout: 2
     );
     expect(deadMetrics.outbox.recentFailures.some((item: { lastErrorCode: string | null }) => item.lastErrorCode === 'PROVIDER_5XX')).toBe(true);
 
+    await circuitsRef.resetForTest('true_process_test');
     const unknown = await prepareWaitingDispatch('ops-outcome-unknown', 'TEST_OUTBOX_UNSAFE', 'timeout-always');
     await waitForOperationStatus(unknown.stepId, 'outcome_unknown');
     const unknownMetrics = await waitForOutboxMetrics((metrics) => metrics.overview.delivery.outcomeUnknown > 0);
@@ -690,6 +702,14 @@ async function isChildProcessAlive(child: ChildProcess) {
 
 function stopContainer(name: string) {
   execFileSync('docker', ['stop', '--time', '1', name], { cwd: repoRoot, stdio: 'ignore' });
+}
+
+function isContainerRunning(name: string) {
+  try {
+    return execFileSync('docker', ['inspect', '-f', '{{.State.Status}}', name], { cwd: repoRoot, encoding: 'utf8' }).trim() === 'running';
+  } catch {
+    return false;
+  }
 }
 
 function startContainer(name: string) {
