@@ -1,405 +1,1084 @@
 # 懒人装甲 Lazy Armor
 
-> **从从容容，游刃有余。**
->
-> **想偷什么懒，定个计划。**
+> 从从容容，游刃有余。
 
-**懒人装甲是一个个人事务自动化平台。**
+**懒人装甲（Lazy Armor）** 是一个以「懒人计划（Plan）」为核心的个人自动化平台。
 
-它不是为了让用户拥有更多功能，而是希望让用户**少做更多事情**：把高频、重复、低价值、需要反复记忆、操作、沟通和跟进的事务，转换成可以长期运行的「懒人计划」。
+它的目标不是堆叠 AI 功能，也不是再造一套复杂的生活管理软件，而是把生活与工作中高频、重复、低价值的事务，变成可以被系统理解、持续跟进、自动执行或半自动执行的计划。
 
-系统能自动完成的事情尽量自动完成；正常成功尽量保持安静。只有当事情异常、需要确认、权限失效，或者确实需要用户处理时，再把用户叫回来。
+核心价值：
 
-懒人装甲不是：
+- 省时
+- 省力
+- 省步骤
+- 省沟通
+- 省记忆
+- 省风险
 
-* AI 聊天机器人
-* 普通提醒软件
-* 单一财务 App
-* 单一内容发布工具
-* 单一车辆 / 设备管理 App
-* 传统商城
-* 大型 ERP
+AI 主要负责理解、生成、整理和编排辅助。
 
-它的核心只有一个：
+真正的系统核心是：
 
-# 计划
+- Plan Engine
+- Connector / Connection
+- Source / Truth
+- Risk / Approval
+- Execution
+- Verification
+- Fallback
+- Record / Audit
 
 ---
 
-## 一个懒人计划是怎么工作的
+## 懒人装甲是什么
 
-用户可以从「懒人计划库」直接**装上**模板，也可以通过自然语言描述自己的需求。
+传统自动化工具往往从“功能”出发：
+
+- 创建一个提醒
+- 设置一个定时任务
+- 写一个脚本
+- 接一个 API
+- 建一个工作流
+
+懒人装甲从“用户真正想少操心的一件事”出发。
 
 例如：
 
-> 以后每个月话费超过 150 元再告诉我。
-
-系统不会把自然语言直接变成任意代码。
-
-AI 只负责理解意图和生成受控 Draft，最终仍然必须进入正式 Plan Definition。
-
 ```text
-用户意图 / 模板
-      ↓
-  Plan Draft
-      ↓
-用户配置与授权
-      ↓
- PlanVersion
-      ↓
-    启用
-      ↓
-  Execution
-      ↓
- Today / Record
-```
+每月话费快到期时提醒我
+快递到驿站后告诉我，不要每条物流消息都提醒
+每天把真正重要的事情整理成一份摘要
+家里的滤芯快到更换周期时提醒我
+一段视频处理好以后，帮我准备多个平台的发布内容
+发现家庭常用物品快用完时提醒补货
 
-底层所有领域共享同一条自动化主链：
+这些都不是独立的小功能。
 
-```text
+它们统一被表达为：
+
+懒人计划（Plan）
+
+核心：懒人计划
+
+Plan 是懒人装甲最核心的产品单位。
+
+一个 Plan 描述：
+
+从哪里获得信息
+↓
+什么时候触发
+↓
+满足什么条件
+↓
+准备做什么
+↓
+有没有风险
+↓
+是否需要用户确认
+↓
+如何执行
+↓
+如何确认执行结果
+↓
+失败以后怎么办
+↓
+最后如何记录
+
+因此，系统不按照：
+
+财务系统
+物流系统
+车辆系统
+家庭系统
+设备系统
+内容系统
+
+分别建立独立自动化引擎。
+
+所有领域统一运行在同一套 Plan Engine 上。
+
+核心价值
+
+懒人装甲不是追求“功能越多越好”。
+
+每一个 Plan 都应该至少帮助用户减少一种成本：
+
+操作成本
+
+少点几次。
+
+少开几个 App。
+
+少重复填写。
+
+时间成本
+
+少查询。
+
+少等待。
+
+少手工整理。
+
+记忆成本
+
+系统持续跟进。
+
+用户不需要一直记着。
+
+决策成本
+
+系统先整理信息。
+
+真正需要决定的时候再找用户。
+
+沟通成本
+
+减少重复确认、询问和催促。
+
+风险成本
+
+该确认的事情必须确认。
+
+该停止的事情必须停止。
+
+不能因为“自动化”而扩大风险。
+
+核心执行链
+
+懒人装甲只有一条核心执行主链：
+
 Source
-  ↓
-Trigger
-  ↓
-Condition
-  ↓
+→ Trigger
+→ Condition
+→ Action
+→ Risk
+→ Approval
+→ Execution
+→ Result
+→ Fallback
+→ Audit
+
+各业务领域不得绕过该主链自行建立独立执行系统。
+
+真实世界数据链
+
+真实数据进入系统以后，不会直接触发高价值动作。
+
+推荐的数据链：
+
+Source
+↓
+Raw Data
+↓
+Normalize
+↓
+Candidate
+↓
+Validation / Deduplication / Freshness
+↓
+Truth
+↓
+Plan
+↓
+Capability Resolver
+↓
 Action
-  ↓
-Risk
-  ↓
-Approval
-  ↓
-Execution
-  ↓
-Result
-  ↓
-Fallback
-  ↓
-Audit
-```
+↓
+Verification
+↓
+Record / Audit
 
-无论是账单、快递、学习、内容、车辆、设备还是工作事项，都不能绕过这条主链另建一套自动化系统。
+核心原则：
 
----
+收到一条数据，不代表它就是真实事实。
 
-# 消费者端只有五个一级入口
+例如：
 
-懒人装甲不会因为领域越来越多，就把首页变成十几个业务入口。
+收到“快递已到驿站”通知
 
-| 入口     | 作用                         |
-| ------ | -------------------------- |
-| **今天** | 看真正需要处理的事情、异常、摘要和系统已经处理的结果 |
-| **计划** | 管理正在运行、需要设置或已经暂停的懒人计划      |
-| **＋**  | 从模板或自然语言创建新的计划             |
-| **记录** | 查看系统过去实际做了什么               |
-| **我的** | 管理连接、权限、设备、车辆、通知、隐私和安全记录   |
+并不一定意味着：
 
-「计划」内部按照消费者理解组织为四大区：
+当前这个快递现在确实还在等待取件
 
-### 我的生活
+它可能是：
 
-家庭、住房、快递、补给、出行、娱乐等。
+重复通知
+延迟通知
+历史通知
+多账号混淆
+多个来源重复描述同一件事
 
-### 我的钱
+所以必须先经过 Candidate / Truth 层。
 
-账单、消费、订阅、异常、财务摘要等。
+Source
 
-### 我的事情
+Source 是系统感知真实世界的入口。
 
-工作、内容、学习、运营等。
+来源可以包括：
 
-### 我的东西
+官方 API
+Webhook
+Android 系统能力
+Android Notification
+App Share
+文件
+图片
+截图
+Gmail
+Calendar
+物流 Provider
+智能家居 Provider
+车辆 Provider
+本地设备
+用户手工输入
 
-车辆、手机、电脑、家电、设备、数字账号等。
+来源本身不会决定业务逻辑。
 
-正常成功默认保持静默。
+Plan Engine 消费的是经过标准化的数据、事件和事实。
 
-Today 不应该成为信息流。
+Android App Discovery
 
----
+懒人装甲 Android 客户端支持从设备上发现真实可用 App。
 
-# 代表性懒人计划
+基本流程：
 
-首批 Canonical Plans 用少量真实场景证明同一套 Plan Engine 可以解决不同领域的问题。
+Android PackageManager
+↓
+Installed / Launchable Apps
+↓
+Device App Identity
+↓
+Capability Detection
+↓
+Generic App Connection
+↓
+Optional Enhanced Adapter
 
-1. **月度账单汇总**
-   自动整理账单、分类、汇总，并发现明显变化。
+核心原则：
 
-2. **话费异常守护**
-   正常账单保持安静，超过阈值或明显异常时再通知。
+发现 App ≠ 连接 App ≠ 获得 App 私有数据。
 
-3. **快递静默管家**
-   正常运输不打扰，长时间停滞、异常时提醒，签收后归档。
+Android App Sandbox 仍然存在。
 
-4. **家庭补给提醒**
-   根据消耗周期、上次购买和使用情况准备补货清单。
+懒人装甲不会因为知道某个 App 已安装，就自动获得该 App 的私有数据库。
 
-5. **视频一稿多发**
-   一个 MasterContent 生成不同平台的 PlatformVariant，并进入 Prepare Publish / Approval / Connector。
+App 可连接能力
 
-6. **每日重要事项摘要**
-   从邮件、日历等来源提炼真正需要用户处理的事情。
+不同 App 可能提供不同能力：
 
-7. **考试学习计划**
-   根据考试日期、学习时间和进度生成结构化计划，并支持遗漏重排。
+App
+├─ Installed
+├─ Launchable
+├─ Notification
+├─ Share
+├─ Intent / Deep Link
+├─ Official API
+├─ OAuth
+├─ Accessibility
+└─ Vision Assisted
 
-8. **设备耗材提醒**
-   围绕设备、耗材和维护周期形成长期计划。
+连接不是简单的：
 
-在此基础上，懒人计划继续扩展到：
+connected = true
 
-* 水电气 / 宽带账单
-* 会员与订阅防浪费
-* 工作跟进
-* 日历冲突
-* 文件整理
-* 学习进度
-* 车辆保险 / 年检 / 保养
-* 数字账号到期
-* 家庭周期事项
-* 经营摘要
-* 库存异常
-* 出行准备
+而应该明确：
 
-但这些能力始终复用统一 Plan Engine。
+当前允许懒人装甲对这个 App 做到什么程度。
 
----
+例如：
 
-# 核心架构原则
+淘宝
 
-## 1. 一个 Plan Engine，而不是多个领域系统
+设备
+✓ 已安装
+✓ 可以启动
 
-领域模块只能扩展：
+数据
+✓ 通知
+○ 分享
+× 官方 API
 
-* Connector
-* Template
-* Action Definition
-* Domain Data Profile
-* Domain Presentation
+动作
+✓ 打开 App
+✓ 打开链接
+× 自动支付
 
-禁止复制：
+当前能力
+Notification Connected
+数据源优先级
 
-* 独立任务引擎
-* 独立审批系统
-* 独立通知引擎
-* 独立自动化 Worker
-* 独立幂等机制
+系统应优先选择更稳定、更可信的数据来源。
 
----
+推荐优先级：
 
-## 2. PlanVersion 不可变
+S1 官方 API / Webhook
+↓
+S2 OS / Device API
+↓
+S3 Notification / Share / File
+↓
+S4 Accessibility Structured Read
+↓
+S5 Screenshot / Vision
+↓
+S6 Manual Assisted
 
-已经创建的历史 PlanVersion 不修改。
+低等级数据源不能被描述成高可信、实时、官方数据。
 
-计划发生变化时：
+Truth Store
 
-```text
-Current PlanVersion
-        ↓
-Create New Version
-        ↓
-Apply / Enable
-```
+Truth Store 用于保存系统当前认为可信的事实或状态。
 
-每一次 Execution 永久关联当时实际运行的 PlanVersion。
+例如：
 
-历史不是“当前配置的副本”，而是真实发生过的事实。
+当前剩余话费
+某快递当前状态
+某设备当前耗材状态
+某账单当前应付金额
+某计划当前所依赖的真实状态
 
----
+Truth 不应该只有：
 
-## 3. 外部副作用必须经过安全链
+value = 100
 
-任何可能影响外部世界的动作，都不能由 Mobile、AI 或领域代码直接调用 Provider。
+还应该保留来源信息：
 
-正式链路至少包括：
+value
+source
+provider
+collectedAt
+observedAt
+confidence
+freshness
+verified
+evidence
 
-```text
-Runtime Permission
-        ↓
-Risk
-        ↓
-Approval（需要时）
-        ↓
+从而回答：
+
+这个数据从哪里来的？
+什么时候获取的？
+现在还新不新？
+有没有其他来源冲突？
+Capability Resolver
+
+Plan 不应该关心具体使用：
+
+Gmail
+Android Notification
+某汽车 API
+某个 App
+Home Assistant
+
+Plan 只描述自己需要的能力。
+
+例如：
+
+读取订单状态
+发送提醒
+打开导航
+获取设备状态
+创建日历事件
+
+Capability Resolver 根据当前环境选择实际能力。
+
+考虑因素包括：
+
+是否可用
+是否授权
+Reality Level
+可靠性
+风险
+用户偏好
+Provider Health
+设备在线状态
+数据新鲜度
+成本
+延迟
+Action
+
+懒人装甲不把“发出请求”直接当作成功。
+
+动作等级可以包括：
+
+E0 INTERNAL
+E1 API
+E2 SYSTEM / INTENT / DEEP LINK
+E3 ACCESSIBILITY
+E4 VISION ASSISTED
+E5 USER ASSISTED
+
+例如：
+
+点击“提交订单”
+
+不代表：
+
+订单已经成功创建
+
+系统应该尽可能验证真实业务结果。
+
+Verification
+
+任何有外部副作用的动作，都应该尽量回答：
+
+到底成功了没有？
+
+执行状态不应该只有：
+
+SUCCESS
+FAILED
+
+而应该允许：
+
+PLANNED
+RESOLVING_CAPABILITY
+WAITING_PERMISSION
+WAITING_APPROVAL
+PREPARED
+EXECUTING
+VERIFYING
+SUCCEEDED
+RETRYING
+FALLBACK
+USER_ASSISTED
+OUTCOME_UNKNOWN
+FAILED
+
+特别是：
+
+OUTCOME_UNKNOWN
+
+非常重要。
+
+如果外部系统可能已经成功，但系统没有收到确认：
+
+不允许盲目重复执行。
+
+否则可能产生：
+
+重复订单
+重复消息
+重复付款
+重复发布
+重复写入
+重复设备操作
+Risk & Approval
+
+自动化不能绕过风险控制。
+
+懒人装甲的原则不是：
+
+能自动就全部自动。
+
+而是：
+
+低风险尽量减少打扰，高风险必须获得充分授权。
+
+典型风险包括：
+
+金钱变化
+账户权限变化
+对外发布
+真实订单
+删除
+身份信息变化
+门锁
+车辆控制
+外部不可逆操作
+
+Risk Engine、Approval 和 Temporary Authorization 统一存在于执行主链。
+
+Side Effect Safety
+
+真实世界动作最危险的问题之一是：
+
+同一件事情被执行两次。
+
+因此系统包含针对 Side Effect 的安全机制，例如：
+
 Idempotency
-        ↓
-SideEffectOperation
-        ↓
+Unique Identity
+Execution Lease
+Transaction
 Transactional Outbox
-        ↓
-Provider
-        ↓
-Result / Recovery
-        ↓
+Claim
+Retry Policy
+Verification
+Reconciliation
 Audit
-```
 
-支付、转账、高价值购买、账户权限变化、重要外部数据删除、大规模公开发布等高风险动作，在完整 Production Gate 通过前必须保持关闭。
+目标不是追求理论上的“所有地方 exactly once”，而是在现实系统中尽可能保证：
 
----
+不会因为并发
+不会因为 Worker 重启
+不会因为网络超时
+不会因为重复消息
+不会因为用户重复点击
 
-## 4. 历史只能追加，不能篡改
+而把同一个外部动作重复执行。
 
-以下内容属于历史事实：
+Trusted Device
 
-* PlanVersion
-* Execution
-* Execution Step
-* SideEffectOperation
-* Audit
+懒人装甲支持一个账号拥有多个可信 Android 设备。
 
-系统采用 **forward-only migration**。
+关系类似：
 
-禁止通过以下方式“解决问题”：
+User
+├─ Android Device A
+├─ Android Device B
+└─ Android Device C
 
-* DROP 正式历史表
-* TRUNCATE 正式数据
-* reset schema
-* destructive startup migration
-* demo seed 覆盖正式数据
-* 修改历史 PlanVersion
-* 修改历史 Execution identity
-* 修改 Audit
+每台设备拥有独立的可信身份。
 
----
+当前 Trusted Device 能力包括：
 
-## 5. 正常成功尽量安静
+独立设备身份
+Public Key
+Challenge
+Signature Proof
+Short-lived Device Session
+Signed Request
+Replay Protection
+Device Revoke
 
-产品默认遵守：
+服务端不能因为一个普通 API 请求，就把任意客户端当成可信设备。
 
-> **能不打扰就不打扰，能不让用户操作就不让用户操作；但越自动，后台越必须安全、透明、可追踪、可撤销。**
+Account & Device Model
 
-正常成功通常进入 Record。
+一个账号可以拥有多个设备。
 
-真正需要用户处理的事情才进入 Today。
+未来设备模型将逐步统一覆盖：
 
----
+Phone
+Tablet
+PC
+Home Bridge
+Vehicle Bridge
+Other Edge Device
 
-# AI 在懒人装甲里的位置
+目标模型：
 
-AI 是理解和生成辅助，不是安全决策者。
+Account
+↓
+EdgeDevice
+↓
+Device Capability
+↓
+Plan
+↓
+DeviceTask
+↓
+Execution
+↓
+Evidence / Result
 
-AI 可以：
+但当前完整的跨设备 EdgeDevice / DeviceTask 调度体系仍在开发中。
 
-* parsePlanIntent
-* generatePlanDraft
-* summarizeExecution
-* classifyTransaction
-* adaptContent
-* generateDraft
+目前 Trusted Device 的重点仍然是 Android。
 
-AI 永远不能：
+Notification
 
-* 判断用户身份
-* 决定或降低 Risk
-* 绕过 Approval
-* 绕过 Runtime Permission
-* 直接调用高风险 Connector
-* 修改历史 PlanVersion
-* 修改历史 Execution
-* 修改 Audit
-* 直接支付或转账
-* 直接改变账户权限
+Android Notification 是懒人装甲非常重要的现实数据入口。
 
-AI 输出最终必须进入：
+流程：
 
-**受控 Schema + 正式 Plan Engine。**
+Android Notification
+↓
+Notification Listener
+↓
+Generic Normalizer
+↓
+Raw Source
+↓
+Candidate
+↓
+Truth
+↓
+Plan
 
----
+通知适合获得：
 
-# Connector 与生产能力
+快递变化
+订单变化
+账单提示
+手机运营商提醒
+银行通知
+设备通知
+App 状态提醒
 
-懒人装甲通过统一 Connector Framework 接入外部数据和服务。
+但 Notification 并不等于官方 API。
 
-包括但不限于：
+系统必须明确来源 Reality Level。
 
-* Email
-* Calendar
-* File
-* Webhook
-* Billing
-* Logistics
-* Cloud Storage
-* Content Platform
-* Device
-* Vehicle
+Accessibility
 
-每个 Provider 都必须明确自己的能力：
+Accessibility 只应作为受控自动化能力使用。
 
-* read
-* write
-* OAuth
-* refresh
-* webhook
-* idempotency
-* operation lookup
-* rate limit
-* sandbox
-* SideEffectContract
-* production availability
+原则：
 
-生产能力必须明确区分：
+用户明确授权
++
+App Allowlist
++
+Capability Allowlist
++
+Plan Authorization
++
+Risk Policy
++
+必要时 Approval
 
-* `PRODUCTION_READY`
-* `BETA`
-* `DRAFT_ONLY`
-* `DISABLED`
+Accessibility 不应被设计成：
 
-## 开发完成 ≠ 生产启用
+“授权以后懒人装甲可以随便操作手机。”
 
-代码已经存在，并不代表能力已经允许在生产环境真实执行。
+高风险操作必须继续受 Risk / Approval 控制。
 
-如果缺少：
+Vision
 
-* 稳定官方 API
-* Production Credential Provider
-* Runtime Permission
-* Approval
-* Idempotency
-* SideEffectContract
-* Outbox
-* Recovery
-* Audit
-* 真实 Production Evidence
+Screenshot / Vision 属于后备数据与操作能力。
 
-对应能力必须继续保持关闭。
+典型用途：
 
-详见：
+用户打开一个账单页面
+↓
+截图
+↓
+Vision
+↓
+识别金额 / 日期 / 状态
+↓
+Candidate
 
-[P2 Provider Capability Matrix](docs/P2_PROVIDER_CAPABILITY_MATRIX.md)
+Vision 结果天然比官方 API 可信度低。
 
----
+因此必须保留：
 
-# 技术栈
+Evidence
+Confidence
+Source
+Freshness
+Household
 
-懒人装甲采用 TypeScript Monorepo。
+家庭不是独立的自动化引擎。
 
-* **Monorepo**：pnpm + Turborepo
-* **Mobile**：Expo + React Native + Expo Router
-* **API**：NestJS
-* **Admin / Operations**：Next.js
-* **Database**：MySQL + Drizzle ORM
-* **Queue / Worker**：Redis + BullMQ
-* **Validation**：Zod + class-validator
-* **Testing**：Vitest + Integration Tests
-* **Android**：Expo / EAS + Native Android Release Pipeline
+家庭能力建立在统一资源与权限体系上。
 
----
+核心概念包括：
 
-# 仓库结构
+Household
+Person
+Membership
+Relationship
+Ownership
+Delegation
+Approval Policy
 
-```text
+家庭关系不自动代表权限。
+
+例如：
+
+父亲
+母亲
+配偶
+孩子
+
+只是关系。
+
+真正能不能：
+
+查看
+修改
+操作
+审批
+
+必须由权限和授权决定。
+
+Lazy Mall
+
+懒人商城不是一个独立于懒人装甲的传统商城系统。
+
+它更适合作为：
+
+Plan 的 Commerce / Service / Connector 空间。
+
+例如：
+
+家庭补给状态
+↓
+Plan
+↓
+准备购买
+↓
+查询商品 / 库存 / 价格
+↓
+预算 / 偏好 / 风险
+↓
+用户确认
+↓
+创建订单
+↓
+验证订单
+↓
+物流跟踪
+↓
+Record / Audit
+
+Plan Engine 不应该绕过 Commerce Connector 直接修改商城业务状态。
+
+支付和高风险交易必须保持严格确认边界。
+
+计划领域
+
+懒人计划可覆盖多个长期领域。
+
+当前统一领域模型包括：
+
+finance
+life
+family
+health
+social
+pet
+housing
+travel
+entertainment
+work
+operations
+content
+study
+identity_docs
+government
+legal_contract
+vehicle
+device
+digital_account
+
+这些领域只用于：
+
+分类
+展示
+模板
+数据组织
+体验设计
+
+它们共享同一套：
+
+Plan Engine
+Connector
+Risk
+Approval
+Execution
+Truth
+Audit
+
+不会为每个领域重新创建独立 Engine。
+
+Reality Level
+
+懒人装甲区分“看起来能用”和“真实已经接通”。
+
+所有能力应该尽量标记现实等级。
+
+Level	含义
+NOT_IMPLEMENTED	尚未实现
+FIXTURE	测试固定数据
+MANUAL	用户手工输入
+INTERNAL_REAL	系统内部真实闭环
+DEVICE_REAL	真实设备数据或能力
+SANDBOX	Provider Sandbox
+PROVIDER_BETA	Provider 测试 / Beta
+PRODUCTION_REAL	生产真实能力
+
+基本规则：
+
+UI、代码、文档和验收报告不得把低 Reality Level 描述成更高等级。
+
+例如：
+
+手工填写车辆里程
+
+不能描述成：
+
+实时车辆数据
+Sandbox 订单
+
+不能描述成：
+
+生产订单
+当前真实能力
+
+当前仓库已经形成完整的自动化基础架构。
+
+Plan Engine
+
+已具备：
+
+Plan
+Immutable PlanVersion
+Current / Active Version
+Canonical Definition
+Definition Hash
+Source
+Trigger
+Condition
+Action
+Plan State
+Template Install
+Plan Draft
+Plan Execution
+Result
+Fallback
+Audit
+Execution
+
+已具备：
+
+Execution
+Execution Step
+Execution Event
+Worker
+Execution Lease
+Queue
+Retry
+Fallback
+Result Resolution
+Approval Gate
+Runtime Connection Guard
+Side Effect
+
+已具备：
+
+Idempotency
+Side Effect Coordinator
+Transactional Outbox
+Outbox Worker
+External Delivery Adapter
+Claim / Retry
+Immutable published state protection
+Security
+
+已具备：
+
+Authentication
+Refresh Session
+Credential Provider
+Encrypted Local Credential Provider
+Webhook Signature Verification
+Temporary Authorization
+Risk Engine
+Approval
+Safe Logging
+Sensitive Snapshot Sanitization
+Append-oriented Audit
+Android
+
+已具备真实 Android Native Bridge。
+
+包括：
+
+Device App Bridge
+Installed App Discovery
+App Information
+Open App
+Open URI
+Notification Listener
+Generic Notification Normalizer
+Notification Source Connection
+Trusted Device
+Device Request Signing
+Replay Protection
+Truth
+
+已具备：
+
+Candidate
+Truth Store
+Provenance
+Source Resolver
+Truth concurrency protection
+Source-aware execution support
+Connectors
+
+已有统一 Connector 基础设施：
+
+Connector SDK
+Connector Registry
+Connection
+Credential
+Capability
+Webhook
+Provider Guard
+Rate Limit
+Circuit Breaker
+Consumer Product
+
+移动端已经具备：
+
+Authentication
+Onboarding
+Today
+Plans
+Plan Detail
+Plan Edit
+Records
+Connections
+Add Connection
+Notification Source
+Trusted Device
+Permission
+Domains
+Membership
+Device
+Vehicle
+Commerce
+Data Management
+Security Activity
+Admin
+
+仓库包含独立 Admin 应用，用于内部运营和管理能力。
+
+当前尚未完成
+
+当前项目仍处于：
+
+持续开发 + 真实设备验收阶段
+
+并不是 Production Ready。
+
+以下能力仍需继续完成或深化。
+
+Android 真机验收
+
+包括：
+
+多设备真实注册
+Revoke
+Replay Attack
+Expired Session
+Account Isolation
+App Discovery
+Notification Permission
+Notification → Candidate → Truth
+真机完整 Plan Journey
+Edge Device
+
+尚未完整建立：
+
+通用 EdgeDevice
+DeviceCapability Registry
+Heartbeat
+Device Online State
+DeviceTask
+Foreground Task
+Offline Task Policy
+Capability Resolver across devices
+Push
+
+仍需完整生产化：
+
+Server
+→ Push Provider
+→ Device
+→ User Action
+→ Plan / Approval / Result
+Gmail
+
+已有相关 Connector / Integration 基础，但生产级 Gmail Provider 连接仍需要继续完成和验证。
+
+Google Calendar
+
+已有相关连接和集成基础，但完整生产级能力仍需要继续验收。
+
+Logistics
+
+当前具备物流领域和相关 Plan 基础。
+
+后续重点是：
+
+更多真实 Provider
+数据源优先级
+状态一致性
+Provider Beta / Production Reality
+Home
+
+后续计划的真实能力优先级：
+
+Matter / Vendor API
+↓
+Home Assistant
+↓
+MQTT / LAN
+↓
+Android Bridge
+↓
+Manual
+
+高风险设备动作，例如门锁，必须继续进入 Risk / Approval。
+
+Vehicle
+
+后续真实能力优先级：
+
+OEM API
+↓
+OBD-II
+↓
+Vehicle / Head Unit Bridge
+↓
+Phone Bluetooth / Notification
+↓
+Manual
+
+手工数据不得冒充实时车辆数据。
+
+Accessibility
+
+计划继续建设：
+
+App allowlist
+Capability allowlist
+Structured Read
+Controlled Action
+Foreground Requirement
+Risk Boundaries
+Evidence
+Verification
+Vision
+
+计划继续建设：
+
+Screenshot ingestion
+OCR / Vision extraction
+Structured candidate
+Evidence
+Confidence
+Verification
+Privacy Center
+
+还需要继续完善：
+
+Data Inventory
+Data Source
+Connected Accounts
+Device Permissions
+Household Visibility
+Retention
+Export
+Revoke
+Delete
+Audit
+Repository Structure
 lazy-armor/
 ├─ apps/
 │  ├─ api/
-│  │  ├─ API
-│  │  ├─ Execution Worker
-│  │  └─ Outbox Worker
+│  │  └─ NestJS backend / workers
 │  │
 │  ├─ mobile/
-│  │  └─ 消费者 App
+│  │  └─ Expo / React Native / Android Native Bridge
 │  │
 │  └─ admin/
-│     └─ Operations / Admin
+│     └─ Next.js internal admin
 │
 ├─ packages/
 │  ├─ config/
@@ -408,314 +1087,526 @@ lazy-armor/
 │  ├─ plan-schema/
 │  └─ shared/
 │
-├─ infra/
-│  └─ 本地基础设施
-│
 ├─ docs/
-│  └─ 开发、审计、验收和生产就绪文档
+│  ├─ STATUS.md
+│  ├─ TASK_BOOK.md
+│  ├─ ANDROID_TRUSTED_DEVICE_ACCEPTANCE.md
+│  ├─ ANDROID_APP_DISCOVERY.md
+│  ├─ MIGRATION_RELEASE_EVIDENCE.md
+│  └─ ROLLBACK_PROCEDURE.md
 │
-└─ artifacts/
-   └─ 构建证据 / Metadata
-```
+├─ infra/
+│  └─ docker/
+│
+├─ scripts/
+│  ├─ migration safety
+│  ├─ repository hygiene
+│  ├─ production truth gate
+│  ├─ MySQL verification
+│  └─ Android verification build
+│
+├─ package.json
+├─ pnpm-lock.yaml
+├─ pnpm-workspace.yaml
+├─ tsconfig.base.json
+└─ turbo.json
+Technology Stack
+Backend
+Node.js
+TypeScript
+NestJS
+MySQL 8
+Drizzle ORM
+Mobile
+React Native
+Expo
+Expo Router
+Android Native Kotlin Bridge
+Admin
+Next.js
+React
+TypeScript
+Monorepo
+pnpm
+Turborepo
+Infrastructure
+MySQL
+Redis
+Docker
+GitHub Actions
+Local Development
 
-新的 APK / AAB 等二进制构建产物不应继续提交到源码 Git。
+推荐环境：
 
----
-
-# 本地开发
-
-## 环境要求
-
-* Node.js 20+
-* pnpm 9+
-* Docker Desktop / Docker Engine
-
-## 安装依赖
-
-```bash
+Node.js 20+
+pnpm
+MySQL 8
+Redis
+Java / Android SDK（Android 开发）
+Install
 pnpm install
-```
+Environment
 
-## 启动 MySQL / Redis
+根据环境准备配置。
 
-```bash
-pnpm docker:up
-```
+仓库提供：
 
-## 配置环境变量
+.env.example
+.env.staging.example
+.env.production.example
 
-复制：
+不要把真实密钥提交到 Git。
 
-```text
-.env.example → .env
-```
+Start Local Infrastructure
+docker compose -f infra/docker/docker-compose.yml up -d
+Database Migration
+pnpm migrate
 
-至少正确配置：
+生产数据库禁止：
 
-```text
-DATABASE_URL
-REDIS_URL
-JWT_SECRET
-CREDENTIAL_MASTER_KEY
-APP_ENV
-EXPO_PUBLIC_APP_ENV
-EXPO_PUBLIC_API_URL
-```
+DROP
+TRUNCATE
 
-不要把真实 Secret、Token、OAuth Credential 或 Android Keystore 密码提交到 Git。
+Migration 必须通过安全检查。
 
-## 数据库 Migration
-
-```bash
-pnpm db:migrate
-```
-
-Migration 必须保持：
-
-```text
-forward-only
-```
-
-## 启动开发环境
-
-```bash
+Development
 pnpm dev
-```
+Testing
 
-也可以分别启动：
+基础检查：
 
-```bash
-pnpm --filter @lazy-armor/api dev
-pnpm --filter @lazy-armor/admin dev
-pnpm --filter @lazy-armor/mobile dev
-```
-
-默认开发 API：
-
-```text
-http://127.0.0.1:3001/api
-```
-
-Health：
-
-```text
-/api/health
-```
-
----
-
-# 独立 Worker
-
-API、Execution Worker 和 Outbox Worker 支持独立进程运行。
-
-构建：
-
-```bash
-pnpm --filter @lazy-armor/api build
-```
-
-分别启动：
-
-```bash
-pnpm --filter @lazy-armor/api start:api
-
-pnpm --filter @lazy-armor/api start:execution-worker
-
-pnpm --filter @lazy-armor/api start:outbox-worker
-```
-
-Standalone Worker 提供独立：
-
-```text
-/live
-/ready
-```
-
-用于检查：
-
-* Worker Process
-* MySQL
-* Redis
-* BullMQ
-* Worker readiness
-
----
-
-# 测试与质量 Gate
-
-常用命令：
-
-```bash
 pnpm typecheck
 pnpm test
 pnpm build
-```
+Repository Hygiene
+pnpm repository:hygiene
+Production Data Truth
+pnpm production:data-truth
+Migration Safety
+pnpm test:migrations
+CI / Release Gates
 
-开发过程优先运行：
+GitHub Actions 是当前正式工程门禁的一部分。
 
-* affected tests
-* focused integration tests
-* security regression
-* migration checks
+主要门禁包括：
 
-集中 Full Regression 只在重要 Gate 运行，例如：
+Repository Hygiene
+↓
+Production Data Truth
+↓
+Dependency Audit
+↓
+MySQL Migration
+↓
+Typecheck
+↓
+Focused Regression
+↓
+Full Monorepo Tests
+↓
+Backup / Restore
+↓
+Full Build
+↓
+Android Verification Artifact
 
-* P0 Hardening
-* P1
-* P2
-* P3
-* P4 Beta
-* P5
-* Final Release Candidate
+CI 全绿是进入真实设备和发布验收的必要条件。
 
-涉及以下能力的修改必须保持专项安全测试：
+但：
 
-* Auth / Session
-* Credential
-* Permission
-* Risk
-* Approval
-* PlanVersion immutability
-* Execution / Audit append-only
-* Idempotency
-* Transactional Outbox
-* Side Effect Recovery
-* Webhook replay / retention
-* Worker restart / fault recovery
+CI 全绿 ≠ 产品已经 Production Ready。
 
----
+真实 Provider、真实手机、真实权限和真实业务动作仍然需要独立验收。
 
-# Development / Staging / Production
+Android Verification
 
-项目明确区分部署环境。
+Android 验证构建：
 
-Backend：
+pwsh -File scripts/android-verification-build.ps1
 
-```text
-APP_ENV=development
-APP_ENV=staging
-APP_ENV=production
-```
+Android 构建产物不提交到源码仓库。
 
-Mobile：
+正式验证产物应保存为：
 
-```text
-EXPO_PUBLIC_APP_ENV=development
-EXPO_PUBLIC_APP_ENV=staging
-EXPO_PUBLIC_APP_ENV=production
-```
+Local temporary artifact
+GitHub Actions Artifact
+Release Artifact
 
-Staging / Production 使用 **fail-closed** 原则。
+不应提交：
 
-例如：
+APK
+AAB
+build metadata
+temporary verification output
 
-* API URL 必须使用 HTTPS
-* 禁止 localhost
-* 禁止 `127.0.0.1`
-* 禁止 `10.0.2.2`
-* Staging / Production Redis 必须使用 `rediss://`
-* Staging / Production 分别固定使用 `lazy-armor-staging` / `lazy-armor-production` 键前缀
-* Production 禁止 Debug Signing
-* 缺 Android 正式 Signing 时 Release 必须失败
-* Production Credential 不允许回落到开发本地文件 Provider
+到 main。
 
-部署配置模板分别见 `.env.staging.example` 与 `.env.production.example`。模板只描述变量形状，所有 secret 必须由部署平台的 Secret Manager 注入；当前未注册托管 Credential Provider 时，staging/production API 会拒绝启动。
+Database Migration Policy
 
-生产风险不会因为代码已经完成而自动开放。
+数据库 Migration 是不可随意重写的历史。
 
----
+已经进入主分支的 migration：
 
-# 开发路线
+0000
+0001
+0002
+...
 
-项目采用 P0～P5 连续开发模型。
+不能为了“看起来整洁”而重新合并。
 
-```text
-P0 — Foundation & Production Hardening
-P1 — Representative Plans
-P2 — Real Connector & Integration Layer
-P3 — Domain Expansion
-P4 — Productization & Beta
-P5 — Commercialization & Scale
-```
+原则：
 
-开发与验收分离。
+Existing migration append-only
+不回写历史 migration
+不随意重命名
+不 DROP / TRUNCATE
+多 DDL migration 使用正确 statement breakpoint
+必须通过 migration safety gate
+必须能够在 MySQL 目标版本实际执行
+Security Principles
 
-完成一个 Workstream 后继续下一项，只有以下 Hard Stop 才暂停相关链路：
+懒人装甲涉及用户真实生活与真实外部动作。
 
-* 数据可能损坏
-* destructive migration
-* PlanVersion immutable 被破坏
-* Execution / Audit 被删除
-* Credential / Token 泄漏
-* 用户数据越权
-* Approval 被绕过
-* Risk 可被客户端降低
-* Idempotency 失效
-* Outbox 原子性失效
-* 领域绕过 Plan Engine
-* 未授权真实高风险动作
+因此安全边界属于产品核心，而不是后期补丁。
 
-普通问题：
+主要原则：
 
-```text
-修复 / Backlog / Deferred Gate
-              ↓
-            继续开发
-```
+Fail Closed
 
----
+权限、身份或结果不明确时：
 
-# 实时开发状态
+不继续高风险动作。
 
-README 不再维护容易快速过期的：
+Least Privilege
 
-* 当前测试数量
-* 最新 Migration 编号
-* 当前小 Workstream
-* 下一条开发任务
-* 临时 Deferred Gate
+一个 Connection 只拥有完成当前能力所必需的最小权限。
 
-这些统一维护在：
+Explicit Authorization
 
-## [CONTINUOUS_DEVELOPMENT_STATUS.md](docs/CONTINUOUS_DEVELOPMENT_STATUS.md)
+高风险能力不能因为“App 已安装”就自动获得。
 
----
+Replay Protection
 
-# 重要文档
+设备签名请求不能被简单重放。
 
-* [持续开发状态](docs/CONTINUOUS_DEVELOPMENT_STATUS.md)
-* [P0 Final Audit](docs/P0_FINAL_AUDIT_REPORT.md)
-* [P1 Development Report](docs/P1_DEVELOPMENT_REPORT.md)
-* [P2 Development Report](docs/P2_DEVELOPMENT_REPORT.md)
-* [P2 Provider Capability Matrix](docs/P2_PROVIDER_CAPABILITY_MATRIX.md)
-* [P3 Development Report](docs/P3_DEVELOPMENT_REPORT.md)
-* [P4 Development Report](docs/P4_DEVELOPMENT_REPORT.md)
-* [P5 Development Report](docs/P5_DEVELOPMENT_REPORT.md)
-* [Production Readiness Checklist](docs/PRODUCTION_READINESS_CHECKLIST.md)
+Idempotency
 
----
+同一个外部副作用不能因为重复请求而重复执行。
 
-# 最终目标
+Verification
+
+发送请求并不等于业务成功。
+
+Audit
+
+关键行为必须能够追踪：
+
+谁
+什么时候
+通过什么来源
+为什么
+做了什么
+结果是什么
+Secret Protection
+
+禁止把：
+
+API Key
+OAuth Token
+Credential
+Private Key
+Production Password
+
+提交到仓库。
+
+Privacy Principles
+
+数据应区分普通数据和敏感数据。
+
+敏感数据例如：
+
+Token
+API Key
+身份证件
+银行相关信息
+健康数据
+合同原文
+Provider Credential
+
+敏感数据应：
+
+加密
+最小权限访问
+保留访问审计
+设置合理保留期
+支持撤销
+支持删除
+避免进入普通日志
+Consumer UX Principles
+
+懒人装甲面向用户的界面不应该大量暴露内部工程术语。
+
+用户更关心：
+
+发生了什么？
+为什么找我？
+你准备做什么？
+最后成功了吗？
+我需要做什么？
+
+而不是：
+
+Execution #2839
+Connector timeout
+Policy R3
+Candidate ID
+
+内部复杂度应尽量由系统承担。
+
+Messages / Attention
+
+系统不应把所有自动化事件都变成通知轰炸。
+
+用户注意力可以区分：
+
+SILENT
+RECORD_ONLY
+DIGEST
+NORMAL
+IMPORTANT
+URGENT
+APPROVAL_REQUIRED
+
+真正应该主动打扰用户的通常是：
+
+需要审批
+需要支付
+需要确认
+权限失效
+连接异常
+执行结果未知
+高风险动作
+用户明确要求提醒
+
+普通完成事件可以只进入 Record 或 Digest。
+
+Mobile Information Architecture
+
+长期移动端结构以“连接的真实世界 + 懒人计划”为核心。
+
+左侧连接区域可以包含：
+
+消息
+懒人装甲
+懒人商城
+──────────
+常用连接
+──────────
+更多连接
+──────────
+其他 App
+──────────
+添加连接
+──────────
+账号
+
+Android 设备上的 App 应尽量自动发现。
+
+未连接 App 不需要全部展开显示。
+
+推荐折叠为：
+
+▦ 其他 App  86
+
+用户进入后再进行：
+
+搜索
+查看能力
+授权
+建立连接
+忽略
+Development Status
+
+当前主线不是继续创造新的阶段编号。
+
+P0～P5 已经作为历史开发阶段完成了大量基础工程建设。
+
+后续开发以：
+
+真实世界接入、真实设备、真实数据、真实动作、产品化和发布验收
+
+为主。
+
+当前连续路线：
+
+CI Green
+↓
+Android Trusted Device Real-device Acceptance
+↓
+Installed App Discovery
+↓
+Generic App Connection
+↓
+Real Notification
+↓
+Candidate
+↓
+Truth Store
+↓
+Plan Resolver
+↓
+Plan Execution
+↓
+Messages / Record / Audit
+↓
+Revoke / Multi-account / Security Acceptance
+↓
+Mobile Consumer Productization
+↓
+Logistics
+↓
+Push
+↓
+Gmail
+↓
+Google Calendar
+↓
+Household / Person / Relationship / Resource / Delegation
+↓
+Lazy Mall
+↓
+Home
+↓
+Vehicle
+↓
+Device / Digital Account
+↓
+Intent / DeviceTask
+↓
+Controlled Accessibility
+↓
+Vision
+↓
+Privacy / Ops / Observability
+↓
+Android Beta + Staging
+↓
+Final RC Audit
+Hard Stop
+
+持续开发过程中，普通：
+
+Test Failure
+Type Error
+Migration Error
+CI Failure
+Build Failure
+
+应直接：
+
+定位
+→ 修复
+→ 回归
+→ 继续
+
+只有以下情况才属于真正 Hard Stop：
+
+Production Data Risk
+
+存在不可逆生产数据破坏风险。
+
+Real Secret / External Account
+
+需要真实生产密钥、真实第三方账号或不可代替的用户授权。
+
+Security Boundary Failure
+
+发现无法继续安全执行的核心安全边界问题。
+
+其他模块不应因为单一链路 Hard Stop 而全部停止。
+
+Documentation
+
+当前长期维护文档：
+
+docs/STATUS.md
+docs/TASK_BOOK.md
+docs/ANDROID_TRUSTED_DEVICE_ACCEPTANCE.md
+docs/ANDROID_APP_DISCOVERY.md
+docs/MIGRATION_RELEASE_EVIDENCE.md
+docs/ROLLBACK_PROCEDURE.md
+
+历史阶段报告不再作为当前工程状态来源。
+
+当前真实状态统一以：
+
+代码
++
+数据库 Migration
++
+自动化测试
++
+GitHub Actions
++
+真实设备 / Provider 验收证据
+
+为准。
+
+Current Release Position
+
+当前项目已经拥有较完整的自动化平台基础，包括：
+
+Plan Engine
+Truth Store
+Connector
+Trusted Device
+Risk
+Approval
+Execution
+Side Effect Safety
+Audit
+Android Native Bridge
+Mobile Product Foundation
+
+但仍然必须区分：
+
+基础架构已经建立
+
+和：
+
+真实世界生产能力已经全部完成
+
+这两件事。
+
+当前项目仍在继续推进真实设备、真实数据源、真实 Provider 和真实执行闭环。
+
+Project Principle
 
 懒人装甲最终追求的不是：
 
-> “功能很多”
+“这个 App 有很多功能。”
 
-也不是：
+而是：
 
-> “所有事情都自动化”
+用户把事情交给系统之后，可以少操心。
 
-真正的目标，是让适合自动化的事务能够**长期、可靠、安静地被处理掉**。
+系统应该尽可能做到：
 
-同时让用户始终知道：
+该知道的时候知道
+该处理的时候处理
+不该打扰的时候不打扰
+需要用户决定的时候再找用户
+做完以后能够证明真的做完了
 
-* 系统正在替我做什么
-* 使用了什么数据
-* 拥有什么权限
-* 什么情况下会先问我
-* 出错以后发生了什么
-* 我能不能暂停
-* 我能不能撤销
-* 我能不能追溯
+这才是懒人装甲真正要解决的问题。
 
-> **懒人装甲真正的价值，是把那些本来需要你反复操心的事情，变成可以放心交出去的计划。**
+懒人装甲 Lazy Armor
+
+让重复的事情少占时间。
+
+让复杂的事情少占脑子。
+
+让真正重要的事情，留给用户自己决定。
+
+
+
