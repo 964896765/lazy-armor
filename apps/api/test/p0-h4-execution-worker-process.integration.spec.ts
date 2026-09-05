@@ -506,11 +506,7 @@ async function stopWorker(worker: WorkerProcess, signal: 'SIGTERM' | 'SIGINT' = 
   worker.child.kill(signal);
   const exited = await waitForExit(worker.child, 8_000);
   if (!exited) {
-    if (worker.child.pid) {
-      try {
-        execFileSync('taskkill', ['/PID', String(worker.child.pid), '/T', '/F'], { stdio: 'ignore' });
-      } catch {}
-    }
+    forceKillWorkerProcess(worker.child);
     const forced = await waitForExit(worker.child, 4_000);
     if (!forced && worker.child.exitCode === null && await isChildProcessAlive(worker.child)) {
       throw new Error(`Worker process did not exit after ${signal}. Logs:\n${worker.output.join('')}`);
@@ -521,15 +517,22 @@ async function stopWorker(worker: WorkerProcess, signal: 'SIGTERM' | 'SIGINT' = 
 async function hardKillWorker(worker: WorkerProcess) {
   forgetWorker(worker);
   if (worker.child.exitCode !== null) return;
-  if (worker.child.pid) {
-    try {
-      execFileSync('taskkill', ['/PID', String(worker.child.pid), '/T', '/F'], { stdio: 'ignore' });
-    } catch {}
-  }
+  forceKillWorkerProcess(worker.child);
   const exited = await waitForExit(worker.child, 4_000);
   if (!exited && worker.child.exitCode === null && await isChildProcessAlive(worker.child)) {
     throw new Error(`Worker process did not exit after force kill. Logs:\n${worker.output.join('')}`);
   }
+}
+
+function forceKillWorkerProcess(child: ChildProcess) {
+  if (!child.pid) return;
+  try {
+    if (process.platform === 'win32') {
+      execFileSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
+      return;
+    }
+    child.kill('SIGKILL');
+  } catch {}
 }
 
 async function waitForExit(child: ChildProcess, timeoutMs: number) {

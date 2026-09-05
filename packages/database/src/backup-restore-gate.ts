@@ -147,7 +147,6 @@ async function recreateDatabase(adminTarget: MysqlTarget, appTarget: MysqlTarget
     await pool.query(`DROP DATABASE IF EXISTS \`${databaseName}\``);
     await pool.query(`CREATE DATABASE \`${databaseName}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci`);
     await pool.query(`GRANT ALL PRIVILEGES ON \`${databaseName}\`.* TO '${appTarget.user}'@'%'`);
-    await pool.query('FLUSH PRIVILEGES');
   } finally {
     await pool.end();
   }
