@@ -5,14 +5,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/api';
 import { useAuthStore } from '../../src/auth-store';
 import {
-  ActionButton,
-  AnimatedEntry,
   AttentionCard,
   EmptyState,
-  PlanCard,
+  MessageRow,
   Surface,
-  TodayCard,
+  WorkspaceHeader,
+  WorkspaceSection,
   colors,
+  radius,
   spacing,
   typography,
 } from '../../src/design';
@@ -26,8 +26,8 @@ interface ProcessedCard { id: string; status: string; resultSummary: string | nu
 interface ConnectionIssue { connectionId: string; connectionStatus: string; providerKey: string; providerName: string; planId: string; planName: string }
 interface TodayData { pendingApprovals: ApprovalCard[]; connectionIssues: ConnectionIssue[]; alerts: AlertCard[]; processed: ProcessedCard[] }
 interface PendingNotificationCandidate { id: string; candidateResource: string | null; candidateConfidence: number; amountMinor: number | null; currency: string | null; postedAt: string }
-interface Profile { displayName: string }
 interface PresentableAlert extends AlertCard { section: 'attention' | 'exception' | 'summary' }
+interface AttentionMessage { id: string; icon: string; title: string; description: string; meta?: string; tone: 'warning' | 'danger' | 'brand'; onPress: () => void }
 
 export default function Today() {
   const token = useAuthStore((store) => store.token);
@@ -43,12 +43,6 @@ export default function Today() {
     queryFn: () => api<PendingNotificationCandidate[]>('/device-app-connections/notification-receipts', token),
     enabled: Boolean(token),
     refetchInterval: 20_000,
-  });
-  const profile = useQuery({
-    queryKey: ['me', token],
-    queryFn: () => api<Profile>('/me', token),
-    enabled: Boolean(token),
-    staleTime: 5 * 60 * 1000,
   });
   const decide = useMutation({
     mutationFn: ({ id, decision, risk }: { id: string; decision: 'approve' | 'reject'; risk: string }) => api(`/approvals/${id}/${decision}`, token, {
@@ -69,10 +63,6 @@ export default function Today() {
     + exceptionAlerts.length;
   const totalCount = attentionCount + summaryAlerts.length + (today.data?.processed.length ?? 0);
   const state = todayState(Boolean(token), today.isLoading, today.isError, totalCount);
-  const completedItems = [
-    ...(today.data?.processed ?? []).map((item) => item.resultSummary ? `${item.planName}：${item.resultSummary}` : `${item.planName}已完成`),
-    ...summaryAlerts.map((item) => `${item.title}：${consumerErrorMessage(item.body)}`),
-  ].slice(0, 4);
 
   const confirm = (approval: ApprovalCard, decision: 'approve' | 'reject') => Alert.alert(
     decision === 'approve' ? '确认继续？' : '确认拒绝？',
@@ -83,157 +73,118 @@ export default function Today() {
     ],
   );
 
+  const attentionMessages: AttentionMessage[] = [
+    ...(today.data?.connectionIssues ?? []).map((item) => ({
+      id: `connection:${item.planId}:${item.connectionId}`,
+      icon: '↻',
+      title: `${item.providerName}${connectionStatusLabel(item.connectionStatus)}`,
+      description: `${connectionStatusExplanation(item.connectionStatus)}“${item.planName}”会保留当前设置。${connectionStatusNextStep(item.connectionStatus)}`,
+      tone: 'warning' as const,
+      onPress: () => router.push('/connections'),
+    })),
+    ...(pendingNotificationCandidates.data ?? []).map((item) => ({
+      id: `notification:${item.id}`,
+      icon: '🔔',
+      title: '应用通知等待核实',
+      description: notificationCandidateSummary(item),
+      meta: formatMessageTime(item.postedAt),
+      tone: 'brand' as const,
+      onPress: () => router.push('/connections/notification-sources' as never),
+    })),
+    ...[...attentionAlerts, ...exceptionAlerts].map((item) => ({
+      id: `alert:${item.id}`,
+      icon: item.section === 'exception' ? '!' : '·',
+      title: item.title,
+      description: `${consumerErrorMessage(item.body)} ${consumerErrorNextStep(item.body)}`.trim(),
+      meta: formatMessageTime(item.createdAt),
+      tone: item.section === 'exception' ? 'danger' as const : 'warning' as const,
+      onPress: item.executionId ? () => router.push(`/executions/${item.executionId}` as never) : () => undefined,
+    })),
+  ];
+  const resultMessages = [
+    ...(today.data?.processed ?? []).map((item) => ({
+      id: `result:${item.id}`,
+      icon: '✓',
+      title: item.planName,
+      description: item.resultSummary ?? executionStatusLabel(item.status),
+      meta: formatMessageTime(item.finishedAt),
+      onPress: () => router.push(`/executions/${item.id}` as never),
+    })),
+    ...summaryAlerts.map((item) => ({
+      id: `summary:${item.id}`,
+      icon: '▤',
+      title: item.title,
+      description: consumerErrorMessage(item.body),
+      meta: formatMessageTime(item.createdAt),
+      onPress: item.executionId ? () => router.push(`/executions/${item.executionId}` as never) : undefined,
+    })),
+  ];
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <ScrollView
         style={styles.page}
         contentContainerStyle={styles.content}
-        refreshControl={token ? <RefreshControl tintColor={colors.primary} refreshing={today.isFetching} onRefresh={() => today.refetch()} /> : undefined}
+        refreshControl={token ? <RefreshControl tintColor="#5865F2" refreshing={today.isFetching} onRefresh={() => today.refetch()} /> : undefined}
       >
-        <View style={styles.header}>
-          <Text style={styles.greeting}>{greetingText(profile.data?.displayName)}</Text>
-          <Text style={styles.date}>今天 · {formatToday()}</Text>
-          <Text style={styles.intro}>懒人装甲已经在帮你关注生活里的大小事。</Text>
-        </View>
+        <WorkspaceHeader title="消息" subtitle={`今天 · ${formatToday()}`} />
 
         {state === 'signed_out' ? (
-          <Surface><EmptyState icon="🛡️" title="登录后，我就能开始帮你" description="你的计划、提醒和完成结果都会集中在这里。" action={{ label: '开始使用', onPress: () => router.push('/connections') }} /></Surface>
+          <Surface style={styles.stateSurface}><EmptyState icon="🛡️" title="登录后开始使用" description="计划、提醒和完成结果会集中在这里。" action={{ label: '开始使用', onPress: () => router.push('/connections') }} /></Surface>
         ) : null}
 
         {state === 'loading' ? (
-          <View style={styles.loading}><ActivityIndicator color={colors.primary} /><Text style={styles.loadingText}>正在看看今天的安排…</Text></View>
+          <View style={styles.loading}><ActivityIndicator color="#5865F2" /><Text style={styles.loadingText}>正在同步今天的消息…</Text></View>
         ) : null}
 
         {state === 'error' ? (
-          <Surface><EmptyState icon="☁️" title="网络暂时不可用" description="没有关系，稍后再试就好。" action={{ label: '重新加载', onPress: () => today.refetch() }} /></Surface>
+          <Surface style={styles.stateSurface}><EmptyState icon="☁️" title="网络暂时不可用" description="请稍后再试。" action={{ label: '重新加载', onPress: () => today.refetch() }} /></Surface>
         ) : null}
 
         {state === 'empty' ? (
-          <>
-            <AnimatedEntry><StatusCard attentionCount={0} /></AnimatedEntry>
-            <View style={styles.sectionBlock}>
-              <SectionTitle title="今天已经帮你" />
-              <Surface><EmptyState title="今天一切安静" description="目前没有需要你处理的事情，我会继续留意。" /></Surface>
-            </View>
-          </>
+          <View style={styles.quietState}><View style={styles.quietIcon}><Text style={styles.quietCheck}>✓</Text></View><View style={styles.quietCopy}><Text style={styles.quietTitle}>今天一切顺利</Text><Text style={styles.quietDescription}>没有需要你处理的事情</Text></View></View>
         ) : null}
 
         {state === 'ready' ? (
           <>
-            <AnimatedEntry><StatusCard attentionCount={attentionCount} /></AnimatedEntry>
+            <View style={[styles.summaryBar, attentionCount > 0 && styles.summaryWarning]}>
+              <View style={[styles.summaryDot, attentionCount > 0 && styles.summaryDotWarning]} />
+              <Text style={styles.summaryText}>{attentionCount > 0 ? `${attentionCount} 件事情需要你看看` : '今天没有需要你处理的事情'}</Text>
+            </View>
 
-            <AnimatedEntry delay={60}>
-              <View style={styles.sectionBlock}>
-                <SectionTitle title="已帮你完成" />
-                {completedItems.length > 0
-                  ? <TodayCard items={completedItems} footnote="完成的事情已经收进记录，随时可以回看。" />
-                  : <Surface><Text style={styles.quietText}>暂时还没有新的完成结果，我会继续安静地留意。</Text></Surface>}
-              </View>
-            </AnimatedEntry>
-
-            {attentionCount > 0 ? (
-              <AnimatedEntry delay={120}>
-                <View style={styles.sectionBlock}>
-                  <SectionTitle title="需要你处理" count={attentionCount} />
-                  <View style={styles.cardList}>
-                    {today.data?.pendingApprovals.map((item) => (
-                      <AttentionCard
-                        key={item.id}
-                        title={item.planName}
-                        description={item.summary}
-                        detail={`${approvalRiskText(item.riskLevel)} · ${formatExpiry(item.expiresAt)}`}
-                        actionLabel="确认继续"
-                        onPress={() => confirm(item, 'approve')}
-                        secondaryAction={{ label: '暂不处理', onPress: () => confirm(item, 'reject') }}
-                      />
-                    ))}
-                    {(pendingNotificationCandidates.data ?? []).map((item) => (
-                      <AttentionCard
-                        key={`notification:${item.id}`}
-                        title="有一条应用通知等待核实"
-                        description={notificationCandidateSummary(item)}
-                        detail={`来自你已授权的应用 · ${new Date(item.postedAt).toLocaleString('zh-CN')}`}
-                        actionLabel="查看并核实"
-                        onPress={() => router.push('/connections/notification-sources' as never)}
-                      />
-                    ))}
-                    {today.data?.connectionIssues.map((item) => (
-                      <AttentionCard
-                        key={`${item.planId}:${item.connectionId}`}
-                        title={`${item.providerName}${connectionStatusLabel(item.connectionStatus)}`}
-                        description={`${connectionStatusExplanation(item.connectionStatus)} “${item.planName}”会保留当前设置。`}
-                        detail={connectionStatusNextStep(item.connectionStatus)}
-                        actionLabel={connectionRecoveryAction(item.connectionStatus) ?? '查看连接'}
-                        onPress={() => router.push('/connections')}
-                      />
-                    ))}
-                    {[...attentionAlerts, ...exceptionAlerts].map((item) => (
-                      <AttentionCard
-                        key={item.id}
-                        title={item.title}
-                        description={consumerErrorMessage(item.body)}
-                        detail={consumerErrorNextStep(item.body)}
-                        actionLabel="查看"
-                        onPress={item.executionId ? () => router.push(`/executions/${item.executionId}` as never) : undefined}
-                      />
-                    ))}
-                  </View>
+            {(today.data?.pendingApprovals.length ?? 0) > 0 ? (
+              <WorkspaceSection title="待你确认" count={today.data?.pendingApprovals.length}>
+                <View style={styles.approvalList}>
+                  {today.data?.pendingApprovals.map((item) => (
+                    <AttentionCard
+                      key={item.id}
+                      title={item.planName}
+                      description={item.summary}
+                      detail={`${approvalRiskText(item.riskLevel)} · ${formatExpiry(item.expiresAt)}`}
+                      actionLabel="确认继续"
+                      onPress={() => confirm(item, 'approve')}
+                      secondaryAction={{ label: '暂不处理', onPress: () => confirm(item, 'reject') }}
+                    />
+                  ))}
                 </View>
-              </AnimatedEntry>
+              </WorkspaceSection>
             ) : null}
 
-            {(today.data?.processed.length ?? 0) > 0 ? (
-              <AnimatedEntry delay={180}>
-                <View style={styles.sectionBlock}>
-                  <SectionTitle title="最近运行的计划" action={{ label: '全部记录', onPress: () => router.push('/records') }} />
-                  <View style={styles.cardList}>
-                    {today.data?.processed.slice(0, 3).map((item) => (
-                      <PlanCard
-                        key={item.id}
-                        icon={planIcon(item.planName)}
-                        name={item.planName}
-                        description={item.resultSummary ?? executionStatusLabel(item.status)}
-                        status={executionStatusLabel(item.status)}
-                        nextRun={formatFinishedAt(item.finishedAt)}
-                        onPress={() => router.push(`/executions/${item.id}` as never)}
-                      />
-                    ))}
-                  </View>
-                </View>
-              </AnimatedEntry>
+            {attentionMessages.length > 0 ? (
+              <WorkspaceSection title="需要处理" count={attentionMessages.length}>
+                <View style={styles.messageGroup}>{attentionMessages.map((item, index) => <MessageRow key={item.id} {...item} last={index === attentionMessages.length - 1} />)}</View>
+              </WorkspaceSection>
+            ) : null}
+
+            {resultMessages.length > 0 ? (
+              <WorkspaceSection title="最近完成" action={{ label: '全部记录', onPress: () => router.push('/records') }}>
+                <View style={styles.messageGroup}>{resultMessages.slice(0, 6).map((item, index, shown) => <MessageRow key={item.id} {...item} tone="success" last={index === shown.length - 1} />)}</View>
+              </WorkspaceSection>
             ) : null}
           </>
         ) : null}
       </ScrollView>
     </SafeAreaView>
-  );
-}
-
-function StatusCard({ attentionCount }: { attentionCount: number }) {
-  const needsAttention = attentionCount > 0;
-  return (
-    <Surface style={[styles.statusCard, needsAttention ? styles.statusWarning : styles.statusSuccess]}>
-      <View style={[styles.statusIcon, needsAttention ? styles.statusIconWarning : styles.statusIconSuccess]}>
-        <Text style={styles.statusEmoji}>{needsAttention ? '!' : '✓'}</Text>
-      </View>
-      <View style={styles.statusCopy}>
-        <Text style={styles.statusEyebrow}>今日状态</Text>
-        <Text style={styles.statusTitle}>{needsAttention ? `有 ${attentionCount} 件事情需要你看看` : '今天一切正常'}</Text>
-        <Text style={styles.statusDescription}>{needsAttention ? '其余计划仍在照常帮你运行。' : '没有需要你处理的事情。'}</Text>
-      </View>
-    </Surface>
-  );
-}
-
-function SectionTitle({ title, count, action }: { title: string; count?: number; action?: { label: string; onPress: () => void } }) {
-  return (
-    <View style={styles.sectionHeader}>
-      <View style={styles.sectionTitleRow}>
-        <Text style={styles.sectionTitle}>{title}</Text>
-        {count ? <View style={styles.countBadge}><Text style={styles.countText}>{count}</Text></View> : null}
-      </View>
-      {action ? <ActionButton label={action.label} tone="quiet" onPress={action.onPress} /> : null}
-    </View>
   );
 }
 
@@ -247,13 +198,7 @@ function classifyAlert(item: AlertCard): PresentableAlert['section'] {
 
 function notificationCandidateSummary(item: PendingNotificationCandidate) {
   if (item.candidateResource === 'mobile.billing.transaction' && item.amountMinor !== null && item.currency === 'CNY') return `检测到一条可能的消费线索，金额为 ${(item.amountMinor / 100).toFixed(2)} 元。确认前不会记录为账单。`;
-  return item.candidateConfidence > 0 ? '检测到一条可能与账户相关的线索。确认前不会记录为任何事实。' : '收到一条待分类的应用通知线索。不会触发自动操作。';
-}
-
-function greetingText(displayName?: string) {
-  const hour = new Date().getHours();
-  const greeting = hour < 11 ? '早上好' : hour < 14 ? '中午好' : hour < 18 ? '下午好' : '晚上好';
-  return displayName ? `${greeting}，${displayName}` : greeting;
+  return item.candidateConfidence > 0 ? '检测到一条可能与账户相关的线索，确认前不会记录为事实。' : '收到一条待分类的应用通知线索，不会触发自动操作。';
 }
 
 function formatToday() {
@@ -264,47 +209,34 @@ function formatExpiry(value: string) {
   return `${new Date(value).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })} 前有效`;
 }
 
-function formatFinishedAt(value: string | null) {
-  if (!value) return '结果已收进记录';
-  return `今天 ${new Date(value).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`;
-}
-
-function planIcon(name: string) {
-  if (name.includes('邮件') || name.includes('摘要')) return '✉️';
-  if (name.includes('快递') || name.includes('包裹')) return '📦';
-  if (name.includes('设备') || name.includes('打印机')) return '🖨️';
-  if (name.includes('账单') || name.includes('钱')) return '💰';
-  if (name.includes('车辆') || name.includes('保养')) return '🚙';
-  return '🛡️';
+function formatMessageTime(value: string | null) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const now = new Date();
+  return date.toDateString() === now.toDateString()
+    ? date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+    : date.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' });
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: colors.background },
-  page: { flex: 1, backgroundColor: colors.background },
-  content: { paddingHorizontal: spacing.page, paddingTop: spacing.xl, paddingBottom: 112 },
-  header: { marginBottom: spacing.xxl },
-  greeting: { ...typography.display, color: colors.text },
-  date: { ...typography.bodyStrong, color: colors.primary, marginTop: spacing.sm },
-  intro: { ...typography.body, color: colors.textSecondary, marginTop: spacing.md, maxWidth: 310 },
+  safeArea: { flex: 1, backgroundColor: '#F8F9FB' },
+  page: { flex: 1, backgroundColor: '#F8F9FB' },
+  content: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: 80 },
   loading: { alignItems: 'center', paddingVertical: 64, gap: spacing.md },
-  loadingText: { ...typography.body, color: colors.textSecondary },
-  statusCard: { flexDirection: 'row', alignItems: 'center', gap: spacing.lg },
-  statusSuccess: { backgroundColor: colors.successSoft, borderColor: '#CFE1D7' },
-  statusWarning: { backgroundColor: colors.warningSoft, borderColor: '#EDD1A8' },
-  statusIcon: { width: 46, height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center' },
-  statusIconSuccess: { backgroundColor: colors.success },
-  statusIconWarning: { backgroundColor: colors.warning },
-  statusEmoji: { color: colors.surface, fontSize: 20, fontWeight: '800' },
-  statusCopy: { flex: 1 },
-  statusEyebrow: { ...typography.label, color: colors.textSecondary, marginBottom: spacing.xs },
-  statusTitle: { ...typography.cardTitle, color: colors.text },
-  statusDescription: { ...typography.caption, color: colors.textSecondary, marginTop: spacing.xs },
-  sectionBlock: { marginTop: spacing.xxxl },
-  sectionHeader: { minHeight: 42, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md, marginBottom: spacing.md },
-  sectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  sectionTitle: { ...typography.section, color: colors.text },
-  countBadge: { minWidth: 24, height: 24, paddingHorizontal: 7, borderRadius: 12, backgroundColor: colors.warningSoft, alignItems: 'center', justifyContent: 'center' },
-  countText: { ...typography.label, color: colors.warning },
-  cardList: { gap: spacing.md },
-  quietText: { ...typography.body, color: colors.textSecondary },
+  loadingText: { ...typography.caption, color: colors.textSecondary },
+  stateSurface: { marginTop: spacing.xl },
+  quietState: { minHeight: 70, flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.lg, paddingHorizontal: spacing.md, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#EAECF0', borderRadius: radius.lg },
+  quietIcon: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: '#E8F7EF' },
+  quietCheck: { color: '#23A559', fontWeight: '900', fontSize: 16 },
+  quietCopy: { flex: 1 },
+  quietTitle: { ...typography.bodyStrong, color: colors.text },
+  quietDescription: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
+  summaryBar: { minHeight: 42, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.lg, paddingHorizontal: spacing.md, borderRadius: radius.md, backgroundColor: '#E8F7EF' },
+  summaryWarning: { backgroundColor: '#FFF4E5' },
+  summaryDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#23A559' },
+  summaryDotWarning: { backgroundColor: '#F79009' },
+  summaryText: { ...typography.bodyStrong, color: colors.text },
+  approvalList: { gap: spacing.sm },
+  messageGroup: { backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#EAECF0', borderRadius: radius.lg, paddingHorizontal: spacing.sm, overflow: 'hidden' },
 });

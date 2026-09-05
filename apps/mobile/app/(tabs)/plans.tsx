@@ -1,15 +1,15 @@
 import { useQuery } from '@tanstack/react-query';
 import { router } from 'expo-router';
-import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/api';
 import { useAuthStore } from '../../src/auth-store';
-import { ActionButton, AnimatedEntry, EmptyState, PlanCard, Surface, colors, spacing, typography } from '../../src/design';
+import { AnimatedEntry, EmptyState, PlanRow, Surface, WorkspaceHeader, WorkspaceSection, colors, radius, spacing, typography } from '../../src/design';
 import {
   consumerPlanGroup,
   consumerPlanGroupSubtitle,
-  planDomainLabel,
   planCenterStatusLabel,
+  planDomainLabel,
   planNextRunLabel,
   planStatusLabel,
   planStatusTone,
@@ -53,21 +53,31 @@ export default function Plans() {
       <ScrollView
         style={styles.page}
         contentContainerStyle={styles.content}
-        refreshControl={token ? <RefreshControl tintColor={colors.primary} refreshing={plans.isFetching} onRefresh={() => plans.refetch()} /> : undefined}
+        refreshControl={token ? <RefreshControl tintColor="#5865F2" refreshing={plans.isFetching} onRefresh={() => plans.refetch()} /> : undefined}
       >
-        <View style={styles.header}>
-          <View style={styles.headerTitleRow}><View style={styles.headerCopy}><Text style={styles.eyebrow}>懒人装甲</Text><Text style={styles.title}>总览与计划</Text></View><ActionButton label="＋计划" onPress={() => router.push('/create' as never)} /></View>
-          <Text style={styles.subtitle}>{activeCount > 0 ? `正在帮你处理 ${activeCount} 件事` : '把麻烦交给我，生活可以轻一点。'}</Text>
-          <View style={styles.workspaceLinks}><ActionButton label="我的领域" tone="quiet" onPress={() => router.push('/domains' as never)} /><ActionButton label="全部记录" tone="quiet" onPress={() => router.push('/records' as never)} /></View>
+        <WorkspaceHeader
+          title="懒人装甲"
+          subtitle={activeCount > 0 ? `${activeCount} 个计划正在运行` : '还没有运行中的计划'}
+          action={<Pressable accessibilityRole="button" accessibilityLabel="创建计划" onPress={() => router.push('/create' as never)} style={({ pressed }) => [styles.addButton, pressed && styles.pressed]}><Text style={styles.addText}>＋</Text></Pressable>}
+        />
+
+        <View style={styles.tools}>
+          <Pressable accessibilityRole="button" onPress={() => router.push('/domains' as never)} style={({ pressed }) => [styles.tool, pressed && styles.pressed]}><Text style={styles.toolIcon}>⌘</Text><Text style={styles.toolText}>管理领域</Text></Pressable>
+          <View style={styles.toolDivider} />
+          <Pressable accessibilityRole="button" onPress={() => router.push('/records' as never)} style={({ pressed }) => [styles.tool, pressed && styles.pressed]}><Text style={styles.toolIcon}>▤</Text><Text style={styles.toolText}>查看记录</Text></Pressable>
         </View>
 
         {!token ? (
-          <Surface><EmptyState icon="🛡️" title="登录后查看你的计划" description="已经安排的事情都会在这里。" action={{ label: '去登录', onPress: () => router.push('/connections') }} /></Surface>
+          <Surface style={styles.stateSurface}><EmptyState icon="🛡️" title="登录后查看计划" description="已经安排的事情都会在这里。" action={{ label: '去登录', onPress: () => router.push('/connections') }} /></Surface>
         ) : null}
-        {plans.isLoading ? <View style={styles.loading}><ActivityIndicator color={colors.primary} /><Text style={styles.loadingText}>正在整理你的计划…</Text></View> : null}
-        {plans.isError ? <Surface><EmptyState icon="☁️" title="暂时没能读取计划" description="请稍后再试。" action={{ label: '重新加载', onPress: () => plans.refetch() }} /></Surface> : null}
+        {plans.isLoading ? <View style={styles.loading}><ActivityIndicator color="#5865F2" /><Text style={styles.loadingText}>正在同步计划…</Text></View> : null}
+        {plans.isError ? <Surface style={styles.stateSurface}><EmptyState icon="☁️" title="暂时没能读取计划" description="请稍后再试。" action={{ label: '重新加载', onPress: () => plans.refetch() }} /></Surface> : null}
         {plans.data?.length === 0 ? (
-          <Surface><EmptyState icon="✨" title="还没有让懒人装甲帮你处理的事情" suggestion="帮我管理我的快递" action={{ label: '安排第一件事', onPress: () => router.push('/create') }} /></Surface>
+          <View style={styles.emptyPlan}>
+            <View style={styles.emptyIcon}><Text style={styles.emptyIconText}>✦</Text></View>
+            <View style={styles.emptyCopy}><Text style={styles.emptyTitle}>还没有计划</Text><Text style={styles.emptyDescription}>试试“帮我管理我的快递”</Text></View>
+            <Pressable accessibilityRole="button" onPress={() => router.push('/create')} style={({ pressed }) => [styles.emptyAction, pressed && styles.pressed]}><Text style={styles.emptyActionText}>安排</Text></Pressable>
+          </View>
         ) : null}
 
         {consumerGroups.map((group, groupIndex) => {
@@ -79,28 +89,28 @@ export default function Plans() {
           }) === group);
           if (items.length === 0) return null;
           return (
-            <AnimatedEntry key={group} delay={groupIndex * 50}>
-              <View style={styles.group}>
-                <Text style={styles.groupTitle}>{group}</Text>
+            <AnimatedEntry key={group} delay={groupIndex * 40}>
+              <WorkspaceSection title={group} count={items.length}>
                 <Text style={styles.groupSubtitle}>{consumerPlanGroupSubtitle(group)}</Text>
-                <View style={styles.cardList}>
-                  {items.map((plan) => {
+                <View style={styles.planGroup}>
+                  {items.map((plan, index) => {
                     const name = plan.name ?? plan.currentVersion?.name ?? '我的懒人计划';
                     return (
-                      <PlanCard
+                      <PlanRow
                         key={plan.id}
                         icon={planVisualIcon(name, plan.planCenterSummary?.kind)}
                         name={name}
-                        description={`${planDomainLabel(plan.domain)} · ${planDescription(plan)}`}
-                        status={plan.hasMissingConnection ? '还差一步设置' : planStatusLabel(plan.status)}
+                        description={planDescription(plan)}
+                        detail={`${planDomainLabel(plan.domain)} · ${planNextRunLabel(plan.status, plan.nextExpectedRunAt)}`}
+                        status={plan.hasMissingConnection ? '还差一步' : planStatusLabel(plan.status)}
                         statusTone={plan.hasMissingConnection ? 'warning' : planStatusTone(plan.status)}
-                        nextRun={planNextRunLabel(plan.status, plan.nextExpectedRunAt)}
                         onPress={() => router.push(`/plans/${plan.id}` as never)}
+                        last={index === items.length - 1}
                       />
                     );
                   })}
                 </View>
-              </View>
+              </WorkspaceSection>
             </AnimatedEntry>
           );
         })}
@@ -110,29 +120,35 @@ export default function Plans() {
 }
 
 function planDescription(plan: PlanSummary) {
-  if (plan.planCenterSummary) {
-    return planCenterStatusLabel(plan.planCenterSummary.kind, plan.planCenterSummary.currentStatus);
-  }
+  if (plan.planCenterSummary) return planCenterStatusLabel(plan.planCenterSummary.kind, plan.planCenterSummary.currentStatus);
   if (plan.description) return plan.description;
   if (plan.latestExecution?.resultSummary) return plan.latestExecution.resultSummary;
   return '会按你的安排持续帮你留意。';
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: colors.background },
-  page: { flex: 1, backgroundColor: colors.background },
-  content: { paddingHorizontal: spacing.page, paddingTop: spacing.xl, paddingBottom: 112 },
-  header: { marginBottom: spacing.xxl },
-  headerTitleRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: spacing.md },
-  headerCopy: { flex: 1 },
-  eyebrow: { ...typography.label, color: colors.primary, letterSpacing: 1 },
-  title: { ...typography.display, color: colors.text, marginTop: spacing.xs },
-  subtitle: { ...typography.body, color: colors.textSecondary, marginTop: spacing.sm },
-  workspaceLinks: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.lg },
+  safeArea: { flex: 1, backgroundColor: '#F8F9FB' },
+  page: { flex: 1, backgroundColor: '#F8F9FB' },
+  content: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: 80 },
+  addButton: { width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F2F4F7', borderWidth: 1, borderColor: '#EAECF0' },
+  addText: { color: '#344054', fontSize: 22, lineHeight: 24, fontWeight: '400' },
+  pressed: { opacity: 0.65 },
+  tools: { minHeight: 50, flexDirection: 'row', alignItems: 'center', marginTop: spacing.md, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#EAECF0', borderRadius: radius.lg },
+  tool: { flex: 1, minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm },
+  toolDivider: { width: 1, height: 24, backgroundColor: '#EAECF0' },
+  toolIcon: { color: '#5865F2', fontSize: 15, fontWeight: '800' },
+  toolText: { ...typography.caption, color: colors.text, fontWeight: '700' },
+  stateSurface: { marginTop: spacing.xl },
+  emptyPlan: { minHeight: 86, flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.xl, paddingHorizontal: spacing.md, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#EAECF0', borderRadius: radius.lg },
+  emptyIcon: { width: 36, height: 36, borderRadius: 12, backgroundColor: '#EEF0FF', alignItems: 'center', justifyContent: 'center' },
+  emptyIconText: { color: '#5865F2', fontSize: 18, fontWeight: '800' },
+  emptyCopy: { flex: 1, minWidth: 0 },
+  emptyTitle: { ...typography.bodyStrong, color: colors.text },
+  emptyDescription: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
+  emptyAction: { minHeight: 34, paddingHorizontal: spacing.md, borderRadius: 12, backgroundColor: '#5865F2', alignItems: 'center', justifyContent: 'center' },
+  emptyActionText: { color: '#FFFFFF', fontSize: 11, lineHeight: 16, fontWeight: '700' },
   loading: { paddingVertical: 64, alignItems: 'center', gap: spacing.md },
-  loadingText: { ...typography.body, color: colors.textSecondary },
-  group: { marginTop: spacing.xxl },
-  groupTitle: { ...typography.section, color: colors.text },
-  groupSubtitle: { ...typography.caption, color: colors.textSecondary, marginTop: spacing.xs, marginBottom: spacing.md },
-  cardList: { gap: spacing.md },
+  loadingText: { ...typography.caption, color: colors.textSecondary },
+  groupSubtitle: { ...typography.caption, color: colors.textSecondary, marginBottom: spacing.sm },
+  planGroup: { backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#EAECF0', borderRadius: radius.lg, paddingHorizontal: spacing.sm, overflow: 'hidden' },
 });
