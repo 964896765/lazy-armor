@@ -127,19 +127,19 @@ function planDescription(plan: PlanSummary) {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#F8F9FB' },
-  page: { flex: 1, backgroundColor: '#F8F9FB' },
+  safeArea: { flex: 1, backgroundColor: '#FFFFFF' },
+  page: { flex: 1, backgroundColor: '#FFFFFF' },
   content: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: 80 },
   addButton: { width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F2F4F7', borderWidth: 1, borderColor: '#EAECF0' },
   addText: { color: '#344054', fontSize: 22, lineHeight: 24, fontWeight: '400' },
   pressed: { opacity: 0.65 },
-  tools: { minHeight: 50, flexDirection: 'row', alignItems: 'center', marginTop: spacing.md, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#EAECF0', borderRadius: radius.lg },
+  tools: { minHeight: 50, flexDirection: 'row', alignItems: 'center', marginTop: spacing.sm, borderBottomWidth: 1, borderBottomColor: '#E3E5E8' },
   tool: { flex: 1, minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm },
   toolDivider: { width: 1, height: 24, backgroundColor: '#EAECF0' },
   toolIcon: { color: '#5865F2', fontSize: 15, fontWeight: '800' },
   toolText: { ...typography.caption, color: colors.text, fontWeight: '700' },
   stateSurface: { marginTop: spacing.xl },
-  emptyPlan: { minHeight: 86, flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.xl, paddingHorizontal: spacing.md, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#EAECF0', borderRadius: radius.lg },
+  emptyPlan: { minHeight: 86, flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.xl, paddingHorizontal: spacing.xs },
   emptyIcon: { width: 36, height: 36, borderRadius: 12, backgroundColor: '#EEF0FF', alignItems: 'center', justifyContent: 'center' },
   emptyIconText: { color: '#5865F2', fontSize: 18, fontWeight: '800' },
   emptyCopy: { flex: 1, minWidth: 0 },
@@ -150,5 +150,5 @@ const styles = StyleSheet.create({
   loading: { paddingVertical: 64, alignItems: 'center', gap: spacing.md },
   loadingText: { ...typography.caption, color: colors.textSecondary },
   groupSubtitle: { ...typography.caption, color: colors.textSecondary, marginBottom: spacing.sm },
-  planGroup: { backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#EAECF0', borderRadius: radius.lg, paddingHorizontal: spacing.sm, overflow: 'hidden' },
+  planGroup: { backgroundColor: '#FFFFFF' },
 });

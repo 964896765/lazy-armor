@@ -87,13 +87,13 @@ function formatTime(value: string) {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#F8F9FB' },
-  page: { flex: 1, backgroundColor: '#F8F9FB' },
+  safeArea: { flex: 1, backgroundColor: '#FFFFFF' },
+  page: { flex: 1, backgroundColor: '#FFFFFF' },
   content: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: 80 },
   stateSurface: { marginTop: spacing.xl },
   loading: { alignItems: 'center', paddingVertical: 64, gap: spacing.md },
   loadingText: { ...typography.caption, color: colors.textSecondary },
-  emptyState: { minHeight: 86, flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.xl, paddingHorizontal: spacing.md, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#EAECF0', borderRadius: radius.lg },
+  emptyState: { minHeight: 86, flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.xl, paddingHorizontal: spacing.xs },
   emptyIcon: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#E8F7EF', alignItems: 'center', justifyContent: 'center' },
   emptyIconText: { color: '#23A559', fontSize: 15, fontWeight: '900' },
   emptyCopy: { flex: 1, minWidth: 0 },
@@ -102,7 +102,7 @@ const styles = StyleSheet.create({
   emptyAction: { minHeight: 34, paddingHorizontal: spacing.md, borderRadius: 12, backgroundColor: '#5865F2', alignItems: 'center', justifyContent: 'center' },
   emptyActionText: { color: '#FFFFFF', fontSize: 11, lineHeight: 16, fontWeight: '700' },
   pressed: { opacity: 0.7 },
-  timelineGroup: { backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#EAECF0', borderRadius: radius.lg, paddingHorizontal: spacing.sm, overflow: 'hidden' },
+  timelineGroup: { backgroundColor: '#FFFFFF' },
   timelineRow: { minHeight: 82, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.sm, paddingHorizontal: spacing.xs },
   divider: { borderBottomWidth: 1, borderBottomColor: '#EAECF0' },
   pressedRow: { backgroundColor: '#F7F8FA' },

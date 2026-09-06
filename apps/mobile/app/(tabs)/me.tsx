@@ -4,7 +4,7 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/api';
 import { useAuthStore } from '../../src/auth-store';
-import { Surface, WorkspaceHeader, colors, radius, spacing, typography } from '../../src/design';
+import { WorkspaceHeader, colors, radius, spacing, typography } from '../../src/design';
 
 interface Connection { id: string }
 interface DeviceProfile { id: string }
@@ -33,16 +33,16 @@ export default function Me() {
         </View>
 
         <Text style={styles.sectionLabel}>我的生活</Text>
-        <Surface style={styles.menu}>
+        <View style={styles.menu}>
           <MenuRow icon="🔗" title="我的连接" detail={token ? `已连接 ${connections.data?.length ?? 0} 个服务` : '登录与连接服务'} onPress={() => router.push('/connections')} />
           <Divider />
           <MenuRow icon="⌁" title="我的设备" detail={`已记录 ${devices.data?.length ?? 0} 台`} onPress={() => router.push('/devices' as Href)} />
           <Divider />
           <MenuRow icon="🚙" title="我的车辆" detail={`已记录 ${vehicles.data?.length ?? 0} 台`} onPress={() => router.push('/vehicles' as Href)} />
-        </Surface>
+        </View>
 
         <Text style={styles.sectionLabel}>提醒与控制</Text>
-        <Surface style={styles.menu}>
+        <View style={styles.menu}>
           <MenuRow icon="◉" title="通知" detail={(unread.data?.count ?? 0) > 0 ? `${unread.data?.count} 条未读` : '按你的偏好提醒'} onPress={() => router.push('/notification-settings' as Href)} />
           <Divider />
           <MenuRow icon="✓" title="权限" detail="管理信息使用范围" onPress={() => router.push('/permissions' as Href)} />
@@ -50,12 +50,12 @@ export default function Me() {
           <MenuRow icon="🛡️" title="安全" detail="确认与保护方式" onPress={() => router.push('/automation-safety' as Href)} />
           <Divider />
           <MenuRow icon="▤" title="安全记录" detail="查看重要操作" onPress={() => router.push('/security-activity' as Href)} />
-        </Surface>
+        </View>
 
         <Text style={styles.sectionLabel}>数据</Text>
-        <Surface style={styles.menu}>
+        <View style={styles.menu}>
           <MenuRow icon="▣" title="数据管理" detail="查看与管理你的数据" onPress={() => router.push('/data-management' as Href)} />
-        </Surface>
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -74,17 +74,17 @@ function MenuRow({ icon, title, detail, onPress }: { icon: string; title: string
 function Divider() { return <View style={styles.divider} />; }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#F8F9FB' },
-  page: { flex: 1, backgroundColor: '#F8F9FB' },
+  safeArea: { flex: 1, backgroundColor: '#FFFFFF' },
+  page: { flex: 1, backgroundColor: '#FFFFFF' },
   content: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: 80 },
-  profile: { minHeight: 78, flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.lg, marginBottom: spacing.sm, paddingHorizontal: spacing.md, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#EAECF0', borderRadius: radius.lg },
+  profile: { minHeight: 82, flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginBottom: spacing.sm, paddingHorizontal: spacing.xs, borderBottomWidth: 1, borderBottomColor: colors.border },
   avatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#5865F2', alignItems: 'center', justifyContent: 'center' },
   avatarText: { color: colors.surface, fontSize: 19, fontWeight: '700' },
   profileCopy: { flex: 1 },
   profileName: { ...typography.cardTitle, color: colors.text },
   profileMeta: { ...typography.caption, color: colors.textSecondary, marginTop: spacing.xs },
   sectionLabel: { ...typography.label, color: colors.textMuted, marginTop: spacing.lg, marginBottom: spacing.xs, paddingLeft: spacing.xs },
-  menu: { padding: 0, overflow: 'hidden' },
+  menu: { padding: 0 },
   row: { minHeight: 64, flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
   pressed: { backgroundColor: '#F7F8FA' },
   rowIcon: { width: 34, height: 34, borderRadius: radius.md, backgroundColor: '#EEF0FF', alignItems: 'center', justifyContent: 'center' },

@@ -1,6 +1,6 @@
 import { useRouter, useSegments } from 'expo-router';
 import { useEffect, type ReactNode } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Image, StyleSheet, Text, View } from 'react-native';
 import { useAuthStore } from './auth-store';
 import { colors, spacing, typography } from './design';
 import { resolveAuthDestination } from './auth-routing';
@@ -18,14 +18,14 @@ export function AuthGate({ children }: { children: ReactNode }) {
   }, [destination, router]);
 
   if (!hydrated || destination) {
-    return <View style={styles.loading}><View style={styles.mark}><Text style={styles.markText}>懒</Text></View><ActivityIndicator color={colors.primary} /><Text style={styles.copy}>正在准备你的懒人装甲…</Text></View>;
+    return <View style={styles.loading}><View style={styles.mark}><Image source={require('../assets/icon.png')} style={styles.markImage} /></View><ActivityIndicator color="#5865F2" /><Text style={styles.copy}>正在准备你的懒人装甲…</Text></View>;
   }
   return children;
 }
 
 const styles = StyleSheet.create({
   loading: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.lg, backgroundColor: colors.background },
-  mark: { width: 64, height: 64, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.primary },
-  markText: { color: colors.surface, fontSize: 26, fontWeight: '800' },
+  mark: { width: 64, height: 64, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFFFFF', overflow: 'hidden' },
+  markImage: { width: 82, height: 82 },
   copy: { ...typography.body, color: colors.textSecondary },
 });

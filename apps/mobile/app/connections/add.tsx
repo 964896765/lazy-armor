@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { deviceAppCapabilities, deviceAppIntegration, type AppIntegrationCapability, type DeviceAppConnectionMode } from '@lazy-armor/shared';
 import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, FlatList, Image, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/api';
 import { useAuthStore } from '../../src/auth-store';
@@ -10,7 +10,7 @@ import { createDeviceAppConnectionRequest } from '../../src/device-app-api-contr
 import { deviceDiscoveryStatus, discoverLaunchableApps, type DiscoveredDeviceApp } from '../../src/device-app-bridge';
 import { deviceInstallationId } from '../../src/device-installation-id';
 import { deviceBoundApi, ensureTrustedDevice } from '../../src/trusted-device-api';
-import { ActionButton, EmptyState, Surface, colors, radius, spacing, typography } from '../../src/design';
+import { ActionButton, EmptyState, Surface, WorkspaceHeader, colors, radius, spacing, typography } from '../../src/design';
 
 interface DeviceAppConnection { id: string; packageName: string; displayName: string; enabled: boolean; modes: DeviceAppConnectionMode[] }
 type ConnectionKind = 'mobile_app' | 'online_service' | 'device';
@@ -20,6 +20,7 @@ export default function AddConnectionPage() {
   const client = useQueryClient();
   const [kind, setKind] = useState<ConnectionKind>('mobile_app');
   const [selectedPackage, setSelectedPackage] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
   const discovery = useQuery({ queryKey: ['device-launchable-apps'], queryFn: discoverLaunchableApps, enabled: Boolean(token), staleTime: 60_000 });
   const existing = useQuery({ queryKey: ['device-app-connections', token], queryFn: () => api<DeviceAppConnection[]>('/device-app-connections', token), enabled: Boolean(token) });
   const selected = useMemo(() => (discovery.data ?? []).find((app) => app.packageName === selectedPackage) ?? null, [discovery.data, selectedPackage]);
@@ -44,34 +45,44 @@ export default function AddConnectionPage() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
-      <ScrollView style={styles.page} contentContainerStyle={styles.content}>
-        <View style={styles.header}><Text style={styles.title}>添加连接</Text><Text style={styles.subtitle}>从这台手机的真实可启动应用中选择。你未选择的应用不会被保存，也不会出现在你的空间导航中。</Text></View>
+      <View style={styles.content}>
+        <WorkspaceHeader title="添加连接" subtitle="选择要交给懒人装甲的来源" onBack={() => router.back()} />
         {!token ? <Surface><EmptyState icon="＋" title="请先登录" description="添加连接前需要确认这是你的账号与设备。" action={{ label: '去登录', onPress: () => router.push('/auth/login' as never) }} /></Surface> : null}
         {token ? <>
-          <View style={styles.kindTabs}>{([['mobile_app', '手机应用'], ['online_service', '在线服务'], ['device', '设备、车辆与家庭']] as const).map(([value, label]) => <Pressable key={value} accessibilityRole="button" onPress={() => setKind(value)} style={[styles.kindTab, kind === value && styles.kindTabSelected]}><Text style={[styles.kindText, kind === value && styles.kindTextSelected]}>{label}</Text></Pressable>)}</View>
-          {kind === 'mobile_app' ? <MobileAppDiscovery selected={selected} apps={discovery.data ?? []} discoveryLoading={discovery.isLoading} discoveryError={discovery.isError} alreadyAdded={alreadyAdded} addPending={add.isPending} addError={add.isError} onSelect={setSelectedPackage} onAdd={() => selected && add.mutate(selected)} /> : null}
-          {kind === 'online_service' ? <ConnectionTypePlaceholder title="在线服务" description="邮箱、日历和文件服务继续通过已审核的 OAuth 或文件授权流程连接。" actionLabel="查看在线服务" onPress={() => router.replace('/connections' as never)} /> : null}
-          {kind === 'device' ? <ConnectionTypePlaceholder title="设备、车辆与家庭" description="设备、车辆和家庭资源会先以你主动添加的资料与授权连接为准；每项读取和操作都会单独验证。" actionLabel="管理我的资料" onPress={() => router.push('/devices' as never)} /> : null}
+          <View style={styles.kindTabs}>{([['mobile_app', '手机应用'], ['online_service', '在线服务'], ['device', '设备与资料']] as const).map(([value, label]) => <Pressable key={value} accessibilityRole="button" onPress={() => setKind(value)} style={[styles.kindTab, kind === value && styles.kindTabSelected]}><Text style={[styles.kindText, kind === value && styles.kindTextSelected]}>{label}</Text></Pressable>)}</View>
+          {kind === 'mobile_app' ? <MobileAppDiscovery selected={selected} search={search} onSearch={setSearch} apps={discovery.data ?? []} discoveryLoading={discovery.isLoading} discoveryError={discovery.isError} onSelect={setSelectedPackage} /> : null}
+          {kind === 'online_service' ? <ScrollView contentContainerStyle={styles.secondaryContent}><ConnectionTypePlaceholder title="在线服务" description="Google 邮箱、日历与文件服务通过正式授权页面连接。" actionLabel="选择在线服务" onPress={() => router.replace('/connections' as never)} /></ScrollView> : null}
+          {kind === 'device' ? <ScrollView contentContainerStyle={styles.secondaryContent}><ConnectionTypePlaceholder title="设备与资料" description="设备、车辆和家庭资料由你主动添加；每项读取和操作都会单独说明。" actionLabel="管理我的资料" onPress={() => router.push('/devices' as never)} /></ScrollView> : null}
         </> : null}
-      </ScrollView>
+      </View>
+      <Modal visible={Boolean(selected)} transparent animationType="slide" onRequestClose={() => setSelectedPackage(null)}>
+        <Pressable style={styles.modalBackdrop} onPress={() => setSelectedPackage(null)} />
+        <View style={styles.sheet}>
+          <View style={styles.sheetHandle} />
+          <ScrollView contentContainerStyle={styles.sheetContent}>
+            {selected ? <ConnectionPreview app={selected} alreadyAdded={alreadyAdded} pending={add.isPending} hasError={add.isError} onAdd={() => add.mutate(selected)} /> : null}
+            <ActionButton label="关闭" tone="quiet" onPress={() => setSelectedPackage(null)} />
+          </ScrollView>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
 
-function MobileAppDiscovery({ selected, apps, discoveryLoading, discoveryError, alreadyAdded, addPending, addError, onSelect, onAdd }: {
-  selected: DiscoveredDeviceApp | null; apps: DiscoveredDeviceApp[]; discoveryLoading: boolean; discoveryError: boolean; alreadyAdded: boolean; addPending: boolean; addError: boolean; onSelect: (packageName: string) => void; onAdd: () => void;
+function MobileAppDiscovery({ selected, search, onSearch, apps, discoveryLoading, discoveryError, onSelect }: {
+  selected: DiscoveredDeviceApp | null; search: string; onSearch: (value: string) => void; apps: DiscoveredDeviceApp[]; discoveryLoading: boolean; discoveryError: boolean; onSelect: (packageName: string) => void;
 }) {
   const unavailable = deviceDiscoveryStatus() === 'unavailable';
-  return <>
-    <Text style={styles.sectionTitle}>这台设备上的可启动应用</Text>
-    <Text style={styles.sectionDescription}>应用列表来自 Android 系统。部分应用可以获得额外适配，但所有已发现的可启动应用都能添加基础连接。</Text>
-    {discoveryLoading ? <View style={styles.loading}><ActivityIndicator color={colors.primary} /><Text style={styles.loadingText}>正在读取这台设备上的应用…</Text></View> : null}
-    {unavailable ? <Surface><EmptyState icon="▣" title="暂时无法读取设备应用" description="请在包含原生模块的 Android 构建中打开此页；Web、iOS 或 Expo Go 不会显示虚构的应用列表。" /></Surface> : null}
-    {!unavailable && discoveryError ? <Surface><EmptyState icon="☁" title="暂时无法读取应用" description="没有保存任何应用。请稍后重新打开本页。" /></Surface> : null}
-    {!unavailable && !discoveryLoading && !discoveryError && apps.length === 0 ? <Surface><EmptyState icon="▣" title="没有可添加的应用" description="系统没有返回其他可启动应用，因此不会显示示例或测试列表。" /></Surface> : null}
-    {apps.length > 0 ? <View style={styles.catalog}>{apps.map((app, index) => <AppRow key={app.packageName} app={app} selected={selected?.packageName === app.packageName} last={index === apps.length - 1} onPress={() => onSelect(app.packageName)} />)}</View> : null}
-    {selected ? <ConnectionPreview app={selected} alreadyAdded={alreadyAdded} pending={addPending} hasError={addError} onAdd={onAdd} /> : null}
-  </>;
+  const normalized = search.trim().toLocaleLowerCase('zh-CN');
+  const filtered = normalized ? apps.filter((app) => `${app.displayName} ${app.packageName}`.toLocaleLowerCase('zh-CN').includes(normalized)) : apps;
+  return <View style={styles.discovery}>
+    <View style={styles.searchBox}><Text style={styles.searchIcon}>⌕</Text><TextInput value={search} onChangeText={onSearch} placeholder="搜索这台手机上的 App" placeholderTextColor={colors.textMuted} style={styles.searchInput} /></View>
+    <Text style={styles.resultMeta}>{discoveryLoading ? '正在读取…' : `${filtered.length} 个可启动 App`}</Text>
+    {unavailable ? <Surface><EmptyState icon="▣" title="暂时无法读取设备应用" description="请使用包含原生模块的 Android 构建。" /></Surface> : null}
+    {!unavailable && discoveryError ? <Surface><EmptyState icon="☁" title="暂时无法读取应用" description="没有保存任何应用，请稍后重试。" /></Surface> : null}
+    {!unavailable && !discoveryLoading && !discoveryError && filtered.length === 0 ? <Surface><EmptyState icon="▣" title={search ? '没有找到对应 App' : '没有可添加的应用'} description="不会显示示例或测试列表。" /></Surface> : null}
+    {!unavailable && !discoveryError ? <FlatList data={filtered} keyExtractor={(app) => app.packageName} style={styles.catalog} contentContainerStyle={styles.catalogContent} keyboardShouldPersistTaps="handled" initialNumToRender={14} maxToRenderPerBatch={18} windowSize={8} renderItem={({ item, index }) => <AppRow app={item} selected={selected?.packageName === item.packageName} last={index === filtered.length - 1} onPress={() => onSelect(item.packageName)} />} /> : null}
+  </View>;
 }
 
 function AppRow({ app, selected, last, onPress }: { app: DiscoveredDeviceApp; selected: boolean; last: boolean; onPress: () => void }) {
@@ -100,9 +111,54 @@ function OperationRow({ operation, last }: { operation: AppIntegrationCapability
 function ConnectionTypePlaceholder({ title, description, actionLabel, onPress }: { title: string; description: string; actionLabel: string; onPress: () => void }) { return <Surface style={styles.placeholder}><Text style={styles.placeholderTitle}>{title}</Text><Text style={styles.placeholderCopy}>{description}</Text><View style={styles.previewAction}><ActionButton label={actionLabel} onPress={onPress} /></View></Surface>; }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: colors.background }, page: { flex: 1, backgroundColor: colors.background }, content: { paddingHorizontal: spacing.page, paddingTop: spacing.xl, paddingBottom: 48 }, header: { marginBottom: spacing.xl }, title: { ...typography.display, color: colors.text }, subtitle: { ...typography.body, color: colors.textSecondary, marginTop: spacing.sm, maxWidth: 350 },
-  kindTabs: { flexDirection: 'row', backgroundColor: '#ECE9E0', padding: 3, borderRadius: radius.md, marginBottom: spacing.xxl }, kindTab: { flex: 1, minHeight: 40, justifyContent: 'center', alignItems: 'center', borderRadius: radius.sm, paddingHorizontal: 4 }, kindTabSelected: { backgroundColor: colors.surface }, kindText: { ...typography.caption, color: colors.textMuted, fontWeight: '600', textAlign: 'center' }, kindTextSelected: { color: colors.primary, fontWeight: '800' },
-  sectionTitle: { ...typography.section, color: colors.text, marginTop: spacing.xl, marginBottom: spacing.sm }, sectionDescription: { ...typography.caption, color: colors.textSecondary, lineHeight: 19, marginBottom: spacing.md }, loading: { alignItems: 'center', paddingVertical: spacing.xl, gap: spacing.md }, loadingText: { ...typography.caption, color: colors.textSecondary }, catalog: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, overflow: 'hidden', backgroundColor: colors.surface },
-  appRow: { minHeight: 66, flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.md }, appRowSelected: { backgroundColor: colors.successSoft }, rowDivider: { borderBottomWidth: 1, borderBottomColor: colors.border }, appIcon: { width: 36, height: 36, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentSoft, overflow: 'hidden' }, appImage: { width: 36, height: 36 }, appIconText: { color: colors.primary, fontSize: 15, fontWeight: '800' }, appCopy: { flex: 1 }, appName: { ...typography.bodyStrong, color: colors.text }, appMeta: { ...typography.caption, color: colors.textSecondary, marginTop: 2 }, chevron: { color: colors.textMuted, fontSize: 25, fontWeight: '300' },
-  preview: { marginTop: spacing.xl }, previewIntro: { ...typography.body, color: colors.textSecondary }, adapterNote: { ...typography.caption, color: colors.primary, marginTop: spacing.md, lineHeight: 18 }, capabilityList: { marginTop: spacing.md }, capabilityRow: { paddingVertical: spacing.md }, capabilityCopy: { flex: 1 }, capabilityName: { ...typography.bodyStrong, color: colors.text }, capabilityDescription: { ...typography.caption, color: colors.textSecondary, marginTop: spacing.xs, lineHeight: 18 }, capabilityMeta: { ...typography.caption, color: colors.warning, marginTop: spacing.xs }, previewAction: { alignItems: 'flex-start', marginTop: spacing.lg }, addedText: { ...typography.bodyStrong, color: colors.success }, error: { ...typography.caption, color: colors.danger, marginTop: spacing.md }, safetyText: { ...typography.caption, color: colors.textMuted, lineHeight: 18, marginTop: spacing.md }, placeholder: { marginTop: spacing.xl }, placeholderTitle: { ...typography.cardTitle, color: colors.text }, placeholderCopy: { ...typography.body, color: colors.textSecondary, marginTop: spacing.sm, lineHeight: 21 }, pressed: { backgroundColor: colors.pressed },
+  safeArea: { flex: 1, backgroundColor: '#FFFFFF' },
+  page: { flex: 1, backgroundColor: '#FFFFFF' },
+  content: { flex: 1, paddingHorizontal: spacing.lg, paddingTop: spacing.md },
+  kindTabs: { flexDirection: 'row', backgroundColor: '#EEF1F5', padding: 3, borderRadius: radius.md, marginTop: spacing.md, marginBottom: spacing.md },
+  kindTab: { flex: 1, minHeight: 36, justifyContent: 'center', alignItems: 'center', borderRadius: radius.sm, paddingHorizontal: 3 },
+  kindTabSelected: { backgroundColor: colors.surface, shadowColor: '#101828', shadowOpacity: 0.06, shadowRadius: 4, elevation: 1 },
+  kindText: { fontSize: 10, lineHeight: 14, color: colors.textMuted, fontWeight: '600', textAlign: 'center' },
+  kindTextSelected: { color: '#5865F2', fontWeight: '800' },
+  discovery: { flex: 1 },
+  searchBox: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.md, backgroundColor: '#F2F3F5', borderRadius: 14 },
+  searchIcon: { color: '#667085', fontSize: 19 },
+  searchInput: { ...typography.body, color: colors.text, flex: 1, paddingVertical: spacing.sm },
+  resultMeta: { ...typography.caption, color: colors.textMuted, marginVertical: spacing.sm, paddingHorizontal: spacing.xs },
+  secondaryContent: { paddingBottom: 48 },
+  sectionTitle: { ...typography.section, color: colors.text, marginTop: spacing.md, marginBottom: spacing.sm },
+  loading: { alignItems: 'center', paddingVertical: spacing.xl, gap: spacing.md },
+  loadingText: { ...typography.caption, color: colors.textSecondary },
+  catalog: { flex: 1, backgroundColor: colors.surface },
+  catalogContent: { paddingBottom: spacing.md },
+  appRow: { minHeight: 62, flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.md },
+  appRowSelected: { backgroundColor: '#EEF0FF' },
+  rowDivider: { borderBottomWidth: 1, borderBottomColor: '#EAECF0' },
+  appIcon: { width: 36, height: 36, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', backgroundColor: '#EEF0FF', overflow: 'hidden' },
+  appImage: { width: 36, height: 36 },
+  appIconText: { color: '#5865F2', fontSize: 15, fontWeight: '800' },
+  appCopy: { flex: 1 },
+  appName: { ...typography.bodyStrong, color: colors.text },
+  appMeta: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
+  chevron: { color: '#98A2B3', fontSize: 25, fontWeight: '300' },
+  modalBackdrop: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundColor: 'rgba(16, 24, 40, 0.34)' },
+  sheet: { position: 'absolute', left: 0, right: 0, bottom: 0, maxHeight: '78%', backgroundColor: '#F8F9FB', borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: spacing.sm },
+  sheetHandle: { width: 38, height: 4, borderRadius: 2, backgroundColor: '#D0D5DD', alignSelf: 'center' },
+  sheetContent: { paddingHorizontal: spacing.lg, paddingBottom: 36 },
+  preview: { marginTop: spacing.sm },
+  previewIntro: { ...typography.body, color: colors.textSecondary },
+  adapterNote: { ...typography.caption, color: '#5865F2', marginTop: spacing.md, lineHeight: 18 },
+  capabilityList: { marginTop: spacing.md },
+  capabilityRow: { paddingVertical: spacing.md },
+  capabilityCopy: { flex: 1 },
+  capabilityName: { ...typography.bodyStrong, color: colors.text },
+  capabilityDescription: { ...typography.caption, color: colors.textSecondary, marginTop: spacing.xs, lineHeight: 18 },
+  capabilityMeta: { ...typography.caption, color: colors.warning, marginTop: spacing.xs },
+  previewAction: { alignItems: 'flex-start', marginTop: spacing.lg },
+  addedText: { ...typography.bodyStrong, color: colors.success },
+  error: { ...typography.caption, color: colors.danger, marginTop: spacing.md },
+  safetyText: { ...typography.caption, color: colors.textMuted, lineHeight: 18, marginTop: spacing.md },
+  placeholder: { marginTop: spacing.md },
+  placeholderTitle: { ...typography.cardTitle, color: colors.text },
+  placeholderCopy: { ...typography.body, color: colors.textSecondary, marginTop: spacing.sm, lineHeight: 21 },
+  pressed: { backgroundColor: '#F7F8FA' },
 });

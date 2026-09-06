@@ -115,8 +115,8 @@ export default function Create() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#F8F9FB' },
-  page: { flex: 1, backgroundColor: '#F8F9FB' },
+  safeArea: { flex: 1, backgroundColor: '#FFFFFF' },
+  page: { flex: 1, backgroundColor: '#FFFFFF' },
   content: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: 80 },
   stateSurface: { marginTop: spacing.xl },
   promptBlock: { marginTop: spacing.xl },
@@ -140,7 +140,7 @@ const styles = StyleSheet.create({
   suggestionActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: spacing.sm, marginTop: spacing.md },
   sectionSubtitle: { ...typography.caption, color: colors.textSecondary, marginBottom: spacing.sm },
   loader: { marginVertical: spacing.xl },
-  templateList: { backgroundColor: '#FFFFFF', borderColor: '#EAECF0', borderWidth: 1, borderRadius: radius.lg, paddingHorizontal: spacing.sm, overflow: 'hidden' },
-  quiet: { minHeight: 62, justifyContent: 'center', paddingHorizontal: spacing.md, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#EAECF0', borderRadius: radius.lg },
+  templateList: { backgroundColor: '#FFFFFF' },
+  quiet: { minHeight: 62, justifyContent: 'center', paddingHorizontal: spacing.xs, borderBottomWidth: 1, borderBottomColor: colors.border },
   quietText: { ...typography.caption, color: colors.textSecondary },
 });

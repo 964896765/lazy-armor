@@ -1,11 +1,11 @@
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { router } from 'expo-router';
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../src/api';
 import { useAuthStore } from '../src/auth-store';
 import { capabilityDescription, capabilityLabel, connectionStatusLabel } from '../src/connection-presenter';
-import { ActionButton, EmptyState, Surface, colors, radius, spacing, typography } from '../src/design';
+import { EmptyState, Surface, WorkspaceHeader, WorkspaceSection, colors, radius, spacing, typography } from '../src/design';
 
 interface Connection { id: string; connectorId: string; connectorName: string; externalAccountName: string; status: string }
 interface Permission { capability: string; name: string; granted: boolean }
@@ -43,10 +43,7 @@ export default function PermissionsPage() {
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <ScrollView style={styles.page} contentContainerStyle={styles.content}>
-        <View style={styles.header}>
-          <Text style={styles.title}>权限</Text>
-          <Text style={styles.subtitle}>清楚知道懒人装甲能看什么、为什么需要，以及哪些计划正在使用。</Text>
-        </View>
+        <WorkspaceHeader title="权限" subtitle="查看每项信息为什么被使用" onBack={() => router.back()} />
 
         {!token ? <Surface><EmptyState icon="🔐" title="登录后管理权限" action={{ label: '去登录', onPress: () => router.push('/connections') }} /></Surface> : null}
         {connections.isLoading || loadingDetails ? <View style={styles.loading}><ActivityIndicator color={colors.primary} /><Text style={styles.loadingText}>正在整理授权范围…</Text></View> : null}
@@ -57,29 +54,30 @@ export default function PermissionsPage() {
           const detail = detailQueries.find((query) => query.data?.connectionId === connection.id)?.data;
           if (!detail || detail.permissions.length === 0) return null;
           return (
-            <View key={connection.id} style={styles.connectionGroup}>
+            <WorkspaceSection key={connection.id} title={connectionDisplayName(connection.connectorId, connection.connectorName)}>
               <View style={styles.connectionHeader}>
-                <View><Text style={styles.connectionName}>{connectionDisplayName(connection.connectorId, connection.connectorName)}</Text><Text style={styles.account}>{connection.externalAccountName}</Text></View>
+                <Text numberOfLines={1} style={styles.account}>{connection.externalAccountName}</Text>
                 <Text style={styles.status}>{connectionStatusLabel(connection.status)}</Text>
               </View>
               <View style={styles.permissionList}>
-                {detail.permissions.map((permission) => {
+                {detail.permissions.map((permission, index) => {
                   const plans = detail.plans.filter((plan) => plan.requiredCapabilities.includes(permission.capability)).map((plan) => plan.planName);
                   const label = capabilityLabel(connection.connectorId, permission.capability, permission.name);
                   return (
-                    <Surface key={permission.capability}>
-                      <Text style={styles.resource}>{permissionResourceLabel(connection.connectorId, permission.capability)}</Text>
-                      <Text style={styles.metaLabel}>允许</Text>
-                      <Text style={styles.permissionName}>{label}</Text>
-                      <Text style={styles.description}>{capabilityDescription(connection.connectorId, permission.capability)}</Text>
-                      <Text style={styles.metaLabel}>用途</Text>
-                      <Text style={styles.purpose}>{plans.length > 0 ? plans.join('、') : '目前没有计划使用'}</Text>
-                      <View style={styles.action}><ActionButton label={permission.granted ? '关闭' : '重新开启'} tone={permission.granted ? 'quiet' : 'primary'} onPress={() => changePermission({ connectionId: connection.id, capability: permission.capability, granted: !permission.granted, label, plans })} disabled={update.isPending} /></View>
-                    </Surface>
+                    <View key={permission.capability} style={[styles.permissionRow, index < detail.permissions.length - 1 && styles.divider]}>
+                      <View style={styles.resourceIcon}><Text style={styles.resourceIconText}>{permissionResourceLabel(connection.connectorId, permission.capability).slice(0, 1)}</Text></View>
+                      <View style={styles.permissionCopy}>
+                        <View style={styles.permissionTitleRow}><Text style={styles.resource}>{permissionResourceLabel(connection.connectorId, permission.capability)}</Text><Text style={styles.permissionState}>{permission.granted ? '已允许' : '已关闭'}</Text></View>
+                        <Text style={styles.permissionName}>{label}</Text>
+                        <Text numberOfLines={2} style={styles.description}>{capabilityDescription(connection.connectorId, permission.capability)}</Text>
+                        <Text numberOfLines={1} style={styles.purpose}>用于：{plans.length > 0 ? plans.join('、') : '目前没有计划使用'}</Text>
+                      </View>
+                      <Pressable accessibilityRole="button" disabled={update.isPending} onPress={() => changePermission({ connectionId: connection.id, capability: permission.capability, granted: !permission.granted, label, plans })} style={({ pressed }) => [styles.action, permission.granted ? styles.actionQuiet : styles.actionPrimary, pressed && styles.pressed]}><Text style={[styles.actionText, !permission.granted && styles.actionTextPrimary]}>{permission.granted ? '关闭' : '开启'}</Text></Pressable>
+                    </View>
                   );
                 })}
               </View>
-            </View>
+            </WorkspaceSection>
           );
         })}
       </ScrollView>
@@ -103,24 +101,30 @@ function connectionDisplayName(key: string, fallback: string) {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: colors.background },
-  page: { flex: 1, backgroundColor: colors.background },
-  content: { paddingHorizontal: spacing.page, paddingTop: spacing.xl, paddingBottom: 72 },
-  header: { marginBottom: spacing.xxl },
-  title: { ...typography.display, color: colors.text },
-  subtitle: { ...typography.body, color: colors.textSecondary, marginTop: spacing.sm, maxWidth: 340 },
+  safeArea: { flex: 1, backgroundColor: '#FFFFFF' },
+  page: { flex: 1, backgroundColor: '#FFFFFF' },
+  content: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: 72 },
   loading: { alignItems: 'center', paddingVertical: 56, gap: spacing.md },
-  loadingText: { ...typography.body, color: colors.textSecondary },
-  connectionGroup: { marginTop: spacing.xxl },
-  connectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md, marginBottom: spacing.md, paddingHorizontal: spacing.xs },
-  connectionName: { ...typography.section, color: colors.text },
-  account: { ...typography.caption, color: colors.textMuted, marginTop: 2 },
-  status: { ...typography.caption, color: colors.success, backgroundColor: colors.successSoft, paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: radius.pill },
-  permissionList: { gap: spacing.md },
-  resource: { ...typography.cardTitle, color: colors.text },
-  metaLabel: { ...typography.label, color: colors.textMuted, marginTop: spacing.lg, marginBottom: spacing.xs },
-  permissionName: { ...typography.bodyStrong, color: colors.text },
-  description: { ...typography.caption, color: colors.textSecondary, marginTop: spacing.xs },
-  purpose: { ...typography.body, color: colors.primary },
-  action: { alignItems: 'flex-end', marginTop: spacing.lg },
+  loadingText: { ...typography.caption, color: colors.textSecondary },
+  connectionHeader: { minHeight: 28, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md, marginBottom: spacing.xs, paddingHorizontal: spacing.xs },
+  account: { ...typography.caption, color: colors.textMuted, flex: 1 },
+  status: { color: '#16834A', backgroundColor: '#E8F7EF', paddingHorizontal: spacing.sm, paddingVertical: 2, borderRadius: radius.pill, fontSize: 9, lineHeight: 13, fontWeight: '700' },
+  permissionList: { backgroundColor: '#FFFFFF' },
+  permissionRow: { minHeight: 100, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.xs, paddingVertical: spacing.md },
+  divider: { borderBottomWidth: 1, borderBottomColor: '#EAECF0' },
+  resourceIcon: { width: 36, height: 36, borderRadius: 12, backgroundColor: '#EEF0FF', alignItems: 'center', justifyContent: 'center' },
+  resourceIconText: { color: '#5865F2', fontSize: 14, fontWeight: '800' },
+  permissionCopy: { flex: 1, minWidth: 0 },
+  permissionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  resource: { ...typography.bodyStrong, color: colors.text, flex: 1 },
+  permissionState: { color: colors.textMuted, fontSize: 9, lineHeight: 13 },
+  permissionName: { ...typography.caption, color: colors.text, marginTop: 2 },
+  description: { color: colors.textSecondary, fontSize: 10, lineHeight: 15, marginTop: 1 },
+  purpose: { color: '#5865F2', fontSize: 10, lineHeight: 15, marginTop: 2 },
+  action: { minHeight: 30, minWidth: 42, paddingHorizontal: spacing.sm, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  actionQuiet: { backgroundColor: '#F2F4F7' },
+  actionPrimary: { backgroundColor: '#5865F2' },
+  actionText: { color: '#475467', fontSize: 10, lineHeight: 14, fontWeight: '700' },
+  actionTextPrimary: { color: '#FFFFFF' },
+  pressed: { opacity: 0.65 },
 });

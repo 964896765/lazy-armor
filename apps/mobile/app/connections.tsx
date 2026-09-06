@@ -3,7 +3,7 @@ import * as Linking from 'expo-linking';
 import { useRouter, type Href } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../src/api';
 import { useAuthStore } from '../src/auth-store';
@@ -20,7 +20,7 @@ import {
   isConsumerConnector,
   providerReadinessLabel,
 } from '../src/connection-presenter';
-import { ActionButton, ConnectionCard as ConnectionSummaryCard, EmptyState, Surface, colors, radius, spacing, typography } from '../src/design';
+import { ActionButton, EmptyState, Surface, WorkspaceHeader, WorkspaceSection, colors, radius, spacing, typography } from '../src/design';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -97,12 +97,11 @@ function ConnectedService({ item, connector, token }: { item: Connection; connec
   const helpsWith = (plans.data ?? []).map((plan) => plan.planName);
   return (
     <View style={styles.connectionBlock}>
-      <ConnectionSummaryCard
-        name={connectionDisplayName(item.connectorId, item.connectorName)}
-        status={connectionStatusLabel(item.status)}
-        helpsWith={helpsWith.length > 0 ? helpsWith : ['等待你安排第一个计划']}
-        onManage={() => setExpanded((current) => !current)}
-      />
+      <Pressable accessibilityRole="button" accessibilityState={{ expanded }} onPress={() => setExpanded((current) => !current)} style={({ pressed }) => [styles.connectionRow, pressed && styles.rowPressed]}>
+        <View style={styles.compactIcon}><Text style={styles.compactIconText}>{providerIcon(item.connectorId)}</Text></View>
+        <View style={styles.compactCopy}><View style={styles.compactTitleRow}><Text numberOfLines={1} style={styles.compactTitle}>{connectionDisplayName(item.connectorId, item.connectorName)}</Text><Text style={[styles.compactStatus, recovery && styles.compactStatusWarning]}>{connectionStatusLabel(item.status)}</Text></View><Text numberOfLines={1} style={styles.compactDetail}>{helpsWith.length > 0 ? `用于：${helpsWith.slice(0, 2).join('、')}` : '尚未用于计划'}</Text></View>
+        <Text style={styles.rowChevron}>{expanded ? '⌃' : '›'}</Text>
+      </Pressable>
       {expanded ? (
         <Surface style={styles.management}>
           <Text style={styles.account}>{item.externalAccountName}</Text>
@@ -130,6 +129,7 @@ function ConnectedService({ item, connector, token }: { item: Connection; connec
 function DeviceAppService({ item, token, trustedDeviceStatus }: { item: DeviceAppConnection; token: string; trustedDeviceStatus?: TrustedDeviceSummary['status'] }) {
   const router = useRouter();
   const client = useQueryClient();
+  const [expanded, setExpanded] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
   const update = useMutation({
     mutationFn: async () => {
@@ -167,15 +167,18 @@ function DeviceAppService({ item, token, trustedDeviceStatus }: { item: DeviceAp
     );
   }
   return (
-    <Surface>
-      <View style={styles.providerHeader}>
-        <View style={styles.providerIcon}><Text style={styles.providerEmoji}>{item.displayName.slice(0, 1)}</Text></View>
-        <View style={styles.providerCopy}><Text style={styles.providerName}>{item.displayName}</Text><Text style={styles.readiness}>{item.enabled ? '已添加到当前设备' : '已停用'}</Text></View>
-      </View>
-      <Text style={styles.providerDescription}>{item.enabled ? `当前已启用：${item.modes.map(deviceAppOperationLabel).join('、')}。仅使用你确认的操作。` : '停用后不会在空间导航中显示，也不会被计划使用。'}</Text>
-      <View style={styles.deviceActions}><ActionButton label="打开应用" tone="quiet" onPress={() => void open()} disabled={!item.enabled} />{item.enabled ? <ActionButton label="通知来源" tone="quiet" onPress={() => router.push('/connections/notification-sources' as Href)} /> : null}<ActionButton label={item.enabled ? '停用连接' : trustedDeviceStatus === 'revoked' ? '重新验证并启用' : '重新启用'} tone={item.enabled ? 'quiet' : 'primary'} onPress={changeEnabled} disabled={update.isPending} /></View>
-      {feedback ? <Text style={styles.feedback}>{feedback}</Text> : null}
-    </Surface>
+    <View style={styles.connectionBlock}>
+      <Pressable accessibilityRole="button" accessibilityState={{ expanded }} onPress={() => setExpanded((current) => !current)} style={({ pressed }) => [styles.connectionRow, pressed && styles.rowPressed]}>
+        <View style={styles.compactIcon}><Text style={styles.compactIconText}>{item.displayName.slice(0, 1)}</Text></View>
+        <View style={styles.compactCopy}><View style={styles.compactTitleRow}><Text numberOfLines={1} style={styles.compactTitle}>{item.displayName}</Text><Text style={[styles.compactStatus, !item.enabled && styles.compactStatusWarning]}>{item.enabled ? '已连接' : '已停用'}</Text></View><Text numberOfLines={1} style={styles.compactDetail}>{item.enabled ? `用于：${item.modes.map(deviceAppOperationLabel).join('、')}` : '不会被计划使用'}</Text></View>
+        <Text style={styles.rowChevron}>{expanded ? '⌃' : '›'}</Text>
+      </Pressable>
+      {expanded ? <Surface style={styles.management}>
+        <Text style={styles.providerDescription}>{item.enabled ? '只使用你确认过的能力。' : '重新启用前会再次确认设备状态。'}</Text>
+        <View style={styles.deviceActions}><ActionButton label="打开应用" tone="quiet" onPress={() => void open()} disabled={!item.enabled} />{item.enabled ? <ActionButton label="通知来源" tone="quiet" onPress={() => router.push('/connections/notification-sources' as Href)} /> : null}<ActionButton label={item.enabled ? '停用连接' : trustedDeviceStatus === 'revoked' ? '重新验证并启用' : '重新启用'} tone={item.enabled ? 'quiet' : 'primary'} onPress={changeEnabled} disabled={update.isPending} /></View>
+        {feedback ? <Text style={styles.feedback}>{feedback}</Text> : null}
+      </Surface> : null}
+    </View>
   );
 }
 
@@ -220,15 +223,10 @@ function AvailableService({ connector, token }: { connector: Connector; token: s
 export default function ConnectionsPage() {
   const router = useRouter();
   const token = useAuthStore((store) => store.token);
-  const setSession = useAuthStore((store) => store.setSession);
-  const clear = useAuthStore((store) => store.clear);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const connectors = useQuery({ queryKey: ['connectors'], queryFn: () => api<Connector[]>('/connectors') });
   const connections = useQuery({ queryKey: ['connections', token], queryFn: () => api<Connection[]>('/connections', token), enabled: Boolean(token) });
   const deviceApps = useQuery({ queryKey: ['device-app-connections', token], queryFn: () => api<DeviceAppConnection[]>('/device-app-connections', token), enabled: Boolean(token) });
   const trustedDevices = useQuery({ queryKey: ['trusted-devices', token], queryFn: () => api<TrustedDeviceSummary[]>('/trusted-devices', token), enabled: Boolean(token) });
-  const login = useMutation({ mutationFn: () => api<{ accessToken: string; refreshToken: string }>('/auth/login', undefined, { method: 'POST', body: JSON.stringify({ email, password }) }), onSuccess: (result) => setSession(result) });
   const consumerConnectors = useMemo(() => connectors.data?.filter((connector) => isConsumerConnector(connector.key)) ?? [], [connectors.data]);
   const activeProviderKeys = new Set((connections.data ?? []).filter((connection) => connection.status !== 'revoked').map((connection) => connection.connectorId));
   const available = consumerConnectors.filter((connector) => connectionStartRequest(connector, 'placeholder') !== null && !activeProviderKeys.has(connector.key));
@@ -236,29 +234,18 @@ export default function ConnectionsPage() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
-      <ScrollView style={styles.page} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" refreshControl={token ? <RefreshControl tintColor={colors.primary} refreshing={connections.isFetching} onRefresh={() => connections.refetch()} /> : undefined}>
-        <View style={styles.header}><Text style={styles.title}>我的连接</Text><Text style={styles.subtitle}>把常用服务交给懒人装甲，计划才能替你读取和整理信息。</Text></View>
+      <ScrollView style={styles.page} contentContainerStyle={styles.content} refreshControl={token ? <RefreshControl tintColor="#5865F2" refreshing={connections.isFetching} onRefresh={() => connections.refetch()} /> : undefined}>
+        <WorkspaceHeader title="我的连接" subtitle="已授权的服务与手机应用" onBack={() => router.back()} action={<Pressable accessibilityRole="button" accessibilityLabel="添加连接" onPress={() => router.push('/connections/add' as Href)} style={({ pressed }) => [styles.headerAction, pressed && styles.rowPressed]}><Text style={styles.headerActionText}>＋</Text></Pressable>} />
         {!token ? (
-          <Surface>
-            <Text style={styles.loginTitle}>先登录你的懒人装甲</Text>
-            <TextInput style={styles.input} autoCapitalize="none" keyboardType="email-address" placeholder="邮箱" placeholderTextColor={colors.textMuted} value={email} onChangeText={setEmail} />
-            <TextInput style={styles.input} secureTextEntry placeholder="密码" placeholderTextColor={colors.textMuted} value={password} onChangeText={setPassword} />
-            <View style={styles.loginAction}><ActionButton label={login.isPending ? '登录中…' : '登录'} onPress={() => login.mutate()} disabled={login.isPending || !email.trim() || !password} /></View>
-            {login.isError ? <Text style={styles.error}>没有登录成功，请检查邮箱和密码。</Text> : null}
-          </Surface>
+          <Surface style={styles.stateSurface}><EmptyState icon="🔗" title="登录后管理连接" description="登录和账号安全在“我的”中管理。" action={{ label: '去登录', onPress: () => router.push('/auth/login' as Href) }} /></Surface>
         ) : (
           <>
-            <Text style={styles.sectionTitle}>正在使用</Text>
             {connections.isLoading ? <ActivityIndicator color={colors.primary} /> : null}
-            {(connections.data?.length ?? 0) + (deviceApps.data?.length ?? 0) === 0 ? <Surface><EmptyState icon="🔗" title="还没有连接服务" description="可以连接在线服务，或添加已安装的手机应用。" action={{ label: '添加连接', onPress: () => router.push('/connections/add' as Href) }} /></Surface> : null}
-            <View style={styles.list}>{connections.data?.map((item) => <ConnectedService key={item.id} item={item} connector={connectorByKey.get(item.connectorId)} token={token} />)}</View>
-            {(deviceApps.data?.length ?? 0) > 0 ? <><Text style={styles.sectionTitle}>手机应用</Text><View style={styles.list}>{deviceApps.data?.map((item) => <DeviceAppService key={item.id} item={item} token={token} trustedDeviceStatus={trustedDevices.data?.find((device) => device.id === item.trustedDeviceId)?.status} />)}</View></> : null}
+            {(connections.data?.length ?? 0) + (deviceApps.data?.length ?? 0) === 0 ? <View style={styles.emptyConnection}><Text style={styles.emptyConnectionTitle}>还没有连接服务</Text><Text style={styles.emptyConnectionCopy}>添加在线服务或这台手机上的应用</Text><ActionButton label="添加连接" onPress={() => router.push('/connections/add' as Href)} /></View> : null}
+            {(connections.data?.length ?? 0) > 0 ? <WorkspaceSection title="在线服务" count={connections.data?.length}><View style={styles.connectionList}>{connections.data?.map((item) => <ConnectedService key={item.id} item={item} connector={connectorByKey.get(item.connectorId)} token={token} />)}</View></WorkspaceSection> : null}
+            {(deviceApps.data?.length ?? 0) > 0 ? <WorkspaceSection title="手机应用" count={deviceApps.data?.length}><View style={styles.connectionList}>{deviceApps.data?.map((item) => <DeviceAppService key={item.id} item={item} token={token} trustedDeviceStatus={trustedDevices.data?.find((device) => device.id === item.trustedDeviceId)?.status} />)}</View></WorkspaceSection> : null}
 
-            {available.length > 0 ? <><Text style={styles.sectionTitle}>可以连接</Text><View style={styles.list}>{available.map((connector) => <AvailableService key={connector.key} connector={connector} token={token} />)}</View></> : null}
-
-            <View style={styles.addConnection}><ActionButton label="＋ 添加连接" tone="quiet" onPress={() => router.push('/connections/add' as Href)} /></View>
-            <View style={styles.addConnection}><ActionButton label="管理可信设备" tone="quiet" onPress={() => router.push('/connections/trusted-devices' as Href)} /></View>
-            <View style={styles.logout}><ActionButton label="退出登录" tone="quiet" onPress={() => void clear()} /></View>
+            {available.length > 0 ? <WorkspaceSection title="还可以连接"><View style={styles.availableList}>{available.map((connector) => <AvailableService key={connector.key} connector={connector} token={token} />)}</View></WorkspaceSection> : null}
           </>
         )}
       </ScrollView>
@@ -287,20 +274,35 @@ function providerIcon(key: string) {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: colors.background },
-  page: { flex: 1, backgroundColor: colors.background },
-  content: { paddingHorizontal: spacing.page, paddingTop: spacing.xl, paddingBottom: 72 },
-  header: { marginBottom: spacing.xxl },
-  title: { ...typography.display, color: colors.text },
-  subtitle: { ...typography.body, color: colors.textSecondary, marginTop: spacing.sm, maxWidth: 340 },
+  safeArea: { flex: 1, backgroundColor: '#FFFFFF' },
+  page: { flex: 1, backgroundColor: '#FFFFFF' },
+  content: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: 72 },
+  headerAction: { width: 36, height: 36, borderRadius: 12, backgroundColor: '#F2F4F7', borderWidth: 1, borderColor: '#EAECF0', alignItems: 'center', justifyContent: 'center' },
+  headerActionText: { color: '#344054', fontSize: 22, lineHeight: 24 },
+  stateSurface: { marginTop: spacing.xl },
+  emptyConnection: { minHeight: 100, alignItems: 'center', justifyContent: 'center', gap: spacing.sm, marginTop: spacing.lg, padding: spacing.md },
+  emptyConnectionTitle: { ...typography.bodyStrong, color: colors.text },
+  emptyConnectionCopy: { ...typography.caption, color: colors.textSecondary, marginBottom: spacing.xs },
   loginTitle: { ...typography.cardTitle, color: colors.text, marginBottom: spacing.sm },
   input: { ...typography.body, color: colors.text, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, backgroundColor: colors.background, paddingHorizontal: spacing.md, paddingVertical: 12, marginTop: spacing.md },
   loginAction: { marginTop: spacing.lg },
   error: { ...typography.caption, color: colors.danger, marginTop: spacing.md },
   sectionTitle: { ...typography.section, color: colors.text, marginTop: spacing.xl, marginBottom: spacing.md },
-  list: { gap: spacing.md },
-  connectionBlock: { gap: spacing.sm },
-  management: { marginHorizontal: spacing.sm, borderTopLeftRadius: 0, borderTopRightRadius: 0 },
+  connectionList: { backgroundColor: '#FFFFFF' },
+  availableList: { gap: spacing.sm },
+  connectionBlock: { borderBottomWidth: 1, borderBottomColor: '#EAECF0' },
+  connectionRow: { minHeight: 70, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
+  rowPressed: { opacity: 0.68 },
+  compactIcon: { width: 38, height: 38, borderRadius: 12, backgroundColor: '#EEF0FF', alignItems: 'center', justifyContent: 'center' },
+  compactIconText: { fontSize: 17 },
+  compactCopy: { flex: 1, minWidth: 0 },
+  compactTitleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  compactTitle: { ...typography.bodyStrong, color: colors.text, flex: 1 },
+  compactStatus: { color: '#16834A', fontSize: 9, lineHeight: 13, fontWeight: '700' },
+  compactStatusWarning: { color: '#B54708' },
+  compactDetail: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
+  rowChevron: { color: '#98A2B3', fontSize: 23, fontWeight: '300' },
+  management: { marginLeft: 50, padding: spacing.md, backgroundColor: '#F2F3F5', borderRadius: radius.sm },
   account: { ...typography.caption, color: colors.textMuted },
   inlineAction: { alignItems: 'flex-start', marginTop: spacing.md },
   feedback: { ...typography.caption, color: colors.warning, marginTop: spacing.md },

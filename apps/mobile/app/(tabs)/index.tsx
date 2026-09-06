@@ -1,14 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { router } from 'expo-router';
-import { ActivityIndicator, Alert, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/api';
 import { useAuthStore } from '../../src/auth-store';
 import {
   AttentionCard,
-  EmptyState,
   MessageRow,
-  Surface,
   WorkspaceHeader,
   WorkspaceSection,
   colors,
@@ -130,7 +128,7 @@ export default function Today() {
         <WorkspaceHeader title="消息" subtitle={`今天 · ${formatToday()}`} />
 
         {state === 'signed_out' ? (
-          <Surface style={styles.stateSurface}><EmptyState icon="🛡️" title="登录后开始使用" description="计划、提醒和完成结果会集中在这里。" action={{ label: '开始使用', onPress: () => router.push('/connections') }} /></Surface>
+          <CompactState icon="🛡" title="登录后开始使用" description="计划、提醒和完成结果会集中在这里。" actionLabel="开始使用" onPress={() => router.push('/connections')} />
         ) : null}
 
         {state === 'loading' ? (
@@ -138,7 +136,7 @@ export default function Today() {
         ) : null}
 
         {state === 'error' ? (
-          <Surface style={styles.stateSurface}><EmptyState icon="☁️" title="网络暂时不可用" description="请稍后再试。" action={{ label: '重新加载', onPress: () => today.refetch() }} /></Surface>
+          <CompactState icon="↻" title="网络暂时不可用" description="请稍后再试，不会影响已有计划。" actionLabel="重试" onPress={() => today.refetch()} />
         ) : null}
 
         {state === 'empty' ? (
@@ -188,6 +186,21 @@ export default function Today() {
   );
 }
 
+function CompactState({ icon, title, description, actionLabel, onPress }: { icon: string; title: string; description: string; actionLabel: string; onPress: () => void }) {
+  return (
+    <View style={styles.compactState}>
+      <View style={styles.compactStateIcon}><Text style={styles.compactStateGlyph}>{icon}</Text></View>
+      <View style={styles.compactStateCopy}>
+        <Text style={styles.compactStateTitle}>{title}</Text>
+        <Text style={styles.compactStateDescription} numberOfLines={2}>{description}</Text>
+      </View>
+      <Pressable accessibilityRole="button" onPress={onPress} style={styles.compactStateAction}>
+        <Text style={styles.compactStateActionText}>{actionLabel}</Text>
+      </Pressable>
+    </View>
+  );
+}
+
 function classifyAlert(item: AlertCard): PresentableAlert['section'] {
   if (item.category) return item.category;
   const normalized = `${item.title} ${item.body}`.toLowerCase();
@@ -220,13 +233,20 @@ function formatMessageTime(value: string | null) {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#F8F9FB' },
-  page: { flex: 1, backgroundColor: '#F8F9FB' },
+  safeArea: { flex: 1, backgroundColor: '#FFFFFF' },
+  page: { flex: 1, backgroundColor: '#FFFFFF' },
   content: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: 80 },
   loading: { alignItems: 'center', paddingVertical: 64, gap: spacing.md },
   loadingText: { ...typography.caption, color: colors.textSecondary },
-  stateSurface: { marginTop: spacing.xl },
-  quietState: { minHeight: 70, flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.lg, paddingHorizontal: spacing.md, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#EAECF0', borderRadius: radius.lg },
+  compactState: { minHeight: 74, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.lg, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, backgroundColor: '#F2F3F5', borderRadius: radius.md },
+  compactStateIcon: { width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#EEF0FF' },
+  compactStateGlyph: { color: '#5865F2', fontSize: 17, fontWeight: '900' },
+  compactStateCopy: { flex: 1 },
+  compactStateTitle: { ...typography.bodyStrong, color: colors.text },
+  compactStateDescription: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
+  compactStateAction: { minHeight: 34, justifyContent: 'center', paddingHorizontal: spacing.md, borderRadius: radius.md, backgroundColor: '#5865F2' },
+  compactStateActionText: { ...typography.label, color: '#FFFFFF' },
+  quietState: { minHeight: 70, flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.lg, paddingHorizontal: spacing.xs },
   quietIcon: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: '#E8F7EF' },
   quietCheck: { color: '#23A559', fontWeight: '900', fontSize: 16 },
   quietCopy: { flex: 1 },
@@ -238,5 +258,5 @@ const styles = StyleSheet.create({
   summaryDotWarning: { backgroundColor: '#F79009' },
   summaryText: { ...typography.bodyStrong, color: colors.text },
   approvalList: { gap: spacing.sm },
-  messageGroup: { backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#EAECF0', borderRadius: radius.lg, paddingHorizontal: spacing.sm, overflow: 'hidden' },
+  messageGroup: { backgroundColor: '#FFFFFF', paddingHorizontal: 0 },
 });

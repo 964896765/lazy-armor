@@ -1,11 +1,13 @@
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, StyleSheet, Text, View, type ImageSourcePropType } from 'react-native';
 import { colors } from '../colors';
 import { RailBadge } from './RailBadge';
 
-export function RailItem({ label, symbol, imageUri, selected = false, status, badgeCount = 0, tone = 'default', onPress }: {
+export function RailItem({ label, symbol, imageUri, imageSource, imageScale = 1, selected = false, status, badgeCount = 0, tone = 'default', onPress }: {
   label: string;
   symbol: string;
   imageUri?: string | null;
+  imageSource?: ImageSourcePropType;
+  imageScale?: number;
   selected?: boolean;
   status?: 'healthy' | 'warning' | 'offline';
   badgeCount?: number;
@@ -16,7 +18,7 @@ export function RailItem({ label, symbol, imageUri, selected = false, status, ba
     <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={({ pressed }) => [styles.item, selected && styles.selected, pressed && styles.pressed]}>
       {selected ? <View style={styles.selectionMark} /> : null}
       <View style={[styles.icon, styles[`${tone}Icon`]]}>
-        {imageUri ? <Image source={{ uri: imageUri }} style={styles.image} /> : <Text style={[styles.symbol, styles[`${tone}Symbol`]]}>{symbol}</Text>}
+        {imageSource ? <Image source={imageSource} style={[styles.image, imageScale !== 1 && { transform: [{ scale: imageScale }] }]} /> : imageUri ? <Image source={{ uri: imageUri }} style={styles.image} /> : <Text style={[styles.symbol, styles[`${tone}Symbol`]]}>{symbol}</Text>}
         {status ? <View style={[styles.status, status === 'healthy' ? styles.healthy : status === 'warning' ? styles.warning : styles.offline]}>{status === 'warning' ? <Text style={styles.statusText}>!</Text> : null}</View> : null}
         <RailBadge count={badgeCount} />
       </View>
