@@ -4,7 +4,7 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/api';
 import { useAuthStore } from '../../src/auth-store';
-import { Surface, colors, radius, spacing, typography } from '../../src/design';
+import { Surface, WorkspaceHeader, colors, radius, spacing, typography } from '../../src/design';
 
 interface Connection { id: string }
 interface DeviceProfile { id: string }
@@ -25,7 +25,7 @@ export default function Me() {
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <ScrollView style={styles.page} contentContainerStyle={styles.content}>
-        <Text style={styles.title}>我的</Text>
+        <WorkspaceHeader title="我的" subtitle="账号、连接与隐私设置" />
         <View style={styles.profile}>
           <View style={styles.avatar}><Text style={styles.avatarText}>{token ? name.slice(0, 1) : '你'}</Text></View>
           <View style={styles.profileCopy}><Text style={styles.profileName}>{name}</Text><Text style={styles.profileMeta}>{token ? '懒人装甲正在为你服务' : '登录后开始管理生活'}</Text></View>
@@ -74,22 +74,21 @@ function MenuRow({ icon, title, detail, onPress }: { icon: string; title: string
 function Divider() { return <View style={styles.divider} />; }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: colors.background },
-  page: { flex: 1, backgroundColor: colors.background },
-  content: { paddingHorizontal: spacing.page, paddingTop: spacing.xl, paddingBottom: 112 },
-  title: { ...typography.display, color: colors.text },
-  profile: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.xxl, marginBottom: spacing.xxl },
-  avatar: { width: 60, height: 60, borderRadius: 30, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
-  avatarText: { color: colors.surface, fontSize: 24, fontWeight: '700' },
+  safeArea: { flex: 1, backgroundColor: '#F8F9FB' },
+  page: { flex: 1, backgroundColor: '#F8F9FB' },
+  content: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: 80 },
+  profile: { minHeight: 78, flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.lg, marginBottom: spacing.sm, paddingHorizontal: spacing.md, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#EAECF0', borderRadius: radius.lg },
+  avatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#5865F2', alignItems: 'center', justifyContent: 'center' },
+  avatarText: { color: colors.surface, fontSize: 19, fontWeight: '700' },
   profileCopy: { flex: 1 },
   profileName: { ...typography.cardTitle, color: colors.text },
   profileMeta: { ...typography.caption, color: colors.textSecondary, marginTop: spacing.xs },
-  sectionLabel: { ...typography.label, color: colors.textMuted, marginTop: spacing.xl, marginBottom: spacing.sm, paddingLeft: spacing.xs },
+  sectionLabel: { ...typography.label, color: colors.textMuted, marginTop: spacing.lg, marginBottom: spacing.xs, paddingLeft: spacing.xs },
   menu: { padding: 0, overflow: 'hidden' },
-  row: { minHeight: 72, flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
-  pressed: { backgroundColor: colors.pressed },
-  rowIcon: { width: 36, height: 36, borderRadius: radius.md, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' },
-  rowEmoji: { color: colors.primary, fontSize: 17 },
+  row: { minHeight: 64, flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
+  pressed: { backgroundColor: '#F7F8FA' },
+  rowIcon: { width: 34, height: 34, borderRadius: radius.md, backgroundColor: '#EEF0FF', alignItems: 'center', justifyContent: 'center' },
+  rowEmoji: { color: '#5865F2', fontSize: 16 },
   rowCopy: { flex: 1, marginLeft: spacing.md },
   rowTitle: { ...typography.bodyStrong, color: colors.text },
   rowDetail: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
