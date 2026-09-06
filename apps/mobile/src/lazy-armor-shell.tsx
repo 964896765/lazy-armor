@@ -172,7 +172,7 @@ const styles = StyleSheet.create({
   accountStatus: { color: '#23A559', fontSize: 9, lineHeight: 12, fontWeight: '600' },
   accountChevron: { color: '#667085', fontSize: 14 },
   activityButton: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center', position: 'relative' },
-  bell: { width: 17, height: 15, borderTopLeftRadius: 9, borderTopRightRadius: 9, borderBottomLeftRadius: 5, borderBottomRightRadius: 5, backgroundColor: '#475467', position: 'relative' },
-  bellClapper: { position: 'absolute', left: 6, bottom: -4, width: 5, height: 4, borderBottomLeftRadius: 3, borderBottomRightRadius: 3, backgroundColor: '#475467' },
+  bell: { width: 17, height: 15, borderWidth: 2, borderColor: '#475467', borderTopLeftRadius: 9, borderTopRightRadius: 9, borderBottomLeftRadius: 5, borderBottomRightRadius: 5, position: 'relative' },
+  bellClapper: { position: 'absolute', left: 4, bottom: -5, width: 5, height: 3, borderRadius: 3, backgroundColor: '#475467' },
   activityDot: { position: 'absolute', right: 7, top: 6, width: 8, height: 8, borderRadius: 4, backgroundColor: '#DA373C', borderWidth: 1, borderColor: '#FFFFFF' },
 });
