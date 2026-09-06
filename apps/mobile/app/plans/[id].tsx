@@ -20,7 +20,7 @@ import {
 } from '../../src/plan-presenter';
 import type { TemplateConfigField } from '../../src/template-config-form';
 import { planMutationErrorMessage } from '../../src/membership-presenter';
-import { ActionButton, AttentionCard, EmptyState, Surface, colors, radius, spacing, typography } from '../../src/design';
+import { ActionButton, AttentionCard, EmptyState, Surface, WorkspaceHeader, colors, radius, spacing, typography } from '../../src/design';
 
 interface PlanSummary {
   id: string;
@@ -185,42 +185,41 @@ export default function PlanDetailPage() {
   return (
     <SafeAreaView style={local.safeArea} edges={['top']}>
       <ScrollView style={local.page} contentContainerStyle={local.content} refreshControl={<RefreshControl tintColor={colors.primary} refreshing={summary.isFetching || version.isFetching} onRefresh={refreshAll} />}>
+        <WorkspaceHeader title="计划详情" subtitle="它如何替你处理这件事" onBack={() => router.back()} />
         {(summary.isLoading || version.isLoading) ? <View style={local.loading}><ActivityIndicator color={colors.primary} /><Text style={local.text}>正在看看这条计划…</Text></View> : null}
         {summary.isError ? <Surface><EmptyState icon="☁️" title="计划暂时加载失败" description="请稍后再试。" action={{ label: '重新加载', onPress: refreshAll }} /></Surface> : null}
         {summary.data && version.data ? (
           <>
             <View style={local.hero}>
               <View style={local.heroIcon}><Text style={local.heroEmoji}>{planDetailIcon(summary.data.planCenterSummary?.kind)}</Text></View>
-              <Text style={local.eyebrow}>{planStatusLabel(summary.data.status)}</Text>
-              <Text style={local.title}>{summary.data.name ?? version.data.name}</Text>
-              <Text style={local.subtitle}>{summary.data.description ?? version.data.description ?? '这件事会按你的安排持续运行。'}</Text>
+              <View style={local.heroCopy}><Text style={local.title}>{summary.data.name ?? version.data.name}</Text><Text style={local.eyebrow}>{planStatusLabel(summary.data.status)}</Text><Text style={local.subtitle}>{summary.data.description ?? version.data.description ?? '这件事会按你的安排持续运行。'}</Text></View>
             </View>
 
             <Text style={local.sectionTitle}>它正在帮你</Text>
-            <Surface>
+            <View style={local.sectionBody}>
               <View style={local.helpSteps}>
                 {version.data.definition.triggers.map((trigger, index) => <HelpStep key={`${trigger.triggerType}-${index}`} icon="◷" text={triggerSummary(trigger.triggerType, trigger.config)} />)}
                 {version.data.definition.actions.map((action, index) => <HelpStep key={`${action.actionType}-${index}`} icon="✓" text={actionSummary(action.actionType, action.config)} />)}
                 <HelpStep icon="→" text={summary.data.nextExpectedRunAt ? `下一次预计在 ${formatTime(summary.data.nextExpectedRunAt)}` : '下一次时间正在安排'} />
               </View>
-            </Surface>
+            </View>
 
             <Text style={local.sectionTitle}>使用的信息</Text>
-            <Surface>
+            <View style={local.sectionBody}>
               <View style={local.sourceList}>
                 {version.data.definition.sources.map((source, index) => (
                   <View style={local.sourceChip} key={`${source.sourceType}-${index}`}><Text style={local.sourceText}>{sourceTypeLabel(source.sourceType)}</Text></View>
                 ))}
               </View>
               <Text style={local.permissionText}>{summary.data.hasMissingConnection ? '还差一个连接，补好后就能继续。' : '只使用完成这条计划所需的信息。'}</Text>
-            </Surface>
+            </View>
 
             <Text style={local.sectionTitle}>最近结果</Text>
-            <Surface>
+            <View style={local.sectionBody}>
               <Text style={local.resultDate}>{summary.data.latestExecution ? formatTime(summary.data.latestExecution.createdAt) : '还没有运行记录'}</Text>
               <Text style={local.resultTitle}>{summary.data.latestExecution?.resultSummary ?? (summary.data.planCenterSummary ? planCenterStatusLabel(summary.data.planCenterSummary.kind, summary.data.planCenterSummary.currentStatus) : '第一次运行后，结果会出现在这里。')}</Text>
               {summary.data.latestExecution ? <View style={local.inlineAction}><ActionButton label="查看完整记录" tone="quiet" onPress={() => router.push(`/executions/${summary.data?.latestExecution?.id}` as never)} /></View> : null}
-            </Surface>
+            </View>
 
             {summary.data.missingConnections.length > 0 ? (
               <View style={local.sectionGap}>
@@ -242,7 +241,7 @@ export default function PlanDetailPage() {
 
             {settingsExpanded ? (
               <View style={local.settingsContent}>
-                <Surface>
+                <View style={local.settingsBlock}>
                   <Text style={local.cardTitle}>什么时候会告诉你</Text>
                   <Text style={local.text}>{notificationText(version.data)}</Text>
                   <Text style={local.cardTitle}>运行条件</Text>
@@ -250,19 +249,19 @@ export default function PlanDetailPage() {
                   {version.data.definition.conditions.map((condition, index) => <Text style={local.text} key={`${condition.fieldPath}-${index}`}>{conditionSummary(condition.fieldPath, condition.operator, condition.comparisonValue)}</Text>)}
                   <Text style={local.cardTitle}>当前设置</Text>
                   {renderConfig(version.data.templateConfig, template.data?.configFields)}
-                </Surface>
+                </View>
 
                 {summary.data.planCenterSummary?.kind === 'device' && deviceConsumableId ? (
-                  <Surface>
+                  <View style={local.settingsBlock}>
                     <Text style={local.cardTitle}>更新耗材更换时间</Text>
                     <Text style={local.text}>更换后告诉我日期，后续提醒会重新计算。</Text>
                     <TextInput style={local.input} placeholder="YYYY-MM-DD" placeholderTextColor={colors.textMuted} value={replacementDate} onChangeText={setReplacementDate} />
                     <ActionButton label={updateReplacement.isPending ? '更新中…' : '确认已更换'} onPress={() => updateReplacement.mutate()} disabled={updateReplacement.isPending || !replacementDate.trim()} />
                     {updateReplacement.isError ? <Text style={local.error}>日期没有更新成功，请检查后重试。</Text> : null}
-                  </Surface>
+                  </View>
                 ) : null}
 
-                <Surface>
+                <View style={local.settingsBlock}>
                   <Text style={local.cardTitle}>管理这条计划</Text>
                   <View style={local.actions}>
                     <ActionButton label="编辑计划" tone="quiet" onPress={() => router.push(`/plans/${id}/edit` as never)} />
@@ -270,7 +269,7 @@ export default function PlanDetailPage() {
                     {summary.data.allowedTransitions.map((status) => <ActionButton key={status} label={statusActionLabel(status)} tone={status === 'archived' ? 'danger' : 'quiet'} onPress={() => changeStatus.mutate(status)} disabled={changeStatus.isPending} />)}
                   </View>
                   {apply.isError || changeStatus.isError ? <Text style={local.error}>{planMutationErrorMessage(changeStatus.error ?? apply.error)}</Text> : null}
-                </Surface>
+                </View>
               </View>
             ) : null}
           </>
@@ -363,18 +362,20 @@ function statusActionLabel(status: string) {
 }
 
 const local = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: colors.background, paddingHorizontal: spacing.page, paddingTop: spacing.xl },
-  page: { flex: 1, backgroundColor: colors.background },
-  content: { paddingHorizontal: spacing.page, paddingTop: spacing.xl, paddingBottom: 72 },
+  safeArea: { flex: 1, backgroundColor: colors.surface },
+  page: { flex: 1, backgroundColor: colors.surface },
+  content: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: 72 },
   loading: { alignItems: 'center', gap: spacing.md, paddingVertical: 64 },
-  hero: { alignItems: 'center', paddingVertical: spacing.lg, marginBottom: spacing.xxl },
-  heroIcon: { width: 68, height: 68, borderRadius: radius.lg, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center', marginBottom: spacing.lg },
-  heroEmoji: { fontSize: 32 },
-  eyebrow: { ...typography.label, color: colors.success, marginBottom: spacing.sm },
-  title: { ...typography.title, color: colors.text, textAlign: 'center' },
-  subtitle: { ...typography.body, color: colors.textSecondary, textAlign: 'center', marginTop: spacing.sm, maxWidth: 320 },
-  sectionTitle: { ...typography.section, color: colors.text, marginTop: spacing.xxxl, marginBottom: spacing.md },
+  hero: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: spacing.lg, borderBottomWidth: 1, borderBottomColor: colors.border },
+  heroIcon: { width: 52, height: 52, borderRadius: 18, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' },
+  heroEmoji: { fontSize: 24 },
+  heroCopy: { flex: 1, minWidth: 0 },
+  eyebrow: { ...typography.label, color: colors.success, marginTop: 2 },
+  title: { ...typography.title, color: colors.text },
+  subtitle: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
+  sectionTitle: { ...typography.section, color: colors.text, marginTop: spacing.xl, marginBottom: spacing.sm },
   sectionTitleNoMargin: { ...typography.section, color: colors.text },
+  sectionBody: { paddingBottom: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border },
   helpSteps: { gap: spacing.lg },
   helpStep: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   helpIcon: { width: 28, height: 28, borderRadius: 14, backgroundColor: colors.successSoft, alignItems: 'center', justifyContent: 'center' },
@@ -391,7 +392,8 @@ const local = StyleSheet.create({
   settingsHeader: { marginTop: spacing.xxxl, paddingVertical: spacing.md, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   settingsHint: { ...typography.caption, color: colors.textSecondary, marginTop: spacing.xs },
   chevron: { color: colors.primary, fontSize: 24 },
-  settingsContent: { gap: spacing.md },
+  settingsContent: { gap: 0 },
+  settingsBlock: { paddingVertical: spacing.md, borderTopWidth: 1, borderTopColor: colors.border },
   cardTitle: { ...typography.cardTitle, color: colors.text, marginTop: spacing.md, marginBottom: spacing.xs },
   text: { ...typography.body, color: colors.textSecondary },
   input: { ...typography.body, color: colors.text, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: 11, backgroundColor: colors.background, marginTop: spacing.md, marginBottom: spacing.md },
