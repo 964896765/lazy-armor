@@ -16,6 +16,10 @@ export default function TabsLayout() {
       <Tabs.Screen name="create" options={{ href: null }} />
       <Tabs.Screen name="records" options={{ href: null }} />
       <Tabs.Screen name="me" options={{ href: null }} />
+      <Tabs.Screen name="connections" options={{ href: null }} />
+      <Tabs.Screen name="domains" options={{ href: null }} />
+      <Tabs.Screen name="permissions" options={{ href: null }} />
+      <Tabs.Screen name="commerce" options={{ href: null }} />
     </Tabs>
   );
 }

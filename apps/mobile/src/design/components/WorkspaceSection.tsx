@@ -15,6 +15,6 @@ const styles = StyleSheet.create({
   title: { ...typography.section, color: colors.text },
   count: { minWidth: 20, height: 20, paddingHorizontal: 6, borderRadius: 10, backgroundColor: colors.danger, alignItems: 'center', justifyContent: 'center' },
   countText: { color: '#FFFFFF', fontSize: 10, lineHeight: 12, fontWeight: '800' },
-  action: { ...typography.caption, color: '#5865F2', fontWeight: '700' },
+  action: { ...typography.caption, color: colors.primary, fontWeight: '700' },
   pressed: { opacity: 0.6 },
 });

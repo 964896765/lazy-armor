@@ -4,7 +4,7 @@ import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, T
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/api';
 import { useAuthStore } from '../../src/auth-store';
-import { AnimatedEntry, EmptyState, PlanRow, Surface, WorkspaceHeader, WorkspaceSection, colors, radius, spacing, typography } from '../../src/design';
+import { AnimatedEntry, PlanRow, WorkspaceHeader, WorkspaceSection, colors, radius, spacing, typography } from '../../src/design';
 import {
   consumerPlanGroup,
   consumerPlanGroupSubtitle,
@@ -53,7 +53,7 @@ export default function Plans() {
       <ScrollView
         style={styles.page}
         contentContainerStyle={styles.content}
-        refreshControl={token ? <RefreshControl tintColor="#5865F2" refreshing={plans.isFetching} onRefresh={() => plans.refetch()} /> : undefined}
+        refreshControl={token ? <RefreshControl tintColor={colors.primary} refreshing={plans.isFetching} onRefresh={() => plans.refetch()} /> : undefined}
       >
         <WorkspaceHeader
           title="懒人装甲"
@@ -68,10 +68,10 @@ export default function Plans() {
         </View>
 
         {!token ? (
-          <Surface style={styles.stateSurface}><EmptyState icon="🛡️" title="登录后查看计划" description="已经安排的事情都会在这里。" action={{ label: '去登录', onPress: () => router.push('/connections') }} /></Surface>
+          <InlineState icon="◇" title="登录后查看计划" description="已经安排的事情都会在这里。" action="去登录" onPress={() => router.push('/connections')} />
         ) : null}
-        {plans.isLoading ? <View style={styles.loading}><ActivityIndicator color="#5865F2" /><Text style={styles.loadingText}>正在同步计划…</Text></View> : null}
-        {plans.isError ? <Surface style={styles.stateSurface}><EmptyState icon="☁️" title="暂时没能读取计划" description="请稍后再试。" action={{ label: '重新加载', onPress: () => plans.refetch() }} /></Surface> : null}
+        {plans.isLoading ? <View style={styles.loading}><ActivityIndicator color={colors.primary} /><Text style={styles.loadingText}>正在同步计划…</Text></View> : null}
+        {plans.isError ? <InlineState icon="↻" title="暂时没能读取计划" description="网络恢复后可重新加载。" action="重试" onPress={() => plans.refetch()} /> : null}
         {plans.data?.length === 0 ? (
           <View style={styles.emptyPlan}>
             <View style={styles.emptyIcon}><Text style={styles.emptyIconText}>✦</Text></View>
@@ -119,6 +119,10 @@ export default function Plans() {
   );
 }
 
+function InlineState({ icon, title, description, action, onPress }: { icon: string; title: string; description: string; action: string; onPress: () => void }) {
+  return <View style={styles.inlineState}><View style={styles.inlineIcon}><Text style={styles.inlineIconText}>{icon}</Text></View><View style={styles.inlineCopy}><Text style={styles.inlineTitle}>{title}</Text><Text style={styles.inlineDescription}>{description}</Text></View><Pressable onPress={onPress} style={({ pressed }) => [styles.inlineAction, pressed && styles.pressed]}><Text style={styles.inlineActionText}>{action}</Text></Pressable></View>;
+}
+
 function planDescription(plan: PlanSummary) {
   if (plan.planCenterSummary) return planCenterStatusLabel(plan.planCenterSummary.kind, plan.planCenterSummary.currentStatus);
   if (plan.description) return plan.description;
@@ -136,16 +140,23 @@ const styles = StyleSheet.create({
   tools: { minHeight: 50, flexDirection: 'row', alignItems: 'center', marginTop: spacing.sm, borderBottomWidth: 1, borderBottomColor: '#E3E5E8' },
   tool: { flex: 1, minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm },
   toolDivider: { width: 1, height: 24, backgroundColor: '#EAECF0' },
-  toolIcon: { color: '#5865F2', fontSize: 15, fontWeight: '800' },
+  toolIcon: { color: colors.primary, fontSize: 15, fontWeight: '800' },
   toolText: { ...typography.caption, color: colors.text, fontWeight: '700' },
-  stateSurface: { marginTop: spacing.xl },
+  inlineState: { minHeight: 76, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.lg, paddingVertical: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border },
+  inlineIcon: { width: 34, height: 34, borderRadius: 12, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' },
+  inlineIconText: { color: colors.primary, fontSize: 16, fontWeight: '800' },
+  inlineCopy: { flex: 1, minWidth: 0 },
+  inlineTitle: { ...typography.bodyStrong, color: colors.text },
+  inlineDescription: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
+  inlineAction: { minHeight: 32, paddingHorizontal: spacing.md, borderRadius: 10, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
+  inlineActionText: { ...typography.label, color: colors.surface },
   emptyPlan: { minHeight: 86, flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.xl, paddingHorizontal: spacing.xs },
-  emptyIcon: { width: 36, height: 36, borderRadius: 12, backgroundColor: '#EEF0FF', alignItems: 'center', justifyContent: 'center' },
-  emptyIconText: { color: '#5865F2', fontSize: 18, fontWeight: '800' },
+  emptyIcon: { width: 36, height: 36, borderRadius: 12, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' },
+  emptyIconText: { color: colors.primary, fontSize: 18, fontWeight: '800' },
   emptyCopy: { flex: 1, minWidth: 0 },
   emptyTitle: { ...typography.bodyStrong, color: colors.text },
   emptyDescription: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
-  emptyAction: { minHeight: 34, paddingHorizontal: spacing.md, borderRadius: 12, backgroundColor: '#5865F2', alignItems: 'center', justifyContent: 'center' },
+  emptyAction: { minHeight: 34, paddingHorizontal: spacing.md, borderRadius: 12, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
   emptyActionText: { color: '#FFFFFF', fontSize: 11, lineHeight: 16, fontWeight: '700' },
   loading: { paddingVertical: 64, alignItems: 'center', gap: spacing.md },
   loadingText: { ...typography.caption, color: colors.textSecondary },

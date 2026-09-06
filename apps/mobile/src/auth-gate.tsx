@@ -18,7 +18,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
   }, [destination, router]);
 
   if (!hydrated || destination) {
-    return <View style={styles.loading}><View style={styles.mark}><Image source={require('../assets/icon.png')} style={styles.markImage} /></View><ActivityIndicator color="#5865F2" /><Text style={styles.copy}>正在准备你的懒人装甲…</Text></View>;
+    return <View style={styles.loading}><View style={styles.mark}><Image source={require('../assets/icon.png')} style={styles.markImage} /></View><ActivityIndicator color={colors.primary} /><Text style={styles.copy}>正在准备你的懒人装甲…</Text></View>;
   }
   return children;
 }

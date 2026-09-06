@@ -2,9 +2,9 @@ import { useQuery } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { api } from '../src/api';
-import { useAuthStore } from '../src/auth-store';
-import { EmptyState, Surface, WorkspaceHeader, colors, radius, spacing, typography } from '../src/design';
+import { api } from '../../src/api';
+import { useAuthStore } from '../../src/auth-store';
+import { EmptyState, Surface, WorkspaceHeader, colors, radius, spacing, typography } from '../../src/design';
 
 interface CommercePlan {
   id: string;
@@ -36,7 +36,7 @@ export default function CommerceSpace() {
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <ScrollView style={styles.page} contentContainerStyle={styles.content}>
-        <WorkspaceHeader title="懒人商城" subtitle="根据你的计划准备补给建议" onBack={() => router.back()} />
+        <WorkspaceHeader title="懒人商城" subtitle="根据你的计划准备补给建议" />
 
         {!token ? <Surface><EmptyState icon="□" title="登录后查看你的补给与待购买事项" description="商城只会使用你允许的计划与资源信息。" action={{ label: '去登录', onPress: () => router.push('/auth/login' as never) }} /></Surface> : null}
         {plans.isLoading ? <View style={styles.loading}><ActivityIndicator color={colors.primary} /><Text style={styles.loadingText}>正在整理补给事项…</Text></View> : null}

@@ -5,11 +5,11 @@ import * as WebBrowser from 'expo-web-browser';
 import { useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { api } from '../src/api';
-import { useAuthStore } from '../src/auth-store';
-import { connectionStartRequest, disconnectRequest, reconnectRequest, validateConnectionRequest } from '../src/connection-api-contract';
-import { openDeviceApp, setNotificationSourceEnabled } from '../src/device-app-bridge';
-import { ensureTrustedDevice } from '../src/trusted-device-api';
+import { api } from '../../src/api';
+import { useAuthStore } from '../../src/auth-store';
+import { connectionStartRequest, disconnectRequest, reconnectRequest, validateConnectionRequest } from '../../src/connection-api-contract';
+import { openDeviceApp, setNotificationSourceEnabled } from '../../src/device-app-bridge';
+import { ensureTrustedDevice } from '../../src/trusted-device-api';
 import {
   capabilityDescription,
   capabilityLabel,
@@ -19,8 +19,8 @@ import {
   connectionStatusLabel,
   isConsumerConnector,
   providerReadinessLabel,
-} from '../src/connection-presenter';
-import { ActionButton, EmptyState, Surface, WorkspaceHeader, WorkspaceSection, colors, radius, spacing, typography } from '../src/design';
+} from '../../src/connection-presenter';
+import { ActionButton, EmptyState, Surface, WorkspaceHeader, WorkspaceSection, colors, radius, spacing, typography } from '../../src/design';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -234,8 +234,8 @@ export default function ConnectionsPage() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
-      <ScrollView style={styles.page} contentContainerStyle={styles.content} refreshControl={token ? <RefreshControl tintColor="#5865F2" refreshing={connections.isFetching} onRefresh={() => connections.refetch()} /> : undefined}>
-        <WorkspaceHeader title="我的连接" subtitle="已授权的服务与手机应用" onBack={() => router.back()} action={<Pressable accessibilityRole="button" accessibilityLabel="添加连接" onPress={() => router.push('/connections/add' as Href)} style={({ pressed }) => [styles.headerAction, pressed && styles.rowPressed]}><Text style={styles.headerActionText}>＋</Text></Pressable>} />
+      <ScrollView style={styles.page} contentContainerStyle={styles.content} refreshControl={token ? <RefreshControl tintColor={colors.primary} refreshing={connections.isFetching} onRefresh={() => connections.refetch()} /> : undefined}>
+        <WorkspaceHeader title="连接中心" subtitle="管理已授权的服务与手机应用" action={<Pressable accessibilityRole="button" accessibilityLabel="添加连接" onPress={() => router.push('/connections/add' as Href)} style={({ pressed }) => [styles.headerAction, pressed && styles.rowPressed]}><Text style={styles.headerActionText}>＋</Text></Pressable>} />
         {!token ? (
           <Surface style={styles.stateSurface}><EmptyState icon="🔗" title="登录后管理连接" description="登录和账号安全在“我的”中管理。" action={{ label: '去登录', onPress: () => router.push('/auth/login' as Href) }} /></Surface>
         ) : (
@@ -293,7 +293,7 @@ const styles = StyleSheet.create({
   connectionBlock: { borderBottomWidth: 1, borderBottomColor: '#EAECF0' },
   connectionRow: { minHeight: 70, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
   rowPressed: { opacity: 0.68 },
-  compactIcon: { width: 38, height: 38, borderRadius: 12, backgroundColor: '#EEF0FF', alignItems: 'center', justifyContent: 'center' },
+  compactIcon: { width: 38, height: 38, borderRadius: 12, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' },
   compactIconText: { fontSize: 17 },
   compactCopy: { flex: 1, minWidth: 0 },
   compactTitleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },

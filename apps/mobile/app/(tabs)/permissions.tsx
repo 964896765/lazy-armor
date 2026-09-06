@@ -2,10 +2,10 @@ import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/rea
 import { router } from 'expo-router';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { api } from '../src/api';
-import { useAuthStore } from '../src/auth-store';
-import { capabilityDescription, capabilityLabel, connectionStatusLabel } from '../src/connection-presenter';
-import { EmptyState, Surface, WorkspaceHeader, WorkspaceSection, colors, radius, spacing, typography } from '../src/design';
+import { api } from '../../src/api';
+import { useAuthStore } from '../../src/auth-store';
+import { capabilityDescription, capabilityLabel, connectionStatusLabel } from '../../src/connection-presenter';
+import { EmptyState, Surface, WorkspaceHeader, WorkspaceSection, colors, radius, spacing, typography } from '../../src/design';
 
 interface Connection { id: string; connectorId: string; connectorName: string; externalAccountName: string; status: string }
 interface Permission { capability: string; name: string; granted: boolean }
@@ -43,7 +43,7 @@ export default function PermissionsPage() {
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <ScrollView style={styles.page} contentContainerStyle={styles.content}>
-        <WorkspaceHeader title="权限" subtitle="查看每项信息为什么被使用" onBack={() => router.back()} />
+        <WorkspaceHeader title="权限与安全" subtitle="查看每项信息为什么被使用" />
 
         {!token ? <Surface><EmptyState icon="🔐" title="登录后管理权限" action={{ label: '去登录', onPress: () => router.push('/connections') }} /></Surface> : null}
         {connections.isLoading || loadingDetails ? <View style={styles.loading}><ActivityIndicator color={colors.primary} /><Text style={styles.loadingText}>正在整理授权范围…</Text></View> : null}
@@ -112,18 +112,18 @@ const styles = StyleSheet.create({
   permissionList: { backgroundColor: '#FFFFFF' },
   permissionRow: { minHeight: 100, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.xs, paddingVertical: spacing.md },
   divider: { borderBottomWidth: 1, borderBottomColor: '#EAECF0' },
-  resourceIcon: { width: 36, height: 36, borderRadius: 12, backgroundColor: '#EEF0FF', alignItems: 'center', justifyContent: 'center' },
-  resourceIconText: { color: '#5865F2', fontSize: 14, fontWeight: '800' },
+  resourceIcon: { width: 36, height: 36, borderRadius: 12, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' },
+  resourceIconText: { color: colors.primary, fontSize: 14, fontWeight: '800' },
   permissionCopy: { flex: 1, minWidth: 0 },
   permissionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   resource: { ...typography.bodyStrong, color: colors.text, flex: 1 },
   permissionState: { color: colors.textMuted, fontSize: 9, lineHeight: 13 },
   permissionName: { ...typography.caption, color: colors.text, marginTop: 2 },
   description: { color: colors.textSecondary, fontSize: 10, lineHeight: 15, marginTop: 1 },
-  purpose: { color: '#5865F2', fontSize: 10, lineHeight: 15, marginTop: 2 },
+  purpose: { color: colors.primary, fontSize: 10, lineHeight: 15, marginTop: 2 },
   action: { minHeight: 30, minWidth: 42, paddingHorizontal: spacing.sm, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   actionQuiet: { backgroundColor: '#F2F4F7' },
-  actionPrimary: { backgroundColor: '#5865F2' },
+  actionPrimary: { backgroundColor: colors.primary },
   actionText: { color: '#475467', fontSize: 10, lineHeight: 14, fontWeight: '700' },
   actionTextPrimary: { color: '#FFFFFF' },
   pressed: { opacity: 0.65 },

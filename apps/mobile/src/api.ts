@@ -39,14 +39,24 @@ export function resolveAppEnv(): MobileAppEnv {
 }
 
 export async function api<T>(path: string, token?: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_URL}/api${path}`, {
-    ...init,
-    headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}), ...init?.headers },
-  });
-  if (!response.ok) {
-    const body = await response.json().catch(() => null) as { code?: string; message?: string } | null;
-    throw new ApiError(response.status, body?.code ?? 'REQUEST_FAILED', body?.message ?? `请求失败（${response.status}）`);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 3000);
+  const abortFromCaller = () => controller.abort();
+  init?.signal?.addEventListener('abort', abortFromCaller, { once: true });
+  try {
+    const response = await fetch(`${API_URL}/api${path}`, {
+      ...init,
+      signal: controller.signal,
+      headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}), ...init?.headers },
+    });
+    if (!response.ok) {
+      const body = await response.json().catch(() => null) as { code?: string; message?: string } | null;
+      throw new ApiError(response.status, body?.code ?? 'REQUEST_FAILED', body?.message ?? `请求失败（${response.status}）`);
+    }
+    if (response.status === 204) return undefined as T;
+    return response.json() as Promise<T>;
+  } finally {
+    clearTimeout(timeout);
+    init?.signal?.removeEventListener('abort', abortFromCaller);
   }
-  if (response.status === 204) return undefined as T;
-  return response.json() as Promise<T>;
 }

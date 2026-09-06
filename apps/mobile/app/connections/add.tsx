@@ -21,7 +21,7 @@ export default function AddConnectionPage() {
   const [kind, setKind] = useState<ConnectionKind>('mobile_app');
   const [selectedPackage, setSelectedPackage] = useState<string | null>(null);
   const [search, setSearch] = useState('');
-  const discovery = useQuery({ queryKey: ['device-launchable-apps'], queryFn: discoverLaunchableApps, enabled: Boolean(token), staleTime: 60_000 });
+  const discovery = useQuery({ queryKey: ['rail-discovered-device-apps'], queryFn: discoverLaunchableApps, enabled: Boolean(token), staleTime: 5 * 60_000 });
   const existing = useQuery({ queryKey: ['device-app-connections', token], queryFn: () => api<DeviceAppConnection[]>('/device-app-connections', token), enabled: Boolean(token) });
   const selected = useMemo(() => (discovery.data ?? []).find((app) => app.packageName === selectedPackage) ?? null, [discovery.data, selectedPackage]);
   const alreadyAdded = selected ? (existing.data ?? []).some((item) => item.packageName === selected.packageName) : false;
@@ -118,7 +118,7 @@ const styles = StyleSheet.create({
   kindTab: { flex: 1, minHeight: 36, justifyContent: 'center', alignItems: 'center', borderRadius: radius.sm, paddingHorizontal: 3 },
   kindTabSelected: { backgroundColor: colors.surface, shadowColor: '#101828', shadowOpacity: 0.06, shadowRadius: 4, elevation: 1 },
   kindText: { fontSize: 10, lineHeight: 14, color: colors.textMuted, fontWeight: '600', textAlign: 'center' },
-  kindTextSelected: { color: '#5865F2', fontWeight: '800' },
+  kindTextSelected: { color: colors.primary, fontWeight: '800' },
   discovery: { flex: 1 },
   searchBox: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.md, backgroundColor: '#F2F3F5', borderRadius: 14 },
   searchIcon: { color: '#667085', fontSize: 19 },
@@ -131,22 +131,22 @@ const styles = StyleSheet.create({
   catalog: { flex: 1, backgroundColor: colors.surface },
   catalogContent: { paddingBottom: spacing.md },
   appRow: { minHeight: 62, flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.md },
-  appRowSelected: { backgroundColor: '#EEF0FF' },
+  appRowSelected: { backgroundColor: colors.accentSoft },
   rowDivider: { borderBottomWidth: 1, borderBottomColor: '#EAECF0' },
-  appIcon: { width: 36, height: 36, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', backgroundColor: '#EEF0FF', overflow: 'hidden' },
+  appIcon: { width: 36, height: 36, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentSoft, overflow: 'hidden' },
   appImage: { width: 36, height: 36 },
-  appIconText: { color: '#5865F2', fontSize: 15, fontWeight: '800' },
+  appIconText: { color: colors.primary, fontSize: 15, fontWeight: '800' },
   appCopy: { flex: 1 },
   appName: { ...typography.bodyStrong, color: colors.text },
   appMeta: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
   chevron: { color: '#98A2B3', fontSize: 25, fontWeight: '300' },
   modalBackdrop: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundColor: 'rgba(16, 24, 40, 0.34)' },
-  sheet: { position: 'absolute', left: 0, right: 0, bottom: 0, maxHeight: '78%', backgroundColor: '#F8F9FB', borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: spacing.sm },
+  sheet: { position: 'absolute', left: 0, right: 0, bottom: 0, maxHeight: '78%', backgroundColor: colors.background, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: spacing.sm },
   sheetHandle: { width: 38, height: 4, borderRadius: 2, backgroundColor: '#D0D5DD', alignSelf: 'center' },
   sheetContent: { paddingHorizontal: spacing.lg, paddingBottom: 36 },
   preview: { marginTop: spacing.sm },
   previewIntro: { ...typography.body, color: colors.textSecondary },
-  adapterNote: { ...typography.caption, color: '#5865F2', marginTop: spacing.md, lineHeight: 18 },
+  adapterNote: { ...typography.caption, color: colors.primary, marginTop: spacing.md, lineHeight: 18 },
   capabilityList: { marginTop: spacing.md },
   capabilityRow: { paddingVertical: spacing.md },
   capabilityCopy: { flex: 1 },

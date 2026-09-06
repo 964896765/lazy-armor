@@ -3,9 +3,9 @@ import { CANONICAL_DOMAIN_CATALOG, DOMAIN_GROUPS, type DomainGroupKey, canonical
 import { router } from 'expo-router';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { api } from '../src/api';
-import { useAuthStore } from '../src/auth-store';
-import { EmptyState, Surface, colors, radius, spacing, typography } from '../src/design';
+import { api } from '../../src/api';
+import { useAuthStore } from '../../src/auth-store';
+import { WorkspaceHeader, colors, radius, spacing, typography } from '../../src/design';
 
 interface PlanDomainSummary { id: string; domain: string | null }
 
@@ -23,13 +23,9 @@ export default function DomainsDirectory() {
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <ScrollView style={styles.page} contentContainerStyle={styles.content}>
-        <View style={styles.header}>
-          <Text style={styles.eyebrow}>懒人装甲</Text>
-          <Text style={styles.title}>我的领域</Text>
-          <Text style={styles.subtitle}>先看你的真实生活对象，再安排需要持续帮你留意的事。</Text>
-        </View>
+        <WorkspaceHeader title="领域与计划" subtitle="按生活场景组织正在管理的事情" />
         {plans.isLoading ? <View style={styles.loading}><ActivityIndicator color={colors.primary} /><Text style={styles.loadingText}>正在整理领域…</Text></View> : null}
-        {!token ? <Surface><EmptyState icon="◆" title="登录后查看你的领域" description="计划、资源与动态只会显示在你的账号内。" action={{ label: '去登录', onPress: () => router.push('/auth/login' as never) }} /></Surface> : null}
+        {!token ? <InlineState title="登录后查看领域" description="计划与生活资料只会显示在你的账号内。" action="去登录" onPress={() => router.push('/auth/login' as never)} /> : null}
         {token ? GROUP_ORDER.map((group) => {
           const definition = DOMAIN_GROUPS[group];
           const domains = CANONICAL_DOMAIN_CATALOG.filter((domain) => domain.group === group);
@@ -37,15 +33,19 @@ export default function DomainsDirectory() {
             <View key={group} style={styles.group}>
               <Text style={styles.groupTitle}>{definition.label}</Text>
               <Text style={styles.groupDescription}>{definition.description}</Text>
-              <Surface style={styles.domainList}>
+              <View style={styles.domainList}>
                 {domains.map((domain, index) => <DomainRow key={domain.key} domain={domain} count={countFor(domain.key)} last={index === domains.length - 1} />)}
-              </Surface>
+              </View>
             </View>
           );
         }) : null}
       </ScrollView>
     </SafeAreaView>
   );
+}
+
+function InlineState({ title, description, action, onPress }: { title: string; description: string; action: string; onPress: () => void }) {
+  return <View style={styles.inlineState}><View style={styles.inlineCopy}><Text style={styles.inlineTitle}>{title}</Text><Text style={styles.inlineDescription}>{description}</Text></View><Pressable onPress={onPress} style={({ pressed }) => [styles.inlineAction, pressed && styles.pressed]}><Text style={styles.inlineActionText}>{action}</Text></Pressable></View>;
 }
 
 function DomainRow({ domain, count, last }: { domain: typeof CANONICAL_DOMAIN_CATALOG[number]; count: number; last: boolean }) {
@@ -72,19 +72,21 @@ function groupIconStyle(group: DomainGroupKey) {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: colors.background },
-  page: { flex: 1, backgroundColor: colors.background },
-  content: { paddingHorizontal: spacing.page, paddingTop: spacing.xl, paddingBottom: 48 },
-  header: { marginBottom: spacing.xxl },
-  eyebrow: { ...typography.label, color: colors.primary, letterSpacing: 1 },
-  title: { ...typography.display, color: colors.text, marginTop: spacing.xs },
-  subtitle: { ...typography.body, color: colors.textSecondary, marginTop: spacing.sm, maxWidth: 335 },
-  loading: { alignItems: 'center', paddingVertical: 56, gap: spacing.md },
-  loadingText: { ...typography.body, color: colors.textSecondary },
-  group: { marginTop: spacing.xxl },
+  safeArea: { flex: 1, backgroundColor: colors.surface },
+  page: { flex: 1, backgroundColor: colors.surface },
+  content: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: 48 },
+  loading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: spacing.xl, gap: spacing.sm },
+  loadingText: { ...typography.caption, color: colors.textSecondary },
+  inlineState: { minHeight: 72, flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.lg, paddingVertical: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border },
+  inlineCopy: { flex: 1 },
+  inlineTitle: { ...typography.bodyStrong, color: colors.text },
+  inlineDescription: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
+  inlineAction: { paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: radius.md, backgroundColor: colors.primary },
+  inlineActionText: { ...typography.label, color: colors.surface },
+  group: { marginTop: spacing.xl },
   groupTitle: { ...typography.section, color: colors.text },
   groupDescription: { ...typography.caption, color: colors.textSecondary, marginTop: spacing.xs, marginBottom: spacing.md },
-  domainList: { padding: 0, overflow: 'hidden' },
+  domainList: { padding: 0 },
   domainRow: { minHeight: 64, flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.md, gap: spacing.md },
   domainDivider: { borderBottomWidth: 1, borderBottomColor: colors.border },
   domainIcon: { width: 34, height: 34, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },

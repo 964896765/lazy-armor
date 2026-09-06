@@ -123,7 +123,7 @@ export default function Today() {
       <ScrollView
         style={styles.page}
         contentContainerStyle={styles.content}
-        refreshControl={token ? <RefreshControl tintColor="#5865F2" refreshing={today.isFetching} onRefresh={() => today.refetch()} /> : undefined}
+        refreshControl={token ? <RefreshControl tintColor={colors.primary} refreshing={today.isFetching} onRefresh={() => today.refetch()} /> : undefined}
       >
         <WorkspaceHeader title="消息" subtitle={`今天 · ${formatToday()}`} />
 
@@ -132,7 +132,7 @@ export default function Today() {
         ) : null}
 
         {state === 'loading' ? (
-          <View style={styles.loading}><ActivityIndicator color="#5865F2" /><Text style={styles.loadingText}>正在同步今天的消息…</Text></View>
+          <View style={styles.loading}><ActivityIndicator color={colors.primary} /><Text style={styles.loadingText}>正在同步今天的消息…</Text></View>
         ) : null}
 
         {state === 'error' ? (
@@ -239,12 +239,12 @@ const styles = StyleSheet.create({
   loading: { alignItems: 'center', paddingVertical: 64, gap: spacing.md },
   loadingText: { ...typography.caption, color: colors.textSecondary },
   compactState: { minHeight: 74, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.lg, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, backgroundColor: '#F2F3F5', borderRadius: radius.md },
-  compactStateIcon: { width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#EEF0FF' },
-  compactStateGlyph: { color: '#5865F2', fontSize: 17, fontWeight: '900' },
+  compactStateIcon: { width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentSoft },
+  compactStateGlyph: { color: colors.primary, fontSize: 17, fontWeight: '900' },
   compactStateCopy: { flex: 1 },
   compactStateTitle: { ...typography.bodyStrong, color: colors.text },
   compactStateDescription: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
-  compactStateAction: { minHeight: 34, justifyContent: 'center', paddingHorizontal: spacing.md, borderRadius: radius.md, backgroundColor: '#5865F2' },
+  compactStateAction: { minHeight: 34, justifyContent: 'center', paddingHorizontal: spacing.md, borderRadius: radius.md, backgroundColor: colors.primary },
   compactStateActionText: { ...typography.label, color: '#FFFFFF' },
   quietState: { minHeight: 70, flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.lg, paddingHorizontal: spacing.xs },
   quietIcon: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: '#E8F7EF' },

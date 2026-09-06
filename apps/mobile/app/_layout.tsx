@@ -6,7 +6,12 @@ import { useAuthStore } from '../src/auth-store';
 import { colors } from '../src/design';
 
 export default function RootLayout() {
-  const [client] = useState(() => new QueryClient());
+  const [client] = useState(() => new QueryClient({
+    defaultOptions: {
+      queries: { retry: 0, staleTime: 10_000, refetchOnWindowFocus: false },
+      mutations: { retry: 0 },
+    },
+  }));
   const hydrate = useAuthStore((state) => state.hydrate);
   useEffect(() => {
     void hydrate();
@@ -20,15 +25,11 @@ export default function RootLayout() {
           <Stack.Screen name="auth" options={{ headerShown: false }} />
           <Stack.Screen name="onboarding" options={{ headerShown: false }} />
           <Stack.Screen name="membership" options={{ title: '会员' }} />
-          <Stack.Screen name="connections" options={{ headerShown: false }} />
           <Stack.Screen name="connections/add" options={{ headerShown: false }} />
           <Stack.Screen name="connections/trusted-devices" options={{ title: '可信设备' }} />
           <Stack.Screen name="connections/notification-sources" options={{ title: '通知来源' }} />
           <Stack.Screen name="truth-store" options={{ title: '已验证事实' }} />
-          <Stack.Screen name="commerce" options={{ headerShown: false }} />
-          <Stack.Screen name="domains" options={{ title: '我的领域' }} />
-          <Stack.Screen name="domains/[domain]" options={{ title: '领域' }} />
-          <Stack.Screen name="permissions" options={{ headerShown: false }} />
+          <Stack.Screen name="domains/[domain]" options={{ headerShown: false }} />
           <Stack.Screen name="devices" options={{ title: '我的设备' }} />
           <Stack.Screen name="vehicles" options={{ title: '我的车辆' }} />
           <Stack.Screen name="notification-settings" options={{ title: '通知' }} />

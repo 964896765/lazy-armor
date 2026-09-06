@@ -59,7 +59,7 @@ export default function Create() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
-      <ScrollView style={styles.page} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" refreshControl={token ? <RefreshControl tintColor="#5865F2" refreshing={templates.isFetching} onRefresh={() => templates.refetch()} /> : undefined}>
+      <ScrollView style={styles.page} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" refreshControl={token ? <RefreshControl tintColor={colors.primary} refreshing={templates.isFetching} onRefresh={() => templates.refetch()} /> : undefined}>
         <WorkspaceHeader title="创建计划" subtitle="告诉我一件想省心的事" />
 
         {!token ? <Surface style={styles.stateSurface}><EmptyState icon="✨" title="登录后开始安排" description="告诉我一件麻烦事，我来帮你找办法。" action={{ label: '去登录', onPress: () => router.push('/connections') }} /></Surface> : (
@@ -102,7 +102,7 @@ export default function Create() {
 
             <WorkspaceSection title="热门计划">
               <Text style={styles.sectionSubtitle}>没有灵感时，从真实可用的计划中选一个</Text>
-              {templates.isLoading ? <ActivityIndicator color="#5865F2" style={styles.loader} /> : null}
+              {templates.isLoading ? <ActivityIndicator color={colors.primary} style={styles.loader} /> : null}
               {templates.isError ? <Text style={styles.error}>热门计划暂时没有加载出来，请稍后再试。</Text> : null}
               {popularTemplates.length > 0 ? <View style={styles.templateList}>{popularTemplates.map((template, index) => <MessageRow key={template.key} icon={planVisualIcon(template.name)} title={template.name} description={template.description} tone="brand" onPress={() => router.push(`/templates/${template.key}` as never)} last={index === popularTemplates.length - 1} />)}</View> : null}
               {templates.data?.length === 0 ? <View style={styles.quiet}><Text style={styles.quietText}>更多计划正在准备，你仍然可以在上面直接说出想做的事。</Text></View> : null}
@@ -123,15 +123,15 @@ const styles = StyleSheet.create({
   promptTitle: { ...typography.section, color: colors.text, marginBottom: spacing.sm },
   composer: { minHeight: 66, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.md, backgroundColor: '#FFFFFF', borderWidth: 1.5, borderColor: '#C7D7FE', borderRadius: 20 },
   input: { ...typography.body, color: colors.text, flex: 1, minHeight: 60, maxHeight: 92, textAlignVertical: 'center', paddingVertical: spacing.sm },
-  sendButton: { minWidth: 50, height: 36, paddingHorizontal: spacing.sm, borderRadius: 12, backgroundColor: '#5865F2', alignItems: 'center', justifyContent: 'center' },
+  sendButton: { minWidth: 50, height: 36, paddingHorizontal: spacing.sm, borderRadius: 12, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
   sendText: { color: '#FFFFFF', fontSize: 11, lineHeight: 16, fontWeight: '700' },
   pressed: { opacity: 0.7 },
   disabled: { opacity: 0.4 },
   error: { ...typography.caption, color: colors.danger, marginTop: spacing.sm },
   suggestion: { marginTop: spacing.lg, borderColor: '#C7D7FE', padding: spacing.lg },
-  suggestionLabel: { ...typography.label, color: '#5865F2' },
+  suggestionLabel: { ...typography.label, color: colors.primary },
   suggestionHeader: { flexDirection: 'row', gap: spacing.md, marginTop: spacing.md },
-  templateIcon: { width: 42, height: 42, borderRadius: radius.md, backgroundColor: '#EEF0FF', alignItems: 'center', justifyContent: 'center' },
+  templateIcon: { width: 42, height: 42, borderRadius: radius.md, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' },
   templateEmoji: { fontSize: 21 },
   suggestionCopy: { flex: 1 },
   templateName: { ...typography.bodyStrong, color: colors.text },

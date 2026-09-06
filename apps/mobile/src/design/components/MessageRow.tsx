@@ -29,7 +29,7 @@ const styles = StyleSheet.create({
   successIcon: { backgroundColor: '#E8F7EF' },
   warningIcon: { backgroundColor: '#FFF4E5' },
   dangerIcon: { backgroundColor: '#FDECEC' },
-  brandIcon: { backgroundColor: '#EEF0FF' },
+  brandIcon: { backgroundColor: colors.accentSoft },
   iconText: { fontSize: 17 },
   copy: { flex: 1, minWidth: 0 },
   titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },

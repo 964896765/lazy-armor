@@ -28,7 +28,7 @@ interface RailDeviceAppConnection {
 interface RailTrustedDevice { id: string; status: 'active' | 'revoked' }
 interface RailPendingNotification { id: string; connectionId: string }
 interface RailProfile { displayName: string; status: string }
-const RAIL_WIDTH = 66;
+const RAIL_WIDTH = 54;
 export function ConnectionRail({ state, navigation }: BottomTabBarProps) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -60,7 +60,7 @@ export function ConnectionRail({ state, navigation }: BottomTabBarProps) {
   const discoveredApps = useQuery({
     queryKey: ['rail-discovered-device-apps'],
     queryFn: discoverLaunchableApps,
-    enabled: Boolean(token),
+    enabled: Boolean(token && (deviceApps.data?.length ?? 0) > 0),
     staleTime: 5 * 60_000,
   });
   const profile = useQuery({
@@ -99,15 +99,17 @@ export function ConnectionRail({ state, navigation }: BottomTabBarProps) {
     if (!isFocused && !event.defaultPrevented) navigation.navigate(routeName as never);
   }
 
+  const activeRoute = state.routes[state.index]?.name;
+
   return (
     <>
     <View style={[styles.frame, { top: Math.max(insets.top, 5), bottom: Math.max(insets.bottom, 5) }]}>
       <View style={styles.fixedTop}>
-        <RailItem label="懒人装甲" symbol="" imageSource={require('../assets/icon.png')} imageScale={1.45} selected={state.routes[state.index]?.name === 'plans'} onPress={() => selectTab('plans')} />
-        <RailItem label="消息" symbol="▤" badgeCount={pendingNotifications.data?.length ?? 0} selected={state.routes[state.index]?.name === 'index'} tone="brand" onPress={() => selectTab('index')} />
-        <RailItem label="领域" symbol="◎" onPress={() => router.push('/domains' as never)} />
-        <RailItem label="安全" symbol="⌑" onPress={() => router.push('/permissions' as never)} />
-        <RailItem label="懒人商城" symbol="店" tone="commerce" onPress={() => router.push('/commerce' as never)} />
+        <RailItem label="懒人装甲" symbol="" imageSource={require('../assets/icon.png')} imageScale={1.45} selected={activeRoute === 'plans'} showLabel={false} onPress={() => selectTab('plans')} />
+        <RailItem label="消息" symbol="▤" badgeCount={pendingNotifications.data?.length ?? 0} selected={activeRoute === 'index'} tone="brand" showLabel={false} onPress={() => selectTab('index')} />
+        <RailItem label="领域" symbol="◎" selected={activeRoute === 'domains'} showLabel={false} onPress={() => selectTab('domains')} />
+        <RailItem label="安全" symbol="⌑" selected={activeRoute === 'permissions'} showLabel={false} onPress={() => selectTab('permissions')} />
+        <RailItem label="懒人商城" symbol="店" selected={activeRoute === 'commerce'} tone="commerce" showLabel={false} onPress={() => selectTab('commerce')} />
         <View style={styles.divider} />
         <Text style={styles.railLabel}>我的连接</Text>
       </View>
@@ -121,11 +123,12 @@ export function ConnectionRail({ state, navigation }: BottomTabBarProps) {
             imageUri={connection.kind === 'app' ? iconByPackage.get(connection.key) : undefined}
             status={connection.status}
             badgeCount={connection.unread}
-            onPress={() => router.push('/connections' as never)}
+            showLabel={false}
+            onPress={() => selectTab('connections')}
           />
         ))}
-        {rail.overflowCount > 0 ? <RailItem label={`更多 ${rail.overflowCount}`} symbol="•••" onPress={() => router.push('/connections' as never)} /> : null}
-        <RailItem label="添加连接" symbol="＋" tone="action" onPress={() => router.push('/connections/add' as never)} />
+        {rail.overflowCount > 0 ? <RailItem label={`更多 ${rail.overflowCount}`} symbol="•••" showLabel={false} onPress={() => selectTab('connections')} /> : null}
+        <RailItem label="添加连接" symbol="＋" tone="action" showLabel={false} onPress={() => router.push('/connections/add' as never)} />
       </ScrollView>
     </View>
     <View style={[styles.bottomDock, { bottom: Math.max(insets.bottom, 5) }]}>
@@ -155,20 +158,20 @@ function accountSymbol(displayName?: string) {
 export const shellLayout = { railWidth: RAIL_WIDTH } as const;
 
 const styles = StyleSheet.create({
-  frame: { position: 'absolute', left: 0, width: RAIL_WIDTH, zIndex: 10, paddingHorizontal: 5, paddingVertical: 6, backgroundColor: '#F2F3F5', borderRightWidth: 1, borderRightColor: '#E3E5E8' },
+  frame: { position: 'absolute', left: 0, width: RAIL_WIDTH, zIndex: 10, paddingHorizontal: 5, paddingVertical: 6, backgroundColor: '#EFF8F5', borderRightWidth: 1, borderRightColor: '#DDECE7' },
   fixedTop: { alignItems: 'center', gap: 2 },
   divider: { width: 36, height: 1, backgroundColor: '#EAECF0', marginVertical: 3 },
-  railLabel: { width: 54, color: '#80848E', fontSize: 7, lineHeight: 10, textAlign: 'center', fontWeight: '700', marginVertical: 2 },
+  railLabel: { width: 44, color: '#788A84', fontSize: 6, lineHeight: 9, textAlign: 'center', fontWeight: '700', marginVertical: 2 },
   scroller: { flex: 1 },
   connections: { alignItems: 'center', gap: 2, paddingVertical: 2 },
-  bottomDock: { position: 'absolute', left: RAIL_WIDTH + 5, right: 6, zIndex: 20, minHeight: 58, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 9, paddingVertical: 6, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E3E5E8', borderRadius: 22, shadowColor: '#101828', shadowOpacity: 0.09, shadowRadius: 16, shadowOffset: { width: 0, height: 5 }, elevation: 7 },
+  bottomDock: { position: 'absolute', left: RAIL_WIDTH + 5, right: 6, zIndex: 20, minHeight: 52, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 9, paddingVertical: 5, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#DDE8E4', borderRadius: 18, shadowColor: '#0F2F27', shadowOpacity: 0.07, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 5 },
   bottomPressed: { opacity: 0.65 },
   accountButton: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 9 },
-  avatar: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', backgroundColor: '#5865F2' },
+  avatar: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: '#087A5A' },
   avatarText: { color: '#FFFFFF', fontSize: 15, lineHeight: 18, fontWeight: '800' },
   onlineDot: { position: 'absolute', right: -1, bottom: -1, width: 12, height: 12, borderRadius: 6, backgroundColor: '#23A559', borderWidth: 2, borderColor: '#FFFFFF' },
   accountCopy: { flex: 1, minWidth: 0 },
-  accountName: { color: '#1E1F22', fontSize: 12, lineHeight: 16, fontWeight: '800' },
+  accountName: { color: '#13233A', fontSize: 11, lineHeight: 15, fontWeight: '800' },
   accountStatus: { color: '#23A559', fontSize: 9, lineHeight: 12, fontWeight: '600' },
   accountChevron: { color: '#667085', fontSize: 14 },
   activityButton: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center', position: 'relative' },

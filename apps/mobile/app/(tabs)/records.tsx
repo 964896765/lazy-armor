@@ -23,11 +23,11 @@ export default function Records() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
-      <ScrollView style={styles.page} contentContainerStyle={styles.content} refreshControl={token ? <RefreshControl tintColor="#5865F2" refreshing={executions.isFetching} onRefresh={() => executions.refetch()} /> : undefined}>
+      <ScrollView style={styles.page} contentContainerStyle={styles.content} refreshControl={token ? <RefreshControl tintColor={colors.primary} refreshing={executions.isFetching} onRefresh={() => executions.refetch()} /> : undefined}>
         <WorkspaceHeader title="记录" subtitle="懒人装甲帮你做过的事" />
 
         {!token ? <Surface style={styles.stateSurface}><EmptyState icon="🕰️" title="登录后查看完成记录" action={{ label: '去登录', onPress: () => router.push('/connections') }} /></Surface> : null}
-        {state === 'loading' ? <View style={styles.loading}><ActivityIndicator color="#5865F2" /><Text style={styles.loadingText}>正在同步记录…</Text></View> : null}
+        {state === 'loading' ? <View style={styles.loading}><ActivityIndicator color={colors.primary} /><Text style={styles.loadingText}>正在同步记录…</Text></View> : null}
         {state === 'error' ? <Surface style={styles.stateSurface}><EmptyState icon="☁️" title="记录暂时没有加载出来" description="请稍后再试。" action={{ label: '重新加载', onPress: () => executions.refetch() }} /></Surface> : null}
         {state === 'empty' ? (
           <View style={styles.emptyState}><View style={styles.emptyIcon}><Text style={styles.emptyIconText}>✓</Text></View><View style={styles.emptyCopy}><Text style={styles.emptyTitle}>还没有完成记录</Text><Text style={styles.emptyDescription}>真实结果会出现在这里</Text></View><Pressable accessibilityRole="button" onPress={() => router.push('/create')} style={({ pressed }) => [styles.emptyAction, pressed && styles.pressed]}><Text style={styles.emptyActionText}>去安排</Text></Pressable></View>
@@ -99,7 +99,7 @@ const styles = StyleSheet.create({
   emptyCopy: { flex: 1, minWidth: 0 },
   emptyTitle: { ...typography.bodyStrong, color: colors.text },
   emptyDescription: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
-  emptyAction: { minHeight: 34, paddingHorizontal: spacing.md, borderRadius: 12, backgroundColor: '#5865F2', alignItems: 'center', justifyContent: 'center' },
+  emptyAction: { minHeight: 34, paddingHorizontal: spacing.md, borderRadius: 12, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
   emptyActionText: { color: '#FFFFFF', fontSize: 11, lineHeight: 16, fontWeight: '700' },
   pressed: { opacity: 0.7 },
   timelineGroup: { backgroundColor: '#FFFFFF' },
