@@ -1,5 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
+import type { ComponentProps } from 'react';
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -178,7 +180,7 @@ export default function PlanDetailPage() {
 
   if (!token) return (
     <SafeAreaView style={local.safeArea} edges={['top']}>
-      <Surface><EmptyState icon="🛡️" title="登录后查看计划详情" action={{ label: '去登录', onPress: () => router.push('/connections') }} /></Surface>
+      <Surface><EmptyState icon="shield-checkmark-outline" title="登录后查看计划详情" action={{ label: '去登录', onPress: () => router.push('/connections') }} /></Surface>
     </SafeAreaView>
   );
 
@@ -187,20 +189,20 @@ export default function PlanDetailPage() {
       <ScrollView style={local.page} contentContainerStyle={local.content} refreshControl={<RefreshControl tintColor={colors.primary} refreshing={summary.isFetching || version.isFetching} onRefresh={refreshAll} />}>
         <WorkspaceHeader title="计划详情" subtitle="它如何替你处理这件事" onBack={() => router.back()} />
         {(summary.isLoading || version.isLoading) ? <View style={local.loading}><ActivityIndicator color={colors.primary} /><Text style={local.text}>正在看看这条计划…</Text></View> : null}
-        {summary.isError ? <Surface><EmptyState icon="☁️" title="计划暂时加载失败" description="请稍后再试。" action={{ label: '重新加载', onPress: refreshAll }} /></Surface> : null}
+        {summary.isError ? <Surface><EmptyState icon="cloud-offline-outline" title="计划暂时加载失败" description="请稍后再试。" action={{ label: '重新加载', onPress: refreshAll }} /></Surface> : null}
         {summary.data && version.data ? (
           <>
             <View style={local.hero}>
-              <View style={local.heroIcon}><Text style={local.heroEmoji}>{planDetailIcon(summary.data.planCenterSummary?.kind)}</Text></View>
+              <View style={local.heroIcon}><Ionicons name={planDetailIcon(summary.data.planCenterSummary?.kind)} size={25} color={colors.primary} /></View>
               <View style={local.heroCopy}><Text style={local.title}>{summary.data.name ?? version.data.name}</Text><Text style={local.eyebrow}>{planStatusLabel(summary.data.status)}</Text><Text style={local.subtitle}>{summary.data.description ?? version.data.description ?? '这件事会按你的安排持续运行。'}</Text></View>
             </View>
 
             <Text style={local.sectionTitle}>它正在帮你</Text>
             <View style={local.sectionBody}>
               <View style={local.helpSteps}>
-                {version.data.definition.triggers.map((trigger, index) => <HelpStep key={`${trigger.triggerType}-${index}`} icon="◷" text={triggerSummary(trigger.triggerType, trigger.config)} />)}
-                {version.data.definition.actions.map((action, index) => <HelpStep key={`${action.actionType}-${index}`} icon="✓" text={actionSummary(action.actionType, action.config)} />)}
-                <HelpStep icon="→" text={summary.data.nextExpectedRunAt ? `下一次预计在 ${formatTime(summary.data.nextExpectedRunAt)}` : '下一次时间正在安排'} />
+                {version.data.definition.triggers.map((trigger, index) => <HelpStep key={`${trigger.triggerType}-${index}`} icon="time-outline" text={triggerSummary(trigger.triggerType, trigger.config)} />)}
+                {version.data.definition.actions.map((action, index) => <HelpStep key={`${action.actionType}-${index}`} icon="play-outline" text={actionSummary(action.actionType, action.config)} />)}
+                <HelpStep icon="arrow-forward-outline" text={summary.data.nextExpectedRunAt ? `下一次预计在 ${formatTime(summary.data.nextExpectedRunAt)}` : '下一次时间正在安排'} />
               </View>
             </View>
 
@@ -236,7 +238,7 @@ export default function PlanDetailPage() {
 
             <Pressable accessibilityRole="button" accessibilityState={{ expanded: settingsExpanded }} onPress={() => setSettingsExpanded((current) => !current)} style={local.settingsHeader}>
               <View><Text style={local.sectionTitleNoMargin}>设置</Text><Text style={local.settingsHint}>通知、运行条件与计划管理</Text></View>
-              <Text style={local.chevron}>{settingsExpanded ? '⌃' : '⌄'}</Text>
+              <Ionicons name={settingsExpanded ? 'chevron-up' : 'chevron-down'} size={20} color={colors.primary} />
             </Pressable>
 
             {settingsExpanded ? (
@@ -279,12 +281,12 @@ export default function PlanDetailPage() {
   );
 }
 
-function HelpStep({ icon, text }: { icon: string; text: string }) {
-  return <View style={local.helpStep}><View style={local.helpIcon}><Text style={local.helpIconText}>{icon}</Text></View><Text style={local.helpText}>{text}</Text></View>;
+function HelpStep({ icon, text }: { icon: ComponentProps<typeof Ionicons>['name']; text: string }) {
+  return <View style={local.helpStep}><View style={local.helpIcon}><Ionicons name={icon} size={16} color={colors.success} /></View><Text style={local.helpText}>{text}</Text></View>;
 }
 
-function planDetailIcon(kind?: string | null) {
-  return ({ logistics: '📦', household: '🏠', content: '🎬', daily_summary: '✉️', study: '📚', device: '🖨️' } as Record<string, string>)[kind ?? ''] ?? '🛡️';
+function planDetailIcon(kind?: string | null): ComponentProps<typeof Ionicons>['name'] {
+  return ({ logistics: 'cube-outline', household: 'home-outline', content: 'create-outline', daily_summary: 'mail-outline', study: 'school-outline', device: 'hardware-chip-outline' } as Record<string, ComponentProps<typeof Ionicons>['name']>)[kind ?? ''] ?? 'shield-checkmark-outline';
 }
 
 function normalizeDateInput(value: string) {
@@ -368,7 +370,6 @@ const local = StyleSheet.create({
   loading: { alignItems: 'center', gap: spacing.md, paddingVertical: 64 },
   hero: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: spacing.lg, borderBottomWidth: 1, borderBottomColor: colors.border },
   heroIcon: { width: 52, height: 52, borderRadius: 18, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' },
-  heroEmoji: { fontSize: 24 },
   heroCopy: { flex: 1, minWidth: 0 },
   eyebrow: { ...typography.label, color: colors.success, marginTop: 2 },
   title: { ...typography.title, color: colors.text },
@@ -379,7 +380,6 @@ const local = StyleSheet.create({
   helpSteps: { gap: spacing.lg },
   helpStep: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   helpIcon: { width: 28, height: 28, borderRadius: 14, backgroundColor: colors.successSoft, alignItems: 'center', justifyContent: 'center' },
-  helpIconText: { color: colors.success, fontWeight: '800' },
   helpText: { ...typography.bodyStrong, color: colors.text, flex: 1 },
   sourceList: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   sourceChip: { backgroundColor: colors.accentSoft, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: radius.pill },
@@ -391,7 +391,6 @@ const local = StyleSheet.create({
   sectionGap: { marginTop: spacing.xxxl },
   settingsHeader: { marginTop: spacing.xxxl, paddingVertical: spacing.md, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   settingsHint: { ...typography.caption, color: colors.textSecondary, marginTop: spacing.xs },
-  chevron: { color: colors.primary, fontSize: 24 },
   settingsContent: { gap: 0 },
   settingsBlock: { paddingVertical: spacing.md, borderTopWidth: 1, borderTopColor: colors.border },
   cardTitle: { ...typography.cardTitle, color: colors.text, marginTop: spacing.md, marginBottom: spacing.xs },

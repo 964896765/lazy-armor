@@ -1,4 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
+import { Ionicons } from '@expo/vector-icons';
+import type { ComponentProps } from 'react';
 import { router } from 'expo-router';
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -56,25 +58,27 @@ export default function Plans() {
         refreshControl={token ? <RefreshControl tintColor={colors.primary} refreshing={plans.isFetching} onRefresh={() => plans.refetch()} /> : undefined}
       >
         <WorkspaceHeader
-          title="懒人装甲"
+          title="懒人装甲工作区"
           subtitle={activeCount > 0 ? `${activeCount} 个计划正在运行` : '还没有运行中的计划'}
-          action={<Pressable accessibilityRole="button" accessibilityLabel="创建计划" onPress={() => router.push('/create' as never)} style={({ pressed }) => [styles.addButton, pressed && styles.pressed]}><Text style={styles.addText}>＋</Text></Pressable>}
+          action={<Pressable accessibilityRole="button" accessibilityLabel="创建计划" onPress={() => router.push('/create' as never)} style={({ pressed }) => [styles.addButton, pressed && styles.pressed]}><Ionicons name="add" size={22} color="#344054" /></Pressable>}
         />
 
         <View style={styles.tools}>
-          <Pressable accessibilityRole="button" onPress={() => router.push('/domains' as never)} style={({ pressed }) => [styles.tool, pressed && styles.pressed]}><Text style={styles.toolIcon}>⌘</Text><Text style={styles.toolText}>管理领域</Text></Pressable>
+          <Pressable accessibilityRole="button" onPress={() => router.push('/plan-center' as never)} style={({ pressed }) => [styles.tool, pressed && styles.pressed]}><Ionicons name="list-circle-outline" size={18} color={colors.primary} /><Text style={styles.toolText}>计划中心</Text></Pressable>
           <View style={styles.toolDivider} />
-          <Pressable accessibilityRole="button" onPress={() => router.push('/records' as never)} style={({ pressed }) => [styles.tool, pressed && styles.pressed]}><Text style={styles.toolIcon}>▤</Text><Text style={styles.toolText}>查看记录</Text></Pressable>
+          <Pressable accessibilityRole="button" onPress={() => router.push('/domains' as never)} style={({ pressed }) => [styles.tool, pressed && styles.pressed]}><Ionicons name="grid-outline" size={17} color={colors.primary} /><Text style={styles.toolText}>管理领域</Text></Pressable>
+          <View style={styles.toolDivider} />
+          <Pressable accessibilityRole="button" onPress={() => router.push('/records' as never)} style={({ pressed }) => [styles.tool, pressed && styles.pressed]}><Ionicons name="list-outline" size={18} color={colors.primary} /><Text style={styles.toolText}>查看记录</Text></Pressable>
         </View>
 
         {!token ? (
-          <InlineState icon="◇" title="登录后查看计划" description="已经安排的事情都会在这里。" action="去登录" onPress={() => router.push('/connections')} />
+          <InlineState icon="shield-checkmark-outline" title="登录后查看计划" description="已经安排的事情都会在这里。" action="去登录" onPress={() => router.push('/connections')} />
         ) : null}
         {plans.isLoading ? <View style={styles.loading}><ActivityIndicator color={colors.primary} /><Text style={styles.loadingText}>正在同步计划…</Text></View> : null}
-        {plans.isError ? <InlineState icon="↻" title="暂时没能读取计划" description="网络恢复后可重新加载。" action="重试" onPress={() => plans.refetch()} /> : null}
+        {plans.isError ? <InlineState icon="refresh-outline" title="暂时没能读取计划" description="网络恢复后可重新加载。" action="重试" onPress={() => plans.refetch()} /> : null}
         {plans.data?.length === 0 ? (
           <View style={styles.emptyPlan}>
-            <View style={styles.emptyIcon}><Text style={styles.emptyIconText}>✦</Text></View>
+            <View style={styles.emptyIcon}><Ionicons name="sparkles-outline" size={20} color={colors.primary} /></View>
             <View style={styles.emptyCopy}><Text style={styles.emptyTitle}>还没有计划</Text><Text style={styles.emptyDescription}>试试“帮我管理我的快递”</Text></View>
             <Pressable accessibilityRole="button" onPress={() => router.push('/create')} style={({ pressed }) => [styles.emptyAction, pressed && styles.pressed]}><Text style={styles.emptyActionText}>安排</Text></Pressable>
           </View>
@@ -119,8 +123,8 @@ export default function Plans() {
   );
 }
 
-function InlineState({ icon, title, description, action, onPress }: { icon: string; title: string; description: string; action: string; onPress: () => void }) {
-  return <View style={styles.inlineState}><View style={styles.inlineIcon}><Text style={styles.inlineIconText}>{icon}</Text></View><View style={styles.inlineCopy}><Text style={styles.inlineTitle}>{title}</Text><Text style={styles.inlineDescription}>{description}</Text></View><Pressable onPress={onPress} style={({ pressed }) => [styles.inlineAction, pressed && styles.pressed]}><Text style={styles.inlineActionText}>{action}</Text></Pressable></View>;
+function InlineState({ icon, title, description, action, onPress }: { icon: ComponentProps<typeof Ionicons>['name']; title: string; description: string; action: string; onPress: () => void }) {
+  return <View style={styles.inlineState}><View style={styles.inlineIcon}><Ionicons name={icon} size={19} color={colors.primary} /></View><View style={styles.inlineCopy}><Text style={styles.inlineTitle}>{title}</Text><Text style={styles.inlineDescription}>{description}</Text></View><Pressable onPress={onPress} style={({ pressed }) => [styles.inlineAction, pressed && styles.pressed]}><Text style={styles.inlineActionText}>{action}</Text></Pressable></View>;
 }
 
 function planDescription(plan: PlanSummary) {
@@ -135,16 +139,13 @@ const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: '#FFFFFF' },
   content: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: 80 },
   addButton: { width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F2F4F7', borderWidth: 1, borderColor: '#EAECF0' },
-  addText: { color: '#344054', fontSize: 22, lineHeight: 24, fontWeight: '400' },
   pressed: { opacity: 0.65 },
   tools: { minHeight: 50, flexDirection: 'row', alignItems: 'center', marginTop: spacing.sm, borderBottomWidth: 1, borderBottomColor: '#E3E5E8' },
   tool: { flex: 1, minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm },
   toolDivider: { width: 1, height: 24, backgroundColor: '#EAECF0' },
-  toolIcon: { color: colors.primary, fontSize: 15, fontWeight: '800' },
   toolText: { ...typography.caption, color: colors.text, fontWeight: '700' },
   inlineState: { minHeight: 76, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.lg, paddingVertical: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border },
   inlineIcon: { width: 34, height: 34, borderRadius: 12, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' },
-  inlineIconText: { color: colors.primary, fontSize: 16, fontWeight: '800' },
   inlineCopy: { flex: 1, minWidth: 0 },
   inlineTitle: { ...typography.bodyStrong, color: colors.text },
   inlineDescription: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
@@ -152,7 +153,6 @@ const styles = StyleSheet.create({
   inlineActionText: { ...typography.label, color: colors.surface },
   emptyPlan: { minHeight: 86, flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.xl, paddingHorizontal: spacing.xs },
   emptyIcon: { width: 36, height: 36, borderRadius: 12, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' },
-  emptyIconText: { color: colors.primary, fontSize: 18, fontWeight: '800' },
   emptyCopy: { flex: 1, minWidth: 0 },
   emptyTitle: { ...typography.bodyStrong, color: colors.text },
   emptyDescription: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },

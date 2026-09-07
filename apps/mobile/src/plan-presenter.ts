@@ -30,16 +30,16 @@ export function planStatusLabel(status: string): string {
   }
 }
 
-export function planVisualIcon(name: string, kind?: string | null): string {
-  if (kind === 'logistics' || name.includes('快递') || name.includes('包裹')) return '📦';
-  if (kind === 'household' || name.includes('家庭') || name.includes('补给')) return '🏠';
-  if (kind === 'daily_summary' || name.includes('邮件') || name.includes('摘要')) return '✉️';
-  if (kind === 'content' || name.includes('内容') || name.includes('发布')) return '🎬';
-  if (kind === 'study' || name.includes('学习') || name.includes('考试')) return '📚';
-  if (kind === 'device' || name.includes('设备') || name.includes('耗材')) return '🖨️';
-  if (name.includes('账单') || name.includes('消费') || name.includes('订阅')) return '💰';
-  if (name.includes('车辆') || name.includes('保养')) return '🚙';
-  return '🛡️';
+export function planVisualIcon(name: string, kind?: string | null): 'cube-outline' | 'home-outline' | 'mail-outline' | 'videocam-outline' | 'school-outline' | 'hardware-chip-outline' | 'wallet-outline' | 'car-outline' | 'shield-checkmark-outline' {
+  if (kind === 'logistics' || name.includes('快递') || name.includes('包裹')) return 'cube-outline';
+  if (kind === 'household' || name.includes('家庭') || name.includes('补给')) return 'home-outline';
+  if (kind === 'daily_summary' || name.includes('邮件') || name.includes('摘要')) return 'mail-outline';
+  if (kind === 'content' || name.includes('内容') || name.includes('发布')) return 'videocam-outline';
+  if (kind === 'study' || name.includes('学习') || name.includes('考试')) return 'school-outline';
+  if (kind === 'device' || name.includes('设备') || name.includes('耗材')) return 'hardware-chip-outline';
+  if (name.includes('账单') || name.includes('消费') || name.includes('订阅')) return 'wallet-outline';
+  if (name.includes('车辆') || name.includes('保养')) return 'car-outline';
+  return 'shield-checkmark-outline';
 }
 
 export function planStatusTone(status: string): 'success' | 'warning' | 'muted' {

@@ -29,13 +29,13 @@ describe('Plan presenter', () => {
     expect(consumerPlanGroup({ domain: 'identity_docs' })).toBe('我的事情');
     expect(consumerPlanGroup({ domain: 'vehicle' })).toBe('我的物品');
     expect(consumerPlanGroup({ domain: 'billing' })).toBe('我的钱');
-    expect(planDomainLabel('legal_contract')).toBe('合同法律');
-    expect(planDomainLabel('general')).toBe('生活');
+    expect(planDomainLabel('legal_contract')).toBe('合同与法律事务');
+    expect(planDomainLabel('general')).toBe('日常事务');
   });
 
   it('builds consumer-facing plan card content without internal statuses', () => {
-    expect(planVisualIcon('每日重要事项摘要', 'daily_summary')).toBe('✉️');
-    expect(planVisualIcon('车辆保养提醒')).toBe('🚙');
+    expect(planVisualIcon('每日重要事项摘要', 'daily_summary')).toBe('mail-outline');
+    expect(planVisualIcon('车辆保养提醒')).toBe('car-outline');
     expect(planStatusLabel('degraded')).toBe('需要留意');
     expect(planStatusLabel('blocked')).toBe('暂时停下');
     expect(planStatusTone('active')).toBe('success');

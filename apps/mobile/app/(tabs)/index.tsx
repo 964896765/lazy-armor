@@ -1,6 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Ionicons } from '@expo/vector-icons';
+import type { ComponentProps } from 'react';
 import { router } from 'expo-router';
-import { ActivityIndicator, Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useState } from 'react';
+import { ActivityIndicator, Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/api';
 import { useAuthStore } from '../../src/auth-store';
@@ -26,10 +29,13 @@ interface TodayData { pendingApprovals: ApprovalCard[]; connectionIssues: Connec
 interface PendingNotificationCandidate { id: string; candidateResource: string | null; candidateConfidence: number; amountMinor: number | null; currency: string | null; postedAt: string }
 interface PresentableAlert extends AlertCard { section: 'attention' | 'exception' | 'summary' }
 interface AttentionMessage { id: string; icon: string; title: string; description: string; meta?: string; tone: 'warning' | 'danger' | 'brand'; onPress: () => void }
+type MessageFilter = 'all' | 'attention' | 'approval' | 'completed';
 
 export default function Today() {
   const token = useAuthStore((store) => store.token);
   const client = useQueryClient();
+  const [filter, setFilter] = useState<MessageFilter>('all');
+  const [search, setSearch] = useState('');
   const today = useQuery({
     queryKey: ['today', token],
     queryFn: () => api<TodayData>('/today', token),
@@ -74,7 +80,7 @@ export default function Today() {
   const attentionMessages: AttentionMessage[] = [
     ...(today.data?.connectionIssues ?? []).map((item) => ({
       id: `connection:${item.planId}:${item.connectionId}`,
-      icon: '↻',
+      icon: 'refresh-outline',
       title: `${item.providerName}${connectionStatusLabel(item.connectionStatus)}`,
       description: `${connectionStatusExplanation(item.connectionStatus)}“${item.planName}”会保留当前设置。${connectionStatusNextStep(item.connectionStatus)}`,
       tone: 'warning' as const,
@@ -82,7 +88,7 @@ export default function Today() {
     })),
     ...(pendingNotificationCandidates.data ?? []).map((item) => ({
       id: `notification:${item.id}`,
-      icon: '🔔',
+      icon: 'notifications-outline',
       title: '应用通知等待核实',
       description: notificationCandidateSummary(item),
       meta: formatMessageTime(item.postedAt),
@@ -91,7 +97,7 @@ export default function Today() {
     })),
     ...[...attentionAlerts, ...exceptionAlerts].map((item) => ({
       id: `alert:${item.id}`,
-      icon: item.section === 'exception' ? '!' : '·',
+      icon: item.section === 'exception' ? 'alert-circle-outline' : 'information-circle-outline',
       title: item.title,
       description: `${consumerErrorMessage(item.body)} ${consumerErrorNextStep(item.body)}`.trim(),
       meta: formatMessageTime(item.createdAt),
@@ -102,7 +108,7 @@ export default function Today() {
   const resultMessages = [
     ...(today.data?.processed ?? []).map((item) => ({
       id: `result:${item.id}`,
-      icon: '✓',
+      icon: 'checkmark-circle-outline',
       title: item.planName,
       description: item.resultSummary ?? executionStatusLabel(item.status),
       meta: formatMessageTime(item.finishedAt),
@@ -110,13 +116,18 @@ export default function Today() {
     })),
     ...summaryAlerts.map((item) => ({
       id: `summary:${item.id}`,
-      icon: '▤',
+      icon: 'document-text-outline',
       title: item.title,
       description: consumerErrorMessage(item.body),
       meta: formatMessageTime(item.createdAt),
       onPress: item.executionId ? () => router.push(`/executions/${item.executionId}` as never) : undefined,
     })),
   ];
+  const needle = search.trim().toLowerCase();
+  const matches = (title: string, description: string) => !needle || `${title} ${description}`.toLowerCase().includes(needle);
+  const shownApprovals = (today.data?.pendingApprovals ?? []).filter((item) => matches(item.planName, item.summary));
+  const shownAttention = attentionMessages.filter((item) => matches(item.title, item.description));
+  const shownResults = resultMessages.filter((item) => matches(item.title, item.description));
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -127,8 +138,15 @@ export default function Today() {
       >
         <WorkspaceHeader title="消息" subtitle={`今天 · ${formatToday()}`} />
 
+        {token ? <><View style={styles.search}><Ionicons name="search-outline" size={19} color={colors.textMuted} /><TextInput value={search} onChangeText={setSearch} placeholder="搜索消息、计划或内容" placeholderTextColor={colors.textMuted} style={styles.searchInput} />{search ? <Pressable accessibilityLabel="清空搜索" onPress={() => setSearch('')}><Ionicons name="close-circle" size={18} color={colors.textMuted} /></Pressable> : null}</View><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters}>{([
+          { key: 'all', label: '全部', count: totalCount },
+          { key: 'attention', label: '需处理', count: attentionMessages.length },
+          { key: 'approval', label: '审批', count: today.data?.pendingApprovals.length ?? 0 },
+          { key: 'completed', label: '已完成', count: resultMessages.length },
+        ] as Array<{ key: MessageFilter; label: string; count: number }>).map((item) => <Pressable key={item.key} onPress={() => setFilter(item.key)} style={[styles.filter, filter === item.key && styles.filterSelected]}><Text style={[styles.filterText, filter === item.key && styles.filterTextSelected]}>{item.label}</Text>{item.count > 0 ? <Text style={[styles.filterCount, filter === item.key && styles.filterCountSelected]}>{item.count}</Text> : null}</Pressable>)}</ScrollView></> : null}
+
         {state === 'signed_out' ? (
-          <CompactState icon="🛡" title="登录后开始使用" description="计划、提醒和完成结果会集中在这里。" actionLabel="开始使用" onPress={() => router.push('/connections')} />
+          <CompactState icon="shield-checkmark-outline" title="登录后开始使用" description="计划、提醒和完成结果会集中在这里。" actionLabel="开始使用" onPress={() => router.push('/connections')} />
         ) : null}
 
         {state === 'loading' ? (
@@ -136,11 +154,11 @@ export default function Today() {
         ) : null}
 
         {state === 'error' ? (
-          <CompactState icon="↻" title="网络暂时不可用" description="请稍后再试，不会影响已有计划。" actionLabel="重试" onPress={() => today.refetch()} />
+          <CompactState icon="refresh-outline" title="网络暂时不可用" description="请稍后再试，不会影响已有计划。" actionLabel="重试" onPress={() => today.refetch()} />
         ) : null}
 
         {state === 'empty' ? (
-          <View style={styles.quietState}><View style={styles.quietIcon}><Text style={styles.quietCheck}>✓</Text></View><View style={styles.quietCopy}><Text style={styles.quietTitle}>今天一切顺利</Text><Text style={styles.quietDescription}>没有需要你处理的事情</Text></View></View>
+          <View style={styles.quietState}><View style={styles.quietIcon}><Ionicons name="checkmark" size={18} color="#23A559" /></View><View style={styles.quietCopy}><Text style={styles.quietTitle}>今天一切顺利</Text><Text style={styles.quietDescription}>没有需要你处理的事情</Text></View></View>
         ) : null}
 
         {state === 'ready' ? (
@@ -150,17 +168,17 @@ export default function Today() {
               <Text style={styles.summaryText}>{attentionCount > 0 ? `${attentionCount} 件事情需要你看看` : '今天没有需要你处理的事情'}</Text>
             </View>
 
-            {(today.data?.pendingApprovals.length ?? 0) > 0 ? (
-              <WorkspaceSection title="待你确认" count={today.data?.pendingApprovals.length}>
+            {(filter === 'all' || filter === 'approval') && shownApprovals.length > 0 ? (
+              <WorkspaceSection title="待你确认" count={shownApprovals.length} action={{ label: '审批中心', onPress: () => router.push('/approvals' as never) }}>
                 <View style={styles.approvalList}>
-                  {today.data?.pendingApprovals.map((item) => (
+                  {shownApprovals.map((item) => (
                     <AttentionCard
                       key={item.id}
                       title={item.planName}
                       description={item.summary}
                       detail={`${approvalRiskText(item.riskLevel)} · ${formatExpiry(item.expiresAt)}`}
-                      actionLabel="确认继续"
-                      onPress={() => confirm(item, 'approve')}
+                      actionLabel="查看详情"
+                      onPress={() => router.push(`/approvals/${item.id}` as never)}
                       secondaryAction={{ label: '暂不处理', onPress: () => confirm(item, 'reject') }}
                     />
                   ))}
@@ -168,17 +186,18 @@ export default function Today() {
               </WorkspaceSection>
             ) : null}
 
-            {attentionMessages.length > 0 ? (
-              <WorkspaceSection title="需要处理" count={attentionMessages.length}>
-                <View style={styles.messageGroup}>{attentionMessages.map((item, index) => <MessageRow key={item.id} {...item} last={index === attentionMessages.length - 1} />)}</View>
+            {(filter === 'all' || filter === 'attention') && shownAttention.length > 0 ? (
+              <WorkspaceSection title="需要处理" count={shownAttention.length}>
+                <View style={styles.messageGroup}>{shownAttention.map((item, index) => <MessageRow key={item.id} {...item} last={index === shownAttention.length - 1} />)}</View>
               </WorkspaceSection>
             ) : null}
 
-            {resultMessages.length > 0 ? (
+            {(filter === 'all' || filter === 'completed') && shownResults.length > 0 ? (
               <WorkspaceSection title="最近完成" action={{ label: '全部记录', onPress: () => router.push('/records') }}>
-                <View style={styles.messageGroup}>{resultMessages.slice(0, 6).map((item, index, shown) => <MessageRow key={item.id} {...item} tone="success" last={index === shown.length - 1} />)}</View>
+                <View style={styles.messageGroup}>{shownResults.slice(0, 6).map((item, index, shown) => <MessageRow key={item.id} {...item} tone="success" last={index === shown.length - 1} />)}</View>
               </WorkspaceSection>
             ) : null}
+            {shownApprovals.length === 0 && shownAttention.length === 0 && shownResults.length === 0 && search ? <View style={styles.noResult}><Ionicons name="search-outline" size={20} color={colors.textMuted} /><Text style={styles.noResultText}>没有匹配的消息</Text></View> : null}
           </>
         ) : null}
       </ScrollView>
@@ -186,10 +205,10 @@ export default function Today() {
   );
 }
 
-function CompactState({ icon, title, description, actionLabel, onPress }: { icon: string; title: string; description: string; actionLabel: string; onPress: () => void }) {
+function CompactState({ icon, title, description, actionLabel, onPress }: { icon: ComponentProps<typeof Ionicons>['name']; title: string; description: string; actionLabel: string; onPress: () => void }) {
   return (
     <View style={styles.compactState}>
-      <View style={styles.compactStateIcon}><Text style={styles.compactStateGlyph}>{icon}</Text></View>
+      <View style={styles.compactStateIcon}><Ionicons name={icon} size={20} color={colors.primary} /></View>
       <View style={styles.compactStateCopy}>
         <Text style={styles.compactStateTitle}>{title}</Text>
         <Text style={styles.compactStateDescription} numberOfLines={2}>{description}</Text>
@@ -236,11 +255,21 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: '#FFFFFF' },
   page: { flex: 1, backgroundColor: '#FFFFFF' },
   content: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: 80 },
+  search: { minHeight: 44, marginTop: spacing.md, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.md, borderRadius: radius.md, backgroundColor: '#F3F6F8' },
+  searchInput: { ...typography.body, color: colors.text, flex: 1, paddingVertical: 0 },
+  filters: { gap: spacing.sm, paddingTop: spacing.sm, paddingBottom: spacing.xs },
+  filter: { minHeight: 34, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: spacing.md, borderRadius: radius.pill, backgroundColor: '#F2F4F7' },
+  filterSelected: { backgroundColor: colors.accentSoft },
+  filterText: { ...typography.caption, color: colors.textSecondary, fontWeight: '600' },
+  filterTextSelected: { color: colors.primary, fontWeight: '800' },
+  filterCount: { ...typography.label, color: colors.textMuted },
+  filterCountSelected: { color: colors.primary },
+  noResult: { minHeight: 120, alignItems: 'center', justifyContent: 'center', gap: spacing.sm },
+  noResultText: { ...typography.caption, color: colors.textMuted },
   loading: { alignItems: 'center', paddingVertical: 64, gap: spacing.md },
   loadingText: { ...typography.caption, color: colors.textSecondary },
   compactState: { minHeight: 74, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.lg, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, backgroundColor: '#F2F3F5', borderRadius: radius.md },
   compactStateIcon: { width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentSoft },
-  compactStateGlyph: { color: colors.primary, fontSize: 17, fontWeight: '900' },
   compactStateCopy: { flex: 1 },
   compactStateTitle: { ...typography.bodyStrong, color: colors.text },
   compactStateDescription: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
@@ -248,7 +277,6 @@ const styles = StyleSheet.create({
   compactStateActionText: { ...typography.label, color: '#FFFFFF' },
   quietState: { minHeight: 70, flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.lg, paddingHorizontal: spacing.xs },
   quietIcon: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: '#E8F7EF' },
-  quietCheck: { color: '#23A559', fontWeight: '900', fontSize: 16 },
   quietCopy: { flex: 1 },
   quietTitle: { ...typography.bodyStrong, color: colors.text },
   quietDescription: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },

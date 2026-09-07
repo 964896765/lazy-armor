@@ -1,10 +1,12 @@
+import { Ionicons } from '@expo/vector-icons';
+import type { ComponentProps } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { colors } from '../colors';
 import { spacing } from '../spacing';
 import { typography } from '../typography';
 
 export function PlanRow({ icon, name, description, detail, status, statusTone = 'success', onPress, last = false }: {
-  icon: string;
+  icon: ComponentProps<typeof Ionicons>['name'];
   name: string;
   description: string;
   detail: string;
@@ -15,13 +17,13 @@ export function PlanRow({ icon, name, description, detail, status, statusTone = 
 }) {
   return (
     <Pressable accessibilityRole="button" onPress={onPress} style={({ pressed }) => [styles.row, !last && styles.divider, pressed && styles.pressed]}>
-      <View style={[styles.icon, styles[`${statusTone}Icon`]]}><Text style={styles.iconText}>{icon}</Text></View>
+      <View style={[styles.icon, styles[`${statusTone}Icon`]]}><Ionicons name={icon} size={19} color={statusTone === 'warning' ? colors.warning : statusTone === 'muted' ? colors.textMuted : colors.primary} /></View>
       <View style={styles.copy}>
         <View style={styles.titleRow}><Text numberOfLines={1} style={styles.name}>{name}</Text><View style={[styles.status, styles[`${statusTone}Status`]]}><Text style={[styles.statusText, styles[`${statusTone}Text`]]}>{status}</Text></View></View>
         <Text numberOfLines={1} style={styles.description}>{description}</Text>
         <Text numberOfLines={1} style={styles.detail}>{detail}</Text>
       </View>
-      <Text style={styles.chevron}>›</Text>
+      <Ionicons name="ellipsis-horizontal" size={18} color={colors.textMuted} />
     </Pressable>
   );
 }
@@ -34,7 +36,6 @@ const styles = StyleSheet.create({
   successIcon: { backgroundColor: '#E8F7EF' },
   warningIcon: { backgroundColor: '#FFF4E5' },
   mutedIcon: { backgroundColor: '#F2F4F7' },
-  iconText: { fontSize: 17 },
   copy: { flex: 1, minWidth: 0 },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   name: { ...typography.bodyStrong, color: colors.text, flex: 1 },
@@ -48,5 +49,4 @@ const styles = StyleSheet.create({
   successText: { color: '#16834A' },
   warningText: { color: '#B54708' },
   mutedText: { color: '#667085' },
-  chevron: { color: '#98A2B3', fontSize: 24, fontWeight: '300' },
 });

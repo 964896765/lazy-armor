@@ -18,6 +18,17 @@ export {
   type PlanDomain,
 } from './domain-catalog';
 
+export {
+  CANONICAL_SCENARIOS,
+  PLAN_EXECUTION_LIFECYCLE,
+  PLAN_STRATEGIES,
+  PRODUCT_DOMAINS,
+  productDomainFromStorageKey,
+  scenariosForDomain,
+  type ProductDomain,
+  type ProductDomainKey,
+} from './product-model';
+
 export const SOURCE_TYPES = ['manual', 'email', 'calendar', 'notification', 'file', 'webhook', 'internal', 'commerce', 'device', 'vehicle', 'billing', 'content_platform'] as const;
 export const TRIGGER_TYPES = ['manual', 'schedule', 'event', 'webhook', 'threshold', 'date_before', 'date_after', 'data_changed'] as const;
 export const CONDITION_OPERATORS = ['EQ', 'NE', 'GT', 'GTE', 'LT', 'LTE', 'IN', 'NOT_IN', 'CONTAINS', 'CHANGED', 'PERCENT_CHANGE_GT', 'TIME_RANGE', 'EXISTS', 'NOT_EXISTS'] as const;

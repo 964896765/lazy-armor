@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { deviceAppCapabilities, deviceAppIntegration, type AppIntegrationCapability, type DeviceAppConnectionMode } from '@lazy-armor/shared';
+import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { ActivityIndicator, FlatList, Image, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
@@ -47,7 +48,7 @@ export default function AddConnectionPage() {
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <View style={styles.content}>
         <WorkspaceHeader title="添加连接" subtitle="选择要交给懒人装甲的来源" onBack={() => router.back()} />
-        {!token ? <Surface><EmptyState icon="＋" title="请先登录" description="添加连接前需要确认这是你的账号与设备。" action={{ label: '去登录', onPress: () => router.push('/auth/login' as never) }} /></Surface> : null}
+        {!token ? <Surface><EmptyState icon="log-in-outline" title="请先登录" description="添加连接前需要确认这是你的账号与设备。" action={{ label: '去登录', onPress: () => router.push('/auth/login' as never) }} /></Surface> : null}
         {token ? <>
           <View style={styles.kindTabs}>{([['mobile_app', '手机应用'], ['online_service', '在线服务'], ['device', '设备与资料']] as const).map(([value, label]) => <Pressable key={value} accessibilityRole="button" onPress={() => setKind(value)} style={[styles.kindTab, kind === value && styles.kindTabSelected]}><Text style={[styles.kindText, kind === value && styles.kindTextSelected]}>{label}</Text></Pressable>)}</View>
           {kind === 'mobile_app' ? <MobileAppDiscovery selected={selected} search={search} onSearch={setSearch} apps={discovery.data ?? []} discoveryLoading={discovery.isLoading} discoveryError={discovery.isError} onSelect={setSelectedPackage} /> : null}
@@ -76,19 +77,19 @@ function MobileAppDiscovery({ selected, search, onSearch, apps, discoveryLoading
   const normalized = search.trim().toLocaleLowerCase('zh-CN');
   const filtered = normalized ? apps.filter((app) => `${app.displayName} ${app.packageName}`.toLocaleLowerCase('zh-CN').includes(normalized)) : apps;
   return <View style={styles.discovery}>
-    <View style={styles.searchBox}><Text style={styles.searchIcon}>⌕</Text><TextInput value={search} onChangeText={onSearch} placeholder="搜索这台手机上的 App" placeholderTextColor={colors.textMuted} style={styles.searchInput} /></View>
+    <View style={styles.searchBox}><Ionicons name="search-outline" size={19} color={colors.textMuted} /><TextInput value={search} onChangeText={onSearch} placeholder="搜索这台手机上的 App" placeholderTextColor={colors.textMuted} style={styles.searchInput} /></View>
     <Text style={styles.resultMeta}>{discoveryLoading ? '正在读取…' : `${filtered.length} 个可启动 App`}</Text>
-    {unavailable ? <Surface><EmptyState icon="▣" title="暂时无法读取设备应用" description="请使用包含原生模块的 Android 构建。" /></Surface> : null}
-    {!unavailable && discoveryError ? <Surface><EmptyState icon="☁" title="暂时无法读取应用" description="没有保存任何应用，请稍后重试。" /></Surface> : null}
-    {!unavailable && !discoveryLoading && !discoveryError && filtered.length === 0 ? <Surface><EmptyState icon="▣" title={search ? '没有找到对应 App' : '没有可添加的应用'} description="不会显示示例或测试列表。" /></Surface> : null}
+    {unavailable ? <Surface><EmptyState icon="phone-portrait-outline" title="暂时无法读取设备应用" description="请使用包含原生模块的 Android 构建。" /></Surface> : null}
+    {!unavailable && discoveryError ? <Surface><EmptyState icon="cloud-offline-outline" title="暂时无法读取应用" description="没有保存任何应用，请稍后重试。" /></Surface> : null}
+    {!unavailable && !discoveryLoading && !discoveryError && filtered.length === 0 ? <Surface><EmptyState icon="apps-outline" title={search ? '没有找到对应 App' : '没有可添加的应用'} description="不会显示示例或测试列表。" /></Surface> : null}
     {!unavailable && !discoveryError ? <FlatList data={filtered} keyExtractor={(app) => app.packageName} style={styles.catalog} contentContainerStyle={styles.catalogContent} keyboardShouldPersistTaps="handled" initialNumToRender={14} maxToRenderPerBatch={18} windowSize={8} renderItem={({ item, index }) => <AppRow app={item} selected={selected?.packageName === item.packageName} last={index === filtered.length - 1} onPress={() => onSelect(item.packageName)} />} /> : null}
   </View>;
 }
 
 function AppRow({ app, selected, last, onPress }: { app: DiscoveredDeviceApp; selected: boolean; last: boolean; onPress: () => void }) {
   return <Pressable accessibilityRole="button" onPress={onPress} style={({ pressed }) => [styles.appRow, !last && styles.rowDivider, selected && styles.appRowSelected, pressed && styles.pressed]}>
-    <View style={styles.appIcon}>{app.iconDataUri ? <Image source={{ uri: app.iconDataUri }} style={styles.appImage} /> : <Text style={styles.appIconText}>{app.displayName.slice(0, 1)}</Text>}</View>
-    <View style={styles.appCopy}><Text style={styles.appName}>{app.displayName}</Text><Text style={styles.appMeta}>{app.versionName ? `版本 ${app.versionName}` : '已由设备发现'}</Text></View><Text style={styles.chevron}>›</Text>
+    <View style={styles.appIcon}>{app.iconDataUri ? <Image source={{ uri: app.iconDataUri }} style={styles.appImage} /> : <Ionicons name="apps-outline" size={19} color={colors.primary} />}</View>
+    <View style={styles.appCopy}><Text style={styles.appName}>{app.displayName}</Text><Text style={styles.appMeta}>{app.versionName ? `版本 ${app.versionName}` : '已由设备发现'}</Text></View><Ionicons name="chevron-forward" size={17} color={colors.textMuted} />
   </Pressable>;
 }
 
@@ -121,7 +122,6 @@ const styles = StyleSheet.create({
   kindTextSelected: { color: colors.primary, fontWeight: '800' },
   discovery: { flex: 1 },
   searchBox: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.md, backgroundColor: '#F2F3F5', borderRadius: 14 },
-  searchIcon: { color: '#667085', fontSize: 19 },
   searchInput: { ...typography.body, color: colors.text, flex: 1, paddingVertical: spacing.sm },
   resultMeta: { ...typography.caption, color: colors.textMuted, marginVertical: spacing.sm, paddingHorizontal: spacing.xs },
   secondaryContent: { paddingBottom: 48 },
@@ -135,11 +135,9 @@ const styles = StyleSheet.create({
   rowDivider: { borderBottomWidth: 1, borderBottomColor: '#EAECF0' },
   appIcon: { width: 36, height: 36, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentSoft, overflow: 'hidden' },
   appImage: { width: 36, height: 36 },
-  appIconText: { color: colors.primary, fontSize: 15, fontWeight: '800' },
   appCopy: { flex: 1 },
   appName: { ...typography.bodyStrong, color: colors.text },
   appMeta: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
-  chevron: { color: '#98A2B3', fontSize: 25, fontWeight: '300' },
   modalBackdrop: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundColor: 'rgba(16, 24, 40, 0.34)' },
   sheet: { position: 'absolute', left: 0, right: 0, bottom: 0, maxHeight: '78%', backgroundColor: colors.background, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: spacing.sm },
   sheetHandle: { width: 38, height: 4, borderRadius: 2, backgroundColor: '#D0D5DD', alignSelf: 'center' },

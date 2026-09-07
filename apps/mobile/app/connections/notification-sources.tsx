@@ -72,14 +72,14 @@ export default function NotificationSourcesPage() {
   const nativeUnavailable = deviceDiscoveryStatus() === 'unavailable';
   return <SafeAreaView style={styles.safeArea} edges={['top']}><ScrollView style={styles.page} contentContainerStyle={styles.content}>
     <View style={styles.header}><Text style={styles.title}>通知来源</Text><Text style={styles.subtitle}>逐个选择已添加的应用。通知正文只在手机上短暂处理，系统只会同步最小化指纹线索等待核实。</Text></View>
-    {!token ? <Surface><EmptyState icon="▣" title="请先登录" description="需要先确认当前账号，才能管理通知来源。" /></Surface> : null}
-    {token && nativeUnavailable ? <Surface><EmptyState icon="▣" title="暂时无法管理通知来源" description="请使用包含原生模块的 Android 构建。Web、iOS 或 Expo Go 不会假装已经获得系统通知访问。" /></Surface> : null}
+    {!token ? <Surface><EmptyState icon="log-in-outline" title="请先登录" description="需要先确认当前账号，才能管理通知来源。" /></Surface> : null}
+    {token && nativeUnavailable ? <Surface><EmptyState icon="notifications-off-outline" title="暂时无法管理通知来源" description="请使用包含原生模块的 Android 构建。Web、iOS 或 Expo Go 不会假装已经获得系统通知访问。" /></Surface> : null}
     {token && !nativeUnavailable ? <>
       {!nativeStatus.data?.accessGranted ? <Surface><Text style={styles.cardTitle}>需要系统通知访问</Text><Text style={styles.cardCopy}>系统会单独询问是否允许懒人装甲读取通知。开启系统访问后，你仍需要在此页为每个应用分别选择是否作为来源。</Text><View style={styles.action}><ActionButton label="打开系统设置" onPress={() => void openNotificationAccessSettings()} /></View></Surface> : null}
       {nativeStatus.data?.accessGranted ? <Surface><Text style={styles.cardTitle}>已获得系统通知访问</Text><Text style={styles.cardCopy}>当前已有 {nativeStatus.data.enabledPackageCount} 个应用被你选为来源。未启用的应用不会采集或同步通知。</Text>{nativeStatus.data.pendingCount > 0 ? <View style={styles.action}><ActionButton label={sync.isPending ? '正在同步…' : `同步 ${nativeStatus.data.pendingCount} 条待核实线索`} onPress={() => sync.mutate()} disabled={sync.isPending} /></View> : <Text style={styles.quietText}>当前没有待同步的通知线索。</Text>}{sync.isError ? <Text style={styles.error}>同步暂时失败，未确认的线索会保留在本机等待你稍后重试。</Text> : null}</Surface> : null}
       <Text style={styles.sectionTitle}>已添加的应用</Text>
       {connections.isLoading ? <ActivityIndicator color={colors.primary} /> : null}
-      {available.length === 0 && !connections.isLoading ? <Surface><EmptyState icon="＋" title="还没有可管理的应用" description="请先从当前设备的真实可启动应用中添加连接。" /></Surface> : null}
+      {available.length === 0 && !connections.isLoading ? <Surface><EmptyState icon="add-circle-outline" title="还没有可管理的应用" description="请先从当前设备的真实可启动应用中添加连接。" /></Surface> : null}
       <View style={styles.list}>{available.map((connection) => <NotificationSourceRow key={connection.id} connection={connection} accessGranted={Boolean(nativeStatus.data?.accessGranted)} pending={toggle.isPending} onToggle={(enabled) => toggle.mutate({ connection, enabled })} />)}</View>
       {toggle.isError ? <Text style={styles.error}>设置暂时没有保存。系统不会在未明确启用时上传通知。</Text> : null}
       <Text style={styles.sectionTitle}>待确认的资源线索</Text>

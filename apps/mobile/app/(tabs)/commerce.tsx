@@ -38,7 +38,7 @@ export default function CommerceSpace() {
       <ScrollView style={styles.page} contentContainerStyle={styles.content}>
         <WorkspaceHeader title="懒人商城" subtitle="根据你的计划准备补给建议" />
 
-        {!token ? <Surface><EmptyState icon="□" title="登录后查看你的补给与待购买事项" description="商城只会使用你允许的计划与资源信息。" action={{ label: '去登录', onPress: () => router.push('/auth/login' as never) }} /></Surface> : null}
+        {!token ? <Surface><EmptyState icon="bag-handle-outline" title="登录后查看你的补给与待购买事项" description="商城只会使用你允许的计划与资源信息。" action={{ label: '去登录', onPress: () => router.push('/auth/login' as never) }} /></Surface> : null}
         {plans.isLoading ? <View style={styles.loading}><ActivityIndicator color={colors.primary} /><Text style={styles.loadingText}>正在整理补给事项…</Text></View> : null}
         {token && !plans.isLoading ? (
           <>

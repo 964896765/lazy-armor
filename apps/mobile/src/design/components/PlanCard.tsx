@@ -5,7 +5,7 @@ import { spacing } from '../spacing';
 import { typography } from '../typography';
 
 export function PlanCard({ icon, name, description, status, nextRun, onPress, statusTone = 'success' }: {
-  icon: string;
+  icon: ComponentProps<typeof Ionicons>['name'];
   name: string;
   description: string;
   status: string;
@@ -19,7 +19,7 @@ export function PlanCard({ icon, name, description, status, nextRun, onPress, st
       onPress={onPress}
       style={({ pressed }) => [styles.card, pressed && onPress ? styles.pressed : null]}
     >
-      <View style={styles.icon}><Text style={styles.iconText}>{icon}</Text></View>
+      <View style={styles.icon}><Ionicons name={icon} size={21} color={colors.primary} /></View>
       <Text style={styles.name}>{name}</Text>
       <Text style={styles.description}>{description}</Text>
       <View style={styles.footer}>
@@ -37,7 +37,6 @@ const styles = StyleSheet.create({
   card: { backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1, borderRadius: radius.lg, padding: spacing.xl, gap: spacing.sm },
   pressed: { opacity: 0.82, transform: [{ scale: 0.99 }] },
   icon: { width: 42, height: 42, borderRadius: radius.md, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center', marginBottom: spacing.xs },
-  iconText: { fontSize: 21 },
   name: { ...typography.cardTitle, color: colors.text },
   description: { ...typography.body, color: colors.textSecondary },
   footer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md, marginTop: spacing.md },
@@ -52,3 +51,5 @@ const styles = StyleSheet.create({
   mutedText: { color: colors.textMuted },
   nextRun: { ...typography.caption, color: colors.textMuted, flexShrink: 1, textAlign: 'right' },
 });
+import { Ionicons } from '@expo/vector-icons';
+import type { ComponentProps } from 'react';

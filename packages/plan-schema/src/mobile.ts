@@ -15,3 +15,14 @@ export {
   type LegacyPlanDomain,
   type PlanDomain,
 } from './domain-catalog';
+
+export {
+  CANONICAL_SCENARIOS,
+  PLAN_EXECUTION_LIFECYCLE,
+  PLAN_STRATEGIES,
+  PRODUCT_DOMAINS,
+  productDomainFromStorageKey,
+  scenariosForDomain,
+  type ProductDomain,
+  type ProductDomainKey,
+} from './product-model';

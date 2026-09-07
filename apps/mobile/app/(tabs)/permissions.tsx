@@ -1,4 +1,6 @@
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Ionicons } from '@expo/vector-icons';
+import type { ComponentProps } from 'react';
 import { router } from 'expo-router';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -45,10 +47,10 @@ export default function PermissionsPage() {
       <ScrollView style={styles.page} contentContainerStyle={styles.content}>
         <WorkspaceHeader title="权限与安全" subtitle="查看每项信息为什么被使用" />
 
-        {!token ? <Surface><EmptyState icon="🔐" title="登录后管理权限" action={{ label: '去登录', onPress: () => router.push('/connections') }} /></Surface> : null}
+        {!token ? <Surface><EmptyState icon="lock-closed-outline" title="登录后管理权限" action={{ label: '去登录', onPress: () => router.push('/connections') }} /></Surface> : null}
         {connections.isLoading || loadingDetails ? <View style={styles.loading}><ActivityIndicator color={colors.primary} /><Text style={styles.loadingText}>正在整理授权范围…</Text></View> : null}
-        {connections.isError ? <Surface><EmptyState icon="☁️" title="权限暂时加载失败" description="请稍后再试。" action={{ label: '重新加载', onPress: () => connections.refetch() }} /></Surface> : null}
-        {connections.data?.length === 0 ? <Surface><EmptyState icon="🔐" title="还没有授予任何权限" description="连接服务后，你可以在这里逐项管理。" action={{ label: '去连接', onPress: () => router.push('/connections') }} /></Surface> : null}
+        {connections.isError ? <Surface><EmptyState icon="cloud-offline-outline" title="权限暂时加载失败" description="请稍后再试。" action={{ label: '重新加载', onPress: () => connections.refetch() }} /></Surface> : null}
+        {connections.data?.length === 0 ? <Surface><EmptyState icon="lock-closed-outline" title="还没有授予任何权限" description="连接服务后，你可以在这里逐项管理。" action={{ label: '去连接', onPress: () => router.push('/connections') }} /></Surface> : null}
 
         {connections.data?.map((connection) => {
           const detail = detailQueries.find((query) => query.data?.connectionId === connection.id)?.data;
@@ -65,7 +67,7 @@ export default function PermissionsPage() {
                   const label = capabilityLabel(connection.connectorId, permission.capability, permission.name);
                   return (
                     <View key={permission.capability} style={[styles.permissionRow, index < detail.permissions.length - 1 && styles.divider]}>
-                      <View style={styles.resourceIcon}><Text style={styles.resourceIconText}>{permissionResourceLabel(connection.connectorId, permission.capability).slice(0, 1)}</Text></View>
+                      <View style={styles.resourceIcon}><Ionicons name={permissionResourceIcon(connection.connectorId, permission.capability)} size={20} color={colors.primary} /></View>
                       <View style={styles.permissionCopy}>
                         <View style={styles.permissionTitleRow}><Text style={styles.resource}>{permissionResourceLabel(connection.connectorId, permission.capability)}</Text><Text style={styles.permissionState}>{permission.granted ? '已允许' : '已关闭'}</Text></View>
                         <Text style={styles.permissionName}>{label}</Text>
@@ -94,6 +96,15 @@ function permissionResourceLabel(provider: string, capability: string) {
   return '计划信息';
 }
 
+function permissionResourceIcon(provider: string, capability: string): ComponentProps<typeof Ionicons>['name'] {
+  if (provider === 'gmail' || capability.includes('EMAIL')) return 'mail-outline';
+  if (provider === 'google_calendar' || provider === 'calendar' || capability.includes('EVENT')) return 'calendar-outline';
+  if (capability.includes('FILE')) return 'document-text-outline';
+  if (capability.includes('CONTENT') || capability.includes('PUBLISH')) return 'create-outline';
+  if (capability.includes('TRACKING')) return 'cube-outline';
+  return 'shield-checkmark-outline';
+}
+
 function connectionDisplayName(key: string, fallback: string) {
   if (key === 'gmail') return 'Google 邮箱';
   if (key === 'google_calendar' || key === 'calendar') return 'Google 日历';
@@ -113,7 +124,6 @@ const styles = StyleSheet.create({
   permissionRow: { minHeight: 100, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.xs, paddingVertical: spacing.md },
   divider: { borderBottomWidth: 1, borderBottomColor: '#EAECF0' },
   resourceIcon: { width: 36, height: 36, borderRadius: 12, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' },
-  resourceIconText: { color: colors.primary, fontSize: 14, fontWeight: '800' },
   permissionCopy: { flex: 1, minWidth: 0 },
   permissionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   resource: { ...typography.bodyStrong, color: colors.text, flex: 1 },

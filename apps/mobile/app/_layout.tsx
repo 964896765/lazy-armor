@@ -26,12 +26,15 @@ export default function RootLayout() {
           <Stack.Screen name="onboarding" options={{ headerShown: false }} />
           <Stack.Screen name="membership" options={{ title: '会员' }} />
           <Stack.Screen name="connections/add" options={{ headerShown: false }} />
+          <Stack.Screen name="approvals" options={{ headerShown: false }} />
+          <Stack.Screen name="approvals/[id]" options={{ headerShown: false }} />
+          <Stack.Screen name="plan-center" options={{ headerShown: false }} />
           <Stack.Screen name="connections/trusted-devices" options={{ title: '可信设备' }} />
           <Stack.Screen name="connections/notification-sources" options={{ title: '通知来源' }} />
           <Stack.Screen name="truth-store" options={{ title: '已验证事实' }} />
           <Stack.Screen name="domains/[domain]" options={{ headerShown: false }} />
-          <Stack.Screen name="devices" options={{ title: '我的设备' }} />
-          <Stack.Screen name="vehicles" options={{ title: '我的车辆' }} />
+          <Stack.Screen name="devices" options={{ headerShown: false }} />
+          <Stack.Screen name="vehicles" options={{ headerShown: false }} />
           <Stack.Screen name="notification-settings" options={{ title: '通知' }} />
           <Stack.Screen name="automation-safety" options={{ title: '自动化安全等级' }} />
           <Stack.Screen name="data-management" options={{ title: '数据管理' }} />

@@ -1,5 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
+import { Ionicons } from '@expo/vector-icons';
 import { router, type Href } from 'expo-router';
+import type { ComponentProps } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/api';
@@ -27,46 +29,46 @@ export default function Me() {
       <ScrollView style={styles.page} contentContainerStyle={styles.content}>
         <WorkspaceHeader title="我的" subtitle="账号、连接与隐私设置" />
         <View style={styles.profile}>
-          <View style={styles.avatar}><Text style={styles.avatarText}>{token ? name.slice(0, 1) : '你'}</Text></View>
+          <View style={styles.avatar}><Ionicons name="person" size={24} color={colors.surface} /></View>
           <View style={styles.profileCopy}><Text style={styles.profileName}>{name}</Text><Text style={styles.profileMeta}>{token ? '懒人装甲正在为你服务' : '登录后开始管理生活'}</Text></View>
           {loading ? <ActivityIndicator color={colors.primary} /> : null}
         </View>
 
         <Text style={styles.sectionLabel}>我的生活</Text>
         <View style={styles.menu}>
-          <MenuRow icon="🔗" title="我的连接" detail={token ? `已连接 ${connections.data?.length ?? 0} 个服务` : '登录与连接服务'} onPress={() => router.push('/connections')} />
+          <MenuRow icon="link-outline" title="我的连接" detail={token ? `已连接 ${connections.data?.length ?? 0} 个服务` : '登录与连接服务'} onPress={() => router.push('/connections')} />
           <Divider />
-          <MenuRow icon="⌁" title="我的设备" detail={`已记录 ${devices.data?.length ?? 0} 台`} onPress={() => router.push('/devices' as Href)} />
+          <MenuRow icon="phone-portrait-outline" title="我的设备" detail={`已记录 ${devices.data?.length ?? 0} 台`} onPress={() => router.push('/devices' as Href)} />
           <Divider />
-          <MenuRow icon="🚙" title="我的车辆" detail={`已记录 ${vehicles.data?.length ?? 0} 台`} onPress={() => router.push('/vehicles' as Href)} />
+          <MenuRow icon="car-outline" title="我的车辆" detail={`已记录 ${vehicles.data?.length ?? 0} 台`} onPress={() => router.push('/vehicles' as Href)} />
         </View>
 
         <Text style={styles.sectionLabel}>提醒与控制</Text>
         <View style={styles.menu}>
-          <MenuRow icon="◉" title="通知" detail={(unread.data?.count ?? 0) > 0 ? `${unread.data?.count} 条未读` : '按你的偏好提醒'} onPress={() => router.push('/notification-settings' as Href)} />
+          <MenuRow icon="notifications-outline" title="通知" detail={(unread.data?.count ?? 0) > 0 ? `${unread.data?.count} 条未读` : '按你的偏好提醒'} onPress={() => router.push('/notification-settings' as Href)} />
           <Divider />
-          <MenuRow icon="✓" title="权限" detail="管理信息使用范围" onPress={() => router.push('/permissions' as Href)} />
+          <MenuRow icon="key-outline" title="权限" detail="管理信息使用范围" onPress={() => router.push('/permissions' as Href)} />
           <Divider />
-          <MenuRow icon="🛡️" title="安全" detail="确认与保护方式" onPress={() => router.push('/automation-safety' as Href)} />
+          <MenuRow icon="shield-checkmark-outline" title="安全" detail="确认与保护方式" onPress={() => router.push('/automation-safety' as Href)} />
           <Divider />
-          <MenuRow icon="▤" title="安全记录" detail="查看重要操作" onPress={() => router.push('/security-activity' as Href)} />
+          <MenuRow icon="receipt-outline" title="安全记录" detail="查看重要操作" onPress={() => router.push('/security-activity' as Href)} />
         </View>
 
         <Text style={styles.sectionLabel}>数据</Text>
         <View style={styles.menu}>
-          <MenuRow icon="▣" title="数据管理" detail="查看与管理你的数据" onPress={() => router.push('/data-management' as Href)} />
+          <MenuRow icon="server-outline" title="数据管理" detail="查看与管理你的数据" onPress={() => router.push('/data-management' as Href)} />
         </View>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-function MenuRow({ icon, title, detail, onPress }: { icon: string; title: string; detail: string; onPress: () => void }) {
+function MenuRow({ icon, title, detail, onPress }: { icon: ComponentProps<typeof Ionicons>['name']; title: string; detail: string; onPress: () => void }) {
   return (
     <Pressable accessibilityRole="button" onPress={onPress} style={({ pressed }) => [styles.row, pressed && styles.pressed]}>
-      <View style={styles.rowIcon}><Text style={styles.rowEmoji}>{icon}</Text></View>
+      <View style={styles.rowIcon}><Ionicons name={icon} size={20} color={colors.primary} /></View>
       <View style={styles.rowCopy}><Text style={styles.rowTitle}>{title}</Text><Text style={styles.rowDetail}>{detail}</Text></View>
-      <Text style={styles.chevron}>›</Text>
+      <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
     </Pressable>
   );
 }
@@ -79,7 +81,6 @@ const styles = StyleSheet.create({
   content: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: 80 },
   profile: { minHeight: 82, flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginBottom: spacing.sm, paddingHorizontal: spacing.xs, borderBottomWidth: 1, borderBottomColor: colors.border },
   avatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
-  avatarText: { color: colors.surface, fontSize: 19, fontWeight: '700' },
   profileCopy: { flex: 1 },
   profileName: { ...typography.cardTitle, color: colors.text },
   profileMeta: { ...typography.caption, color: colors.textSecondary, marginTop: spacing.xs },
@@ -88,10 +89,8 @@ const styles = StyleSheet.create({
   row: { minHeight: 64, flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
   pressed: { backgroundColor: '#F7F8FA' },
   rowIcon: { width: 34, height: 34, borderRadius: radius.md, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' },
-  rowEmoji: { color: colors.primary, fontSize: 16 },
   rowCopy: { flex: 1, marginLeft: spacing.md },
   rowTitle: { ...typography.bodyStrong, color: colors.text },
   rowDetail: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
-  chevron: { color: colors.textMuted, fontSize: 26, fontWeight: '300' },
   divider: { height: 1, backgroundColor: colors.border, marginLeft: 64 },
 });

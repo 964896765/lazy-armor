@@ -1,4 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Ionicons } from '@expo/vector-icons';
+import type { ComponentProps } from 'react';
 import * as Linking from 'expo-linking';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo } from 'react';
@@ -64,7 +66,7 @@ export default function OAuthCallbackPage() {
 
         {failure ? (
           <View style={styles.centerState}>
-            <View style={[styles.stateIcon, styles.failureIcon]}><Text style={styles.failureMark}>!</Text></View>
+            <View style={[styles.stateIcon, styles.failureIcon]}><Ionicons name="warning" size={30} color={colors.warning} /></View>
             <Text style={styles.stateTitle}>连接没有完成</Text>
             <Text style={styles.stateDescription}>{failure}</Text>
             <View style={styles.stateAction}><ActionButton label="返回我的连接" onPress={() => router.replace('/connections')} /></View>
@@ -74,7 +76,7 @@ export default function OAuthCallbackPage() {
         {callback.data ? (
           <>
             <View style={styles.successHeader}>
-              <View style={[styles.stateIcon, styles.successIcon]}><Text style={styles.successMark}>✓</Text></View>
+              <View style={[styles.stateIcon, styles.successIcon]}><Ionicons name="checkmark" size={32} color={colors.surface} /></View>
               <Text style={styles.stateTitle}>连接成功</Text>
               <Text style={styles.stateDescription}>{callback.data.connectorName} · {callback.data.externalAccountName}</Text>
             </View>
@@ -86,7 +88,7 @@ export default function OAuthCallbackPage() {
               {permissions.data?.map((permission) => (
                 <Surface key={permission.capability}>
                   <View style={styles.permissionHeader}>
-                    <View style={styles.permissionIcon}><Text style={styles.permissionEmoji}>{permissionIcon(permission.capability)}</Text></View>
+                    <View style={styles.permissionIcon}><Ionicons name={permissionIcon(permission.capability)} size={20} color={colors.primary} /></View>
                     <View style={styles.permissionCopy}>
                       <Text style={styles.permissionName}>{capabilityLabel(callback.data!.connectorId, permission.capability, permission.name)}</Text>
                       <Text style={styles.permissionDescription}>{capabilityDescription(callback.data!.connectorId, permission.capability)}</Text>
@@ -104,10 +106,10 @@ export default function OAuthCallbackPage() {
   );
 }
 
-function permissionIcon(capability: string) {
-  if (capability.includes('EMAIL')) return '✉️';
-  if (capability.includes('EVENT')) return '📅';
-  return '🔐';
+function permissionIcon(capability: string): ComponentProps<typeof Ionicons>['name'] {
+  if (capability.includes('EMAIL')) return 'mail-outline';
+  if (capability.includes('EVENT')) return 'calendar-outline';
+  return 'lock-closed-outline';
 }
 
 const styles = StyleSheet.create({
@@ -118,8 +120,6 @@ const styles = StyleSheet.create({
   stateIcon: { width: 72, height: 72, borderRadius: 36, alignItems: 'center', justifyContent: 'center', marginBottom: spacing.xl },
   successIcon: { backgroundColor: colors.success },
   failureIcon: { backgroundColor: colors.warningSoft },
-  successMark: { color: colors.surface, fontSize: 30, fontWeight: '800' },
-  failureMark: { color: colors.warning, fontSize: 30, fontWeight: '800' },
   stateTitle: { ...typography.title, color: colors.text, textAlign: 'center' },
   stateDescription: { ...typography.body, color: colors.textSecondary, textAlign: 'center', marginTop: spacing.sm },
   stateAction: { marginTop: spacing.xl },
@@ -129,7 +129,6 @@ const styles = StyleSheet.create({
   permissionList: { gap: spacing.md },
   permissionHeader: { flexDirection: 'row', gap: spacing.md },
   permissionIcon: { width: 42, height: 42, borderRadius: radius.md, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' },
-  permissionEmoji: { fontSize: 20 },
   permissionCopy: { flex: 1 },
   permissionName: { ...typography.bodyStrong, color: colors.text },
   permissionDescription: { ...typography.caption, color: colors.textSecondary, marginTop: spacing.xs },
