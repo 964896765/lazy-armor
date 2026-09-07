@@ -13,8 +13,8 @@ const styles = StyleSheet.create({
   header: { minHeight: 34, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.xs },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   title: { ...typography.section, color: colors.text },
-  count: { minWidth: 20, height: 20, paddingHorizontal: 6, borderRadius: 10, backgroundColor: colors.danger, alignItems: 'center', justifyContent: 'center' },
-  countText: { color: '#FFFFFF', fontSize: 10, lineHeight: 12, fontWeight: '800' },
+  count: { minWidth: 20, height: 20, paddingHorizontal: 6, borderRadius: 10, backgroundColor: '#EEF1F5', alignItems: 'center', justifyContent: 'center' },
+  countText: { color: colors.textSecondary, fontSize: 10, lineHeight: 12, fontWeight: '800' },
   action: { ...typography.caption, color: colors.primary, fontWeight: '700' },
   pressed: { opacity: 0.6 },
 });

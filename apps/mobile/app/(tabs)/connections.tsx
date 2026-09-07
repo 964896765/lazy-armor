@@ -5,7 +5,7 @@ import { useRouter, type Href } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import type { ComponentProps } from 'react';
 import { useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/api';
 import { useAuthStore } from '../../src/auth-store';
@@ -106,6 +106,17 @@ function ConnectedService({ item, connector, token }: { item: Connection; connec
       </Pressable>
       {expanded ? (
         <Surface style={styles.management}>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => router.push(`/connections/${item.id}` as Href)}
+            style={({ pressed }) => [styles.detailLink, pressed && styles.rowPressed]}
+          >
+            <View style={styles.detailLinkCopy}>
+              <Text style={styles.detailLinkTitle}>查看来源详情</Text>
+              <Text style={styles.detailLinkDescription}>能力、关联计划与授权边界</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={colors.primary} />
+          </Pressable>
           <Text style={styles.account}>{item.externalAccountName}</Text>
           {recovery ? <View style={styles.inlineAction}><ActionButton label={recovery} onPress={() => void recover()} /></View> : null}
           {feedback ? <Text style={styles.feedback}>{feedback}</Text> : null}
@@ -205,26 +216,22 @@ function AvailableService({ connector, token }: { connector: Connector; token: s
   }
 
   return (
-    <Surface>
-      <View style={styles.providerHeader}>
-        <ServiceIcon provider={connector.key} size="large" />
-        <View style={styles.providerCopy}><Text style={styles.providerName}>{connectionDisplayName(connector.key, connector.name)}</Text><Text style={styles.readiness}>{providerReadinessLabel(connector.productionStatus)}</Text></View>
+    <View style={styles.availableBlock}>
+      <View style={styles.availableRow}>
+        <ServiceIcon provider={connector.key} size="compact" />
+        <View style={styles.compactCopy}><View style={styles.compactTitleRow}><Text numberOfLines={1} style={styles.compactTitle}>{connectionDisplayName(connector.key, connector.name)}</Text><Text style={styles.readiness}>{providerReadinessLabel(connector.productionStatus)}</Text></View><Text numberOfLines={1} style={styles.compactDetail}>{connector.description}</Text></View>
+        <Pressable accessibilityRole="button" disabled={!requestAvailable || pending} onPress={connector.key === 'file_provider' ? () => router.push('/file-import' as Href) : () => void connect()} style={({ pressed }) => [styles.connectButton, pressed && styles.rowPressed, (!requestAvailable || pending) && styles.connectDisabled]}><Text style={styles.connectButtonText}>{connector.key === 'file_provider' ? '选择' : pending ? '打开中' : requestAvailable ? '连接' : '暂不可用'}</Text></Pressable>
       </View>
-      <Text style={styles.providerDescription}>{connector.description}</Text>
-      <View style={styles.capabilities}>{connector.capabilities.slice(0, 3).map((capability) => <Text style={styles.capability} key={capability.key}>✓ {capabilityLabel(connector.key, capability.key, capability.name)}</Text>)}</View>
-      <View style={styles.providerAction}>
-        {connector.key === 'file_provider'
-          ? <ActionButton label="选择账单文件" onPress={() => router.push('/file-import' as Href)} />
-          : <ActionButton label={requestAvailable ? (pending ? '正在打开授权…' : '连接') : providerReadinessLabel(connector.productionStatus)} onPress={() => void connect()} disabled={!requestAvailable || pending} />}
-      </View>
+      <View style={styles.capabilityChips}>{connector.capabilities.slice(0, 3).map((capability) => <View style={styles.capabilityChip} key={capability.key}><Ionicons name="checkmark" size={12} color={colors.primary} /><Text numberOfLines={1} style={styles.capabilityChipText}>{capabilityLabel(connector.key, capability.key, capability.name)}</Text></View>)}</View>
       {feedback ? <Text style={styles.feedback}>{feedback}</Text> : null}
-    </Surface>
+    </View>
   );
 }
 
 export default function ConnectionsPage() {
   const router = useRouter();
   const token = useAuthStore((store) => store.token);
+  const [search, setSearch] = useState('');
   const connectors = useQuery({ queryKey: ['connectors'], queryFn: () => api<Connector[]>('/connectors') });
   const connections = useQuery({ queryKey: ['connections', token], queryFn: () => api<Connection[]>('/connections', token), enabled: Boolean(token) });
   const deviceApps = useQuery({ queryKey: ['device-app-connections', token], queryFn: () => api<DeviceAppConnection[]>('/device-app-connections', token), enabled: Boolean(token) });
@@ -235,6 +242,12 @@ export default function ConnectionsPage() {
   const available = consumerConnectors.filter((connector) => connectionStartRequest(connector, 'placeholder') !== null && !activeProviderKeys.has(connector.key));
   const connectorByKey = new Map(consumerConnectors.map((connector) => [connector.key, connector]));
   const iconByPackage = new Map((discoveredApps.data ?? []).map((app) => [app.packageName, app.iconDataUri]));
+  const needle = search.trim().toLocaleLowerCase('zh-CN');
+  const visibleConnections = (connections.data ?? []).filter((item) => !needle || `${item.connectorName} ${item.externalAccountName}`.toLocaleLowerCase('zh-CN').includes(needle));
+  const visibleApps = (deviceApps.data ?? []).filter((item) => !needle || `${item.displayName} ${item.packageName}`.toLocaleLowerCase('zh-CN').includes(needle));
+  const visibleAvailable = available.filter((item) => !needle || `${item.name} ${item.description}`.toLocaleLowerCase('zh-CN').includes(needle));
+  const connectedCount = (connections.data?.filter((item) => item.status !== 'revoked').length ?? 0) + (deviceApps.data?.filter((item) => item.enabled).length ?? 0);
+  const attentionCount = (connections.data?.filter((item) => Boolean(connectionRecoveryAction(item.status))).length ?? 0) + (deviceApps.data?.filter((item) => !item.enabled).length ?? 0);
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -244,17 +257,25 @@ export default function ConnectionsPage() {
           <Surface style={styles.stateSurface}><EmptyState icon="link-outline" title="登录后管理连接" description="登录和账号安全在“我的”中管理。" action={{ label: '去登录', onPress: () => router.push('/auth/login' as Href) }} /></Surface>
         ) : (
           <>
+            <View style={styles.searchBox}><Ionicons name="search-outline" size={19} color={colors.textMuted} /><TextInput value={search} onChangeText={setSearch} placeholder="搜索已连接服务或可用来源" placeholderTextColor={colors.textMuted} style={styles.searchInput} />{search ? <Pressable accessibilityLabel="清空搜索" onPress={() => setSearch('')}><Ionicons name="close-circle" size={18} color={colors.textMuted} /></Pressable> : null}</View>
+            <View style={styles.summaryStrip}><ConnectionStat icon="link-outline" value={connectedCount} label="已连接" tone="success" /><View style={styles.statDivider} /><ConnectionStat icon="alert-circle-outline" value={attentionCount} label="需关注" tone={attentionCount > 0 ? 'warning' : 'muted'} /><View style={styles.statDivider} /><ConnectionStat icon="apps-outline" value={deviceApps.data?.length ?? 0} label="手机应用" tone="brand" /></View>
             {connections.isLoading ? <ActivityIndicator color={colors.primary} /> : null}
             {(connections.data?.length ?? 0) + (deviceApps.data?.length ?? 0) === 0 ? <View style={styles.emptyConnection}><Text style={styles.emptyConnectionTitle}>还没有连接服务</Text><Text style={styles.emptyConnectionCopy}>添加在线服务或这台手机上的应用</Text><ActionButton label="添加连接" onPress={() => router.push('/connections/add' as Href)} /></View> : null}
-            {(connections.data?.length ?? 0) > 0 ? <WorkspaceSection title="在线服务" count={connections.data?.length}><View style={styles.connectionList}>{connections.data?.map((item) => <ConnectedService key={item.id} item={item} connector={connectorByKey.get(item.connectorId)} token={token} />)}</View></WorkspaceSection> : null}
-            {(deviceApps.data?.length ?? 0) > 0 ? <WorkspaceSection title="手机应用" count={deviceApps.data?.length}><View style={styles.connectionList}>{deviceApps.data?.map((item) => <DeviceAppService key={item.id} item={item} token={token} trustedDeviceStatus={trustedDevices.data?.find((device) => device.id === item.trustedDeviceId)?.status} iconUri={iconByPackage.get(item.packageName) ?? undefined} />)}</View></WorkspaceSection> : null}
+            {visibleConnections.length > 0 ? <WorkspaceSection title="在线服务" count={visibleConnections.length}><View style={styles.connectionList}>{visibleConnections.map((item) => <ConnectedService key={item.id} item={item} connector={connectorByKey.get(item.connectorId)} token={token} />)}</View></WorkspaceSection> : null}
+            {visibleApps.length > 0 ? <WorkspaceSection title="手机应用" count={visibleApps.length}><View style={styles.connectionList}>{visibleApps.map((item) => <DeviceAppService key={item.id} item={item} token={token} trustedDeviceStatus={trustedDevices.data?.find((device) => device.id === item.trustedDeviceId)?.status} iconUri={iconByPackage.get(item.packageName) ?? undefined} />)}</View></WorkspaceSection> : null}
 
-            {available.length > 0 ? <WorkspaceSection title="还可以连接"><View style={styles.availableList}>{available.map((connector) => <AvailableService key={connector.key} connector={connector} token={token} />)}</View></WorkspaceSection> : null}
+            {visibleAvailable.length > 0 ? <WorkspaceSection title="还可以连接" count={visibleAvailable.length}><View style={styles.availableList}>{visibleAvailable.map((connector) => <AvailableService key={connector.key} connector={connector} token={token} />)}</View></WorkspaceSection> : null}
+            {search && visibleConnections.length + visibleApps.length + visibleAvailable.length === 0 ? <View style={styles.noResults}><Ionicons name="search-outline" size={21} color={colors.textMuted} /><Text style={styles.emptyConnectionCopy}>没有匹配的连接或来源</Text></View> : null}
           </>
         )}
       </ScrollView>
     </SafeAreaView>
   );
+}
+
+function ConnectionStat({ icon, value, label, tone }: { icon: ComponentProps<typeof Ionicons>['name']; value: number; label: string; tone: 'success' | 'warning' | 'muted' | 'brand' }) {
+  const color = tone === 'warning' ? colors.warning : tone === 'muted' ? colors.textMuted : colors.primary;
+  return <View style={styles.stat}><Ionicons name={icon} size={18} color={color} /><View><Text style={[styles.statValue, { color }]}>{value}</Text><Text style={styles.statLabel}>{label}</Text></View></View>;
 }
 
 function connectionDisplayName(key: string, fallback: string) {
@@ -288,6 +309,13 @@ const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: '#FFFFFF' },
   content: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: 72 },
   headerAction: { width: 36, height: 36, borderRadius: 12, backgroundColor: '#F2F4F7', borderWidth: 1, borderColor: '#EAECF0', alignItems: 'center', justifyContent: 'center' },
+  searchBox: { minHeight: 44, marginTop: spacing.md, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.md, backgroundColor: '#F3F6F8', borderRadius: radius.md },
+  searchInput: { ...typography.body, color: colors.text, flex: 1, paddingVertical: 0 },
+  summaryStrip: { minHeight: 66, flexDirection: 'row', alignItems: 'center', marginTop: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.border },
+  stat: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm },
+  statDivider: { width: 1, height: 30, backgroundColor: colors.border },
+  statValue: { ...typography.bodyStrong },
+  statLabel: { fontSize: 9, lineHeight: 13, color: colors.textMuted },
   stateSurface: { marginTop: spacing.xl },
   emptyConnection: { minHeight: 100, alignItems: 'center', justifyContent: 'center', gap: spacing.sm, marginTop: spacing.lg, padding: spacing.md },
   emptyConnectionTitle: { ...typography.bodyStrong, color: colors.text },
@@ -298,7 +326,16 @@ const styles = StyleSheet.create({
   error: { ...typography.caption, color: colors.danger, marginTop: spacing.md },
   sectionTitle: { ...typography.section, color: colors.text, marginTop: spacing.xl, marginBottom: spacing.md },
   connectionList: { backgroundColor: '#FFFFFF' },
-  availableList: { gap: spacing.sm },
+  availableList: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, overflow: 'hidden' },
+  availableBlock: { paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.border },
+  availableRow: { minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  connectButton: { minWidth: 52, minHeight: 32, borderRadius: 11, backgroundColor: colors.successSoft, alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing.sm },
+  connectDisabled: { opacity: 0.45 },
+  connectButtonText: { ...typography.label, color: colors.primary },
+  capabilityChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 5, paddingLeft: 46, paddingBottom: spacing.xs },
+  capabilityChip: { maxWidth: '46%', flexDirection: 'row', alignItems: 'center', gap: 2, paddingHorizontal: 6, paddingVertical: 3, borderRadius: radius.pill, backgroundColor: colors.accentSoft },
+  capabilityChipText: { color: colors.primary, fontSize: 8, lineHeight: 11, flexShrink: 1 },
+  noResults: { minHeight: 120, alignItems: 'center', justifyContent: 'center', gap: spacing.sm },
   connectionBlock: { borderBottomWidth: 1, borderBottomColor: '#EAECF0' },
   connectionRow: { minHeight: 70, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
   rowPressed: { opacity: 0.68 },
@@ -311,6 +348,10 @@ const styles = StyleSheet.create({
   compactStatusWarning: { color: '#B54708' },
   compactDetail: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
   management: { marginLeft: 50, padding: spacing.md, backgroundColor: '#F2F3F5', borderRadius: radius.sm },
+  detailLink: { minHeight: 48, marginBottom: spacing.md, paddingBottom: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border, flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  detailLinkCopy: { flex: 1 },
+  detailLinkTitle: { ...typography.bodyStrong, color: colors.primary },
+  detailLinkDescription: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
   account: { ...typography.caption, color: colors.textMuted },
   inlineAction: { alignItems: 'flex-start', marginTop: spacing.md },
   feedback: { ...typography.caption, color: colors.warning, marginTop: spacing.md },

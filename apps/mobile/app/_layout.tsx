@@ -26,6 +26,7 @@ export default function RootLayout() {
           <Stack.Screen name="onboarding" options={{ headerShown: false }} />
           <Stack.Screen name="membership" options={{ title: '会员' }} />
           <Stack.Screen name="connections/add" options={{ headerShown: false }} />
+          <Stack.Screen name="connections/[id]" options={{ headerShown: false }} />
           <Stack.Screen name="approvals" options={{ headerShown: false }} />
           <Stack.Screen name="approvals/[id]" options={{ headerShown: false }} />
           <Stack.Screen name="plan-center" options={{ headerShown: false }} />
