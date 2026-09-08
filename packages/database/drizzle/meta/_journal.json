@@ -253,6 +253,13 @@
       "when": 1788485400000,
       "tag": "0035_trusted_device_request_sessions",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1788912000000,
+      "tag": "0036_capability_foundation",
+      "breakpoints": true
     }
   ]
 }

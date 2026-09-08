@@ -1,5 +1,5 @@
 import { ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { connectionPermissions, connections, connectorCapabilities, connectors } from '@lazy-armor/database';
+import { connectionCapabilityGrants, connectionPermissions, connections, connectorCapabilities, connectors } from '@lazy-armor/database';
 import { newId } from '@lazy-armor/shared';
 import { and, eq } from 'drizzle-orm';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
@@ -70,6 +70,28 @@ export class PermissionsService {
           grantedAt: update.granted ? now : null,
           expiresAt,
           revokedAt: update.granted ? null : now,
+          updatedAt: now,
+        } });
+        await tx.insert(connectionCapabilityGrants).values({
+          id: newId(),
+          connectionId,
+          providerKey: connection.connectorKey,
+          capabilityKey: capability.key,
+          status: update.granted ? 'GRANTED' : 'REVOKED',
+          grantedScopesJson: update.granted ? [capability.key] : [],
+          grantedAt: update.granted ? now : null,
+          expiresAt,
+          revokedAt: update.granted ? null : now,
+          source: 'permission_projection',
+          createdAt: now,
+          updatedAt: now,
+        }).onDuplicateKeyUpdate({ set: {
+          status: update.granted ? 'GRANTED' : 'REVOKED',
+          grantedScopesJson: update.granted ? [capability.key] : [],
+          grantedAt: update.granted ? now : null,
+          expiresAt,
+          revokedAt: update.granted ? null : now,
+          source: 'permission_projection',
           updatedAt: now,
         } });
         // 权限变更与 Audit 同事务。

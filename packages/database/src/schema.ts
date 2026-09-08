@@ -300,6 +300,68 @@ export const connectionPermissions = mysqlTable('connection_permissions', {
   ...timestamps,
 }, (table) => [uniqueIndex('connection_permissions_connection_capability_uq').on(table.connectionId, table.connectorCapabilityId)]);
 
+export const providerCapabilityManifests = mysqlTable('provider_capability_manifests', {
+  id: uuidBinary('id').primaryKey(),
+  providerKey: varchar('provider_key', { length: 80 }).notNull(),
+  schemaVersion: varchar('schema_version', { length: 16 }).notNull(),
+  revision: int('revision').notNull(),
+  manifestHash: char('manifest_hash', { length: 64 }).notNull(),
+  status: varchar('status', { length: 32 }).notNull(),
+  manifestJson: json('manifest_json').$type<Record<string, unknown>>().notNull(),
+  supersededAt: datetime('superseded_at', { mode: 'date', fsp: 6 }),
+  createdAt: datetime('created_at', { mode: 'date', fsp: 6 }).notNull(),
+}, (table) => [
+  uniqueIndex('provider_capability_manifests_provider_revision_uq').on(table.providerKey, table.revision),
+  uniqueIndex('provider_capability_manifests_hash_uq').on(table.manifestHash),
+  index('provider_capability_manifests_provider_status_idx').on(table.providerKey, table.status),
+]);
+
+export const providerCapabilityEvidence = mysqlTable('provider_capability_evidence', {
+  id: uuidBinary('id').primaryKey(),
+  manifestId: uuidBinary('manifest_id').notNull().references(() => providerCapabilityManifests.id, { onDelete: 'restrict' }),
+  capabilityKey: varchar('capability_key', { length: 100 }),
+  evidenceKind: varchar('evidence_kind', { length: 32 }).notNull(),
+  reviewStatus: varchar('review_status', { length: 32 }).notNull(),
+  uri: varchar('uri', { length: 1000 }),
+  summary: varchar('summary', { length: 1000 }).notNull(),
+  verifiedAt: datetime('verified_at', { mode: 'date', fsp: 6 }),
+  lastCheckedAt: datetime('last_checked_at', { mode: 'date', fsp: 6 }),
+  createdAt: datetime('created_at', { mode: 'date', fsp: 6 }).notNull(),
+}, (table) => [index('provider_capability_evidence_manifest_capability_idx').on(table.manifestId, table.capabilityKey)]);
+
+export const connectionCapabilityGrants = mysqlTable('connection_capability_grants', {
+  id: uuidBinary('id').primaryKey(),
+  connectionId: uuidBinary('connection_id').notNull().references(() => connections.id, { onDelete: 'restrict' }),
+  providerKey: varchar('provider_key', { length: 80 }).notNull(),
+  capabilityKey: varchar('capability_key', { length: 100 }).notNull(),
+  status: varchar('status', { length: 32 }).notNull(),
+  grantedScopesJson: json('granted_scopes_json').$type<string[]>().notNull(),
+  grantedAt: datetime('granted_at', { mode: 'date', fsp: 6 }),
+  expiresAt: datetime('expires_at', { mode: 'date', fsp: 6 }),
+  revokedAt: datetime('revoked_at', { mode: 'date', fsp: 6 }),
+  source: varchar('source', { length: 32 }).notNull(),
+  ...timestamps,
+}, (table) => [
+  uniqueIndex('connection_capability_grants_connection_capability_uq').on(table.connectionId, table.capabilityKey),
+  index('connection_capability_grants_provider_status_idx').on(table.providerKey, table.status),
+]);
+
+export const providerCapabilityHealth = mysqlTable('provider_capability_health', {
+  id: uuidBinary('id').primaryKey(),
+  connectionId: uuidBinary('connection_id').notNull().references(() => connections.id, { onDelete: 'restrict' }),
+  providerKey: varchar('provider_key', { length: 80 }).notNull(),
+  capabilityKey: varchar('capability_key', { length: 100 }).notNull(),
+  status: varchar('status', { length: 32 }).notNull(),
+  reasonCode: varchar('reason_code', { length: 100 }),
+  detail: varchar('detail', { length: 1000 }),
+  checkedAt: datetime('checked_at', { mode: 'date', fsp: 6 }).notNull(),
+  validUntil: datetime('valid_until', { mode: 'date', fsp: 6 }),
+  ...timestamps,
+}, (table) => [
+  uniqueIndex('provider_capability_health_connection_capability_uq').on(table.connectionId, table.capabilityKey),
+  index('provider_capability_health_provider_status_idx').on(table.providerKey, table.status, table.checkedAt),
+]);
+
 export const trustedDevices = mysqlTable('trusted_devices', {
   id: uuidBinary('id').primaryKey(),
   userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
@@ -1124,6 +1186,10 @@ export const schema = {
   connections,
   oauthAuthorizationStates,
   connectionPermissions,
+  providerCapabilityManifests,
+  providerCapabilityEvidence,
+  connectionCapabilityGrants,
+  providerCapabilityHealth,
   billingRecords,
   fileImports,
   logisticsTrackingSnapshots,

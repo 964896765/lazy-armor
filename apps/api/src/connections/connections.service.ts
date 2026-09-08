@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from 'crypto';
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { ConnectorError, ConnectorRegistry, type ConnectorRequest } from '@lazy-armor/connector-sdk';
-import { connections, connectors, credentialRefs, credentialVersions, connectionPermissions, connectorCapabilities, oauthAuthorizationStates, planActions, planSources, planVersions, plans } from '@lazy-armor/database';
+import { connections, connectors, credentialRefs, credentialVersions, connectionCapabilityGrants, connectionPermissions, connectorCapabilities, oauthAuthorizationStates, planActions, planSources, planVersions, plans, providerCapabilityHealth } from '@lazy-armor/database';
 import { newId } from '@lazy-armor/shared';
 import { and, eq, isNull } from 'drizzle-orm';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
@@ -100,13 +100,25 @@ export class ConnectionsService {
     const request = await this.connectorRequestFor(userId, current);
     const health = await (this.registry.get(current.connectorKey).validateConnection?.(request) ?? Promise.resolve({ status: 'healthy' as const, checkedAt: new Date().toISOString(), reason: undefined }));
     const status = mapHealthToConnectionStatus(health.status);
-    await this.db.update(connections).set({
-      status,
-      statusReason: health.reason ?? null,
-      lastErrorCode: status === 'connected' ? null : health.reason ?? null,
-      lastCheckedAt: new Date(),
-      updatedAt: new Date(),
-    }).where(eq(connections.id, id));
+    const checkedAt = new Date();
+    const capabilities = await this.db.select({ key: connectorCapabilities.key }).from(connectorCapabilities).where(eq(connectorCapabilities.connectorId, current.connectorCatalogId));
+    await this.db.transaction(async (tx) => {
+      await tx.update(connections).set({
+        status,
+        statusReason: health.reason ?? null,
+        lastErrorCode: status === 'connected' ? null : health.reason ?? null,
+        lastCheckedAt: checkedAt,
+        updatedAt: checkedAt,
+      }).where(eq(connections.id, id));
+      for (const capability of capabilities) await tx.insert(providerCapabilityHealth).values({
+        id: newId(), connectionId: id, providerKey: current.connectorKey, capabilityKey: capability.key,
+        status: mapHealthToCapabilityStatus(health.status), reasonCode: health.reason ?? null, detail: health.reason ?? null,
+        checkedAt, validUntil: null, createdAt: checkedAt, updatedAt: checkedAt,
+      }).onDuplicateKeyUpdate({ set: {
+        status: mapHealthToCapabilityStatus(health.status), reasonCode: health.reason ?? null, detail: health.reason ?? null,
+        checkedAt, validUntil: null, updatedAt: checkedAt,
+      } });
+    });
     return { connection: await this.get(userId, id), health };
   }
 
@@ -481,7 +493,7 @@ export class ConnectionsService {
           createdAt: now,
           updatedAt: now,
         });
-        await this.seedGrantedCapabilities(tx, connectionId, input.connectorId, input.grantedCapabilities, now);
+        await this.seedGrantedCapabilities(tx, connectionId, input.connectorId, input.connectorKey, input.grantedCapabilities, now);
         await this.audit.append({
           actorType: 'user',
           actorUserId: userId,
@@ -545,7 +557,7 @@ export class ConnectionsService {
           expiresAt: completed.expiresAt ? new Date(completed.expiresAt) : null,
           updatedAt: now,
         }).where(eq(connections.id, connectionId));
-        await this.seedGrantedCapabilities(tx, connectionId, current.connectorCatalogId, completed.grantedCapabilities ?? [], now);
+        await this.seedGrantedCapabilities(tx, connectionId, current.connectorCatalogId, providerKey, completed.grantedCapabilities ?? [], now);
         await this.audit.append({
           actorType: 'user',
           actorUserId: userId,
@@ -572,7 +584,7 @@ export class ConnectionsService {
     return connectionId;
   }
 
-  private async seedGrantedCapabilities(tx: { select: InjectedDatabase['select']; insert: InjectedDatabase['insert'] }, connectionId: string, connectorId: string, capabilityKeys: string[], now: Date) {
+  private async seedGrantedCapabilities(tx: { select: InjectedDatabase['select']; insert: InjectedDatabase['insert'] }, connectionId: string, connectorId: string, providerKey: string, capabilityKeys: string[], now: Date) {
     if (capabilityKeys.length === 0) return;
     const rows = await tx.select({ id: connectorCapabilities.id, key: connectorCapabilities.key })
       .from(connectorCapabilities)
@@ -596,6 +608,14 @@ export class ConnectionsService {
           updatedAt: now,
         },
       });
+      await tx.insert(connectionCapabilityGrants).values({
+        id: newId(), connectionId, providerKey, capabilityKey: capability.key, status: 'GRANTED',
+        grantedScopesJson: [capability.key], grantedAt: now, expiresAt: null, revokedAt: null,
+        source: 'oauth_projection', createdAt: now, updatedAt: now,
+      }).onDuplicateKeyUpdate({ set: {
+        status: 'GRANTED', grantedScopesJson: [capability.key], grantedAt: now, expiresAt: null,
+        revokedAt: null, source: 'oauth_projection', updatedAt: now,
+      } });
     }
   }
 
@@ -728,6 +748,17 @@ function mapHealthToConnectionStatus(status: 'healthy' | 'degraded' | 'unhealthy
     case 'unhealthy':
     default:
       return 'provider_error';
+  }
+}
+
+function mapHealthToCapabilityStatus(status: 'healthy' | 'degraded' | 'unhealthy' | 'reauthorization_required' | 'rate_limited' | 'provider_unavailable') {
+  switch (status) {
+    case 'healthy': return 'HEALTHY';
+    case 'degraded': return 'DEGRADED';
+    case 'reauthorization_required': return 'REAUTHORIZATION_REQUIRED';
+    case 'rate_limited': return 'RATE_LIMITED';
+    case 'provider_unavailable': return 'PROVIDER_UNAVAILABLE';
+    default: return 'UNHEALTHY';
   }
 }
 

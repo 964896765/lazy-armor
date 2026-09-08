@@ -37,6 +37,7 @@ import { MembershipModule } from './membership/membership.module';
 import { UsageModule } from './usage/usage.module';
 import { SubscriptionBillingModule } from './subscription-billing/subscription-billing.module';
 import { CostModule } from './cost/cost.module';
+import { ProviderCapabilitiesModule } from './provider-capabilities/provider-capabilities.module';
 
 @Module({
   imports: [
@@ -73,6 +74,7 @@ import { CostModule } from './cost/cost.module';
     UsageModule,
     SubscriptionBillingModule,
     CostModule,
+    ProviderCapabilitiesModule,
     PlansModule,
     TemplatesModule,
     ExecutionModule,
