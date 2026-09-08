@@ -362,6 +362,35 @@ export const providerCapabilityHealth = mysqlTable('provider_capability_health',
   index('provider_capability_health_provider_status_idx').on(table.providerKey, table.status, table.checkedAt),
 ]);
 
+export const resourceCatalogDefinitions = mysqlTable('resource_catalog_definitions', {
+  id: uuidBinary('id').primaryKey(), resourceKey: varchar('resource_key', { length: 100 }).notNull(), schemaVersion: varchar('schema_version', { length: 16 }).notNull(),
+  revision: int('revision').notNull(), definitionHash: char('definition_hash', { length: 64 }).notNull(), status: varchar('status', { length: 32 }).notNull(),
+  definitionJson: json('definition_json').$type<Record<string, unknown>>().notNull(), supersededAt: datetime('superseded_at', { mode: 'date', fsp: 6 }), createdAt: datetime('created_at', { mode: 'date', fsp: 6 }).notNull(),
+}, (table) => [uniqueIndex('resource_catalog_definitions_key_revision_uq').on(table.resourceKey, table.revision), uniqueIndex('resource_catalog_definitions_hash_uq').on(table.definitionHash), index('resource_catalog_definitions_status_idx').on(table.status, table.resourceKey)]);
+
+export const factSchemaDefinitions = mysqlTable('fact_schema_definitions', {
+  id: uuidBinary('id').primaryKey(), factKey: varchar('fact_key', { length: 180 }).notNull(), resourceKey: varchar('resource_key', { length: 100 }).notNull(), schemaVersion: varchar('schema_version', { length: 16 }).notNull(),
+  revision: int('revision').notNull(), definitionHash: char('definition_hash', { length: 64 }).notNull(), status: varchar('status', { length: 32 }).notNull(),
+  definitionJson: json('definition_json').$type<Record<string, unknown>>().notNull(), supersededAt: datetime('superseded_at', { mode: 'date', fsp: 6 }), createdAt: datetime('created_at', { mode: 'date', fsp: 6 }).notNull(),
+}, (table) => [uniqueIndex('fact_schema_definitions_key_revision_uq').on(table.factKey, table.revision), uniqueIndex('fact_schema_definitions_hash_uq').on(table.definitionHash), index('fact_schema_definitions_resource_status_idx').on(table.resourceKey, table.status)]);
+
+export const strategyProfileDefinitions = mysqlTable('strategy_profile_definitions', {
+  id: uuidBinary('id').primaryKey(), strategyKey: varchar('strategy_key', { length: 64 }).notNull(), schemaVersion: varchar('schema_version', { length: 16 }).notNull(),
+  revision: int('revision').notNull(), definitionHash: char('definition_hash', { length: 64 }).notNull(), status: varchar('status', { length: 32 }).notNull(),
+  definitionJson: json('definition_json').$type<Record<string, unknown>>().notNull(), supersededAt: datetime('superseded_at', { mode: 'date', fsp: 6 }), createdAt: datetime('created_at', { mode: 'date', fsp: 6 }).notNull(),
+}, (table) => [uniqueIndex('strategy_profile_definitions_key_revision_uq').on(table.strategyKey, table.revision), uniqueIndex('strategy_profile_definitions_hash_uq').on(table.definitionHash), index('strategy_profile_definitions_status_idx').on(table.status, table.strategyKey)]);
+
+export const scenarioDefinitions = mysqlTable('scenario_definitions', {
+  id: uuidBinary('id').primaryKey(), scenarioKey: varchar('scenario_key', { length: 120 }).notNull(), domainKey: varchar('domain_key', { length: 64 }).notNull(), schemaVersion: varchar('schema_version', { length: 16 }).notNull(),
+  revision: int('revision').notNull(), definitionHash: char('definition_hash', { length: 64 }).notNull(), status: varchar('status', { length: 32 }).notNull(),
+  definitionJson: json('definition_json').$type<Record<string, unknown>>().notNull(), supersededAt: datetime('superseded_at', { mode: 'date', fsp: 6 }), createdAt: datetime('created_at', { mode: 'date', fsp: 6 }).notNull(),
+}, (table) => [uniqueIndex('scenario_definitions_key_revision_uq').on(table.scenarioKey, table.revision), uniqueIndex('scenario_definitions_hash_uq').on(table.definitionHash), index('scenario_definitions_domain_status_idx').on(table.domainKey, table.status)]);
+
+export const scenarioReadinessSnapshots = mysqlTable('scenario_readiness_snapshots', {
+  id: uuidBinary('id').primaryKey(), userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }), scenarioKey: varchar('scenario_key', { length: 120 }).notNull(),
+  scenarioRevision: int('scenario_revision').notNull(), state: varchar('state', { length: 32 }).notNull(), snapshotJson: json('snapshot_json').$type<Record<string, unknown>>().notNull(), evaluatedAt: datetime('evaluated_at', { mode: 'date', fsp: 6 }).notNull(),
+}, (table) => [index('scenario_readiness_user_scenario_idx').on(table.userId, table.scenarioKey, table.evaluatedAt)]);
+
 export const trustedDevices = mysqlTable('trusted_devices', {
   id: uuidBinary('id').primaryKey(),
   userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
@@ -1190,6 +1219,11 @@ export const schema = {
   providerCapabilityEvidence,
   connectionCapabilityGrants,
   providerCapabilityHealth,
+  resourceCatalogDefinitions,
+  factSchemaDefinitions,
+  strategyProfileDefinitions,
+  scenarioDefinitions,
+  scenarioReadinessSnapshots,
   billingRecords,
   fileImports,
   logisticsTrackingSnapshots,

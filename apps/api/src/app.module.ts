@@ -38,6 +38,7 @@ import { UsageModule } from './usage/usage.module';
 import { SubscriptionBillingModule } from './subscription-billing/subscription-billing.module';
 import { CostModule } from './cost/cost.module';
 import { ProviderCapabilitiesModule } from './provider-capabilities/provider-capabilities.module';
+import { RuntimeCatalogModule } from './runtime-catalog/runtime-catalog.module';
 
 @Module({
   imports: [
@@ -75,6 +76,7 @@ import { ProviderCapabilitiesModule } from './provider-capabilities/provider-cap
     SubscriptionBillingModule,
     CostModule,
     ProviderCapabilitiesModule,
+    RuntimeCatalogModule,
     PlansModule,
     TemplatesModule,
     ExecutionModule,

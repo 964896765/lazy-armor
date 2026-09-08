@@ -13,8 +13,8 @@
 | Batch | 状态 | 报告 |
 | --- | --- | --- |
 | Batch 1 — Capability Foundation | 已完成 | [runtime-productization-batch-1-report.md](./runtime-productization-batch-1-report.md) |
-| Batch 2 — Scenario Foundation | 进行中 | 待更新 |
-| Batch 3 — Reality Pipeline | 待开始 | 待更新 |
+| Batch 2 — Scenario Foundation | 已完成 | [runtime-productization-batch-2-report.md](./runtime-productization-batch-2-report.md) |
+| Batch 3 — Reality Pipeline | 进行中 | 待更新 |
 | Batch 4 — Android Foreground Acquisition | 待开始 | 待更新 |
 
 ---
@@ -3328,4 +3328,3 @@ Domain modules如 Billing/Logistics/Study/Device 保留为：
 - UI 是否来自后端 Reality 而非硬编码？
 
 若任一答案不符合，优先修正架构再继续扩功能。
-

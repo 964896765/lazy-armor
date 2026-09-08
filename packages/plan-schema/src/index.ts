@@ -404,3 +404,25 @@ export function canonicalStringify(value: unknown): string {
 export function definitionHash(definition: PlanDefinition): string {
   return createHash('sha256').update(canonicalStringify(definition)).digest('hex');
 }
+
+export {
+  FACT_SCHEMA_CATALOG,
+  RESOURCE_CATALOG,
+  SCENARIO_DEFINITIONS,
+  SCENARIO_READINESS_STATES,
+  STRATEGY_PROFILES,
+  catalogHash,
+  evaluateScenarioReadiness,
+  scenarioByKey,
+  type CapabilityRequirement,
+  type FactSchemaDefinition,
+  type RealityLevel,
+  type ResourceDefinition,
+  type ScenarioDefinition,
+  type ScenarioReadiness,
+  type ScenarioReadinessInput,
+  type ScenarioReadinessState,
+  type StrategyKey,
+  type StrategyProfile,
+} from './runtime-catalog';
+export { compileScenarioPlan, type CompiledScenarioPlan, type ScenarioCompileInput } from './scenario-plan-compiler';
