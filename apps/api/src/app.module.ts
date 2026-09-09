@@ -39,6 +39,7 @@ import { SubscriptionBillingModule } from './subscription-billing/subscription-b
 import { CostModule } from './cost/cost.module';
 import { ProviderCapabilitiesModule } from './provider-capabilities/provider-capabilities.module';
 import { RuntimeCatalogModule } from './runtime-catalog/runtime-catalog.module';
+import { AppReadSessionsModule } from './app-read-sessions/app-read-sessions.module';
 
 @Module({
   imports: [
@@ -77,6 +78,7 @@ import { RuntimeCatalogModule } from './runtime-catalog/runtime-catalog.module';
     CostModule,
     ProviderCapabilitiesModule,
     RuntimeCatalogModule,
+    AppReadSessionsModule,
     PlansModule,
     TemplatesModule,
     ExecutionModule,

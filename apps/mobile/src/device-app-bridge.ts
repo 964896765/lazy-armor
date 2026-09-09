@@ -46,6 +46,30 @@ export interface MobileNotificationPreview {
   status: 'received_unclassified';
 }
 
+export interface NativeAppReadSessionStatus {
+  active: boolean;
+  sessionId: string | null;
+  targetPackage: string | null;
+  status: string;
+  expiresAt: number;
+  usageAccessGranted: boolean;
+  foregroundPackage: string | null;
+  pendingEventCount: number;
+}
+
+export interface NativeAppReadSessionEvent {
+  sessionId: string;
+  eventKey: string;
+  eventType: string;
+  packageName: string;
+  observedAt: number;
+  payload: Record<string, unknown>;
+  evidenceHash?: string | null;
+  candidateKind?: 'billing_transaction_candidate' | 'unknown';
+  amountMinor?: number | null;
+  currency?: 'CNY' | null;
+}
+
 interface NativeDeviceBridge {
   getTrustedDeviceIdentity(): Promise<TrustedDeviceIdentity>;
   signTrustedDeviceChallenge(payload: string): Promise<string>;
@@ -59,10 +83,17 @@ interface NativeDeviceBridge {
   setNotificationSourceEnabled(packageName: string, enabled: boolean): Promise<boolean>;
   drainNotificationPreviews(): Promise<MobileNotificationPreview[]>;
   acknowledgeNotificationPreviews(eventIds: string[]): Promise<boolean>;
+  getAppReadSessionStatus(): Promise<NativeAppReadSessionStatus>;
+  openUsageAccessSettings(): Promise<boolean>;
+  startAppReadSession(sessionId: string, targetPackage: string, modes: string[], expiresAt: number): Promise<boolean>;
+  stopAppReadSession(): Promise<boolean>;
+  drainAppReadSessionEventsJson(): Promise<string>;
+  acknowledgeAppReadSessionEvents(eventKeys: string[]): Promise<boolean>;
 }
 
 export type DeviceDiscoveryStatus = 'available' | 'unavailable';
 const EMPTY_NOTIFICATION_STATUS: NotificationSourceStatus = { accessGranted: false, enabledPackageCount: 0, pendingCount: 0 };
+const EMPTY_APP_READ_STATUS: NativeAppReadSessionStatus = { active: false, sessionId: null, targetPackage: null, status: 'IDLE', expiresAt: 0, usageAccessGranted: false, foregroundPackage: null, pendingEventCount: 0 };
 
 function bridge(): NativeDeviceBridge | null {
   if (Platform.OS !== 'android') return null;
@@ -199,4 +230,53 @@ export async function acknowledgeNotificationPreviews(eventIds: string[]): Promi
   const native = bridge();
   if (!native || typeof native.acknowledgeNotificationPreviews !== 'function') return false;
   try { return await native.acknowledgeNotificationPreviews(accepted); } catch { return false; }
+}
+
+export async function appReadSessionStatus(): Promise<NativeAppReadSessionStatus> {
+  const native = bridge();
+  if (!native || typeof native.getAppReadSessionStatus !== 'function') return EMPTY_APP_READ_STATUS;
+  try { return await native.getAppReadSessionStatus(); } catch { return EMPTY_APP_READ_STATUS; }
+}
+
+export async function openUsageAccessSettings(): Promise<boolean> {
+  const native = bridge();
+  if (!native || typeof native.openUsageAccessSettings !== 'function') return false;
+  try { return await native.openUsageAccessSettings(); } catch { return false; }
+}
+
+export async function startNativeAppReadSession(sessionId: string, targetPackage: string, modes: string[], expiresAt: string): Promise<boolean> {
+  const native = bridge();
+  const expiry = new Date(expiresAt).getTime();
+  if (!native || typeof native.startAppReadSession !== 'function' || !sessionId || !targetPackage || !Number.isFinite(expiry)) return false;
+  try { return await native.startAppReadSession(sessionId, targetPackage, modes, expiry); } catch { return false; }
+}
+
+export async function stopNativeAppReadSession(): Promise<boolean> {
+  const native = bridge();
+  if (!native || typeof native.stopAppReadSession !== 'function') return false;
+  try { return await native.stopAppReadSession(); } catch { return false; }
+}
+
+export async function drainAppReadSessionEvents(): Promise<NativeAppReadSessionEvent[]> {
+  const native = bridge();
+  if (!native || typeof native.drainAppReadSessionEventsJson !== 'function') return [];
+  try {
+    const parsed = JSON.parse(await native.drainAppReadSessionEventsJson()) as unknown;
+    return Array.isArray(parsed) ? parsed.filter(isSafeAppReadSessionEvent).slice(0, 80) : [];
+  } catch { return []; }
+}
+
+function isSafeAppReadSessionEvent(value: unknown): value is NativeAppReadSessionEvent {
+  if (!value || typeof value !== 'object') return false;
+  const event = value as Partial<NativeAppReadSessionEvent>;
+  return Boolean(event.sessionId) && /^[a-f0-9]{64}$/.test(event.eventKey ?? '') && Boolean(event.eventType)
+    && Boolean(event.packageName) && Number.isFinite(event.observedAt) && Boolean(event.payload) && typeof event.payload === 'object';
+}
+
+export async function acknowledgeAppReadSessionEvents(eventKeys: string[]): Promise<boolean> {
+  const accepted = [...new Set(eventKeys.filter((item) => /^[a-f0-9]{64}$/.test(item)))];
+  if (accepted.length === 0) return true;
+  const native = bridge();
+  if (!native || typeof native.acknowledgeAppReadSessionEvents !== 'function') return false;
+  try { return await native.acknowledgeAppReadSessionEvents(accepted); } catch { return false; }
 }

@@ -431,3 +431,9 @@ export {
   parseAndNormalizeObservation, realityValueHash,
   type NormalizedFactDraft, type ParserKey, type RealityPolicyDefinition, type SourceMode, type SourceObservationInput,
 } from './reality-pipeline';
+export {
+  APP_READ_SESSION_EVENT_TYPES, APP_READ_SESSION_HEARTBEAT_GRACE_SECONDS, APP_READ_SESSION_MAX_SECONDS,
+  APP_READ_SESSION_MODES, APP_READ_SESSION_STATUSES, APP_READ_SESSION_TERMINAL_STATUSES,
+  appReadSessionStatusForEvent, canTransitionAppReadSession, isExactAndroidPackage,
+  type AppReadSessionEventType, type AppReadSessionMode, type AppReadSessionStatus,
+} from './app-read-session';

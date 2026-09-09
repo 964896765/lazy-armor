@@ -97,6 +97,7 @@ class LazyArmorNotificationListener : NotificationListenerService() {
     val extras = notification.notification.extras ?: return
     val title = extras.getCharSequence("android.title")?.toString().orEmpty()
     val body = extras.getCharSequence("android.text")?.toString().orEmpty()
+    AppReadSessionStore.capture(applicationContext, "NOTIFICATION_CAPTURED", notification.packageName, title, body)
     val capturedAt = System.currentTimeMillis()
     val eventId = sha256("${notification.packageName}|${notification.key}|${notification.postTime}")
     val contentHash = sha256("$title\n$body")

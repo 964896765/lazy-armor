@@ -188,7 +188,7 @@ function DeviceAppService({ item, token, trustedDeviceStatus, iconUri }: { item:
       </Pressable>
       {expanded ? <Surface style={styles.management}>
         <Text style={styles.providerDescription}>{item.enabled ? '只使用你确认过的能力。' : '重新启用前会再次确认设备状态。'}</Text>
-        <View style={styles.deviceActions}><ActionButton label="打开应用" tone="quiet" onPress={() => void open()} disabled={!item.enabled} />{item.enabled ? <ActionButton label="通知来源" tone="quiet" onPress={() => router.push('/connections/notification-sources' as Href)} /> : null}<ActionButton label={item.enabled ? '停用连接' : trustedDeviceStatus === 'revoked' ? '重新验证并启用' : '重新启用'} tone={item.enabled ? 'quiet' : 'primary'} onPress={changeEnabled} disabled={update.isPending} /></View>
+        <View style={styles.deviceActions}><ActionButton label="打开应用" tone="quiet" onPress={() => void open()} disabled={!item.enabled} />{item.enabled ? <ActionButton label="受控读取" tone="primary" onPress={() => router.push({ pathname: '/connections/app-read-session', params: { connectionId: item.id, packageName: item.packageName, displayName: item.displayName, notificationEnabled: String(item.modes.includes('notification_read')) } } as unknown as Href)} /> : null}{item.enabled ? <ActionButton label="通知来源" tone="quiet" onPress={() => router.push('/connections/notification-sources' as Href)} /> : null}<ActionButton label={item.enabled ? '停用连接' : trustedDeviceStatus === 'revoked' ? '重新验证并启用' : '重新启用'} tone={item.enabled ? 'quiet' : 'primary'} onPress={changeEnabled} disabled={update.isPending} /></View>
         {feedback ? <Text style={styles.feedback}>{feedback}</Text> : null}
       </Surface> : null}
     </View>

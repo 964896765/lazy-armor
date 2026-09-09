@@ -544,6 +544,48 @@ export const truthProvenance = mysqlTable('truth_provenance', {
   id: uuidBinary('id').primaryKey(), truthRecordVersionId: uuidBinary('truth_record_version_id').notNull().references(() => truthRecordVersions.id, { onDelete: 'restrict' }), candidateFactId: uuidBinary('candidate_fact_id').notNull().references(() => candidateFacts.id, { onDelete: 'restrict' }), observationId: uuidBinary('observation_id').notNull().references(() => sourceObservations.id, { onDelete: 'restrict' }), providerKey: varchar('provider_key', { length: 80 }).notNull(), sourceMode: varchar('source_mode', { length: 32 }).notNull(), evidenceHash: char('evidence_hash', { length: 64 }).notNull(), observedAt: datetime('observed_at', { mode: 'date', fsp: 6 }).notNull(), createdAt: datetime('created_at', { mode: 'date', fsp: 6 }).notNull(),
 }, (table) => [uniqueIndex('truth_provenance_version_candidate_uq').on(table.truthRecordVersionId, table.candidateFactId), uniqueIndex('truth_provenance_candidate_uq').on(table.candidateFactId), index('truth_provenance_observation_idx').on(table.observationId)]);
 
+export const appReadSessions = mysqlTable('app_read_sessions', {
+  id: uuidBinary('id').primaryKey(),
+  userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  trustedDeviceId: uuidBinary('trusted_device_id').notNull().references(() => trustedDevices.id, { onDelete: 'restrict' }),
+  deviceAppConnectionId: uuidBinary('device_app_connection_id').notNull().references(() => deviceAppConnections.id, { onDelete: 'restrict' }),
+  targetPackage: varchar('target_package', { length: 255 }).notNull(),
+  modesJson: json('modes_json').$type<string[]>().notNull(),
+  status: varchar('status', { length: 32 }).notNull(),
+  activeDeviceKey: varchar('active_device_key', { length: 64 }),
+  correlationId: char('correlation_id', { length: 64 }).notNull(),
+  startedAt: datetime('started_at', { mode: 'date', fsp: 6 }),
+  lastHeartbeatAt: datetime('last_heartbeat_at', { mode: 'date', fsp: 6 }),
+  expiresAt: datetime('expires_at', { mode: 'date', fsp: 6 }).notNull(),
+  endedAt: datetime('ended_at', { mode: 'date', fsp: 6 }),
+  terminalReason: varchar('terminal_reason', { length: 120 }),
+  ...timestamps,
+}, (table) => [
+  uniqueIndex('app_read_sessions_active_device_uq').on(table.activeDeviceKey),
+  index('app_read_sessions_user_created_idx').on(table.userId, table.createdAt),
+  index('app_read_sessions_device_status_idx').on(table.trustedDeviceId, table.status, table.expiresAt),
+]);
+
+export const appReadSessionEvents = mysqlTable('app_read_session_events', {
+  id: uuidBinary('id').primaryKey(),
+  sessionId: uuidBinary('session_id').notNull().references(() => appReadSessions.id, { onDelete: 'restrict' }),
+  userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  eventKey: char('event_key', { length: 64 }).notNull(),
+  eventType: varchar('event_type', { length: 40 }).notNull(),
+  sourceMode: varchar('source_mode', { length: 32 }),
+  packageName: varchar('package_name', { length: 255 }),
+  payloadHash: char('payload_hash', { length: 64 }).notNull(),
+  evidenceHash: char('evidence_hash', { length: 64 }),
+  payloadJson: json('payload_json').$type<Record<string, unknown>>().notNull(),
+  observationId: uuidBinary('observation_id').references(() => sourceObservations.id, { onDelete: 'restrict' }),
+  candidateFactId: uuidBinary('candidate_fact_id').references(() => candidateFacts.id, { onDelete: 'restrict' }),
+  createdAt: datetime('created_at', { mode: 'date', fsp: 6 }).notNull(),
+}, (table) => [
+  uniqueIndex('app_read_session_events_session_key_uq').on(table.sessionId, table.eventKey),
+  index('app_read_session_events_session_created_idx').on(table.sessionId, table.createdAt),
+  index('app_read_session_events_observation_idx').on(table.observationId),
+]);
+
 export const billingRecords = mysqlTable('billing_records', {
   id: uuidBinary('id').primaryKey(),
   userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
@@ -1249,6 +1291,8 @@ export const schema = {
   sourceObservations,
   candidateFacts,
   truthProvenance,
+  appReadSessions,
+  appReadSessionEvents,
   billingRecords,
   fileImports,
   logisticsTrackingSnapshots,

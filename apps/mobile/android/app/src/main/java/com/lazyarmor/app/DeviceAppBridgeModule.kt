@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.drawable.Drawable
 import android.os.Build
+import android.provider.Settings
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
@@ -14,6 +15,7 @@ import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.ReadableArray
+import androidx.core.content.ContextCompat
 import java.io.ByteArrayOutputStream
 import java.security.KeyPair
 import java.security.KeyPairGenerator
@@ -250,6 +252,81 @@ class DeviceAppBridgeModule(reactContext: ReactApplicationContext) : ReactContex
       promise.resolve(true)
     } catch (error: Exception) {
       promise.reject("E_NOTIFICATION_QUEUE_ACK_FAILED", "无法确认已同步通知。", error)
+    }
+  }
+
+  @ReactMethod
+  fun getAppReadSessionStatus(promise: Promise) {
+    try {
+      val status = AppReadSessionStore.status(reactApplicationContext)
+      val result = Arguments.createMap()
+      result.putBoolean("active", status.optBoolean("active", false))
+      result.putString("sessionId", status.optString("sessionId", null))
+      result.putString("targetPackage", status.optString("targetPackage", null))
+      result.putString("status", status.optString("status", "IDLE"))
+      result.putDouble("expiresAt", status.optLong("expiresAt", 0).toDouble())
+      result.putBoolean("usageAccessGranted", status.optBoolean("usageAccessGranted", false))
+      result.putString("foregroundPackage", status.optString("foregroundPackage", null))
+      result.putInt("pendingEventCount", status.optInt("pendingEventCount", 0))
+      promise.resolve(result)
+    } catch (error: Exception) {
+      promise.reject("E_APP_READ_STATUS_FAILED", "无法读取前台会话状态。", error)
+    }
+  }
+
+  @ReactMethod
+  fun openUsageAccessSettings(promise: Promise) {
+    try {
+      reactApplicationContext.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+      promise.resolve(true)
+    } catch (error: Exception) {
+      promise.reject("E_USAGE_ACCESS_SETTINGS_FAILED", "无法打开使用情况访问设置。", error)
+    }
+  }
+
+  @ReactMethod
+  fun startAppReadSession(sessionId: String, targetPackage: String, modes: ReadableArray, expiresAt: Double, promise: Promise) {
+    try {
+      val selectedModes = (0 until modes.size()).mapNotNull { modes.getString(it) }.toSet()
+      AppReadSessionStore.start(reactApplicationContext, sessionId, targetPackage, selectedModes, expiresAt.toLong())
+      ContextCompat.startForegroundService(reactApplicationContext, Intent(reactApplicationContext, AppReadForegroundService::class.java))
+      val launch = reactApplicationContext.packageManager.getLaunchIntentForPackage(targetPackage)
+        ?: throw IllegalArgumentException("目标应用不可启动")
+      reactApplicationContext.startActivity(launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+      promise.resolve(true)
+    } catch (error: Exception) {
+      AppReadSessionStore.stop(reactApplicationContext, "NATIVE_ERROR", "START_FAILED")
+      promise.reject("E_APP_READ_START_FAILED", "无法启动受控读取会话。", error)
+    }
+  }
+
+  @ReactMethod
+  fun stopAppReadSession(promise: Promise) {
+    AppReadSessionStore.stop(reactApplicationContext)
+    reactApplicationContext.stopService(Intent(reactApplicationContext, AppReadForegroundService::class.java))
+    promise.resolve(true)
+  }
+
+  @ReactMethod
+  fun drainAppReadSessionEventsJson(promise: Promise) {
+    try {
+      promise.resolve(AppReadSessionStore.readEvents(reactApplicationContext).toString())
+    } catch (error: Exception) {
+      promise.reject("E_APP_READ_EVENTS_FAILED", "无法读取前台会话事件。", error)
+    }
+  }
+
+  @ReactMethod
+  fun acknowledgeAppReadSessionEvents(eventKeys: ReadableArray, promise: Promise) {
+    try {
+      val keys = mutableSetOf<String>()
+      for (index in 0 until eventKeys.size()) {
+        eventKeys.getString(index)?.takeIf { it.matches(Regex("[a-f0-9]{64}")) }?.let { keys.add(it) }
+      }
+      AppReadSessionStore.acknowledge(reactApplicationContext, keys)
+      promise.resolve(true)
+    } catch (error: Exception) {
+      promise.reject("E_APP_READ_ACK_FAILED", "无法确认前台会话事件。", error)
     }
   }
 
