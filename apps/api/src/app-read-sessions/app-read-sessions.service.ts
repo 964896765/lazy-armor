@@ -227,11 +227,20 @@ export class AppReadSessionsService {
       return { ...existing, duplicate: true };
     }
     const id = newId();
-    await this.db.insert(appReadSessionEvents).values({
-      id, sessionId: session.id, userId: session.userId, eventKey, eventType, sourceMode,
-      packageName: typeof payload.packageName === 'string' ? payload.packageName : session.targetPackage,
-      payloadHash, evidenceHash, payloadJson: payload, observationId, candidateFactId, createdAt: new Date(),
-    });
+    try {
+      await this.db.insert(appReadSessionEvents).values({
+        id, sessionId: session.id, userId: session.userId, eventKey, eventType, sourceMode,
+        packageName: typeof payload.packageName === 'string' ? payload.packageName : session.targetPackage,
+        payloadHash, evidenceHash, payloadJson: payload, observationId, candidateFactId, createdAt: new Date(),
+      });
+    } catch (error) {
+      if (!isDuplicate(error)) throw error;
+      const raced = await this.findEvent(session.id, eventKey);
+      if (!raced || raced.payloadHash !== payloadHash) {
+        throw new ConflictException('Session event key cannot be reused with different evidence');
+      }
+      return { ...raced, duplicate: true };
+    }
     return { id, duplicate: false };
   }
 

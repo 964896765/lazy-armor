@@ -16,9 +16,9 @@ CREATE TABLE app_read_sessions (
   created_at datetime(6) NOT NULL,
   updated_at datetime(6) NOT NULL,
   CONSTRAINT app_read_sessions_id PRIMARY KEY(id),
-  CONSTRAINT app_read_sessions_user_id_users_id_fk FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE restrict,
-  CONSTRAINT app_read_sessions_trusted_device_id_trusted_devices_id_fk FOREIGN KEY (trusted_device_id) REFERENCES trusted_devices(id) ON DELETE restrict,
-  CONSTRAINT app_read_sessions_device_app_connection_id_device_app_connections_id_fk FOREIGN KEY (device_app_connection_id) REFERENCES device_app_connections(id) ON DELETE restrict
+  CONSTRAINT app_read_sessions_user_fk FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE restrict,
+  CONSTRAINT app_read_sessions_device_fk FOREIGN KEY (trusted_device_id) REFERENCES trusted_devices(id) ON DELETE restrict,
+  CONSTRAINT app_read_sessions_connection_fk FOREIGN KEY (device_app_connection_id) REFERENCES device_app_connections(id) ON DELETE restrict
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX app_read_sessions_active_device_uq ON app_read_sessions (active_device_key);
@@ -42,10 +42,10 @@ CREATE TABLE app_read_session_events (
   candidate_fact_id binary(16),
   created_at datetime(6) NOT NULL,
   CONSTRAINT app_read_session_events_id PRIMARY KEY(id),
-  CONSTRAINT app_read_session_events_session_id_app_read_sessions_id_fk FOREIGN KEY (session_id) REFERENCES app_read_sessions(id) ON DELETE restrict,
-  CONSTRAINT app_read_session_events_user_id_users_id_fk FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE restrict,
-  CONSTRAINT app_read_session_events_observation_id_source_observations_id_fk FOREIGN KEY (observation_id) REFERENCES source_observations(id) ON DELETE restrict,
-  CONSTRAINT app_read_session_events_candidate_fact_id_candidate_facts_id_fk FOREIGN KEY (candidate_fact_id) REFERENCES candidate_facts(id) ON DELETE restrict
+  CONSTRAINT app_read_events_session_fk FOREIGN KEY (session_id) REFERENCES app_read_sessions(id) ON DELETE restrict,
+  CONSTRAINT app_read_events_user_fk FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE restrict,
+  CONSTRAINT app_read_events_observation_fk FOREIGN KEY (observation_id) REFERENCES source_observations(id) ON DELETE restrict,
+  CONSTRAINT app_read_events_candidate_fk FOREIGN KEY (candidate_fact_id) REFERENCES candidate_facts(id) ON DELETE restrict
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX app_read_session_events_session_key_uq ON app_read_session_events (session_id, event_key);
