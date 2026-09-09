@@ -14,8 +14,8 @@
 | --- | --- | --- |
 | Batch 1 — Capability Foundation | 已完成 | [runtime-productization-batch-1-report.md](./runtime-productization-batch-1-report.md) |
 | Batch 2 — Scenario Foundation | 已完成 | [runtime-productization-batch-2-report.md](./runtime-productization-batch-2-report.md) |
-| Batch 3 — Reality Pipeline | 进行中 | 待更新 |
-| Batch 4 — Android Foreground Acquisition | 待开始 | 待更新 |
+| Batch 3 — Reality Pipeline | 已完成 | [runtime-productization-batch-3-report.md](./runtime-productization-batch-3-report.md) |
+| Batch 4 — Android Foreground Acquisition | 进行中 | 待更新 |
 
 ---
 

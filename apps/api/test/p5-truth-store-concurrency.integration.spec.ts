@@ -54,5 +54,14 @@ describe.skipIf(!enabled).sequential('Truth Store MySQL atomic concurrency', { t
       [user.userId, receiptId],
     );
     expect(records).toEqual([expect.objectContaining({ currentVersionId: expect.any(String), versionCount: 1 })]);
+    const [pipelineRows] = await pool.query<RowDataPacket[]>(
+      `SELECT COUNT(DISTINCT o.id) observations, COUNT(DISTINCT c.id) candidates, COUNT(DISTINCT p.id) provenance
+         FROM source_observations o
+         LEFT JOIN candidate_facts c ON c.observation_id=o.id
+         LEFT JOIN truth_provenance p ON p.candidate_fact_id=c.id
+        WHERE o.user_id=UUID_TO_BIN(?) AND o.external_event_key=? AND o.parser_key='mobile-notification-billing.v1'`,
+      [user.userId, receiptId],
+    );
+    expect(pipelineRows[0]).toMatchObject({ observations: 1, candidates: 1, provenance: 1 });
   });
 });

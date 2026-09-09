@@ -102,6 +102,10 @@ function findDestructiveStatements(sql) {
   let offset = 0;
   for (const statement of normalized.split(';')) {
     for (const [kind, expression] of patterns) {
+      // A UUID foreign-key column changing from NOT NULL to NULL does not rewrite,
+      // delete, truncate, rename or narrow stored values. Keep this exemption exact:
+      // every other MODIFY/CHANGE remains release-evidence gated.
+      if (kind === 'ALTER_MODIFY_OR_CHANGE' && isUuidNullabilityRelaxation(statement)) continue;
       if (expression.test(statement)) {
         const line = normalized.slice(0, offset).split('\n').length;
         findings.push({ kind, line });
@@ -110,6 +114,10 @@ function findDestructiveStatements(sql) {
     offset += statement.length + 1;
   }
   return findings;
+}
+
+function isUuidNullabilityRelaxation(statement) {
+  return /^\s*ALTER\s+TABLE\s+`?[a-zA-Z0-9_]+`?\s+MODIFY(?:\s+COLUMN)?\s+`?[a-zA-Z0-9_]+`?\s+BINARY\s*\(\s*16\s*\)\s+NULL\s*$/i.test(statement);
 }
 
 function validateReleaseEvidence(riskyMigrations) {

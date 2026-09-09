@@ -426,3 +426,8 @@ export {
   type StrategyProfile,
 } from './runtime-catalog';
 export { compileScenarioPlan, type CompiledScenarioPlan, type ScenarioCompileInput } from './scenario-plan-compiler';
+export {
+  PARSER_KEYS, REALITY_ADAPTER_REGISTRY, REALITY_POLICY_REGISTRY, SOURCE_MODES, candidateDedupeKey, observationIdentity,
+  parseAndNormalizeObservation, realityValueHash,
+  type NormalizedFactDraft, type ParserKey, type RealityPolicyDefinition, type SourceMode, type SourceObservationInput,
+} from './reality-pipeline';

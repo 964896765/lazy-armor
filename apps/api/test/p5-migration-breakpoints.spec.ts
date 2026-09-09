@@ -40,4 +40,14 @@ describe('Drizzle migration statement-breakpoint gate', () => {
     const run = runFixture('CREATE TABLE alpha (id INT);\n--> statement-breakpoint\nCREATE TABLE beta (id INT);\n', false);
     expect(run).toThrow(/contains statement breakpoints but its journal entry does not enable breakpoints/);
   });
+
+  it('recognizes an exact UUID nullability relaxation as non-destructive', () => {
+    const run = runFixture('ALTER TABLE truth_records MODIFY source_receipt_id BINARY(16) NULL;\n');
+    expect(run()).toContain('destructive=0');
+  });
+
+  it('continues to gate every other MODIFY statement as destructive', () => {
+    const run = runFixture('ALTER TABLE truth_records MODIFY source_receipt_id VARCHAR(16) NULL;\n');
+    expect(run).toThrow(/DESTRUCTIVE_MIGRATION_EVIDENCE_REQUIRED/);
+  });
 });

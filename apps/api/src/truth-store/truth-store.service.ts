@@ -1,10 +1,11 @@
-import { BadRequestException, ConflictException, Inject, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Inject, Injectable, Optional } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { mobileNotificationReceipts, truthRecords, truthRecordVersions } from '@lazy-armor/database';
 import { and, desc, eq } from 'drizzle-orm';
 import { newId } from '@lazy-armor/shared';
 import { AuditService } from '../audit/audit.service';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
+import { RealityPipelineService } from '../reality-pipeline/reality-pipeline.service';
 
 interface CandidateSnapshot {
   schema?: unknown;
@@ -17,12 +18,27 @@ interface CandidateSnapshot {
 
 @Injectable()
 export class TruthStoreService {
-  constructor(@Inject(DATABASE) private readonly db: InjectedDatabase, private readonly audit: AuditService) {}
+  constructor(@Inject(DATABASE) private readonly db: InjectedDatabase, private readonly audit: AuditService, @Optional() private readonly realityPipeline?: RealityPipelineService) {}
 
   async confirmMobileReceipt(userId: string, receipt: typeof mobileNotificationReceipts.$inferSelect) {
     const candidate = this.candidateFrom(receipt);
     const existing = await this.findByReceipt(this.db, userId, receipt.id);
     if (existing) return this.completedResponse(existing);
+
+    if (this.realityPipeline) {
+      const evidenceHash = hash({ receiptId: receipt.id, payloadHash: receipt.payloadHash, candidateResource: candidate.resource, parserVersion: candidate.parserVersion });
+      const normalized = await this.realityPipeline.ingest(userId, {
+        sourceMode: 'NOTIFICATION', providerKey: receipt.sourcePackage, connectionId: null,
+        externalEventKey: receipt.id, parserKey: 'mobile-notification-billing.v1', resourceHint: 'finance.transaction',
+        payload: { subjectKey: receipt.id, amountMinor: receipt.amountMinor as number, currency: candidate.currency }, evidenceHash,
+        observedAt: receipt.receivedAt.toISOString(), occurredAt: receipt.postedAt.toISOString(),
+      });
+      const candidateId = normalized.candidates[0]?.id;
+      if (!candidateId) throw new ConflictException('Notification observation produced no candidate fact');
+      const result = await this.realityPipeline.confirmCandidate(userId, candidateId, { sourceReceiptId: receipt.id, verifiedBy: 'user_confirmation', verificationMethod: 'user_confirmation_after_device_key_proof' });
+      await this.audit.append({ actorType: 'user', actorUserId: userId, action: 'TRUTH_RECORD_VERIFIED', resourceType: 'truth_record', resourceId: result.id, userId, correlationId: receipt.id, changeSummary: 'Confirmed a mobile billing fact through the generic reality pipeline adapter', source: 'api', result: 'success' });
+      return result;
+    }
 
     const now = new Date();
     const truthId = newId();

@@ -500,7 +500,7 @@ export const truthRecords = mysqlTable('truth_records', {
   subjectKey: varchar('subject_key', { length: 255 }).notNull(),
   status: varchar('status', { length: 32 }).notNull(),
   currentVersionId: uuidBinary('current_version_id'),
-  sourceReceiptId: uuidBinary('source_receipt_id').notNull().references(() => mobileNotificationReceipts.id, { onDelete: 'restrict' }),
+  sourceReceiptId: uuidBinary('source_receipt_id').references(() => mobileNotificationReceipts.id, { onDelete: 'restrict' }),
   verifiedBy: varchar('verified_by', { length: 32 }).notNull(),
   verifiedAt: datetime('verified_at', { mode: 'date', fsp: 6 }).notNull(),
   revokedAt: datetime('revoked_at', { mode: 'date', fsp: 6 }),
@@ -523,6 +523,26 @@ export const truthRecordVersions = mysqlTable('truth_record_versions', {
   uniqueIndex('truth_record_versions_record_version_uq').on(table.truthRecordId, table.versionNumber),
   index('truth_record_versions_record_created_idx').on(table.truthRecordId, table.createdAt),
 ]);
+
+export const realityAdapterDefinitions = mysqlTable('reality_adapter_definitions', {
+  id: uuidBinary('id').primaryKey(), adapterKey: varchar('adapter_key', { length: 120 }).notNull(), adapterKind: varchar('adapter_kind', { length: 32 }).notNull(), revision: int('revision').notNull(), definitionHash: char('definition_hash', { length: 64 }).notNull(), status: varchar('status', { length: 32 }).notNull(), definitionJson: json('definition_json').$type<Record<string, unknown>>().notNull(), createdAt: datetime('created_at', { mode: 'date', fsp: 6 }).notNull(),
+}, (table) => [uniqueIndex('reality_adapter_definitions_key_revision_uq').on(table.adapterKey, table.revision), uniqueIndex('reality_adapter_definitions_hash_uq').on(table.definitionHash)]);
+
+export const realityPolicyDefinitions = mysqlTable('reality_policy_definitions', {
+  id: uuidBinary('id').primaryKey(), policyKey: varchar('policy_key', { length: 120 }).notNull(), policyKind: varchar('policy_kind', { length: 32 }).notNull(), revision: int('revision').notNull(), definitionHash: char('definition_hash', { length: 64 }).notNull(), status: varchar('status', { length: 32 }).notNull(), definitionJson: json('definition_json').$type<Record<string, unknown>>().notNull(), createdAt: datetime('created_at', { mode: 'date', fsp: 6 }).notNull(),
+}, (table) => [uniqueIndex('reality_policy_definitions_key_revision_uq').on(table.policyKey, table.revision), uniqueIndex('reality_policy_definitions_hash_uq').on(table.definitionHash)]);
+
+export const sourceObservations = mysqlTable('source_observations', {
+  id: uuidBinary('id').primaryKey(), userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }), connectionId: uuidBinary('connection_id').references(() => connections.id, { onDelete: 'restrict' }), sourceMode: varchar('source_mode', { length: 32 }).notNull(), providerKey: varchar('provider_key', { length: 80 }).notNull(), externalEventKey: varchar('external_event_key', { length: 255 }).notNull(), sourceIdentity: char('source_identity', { length: 64 }).notNull(), parserKey: varchar('parser_key', { length: 120 }).notNull(), resourceHint: varchar('resource_hint', { length: 120 }).notNull(), payloadHash: char('payload_hash', { length: 64 }).notNull(), evidenceHash: char('evidence_hash', { length: 64 }).notNull(), payloadJson: json('payload_json').$type<Record<string, unknown>>().notNull(), status: varchar('status', { length: 32 }).notNull(), observedAt: datetime('observed_at', { mode: 'date', fsp: 6 }).notNull(), occurredAt: datetime('occurred_at', { mode: 'date', fsp: 6 }), receivedAt: datetime('received_at', { mode: 'date', fsp: 6 }).notNull(),
+}, (table) => [uniqueIndex('source_observations_user_identity_uq').on(table.userId, table.sourceIdentity), index('source_observations_user_time_idx').on(table.userId, table.receivedAt)]);
+
+export const candidateFacts = mysqlTable('candidate_facts', {
+  id: uuidBinary('id').primaryKey(), userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }), observationId: uuidBinary('observation_id').notNull().references(() => sourceObservations.id, { onDelete: 'restrict' }), resourceType: varchar('resource_type', { length: 120 }).notNull(), resourceKey: varchar('resource_key', { length: 255 }).notNull(), subjectKey: varchar('subject_key', { length: 255 }).notNull(), factKey: varchar('fact_key', { length: 180 }).notNull(), valueJson: json('value_json').$type<Record<string, unknown>>().notNull(), valueHash: char('value_hash', { length: 64 }).notNull(), dedupeKey: char('dedupe_key', { length: 64 }).notNull(), confidence: int('confidence').notNull(), normalizerKey: varchar('normalizer_key', { length: 120 }).notNull(), freshnessPolicyKey: varchar('freshness_policy_key', { length: 120 }).notNull(), conflictPolicyKey: varchar('conflict_policy_key', { length: 120 }).notNull(), compatibilityResourceKey: varchar('compatibility_resource_key', { length: 120 }), status: varchar('status', { length: 32 }).notNull(), truthRecordId: uuidBinary('truth_record_id').references(() => truthRecords.id, { onDelete: 'restrict' }), decidedAt: datetime('decided_at', { mode: 'date', fsp: 6 }), createdAt: datetime('created_at', { mode: 'date', fsp: 6 }).notNull(),
+}, (table) => [uniqueIndex('candidate_facts_user_dedupe_uq').on(table.userId, table.dedupeKey), index('candidate_facts_user_status_idx').on(table.userId, table.status, table.createdAt)]);
+
+export const truthProvenance = mysqlTable('truth_provenance', {
+  id: uuidBinary('id').primaryKey(), truthRecordVersionId: uuidBinary('truth_record_version_id').notNull().references(() => truthRecordVersions.id, { onDelete: 'restrict' }), candidateFactId: uuidBinary('candidate_fact_id').notNull().references(() => candidateFacts.id, { onDelete: 'restrict' }), observationId: uuidBinary('observation_id').notNull().references(() => sourceObservations.id, { onDelete: 'restrict' }), providerKey: varchar('provider_key', { length: 80 }).notNull(), sourceMode: varchar('source_mode', { length: 32 }).notNull(), evidenceHash: char('evidence_hash', { length: 64 }).notNull(), observedAt: datetime('observed_at', { mode: 'date', fsp: 6 }).notNull(), createdAt: datetime('created_at', { mode: 'date', fsp: 6 }).notNull(),
+}, (table) => [uniqueIndex('truth_provenance_version_candidate_uq').on(table.truthRecordVersionId, table.candidateFactId), uniqueIndex('truth_provenance_candidate_uq').on(table.candidateFactId), index('truth_provenance_observation_idx').on(table.observationId)]);
 
 export const billingRecords = mysqlTable('billing_records', {
   id: uuidBinary('id').primaryKey(),
@@ -1224,6 +1244,11 @@ export const schema = {
   strategyProfileDefinitions,
   scenarioDefinitions,
   scenarioReadinessSnapshots,
+  realityAdapterDefinitions,
+  realityPolicyDefinitions,
+  sourceObservations,
+  candidateFacts,
+  truthProvenance,
   billingRecords,
   fileImports,
   logisticsTrackingSnapshots,
