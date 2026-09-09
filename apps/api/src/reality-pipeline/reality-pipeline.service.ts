@@ -11,10 +11,15 @@ import { newId } from '@lazy-armor/shared';
 import { and, desc, eq } from 'drizzle-orm';
 import { AuditService } from '../audit/audit.service';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
+import { StrategyRuntimeService } from '../strategy-runtime/strategy-runtime.service';
 
 @Injectable()
 export class RealityPipelineService implements OnModuleInit {
-  constructor(@Inject(DATABASE) private readonly db: InjectedDatabase, private readonly audit: AuditService) {}
+  constructor(
+    @Inject(DATABASE) private readonly db: InjectedDatabase,
+    private readonly audit: AuditService,
+    private readonly strategyRuntime: StrategyRuntimeService,
+  ) {}
   async onModuleInit() { await this.syncRegistry(); }
 
   async ingest(userId: string, input: SourceObservationInput) {
@@ -88,6 +93,12 @@ export class RealityPipelineService implements OnModuleInit {
         await tx.insert(truthProvenance).values({ id: newId(), truthRecordVersionId: versionId, candidateFactId: candidateId, observationId: observation.id, providerKey: observation.providerKey, sourceMode: observation.sourceMode, evidenceHash: observation.evidenceHash, observedAt: observation.observedAt, createdAt: now });
         await tx.update(truthRecords).set({ currentVersionId: versionId, updatedAt: now }).where(eq(truthRecords.id, truthId));
         await tx.update(candidateFacts).set({ status: 'VERIFIED', truthRecordId: truthId, decidedAt: now }).where(and(eq(candidateFacts.id, candidateId), eq(candidateFacts.status, 'PENDING')));
+        await this.strategyRuntime.enqueueTruthChange(userId, {
+          truthRecordVersionId: versionId,
+          factKey: existing.factKey,
+          resourceType: existing.resourceType,
+          subjectKey: existing.subjectKey,
+        }, tx);
       });
     } catch (error) {
       if (!isDuplicate(error) && !isDeadlock(error)) throw error;

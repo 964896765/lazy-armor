@@ -46,9 +46,9 @@ export class RuntimeCatalogRegistryService implements OnModuleInit {
     });
   }
 
-  async compile(userId: string, key: string, input: { strategy?: StrategyKey; name?: string }) {
+  async compile(userId: string, key: string, input: { strategy?: StrategyKey; name?: string; subjectKey?: string }) {
     const readiness = await this.readiness(userId, key);
-    return compileScenarioPlan({ scenarioKey: key, strategy: input.strategy, name: input.name, mode: 'DRAFT', readiness: {
+    return compileScenarioPlan({ scenarioKey: key, strategy: input.strategy, name: input.name, subjectKey: input.subjectKey, mode: 'DRAFT', readiness: {
       manualInputAvailable: readiness.state === 'MANUAL_READY',
       observationPipelineAvailable: false,
       executionPipelineAvailable: true,

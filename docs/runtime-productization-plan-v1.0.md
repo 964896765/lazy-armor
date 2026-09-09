@@ -16,6 +16,7 @@
 | Batch 2 — Scenario Foundation | 已完成 | [runtime-productization-batch-2-report.md](./runtime-productization-batch-2-report.md) |
 | Batch 3 — Reality Pipeline | 已完成 | [runtime-productization-batch-3-report.md](./runtime-productization-batch-3-report.md) |
 | Batch 4 — Android Foreground Acquisition | 已完成 | [runtime-productization-batch-4-report.md](./runtime-productization-batch-4-report.md) |
+| Batch 5 — Strategy Runtime + Dependency Index | 已完成 | [runtime-productization-batch-5-report.md](./runtime-productization-batch-5-report.md) |
 
 ---
 
@@ -2795,6 +2796,8 @@ digital_account.connection.health
 - 后台隐蔽采集
 
 ## 101. Batch 5 — Strategy Runtime + Dependency Index
+
+状态：已完成，详见 [Batch 5 开发报告](./runtime-productization-batch-5-report.md)。
 
 ### 交付
 

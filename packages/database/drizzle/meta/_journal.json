@@ -281,6 +281,13 @@
       "when": 1789171200000,
       "tag": "0039_app_read_sessions",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1789257600000,
+      "tag": "0040_strategy_runtime",
+      "breakpoints": true
     }
   ]
 }

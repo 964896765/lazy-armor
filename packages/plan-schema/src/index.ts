@@ -427,6 +427,24 @@ export {
 } from './runtime-catalog';
 export { compileScenarioPlan, type CompiledScenarioPlan, type ScenarioCompileInput } from './scenario-plan-compiler';
 export {
+  CONDITION_AST_SCHEMA_VERSION,
+  CONDITION_OPERATORS_V1,
+  OPERATOR_REGISTRY,
+  OPERATOR_REGISTRY_REVISION,
+  buildStrategyRuntime,
+  evaluateConditionAst,
+  type CompiledStrategyRuntime,
+  type ConditionAst,
+  type ConditionDecision,
+  type ConditionEvaluationContext,
+  type FactDependencyDefinition,
+  type FactDependencyScope,
+  type LifecycleRuntimeState,
+  type RuntimeConditionOperator,
+  type RuntimeFactInput,
+  type StrategyTriggerProfile,
+} from './strategy-runtime';
+export {
   PARSER_KEYS, REALITY_ADAPTER_REGISTRY, REALITY_POLICY_REGISTRY, SOURCE_MODES, candidateDedupeKey, observationIdentity,
   parseAndNormalizeObservation, realityValueHash,
   type NormalizedFactDraft, type ParserKey, type RealityPolicyDefinition, type SourceMode, type SourceObservationInput,

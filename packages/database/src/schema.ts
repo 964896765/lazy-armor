@@ -970,6 +970,77 @@ export const planActions = mysqlTable('plan_actions', {
   createdAt: datetime('created_at', { mode: 'date', fsp: 6 }).notNull(),
 }, (table) => [uniqueIndex('plan_actions_version_step_uq').on(table.planVersionId, table.stepOrder)]);
 
+export const strategyRuntimeBindings = mysqlTable('strategy_runtime_bindings', {
+  id: uuidBinary('id').primaryKey(),
+  userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  planVersionId: uuidBinary('plan_version_id').notNull().references(() => planVersions.id, { onDelete: 'restrict' }),
+  scenarioKey: varchar('scenario_key', { length: 120 }).notNull(),
+  scenarioRevision: int('scenario_revision').notNull(),
+  strategyKey: varchar('strategy_key', { length: 64 }).notNull(),
+  strategyRevision: int('strategy_revision').notNull(),
+  schemaVersion: varchar('schema_version', { length: 16 }).notNull(),
+  runtimeHash: char('runtime_hash', { length: 64 }).notNull(),
+  runtimeJson: json('runtime_json').$type<Record<string, unknown>>().notNull(),
+  createdAt: datetime('created_at', { mode: 'date', fsp: 6 }).notNull(),
+}, (table) => [
+  uniqueIndex('strategy_runtime_bindings_plan_version_uq').on(table.planVersionId),
+  index('strategy_runtime_bindings_user_strategy_idx').on(table.userId, table.strategyKey, table.createdAt),
+]);
+
+export const truthFactDependencies = mysqlTable('truth_fact_dependencies', {
+  id: uuidBinary('id').primaryKey(),
+  bindingId: uuidBinary('binding_id').notNull().references(() => strategyRuntimeBindings.id, { onDelete: 'restrict' }),
+  userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  planVersionId: uuidBinary('plan_version_id').notNull().references(() => planVersions.id, { onDelete: 'restrict' }),
+  dependencyKey: char('dependency_key', { length: 64 }).notNull(),
+  factKey: varchar('fact_key', { length: 180 }).notNull(),
+  resourceType: varchar('resource_type', { length: 120 }).notNull(),
+  field: varchar('field', { length: 120 }).notNull(),
+  scope: varchar('scope', { length: 32 }).notNull(),
+  subjectKey: varchar('subject_key', { length: 255 }),
+  createdAt: datetime('created_at', { mode: 'date', fsp: 6 }).notNull(),
+}, (table) => [
+  uniqueIndex('truth_fact_dependencies_key_uq').on(table.dependencyKey),
+  index('truth_fact_dependencies_lookup_idx').on(table.userId, table.factKey, table.resourceType, table.scope),
+  index('truth_fact_dependencies_subject_idx').on(table.userId, table.subjectKey, table.factKey),
+]);
+
+export const strategyRuntimeWakeups = mysqlTable('strategy_runtime_wakeups', {
+  id: uuidBinary('id').primaryKey(),
+  bindingId: uuidBinary('binding_id').notNull().references(() => strategyRuntimeBindings.id, { onDelete: 'restrict' }),
+  userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  planVersionId: uuidBinary('plan_version_id').notNull().references(() => planVersions.id, { onDelete: 'restrict' }),
+  truthRecordVersionId: uuidBinary('truth_record_version_id').notNull().references(() => truthRecordVersions.id, { onDelete: 'restrict' }),
+  wakeupKey: char('wakeup_key', { length: 64 }).notNull(),
+  factKey: varchar('fact_key', { length: 180 }).notNull(),
+  resourceType: varchar('resource_type', { length: 120 }).notNull(),
+  subjectKey: varchar('subject_key', { length: 255 }).notNull(),
+  triggerMode: varchar('trigger_mode', { length: 32 }).notNull(),
+  status: varchar('status', { length: 32 }).notNull(),
+  createdAt: datetime('created_at', { mode: 'date', fsp: 6 }).notNull(),
+  evaluatedAt: datetime('evaluated_at', { mode: 'date', fsp: 6 }),
+}, (table) => [
+  uniqueIndex('strategy_runtime_wakeups_key_uq').on(table.wakeupKey),
+  index('strategy_runtime_wakeups_user_status_idx').on(table.userId, table.status, table.createdAt),
+]);
+
+export const strategyRuntimeDecisions = mysqlTable('strategy_runtime_decisions', {
+  id: uuidBinary('id').primaryKey(),
+  bindingId: uuidBinary('binding_id').notNull().references(() => strategyRuntimeBindings.id, { onDelete: 'restrict' }),
+  wakeupId: uuidBinary('wakeup_id').notNull().references(() => strategyRuntimeWakeups.id, { onDelete: 'restrict' }),
+  userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  inputHash: char('input_hash', { length: 64 }).notNull(),
+  decisionHash: char('decision_hash', { length: 64 }).notNull(),
+  triggerDecisionJson: json('trigger_decision_json').$type<Record<string, unknown>>().notNull(),
+  conditionDecisionJson: json('condition_decision_json').$type<Record<string, unknown>>().notNull(),
+  lifecycleTraceJson: json('lifecycle_trace_json').$type<Record<string, unknown>[]>().notNull(),
+  result: varchar('result', { length: 32 }).notNull(),
+  evaluatedAt: datetime('evaluated_at', { mode: 'date', fsp: 6 }).notNull(),
+}, (table) => [
+  uniqueIndex('strategy_runtime_decisions_wakeup_uq').on(table.wakeupId),
+  index('strategy_runtime_decisions_user_time_idx').on(table.userId, table.evaluatedAt),
+]);
+
 export const executions = mysqlTable('executions', {
   id: uuidBinary('id').primaryKey(),
   userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
