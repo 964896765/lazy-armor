@@ -362,3 +362,4 @@ export class ConnectorRegistry {
 
 export * from './capability-manifest';
 export * from './provider-registry';
+export * from './capability-resolver';

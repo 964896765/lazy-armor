@@ -970,6 +970,18 @@ export const planActions = mysqlTable('plan_actions', {
   createdAt: datetime('created_at', { mode: 'date', fsp: 6 }).notNull(),
 }, (table) => [uniqueIndex('plan_actions_version_step_uq').on(table.planVersionId, table.stepOrder)]);
 
+export const capabilityResolutionDecisions = mysqlTable('capability_resolution_decisions', {
+  id: uuidBinary('id').primaryKey(),
+  userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  planVersionId: uuidBinary('plan_version_id').notNull().references(() => planVersions.id, { onDelete: 'restrict' }),
+  requestKey: varchar('request_key', { length: 120 }).notNull(),
+  requestHash: char('request_hash', { length: 64 }).notNull(),
+  decisionHash: char('decision_hash', { length: 64 }).notNull(),
+  inputJson: json('input_json').$type<Record<string, unknown>>().notNull(),
+  decisionJson: json('decision_json').$type<Record<string, unknown>>().notNull(),
+  createdAt: datetime('created_at', { mode: 'date', fsp: 6 }).notNull(),
+}, (table) => [uniqueIndex('cap_resolution_request_uq').on(table.userId, table.requestKey), index('cap_resolution_version_idx').on(table.planVersionId, table.createdAt)]);
+
 export const strategyRuntimeBindings = mysqlTable('strategy_runtime_bindings', {
   id: uuidBinary('id').primaryKey(),
   userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),

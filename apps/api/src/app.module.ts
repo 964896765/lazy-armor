@@ -38,6 +38,7 @@ import { UsageModule } from './usage/usage.module';
 import { SubscriptionBillingModule } from './subscription-billing/subscription-billing.module';
 import { CostModule } from './cost/cost.module';
 import { StrategyRuntimeModule } from './strategy-runtime/strategy-runtime.module';
+import { CapabilityResolverModule } from './capability-resolver/capability-resolver.module';
 import { ProviderCapabilitiesModule } from './provider-capabilities/provider-capabilities.module';
 import { RuntimeCatalogModule } from './runtime-catalog/runtime-catalog.module';
 import { AppReadSessionsModule } from './app-read-sessions/app-read-sessions.module';
@@ -78,6 +79,7 @@ import { AppReadSessionsModule } from './app-read-sessions/app-read-sessions.mod
     SubscriptionBillingModule,
     CostModule,
     StrategyRuntimeModule,
+    CapabilityResolverModule,
     ProviderCapabilitiesModule,
     RuntimeCatalogModule,
     AppReadSessionsModule,
