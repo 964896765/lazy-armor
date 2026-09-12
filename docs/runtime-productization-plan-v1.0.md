@@ -18,8 +18,8 @@
 | Batch 4 — Android Foreground Acquisition | 已完成 | [runtime-productization-batch-4-report.md](./runtime-productization-batch-4-report.md) |
 | Batch 5 — Strategy Runtime + Dependency Index | 已完成 | [runtime-productization-batch-5-report.md](./runtime-productization-batch-5-report.md) |
 | Batch 6 — Capability Resolver | 已完成 | [runtime-productization-batch-6-report.md](./runtime-productization-batch-6-report.md) |
-| Batch 7 — Risk / Approval / Execution Integration | 最终验收中 | [runtime-productization-batch-7-report.md](./runtime-productization-batch-7-report.md) |
-| Batch 8 — Verification / Result / Reconciliation | 最终验收中 | [runtime-productization-batch-8-report.md](./runtime-productization-batch-8-report.md) |
+| Batch 7 — Risk / Approval / Execution Integration | 已完成 | [runtime-productization-batch-7-report.md](./runtime-productization-batch-7-report.md) |
+| Batch 8 — Verification / Result / Reconciliation | 已完成 | [runtime-productization-batch-8-report.md](./runtime-productization-batch-8-report.md) |
 
 ---
 

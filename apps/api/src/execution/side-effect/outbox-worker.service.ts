@@ -30,7 +30,7 @@ const POLL_INTERVAL_MS = 1_000;
 const CLAIM_BATCH = 8;
 const WORKER_ID = () => `outbox-${process.pid}`;
 // 审批后仍不可覆盖的运行权限阻断码：直接受控失败，绝不无限重试。
-const BLOCKING_CODES = new Set(['CONNECTION_REVOKED', 'CONNECTION_EXPIRED', 'CONNECTION_UNAVAILABLE', 'CONNECTION_NOT_OWNED', 'CAPABILITY_NOT_FOUND', 'CAPABILITY_NOT_GRANTED', 'PERMISSION_REVOKED', 'PERMISSION_EXPIRED', 'CREDENTIAL_INVALID', 'CREDENTIAL_EXPIRED']);
+const BLOCKING_CODES = new Set(['CONNECTION_REVOKED', 'CONNECTION_EXPIRED', 'CONNECTION_UNAVAILABLE', 'CONNECTION_NOT_OWNED', 'CAPABILITY_NOT_FOUND', 'CAPABILITY_NOT_GRANTED', 'PERMISSION_REVOKED', 'PERMISSION_EXPIRED', 'CREDENTIAL_INVALID', 'CREDENTIAL_EXPIRED', 'ACTION_INTENT_MISSING', 'ACTION_ADAPTER_INTEGRITY_ERROR', 'ACTION_RESOLUTION_CHANGED', 'RISK_CONTEXT_CHANGED', 'RISK_SNAPSHOT_MISSING', 'APPROVAL_NOT_VALID', 'APPROVAL_EXPIRED']);
 
 @Injectable()
 export class OutboxWorker implements OnModuleInit, OnApplicationShutdown {
@@ -152,10 +152,18 @@ export class OutboxWorker implements OnModuleInit, OnApplicationShutdown {
       const execution = (await this.db.select({ planId: executions.planId, cancellationRequestedAt: executions.cancellationRequestedAt }).from(executions).where(eq(executions.id, payload.executionId)).limit(1))[0];
       const plan = execution ? (await this.db.select({ status: plans.status }).from(plans).where(and(eq(plans.id, execution.planId), eq(plans.userId, operation.userId))).limit(1))[0] : null;
       if (execution?.cancellationRequestedAt) {
+        if (operation.status === 'executing') {
+          await this.unknownOutcome(operation, message, new ExecutionRuntimeError('OUTCOME_UNKNOWN', 'Cancelled dispatch recovery cannot confirm the prior effect'), payload.executionId);
+          return;
+        }
         await this.cancelOperation(operation, message, 'CANCELLED_BEFORE_DISPATCH', payload.executionId);
         return;
       }
       if (!plan || plan.status !== 'active') {
+        if (operation.status === 'executing') {
+          await this.unknownOutcome(operation, message, new ExecutionRuntimeError('OUTCOME_UNKNOWN', 'Inactive plan dispatch recovery cannot confirm the prior effect'), payload.executionId);
+          return;
+        }
         await this.failOperation(operation, message, 'PLAN_NOT_ACTIVE', 'Plan is no longer active');
         return;
       }

@@ -2,7 +2,9 @@
 
 日期：2026-09-12。阶段基线：main 的 Batch 6 后续前向扩展，与 Batch 7 连续开发。
 
-状态：功能专项通过；最终 Full API / monorepo 验收进行中。
+最终验收基线：main@101a326，已核对 origin/main 一致。
+
+状态：已完成；最终 Full API / monorepo 门禁通过。
 
 ## 实现
 
@@ -14,7 +16,7 @@
 - Reconciliation Worker 随独立 outbox-worker 角色运行，使用 FOR UPDATE SKIP LOCKED、独立 lease token 和过期接管。迟到 Worker 不能提交覆盖新租约。
 - 自动回查仅调用显式支持的 lookupOperation，使用原有副作用键和当前权限 / 凭据校验；不调用 execute、不重入原 Action、不重新入队 Outbox。
 - Provider 未有明确可用的只读验证策略时，进入 NEEDS_USER。Lookup 无确认结果时退避，达到上限 / 过期后停止自动回查。
-- 不安全动作的派发权使用数据库 CAS；发现崩溃前已进入派发阶段时只回查。迟到成功响应追加证据，不覆盖历史未知 operation / Execution 终态。
+- 不安全动作的派发权使用数据库 CAS；发现崩溃前已进入派发阶段时只回查。成功、失败和未知结果提交前均检查行锁内终态；迟到成功 / 失败响应只追加证据，不覆盖历史未知 operation / Execution 终态，迟到未知回调不能覆盖已提交的已知终态。
 - 对账收口独立更新 case 与追加 evidence / audit，保留历史 Execution 状态；Execution API 给出包含全部步骤的当前业务结果 projection。已跳过的步骤是已知未完成结果，不伪装成外部副作用未知；非外部步骤失败也参与部分成功的计算。
 
 ## 接口与消费者
@@ -37,9 +39,17 @@ runtime-verification-reconciliation.integration.spec 使用真实本地 HTTP / T
 
 另覆盖 lease 过期 / token fencing / takeover、partial result、pending 结果与有界停止、权限撤销、已派发不安全动作崩溃后的只读恢复、Resolver 绑定全链、鉴权 / 归属和不可变策略。reconciliation-result.spec 单独覆盖已跳过步骤、非外部步骤失败及历史未知结果的收口投影。
 
+outbox-terminal-fencing.spec 覆盖迟到未知 / 失败回调不能覆盖已有终态，以及迟到失败只追加证据而不改写未知 operation。
+
 ## 门禁
 
-验证纯函数与 Registry unit、真实 MySQL DB / concurrency / API contract、Migration replay / checksum、Full API、monorepo test、8 包 typecheck / build、Mobile typecheck / 99 项测试均纳入验收；全量运行结果将在结束后补录。
+- Full API：71 个文件通过、2 个文件按条件跳过；433 项通过、5 项按条件跳过。最终完整 API 套件通过 monorepo 实际执行，耗时 372.58 秒。
+- Monorepo Test：16/16 工作区任务成功；Typecheck：8/8 成功；Build：8/8 成功。
+- Plan Schema：42 项通过；Connector SDK：31 项通过；Mobile：16 个文件、99 项通过，类型检查与现有 web export 构建通过。
+- Verification / Registry / result projection / terminal fencing unit、真实 MySQL DB / concurrency / API contract、Migration replay / checksum 全部包含在通过的套件内。数据库工作区无独立测试文件，DB 集成测试位于 API 工作区，未将空测试任务当作 DB 集成验收。
+- Migration Safety：45 个迁移文件通过，破坏性语句 0；Repository Hygiene：591 个跟踪文件通过；Production Data Truth 通过。
+
+门禁命令：pnpm typecheck、pnpm build、pnpm test、pnpm migration:safety、pnpm repository:hygiene、pnpm data:truth。最终运行日志：.data/runtime-batch-7-8-monorepo-final.log；专项日志：.data/runtime-batch-7-8-final-specialized.log。测试中临时停止 Redis、断开 TCP 和 Worker 租约接管均为隔离故障注入，不是生产操作。
 
 ## 边界
 

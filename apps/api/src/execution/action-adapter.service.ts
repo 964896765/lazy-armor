@@ -29,9 +29,8 @@ export class ActionAdapter {
     const current = await this.risk.evaluate(action, step.declaredRiskLevel as RiskLevel, execution.triggerPayloadJson, step.connectorId, this.db, execution.planVersionId, snapshot.manifestRiskFloor ?? 'R0');
     if (current.effectiveRisk !== step.effectiveRiskLevel || current.inputFingerprint !== step.inputFingerprint) throw new ExecutionRuntimeError('RISK_CONTEXT_CHANGED', 'Risk context changed before external dispatch');
     const approval = (await this.db.select().from(approvalRequests).where(eq(approvalRequests.executionStepId, stepId)).limit(1))[0];
-    if ((current.minimumApprovalRequirement !== 'none' || approval) && approval?.status !== 'approved') {
-      throw new ExecutionRuntimeError('APPROVAL_NOT_VALID', 'Required immutable approval is unavailable before external dispatch');
-    }
+    const authorization = await this.approvalGate.check({ execution, step, action });
+    if (!authorization.allowed) throw new ExecutionRuntimeError('APPROVAL_NOT_VALID', 'Required approval or scoped temporary authorization is unavailable before external dispatch');
     if (approval?.status === 'approved') await this.approvalGate.assertSnapshotValid(approval, execution, step, current);
   }
 
