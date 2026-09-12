@@ -15,7 +15,8 @@
 - 官方 npm registry 下 frozen-lockfile install 通过。
 - `pnpm audit --prod --audit-level=high --registry=https://registry.npmjs.org` 通过：No known vulnerabilities found。只对本次命令指定 registry，不改用户全局镜像配置。
 - 本地 monorepo build：8/8 成功；typecheck / migration safety / repository hygiene / production data truth 通过。
-- 本地完整 monorepo / Full API / 真实数据库并发回归运行中。
+- 本地完整 monorepo / Full API / 真实数据库并发回归通过：16/16 任务，API 72 文件通过、1 文件按条件跳过，434 项通过、4 项按条件跳过。
+- 修复提交 `4f6bb61` 的 [远端 CI #62](https://github.com/964896765/lazy-armor/actions/runs/34688176216) 快速门禁通过，RC 的 MySQL 8.4 Migration / Backup-Restore 通过；完整 API 测试因迁移测试硬编码只接受本地库名而失败，CI 使用的 lazy_armor_ci_test 被错误拒绝。修复为显式接受 lazy_armor_test / lazy_armor_ci_test 两个既有隔离库，其他名称、错误协议和无效 URL 仍在打开连接前拒绝；新增安全边界单元回归。未修改任何历史迁移源文件或 ledger。
 - 新修复提交的远端完整 CI 尚待执行。本报告明确不是 FULL GREEN；只有 Production Dependency Audit、Migration / MySQL 8.4 / Backup-Restore、Full API / Monorepo Test / Build / Mobile、Android 全部远端成功后，才更新最终验收状态。
 
 本地日志：`.data/batch-6-8-ci-fix-build.log`、`.data/batch-6-8-ci-fix-typecheck.log`、`.data/batch-6-8-ci-fix-migration.log`、`.data/batch-6-8-ci-fix-monorepo.log`。

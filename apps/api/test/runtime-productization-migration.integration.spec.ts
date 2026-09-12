@@ -5,13 +5,13 @@ import type { Pool, RowDataPacket } from 'mysql2/promise';
 import { createDatabase } from '@lazy-armor/database';
 import { migrate } from 'drizzle-orm/mysql2/migrator';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { assertMigrationTestDatabase } from './migration-database.guard';
 
 describe('Batch 7/8 forward migration contracts', () => {
   let pool: Pool; let db: ReturnType<typeof createDatabase>['db'];
   const folder = resolve(process.cwd(), '../../packages/database/drizzle');
   beforeAll(() => {
-    const url = process.env.DATABASE_URL!;
-    if (new URL(url).pathname !== '/lazy_armor_test') throw new Error('Migration integration is restricted to the isolated test database');
+    const url = assertMigrationTestDatabase(process.env.DATABASE_URL);
     ({ db, pool } = createDatabase(url));
   });
   afterAll(async () => { await pool?.end(); });
