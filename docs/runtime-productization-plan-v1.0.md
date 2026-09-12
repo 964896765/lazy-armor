@@ -10,6 +10,8 @@
 
 ## 执行进度
 
+2026-09-12 基线收口约束：以 `main@b679250` 冻结 Batch 6～8 完成实现，此后这些 Batch 只允许 bugfix，不再改变核心架构。远端完整门禁与安全修复证据见 [Batch 6～8 远端 CI 收口报告](./runtime-productization-batch-6-8-remote-ci-report.md)；本地通过不等于远端 FULL GREEN。
+
 | Batch | 状态 | 报告 |
 | --- | --- | --- |
 | Batch 1 — Capability Foundation | 已完成 | [runtime-productization-batch-1-report.md](./runtime-productization-batch-1-report.md) |
