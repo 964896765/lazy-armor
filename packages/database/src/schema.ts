@@ -1092,10 +1092,57 @@ export const executions = mysqlTable('executions', {
   index('executions_lease_recovery_idx').on(table.status, table.leaseExpiresAt),
 ]);
 
+export const actionIntents = mysqlTable('action_intents', {
+  id: uuidBinary('id').primaryKey(),
+  userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  planId: uuidBinary('plan_id').notNull().references(() => plans.id, { onDelete: 'restrict' }),
+  planVersionId: uuidBinary('plan_version_id').notNull().references(() => planVersions.id, { onDelete: 'restrict' }),
+  planActionId: uuidBinary('plan_action_id').notNull().references(() => planActions.id, { onDelete: 'restrict' }),
+  executionId: uuidBinary('execution_id').notNull().references(() => executions.id, { onDelete: 'restrict' }),
+  schemaVersion: varchar('schema_version', { length: 16 }).notNull(),
+  actionType: varchar('action_type', { length: 64 }).notNull(),
+  capabilityKey: varchar('capability_key', { length: 100 }),
+  resourceType: varchar('resource_type', { length: 120 }).notNull(),
+  targetJson: json('target_json').$type<unknown>().notNull(),
+  payloadJson: json('payload_json').$type<unknown>().notNull(),
+  payloadHash: char('payload_hash', { length: 64 }).notNull(),
+  desiredOutcome: varchar('desired_outcome', { length: 500 }).notNull(),
+  sideEffectKey: varchar('side_effect_key', { length: 255 }),
+  providerRiskFloor: varchar('provider_risk_floor', { length: 8 }).notNull(),
+  scenarioRiskFloor: varchar('scenario_risk_floor', { length: 8 }).notNull(),
+  actionRisk: varchar('action_risk', { length: 8 }).notNull(),
+  contextRiskElevation: varchar('context_risk_elevation', { length: 8 }).notNull(),
+  effectiveRiskLevel: varchar('effective_risk_level', { length: 8 }).notNull(),
+  contextSignalsJson: json('context_signals_json').$type<Record<string, unknown>[]>().notNull(),
+  intentHash: char('intent_hash', { length: 64 }).notNull(),
+  status: varchar('status', { length: 32 }).notNull(),
+  createdAt: datetime('created_at', { mode: 'date', fsp: 6 }).notNull(),
+}, (table) => [
+  uniqueIndex('action_intents_execution_action_uq').on(table.executionId, table.planActionId),
+  uniqueIndex('action_intents_hash_uq').on(table.intentHash),
+  index('action_intents_user_created_idx').on(table.userId, table.createdAt),
+]);
+
+export const actionAdapterBindings = mysqlTable('action_adapter_bindings', {
+  id: uuidBinary('id').primaryKey(),
+  actionIntentId: uuidBinary('action_intent_id').notNull().references(() => actionIntents.id, { onDelete: 'restrict' }),
+  adapterRevision: int('adapter_revision').notNull(),
+  adapterKey: varchar('adapter_key', { length: 160 }).notNull(),
+  connectorId: uuidBinary('connector_id').references(() => connectors.id, { onDelete: 'restrict' }),
+  connectionId: uuidBinary('connection_id').references(() => connections.id, { onDelete: 'restrict' }),
+  capabilityKey: varchar('capability_key', { length: 100 }),
+  capabilityResolutionDecisionId: uuidBinary('capability_resolution_decision_id').references(() => capabilityResolutionDecisions.id, { onDelete: 'restrict' }),
+  capabilityResolutionDecisionHash: char('capability_resolution_decision_hash', { length: 64 }),
+  bindingHash: char('binding_hash', { length: 64 }).notNull(),
+  status: varchar('status', { length: 32 }).notNull(),
+  createdAt: datetime('created_at', { mode: 'date', fsp: 6 }).notNull(),
+}, (table) => [uniqueIndex('action_adapter_bindings_intent_uq').on(table.actionIntentId), uniqueIndex('action_adapter_bindings_hash_uq').on(table.bindingHash)]);
+
 export const executionSteps = mysqlTable('execution_steps', {
   id: uuidBinary('id').primaryKey(),
   executionId: uuidBinary('execution_id').notNull().references(() => executions.id, { onDelete: 'restrict' }),
   planActionId: uuidBinary('plan_action_id').notNull().references(() => planActions.id, { onDelete: 'restrict' }),
+  actionIntentId: uuidBinary('action_intent_id').references(() => actionIntents.id, { onDelete: 'restrict' }),
   stepOrder: int('step_order').notNull(),
   actionType: varchar('action_type', { length: 64 }).notNull(),
   connectorId: uuidBinary('connector_id').references(() => connectors.id, { onDelete: 'restrict' }),
@@ -1122,6 +1169,7 @@ export const executionSteps = mysqlTable('execution_steps', {
 }, (table) => [
   uniqueIndex('execution_steps_execution_order_uq').on(table.executionId, table.stepOrder),
   index('execution_steps_status_retry_idx').on(table.status, table.nextRetryAt),
+  index('execution_steps_action_intent_idx').on(table.actionIntentId),
 ]);
 
 export const executionEvents = mysqlTable('execution_events', {
@@ -1153,6 +1201,8 @@ export const approvalRequests = mysqlTable('approval_requests', {
   planActionId: uuidBinary('plan_action_id').notNull().references(() => planActions.id, { onDelete: 'restrict' }),
   actionType: varchar('action_type', { length: 64 }),
   policySnapshotJson: json('policy_snapshot').$type<Record<string, unknown>>(),
+  approvalSnapshotJson: json('approval_snapshot_json').$type<Record<string, unknown>>(),
+  approvalSnapshotHash: char('approval_snapshot_hash', { length: 64 }),
   reason: varchar('reason', { length: 500 }),
   requestedAt: datetime('requested_at', { mode: 'date', fsp: 6 }),
   inputFingerprint: char('input_fingerprint', { length: 64 }).notNull(),
@@ -1259,6 +1309,50 @@ export const sideEffectOperations = mysqlTable('side_effect_operations', {
   index('side_effect_operations_execution_idx').on(table.executionId, table.executionStepId),
   index('side_effect_operations_status_idx').on(table.status, table.updatedAt),
 ]);
+
+export const verificationPolicies = mysqlTable('verification_policies', {
+  id: uuidBinary('id').primaryKey(),
+  policyKey: varchar('policy_key', { length: 100 }).notNull(),
+  revision: varchar('revision', { length: 32 }).notNull(),
+  definitionJson: json('definition_json').$type<Record<string, unknown>>().notNull(),
+  definitionHash: char('definition_hash', { length: 64 }).notNull(),
+  createdAt: datetime('created_at', { mode: 'date', fsp: 6 }).notNull(),
+}, (table) => [uniqueIndex('verification_policy_revision_uq').on(table.policyKey, table.revision)]);
+
+export const reconciliationCases = mysqlTable('reconciliation_cases', {
+  id: uuidBinary('id').primaryKey(),
+  userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  executionId: uuidBinary('execution_id').notNull().references(() => executions.id, { onDelete: 'restrict' }),
+  executionStepId: uuidBinary('execution_step_id').notNull().references(() => executionSteps.id, { onDelete: 'restrict' }),
+  operationId: uuidBinary('operation_id').notNull().references(() => sideEffectOperations.id, { onDelete: 'restrict' }),
+  policyId: uuidBinary('policy_id').notNull().references(() => verificationPolicies.id, { onDelete: 'restrict' }),
+  policySnapshotJson: json('policy_snapshot_json').$type<Record<string, unknown>>().notNull(),
+  policyHash: char('policy_hash', { length: 64 }).notNull(),
+  status: varchar('status', { length: 32 }).notNull(),
+  resultState: varchar('result_state', { length: 32 }).notNull(),
+  attemptCount: int('attempt_count').notNull().default(0),
+  nextAttemptAt: datetime('next_attempt_at', { mode: 'date', fsp: 6 }).notNull(),
+  leaseToken: varchar('lease_token', { length: 64 }),
+  leaseUntil: datetime('lease_until', { mode: 'date', fsp: 6 }),
+  expiresAt: datetime('expires_at', { mode: 'date', fsp: 6 }).notNull(),
+  resolvedAt: datetime('resolved_at', { mode: 'date', fsp: 6 }),
+  ...timestamps,
+}, (table) => [uniqueIndex('reconciliation_operation_uq').on(table.operationId), index('reconciliation_due_idx').on(table.status, table.nextAttemptAt, table.leaseUntil), index('reconciliation_user_created_idx').on(table.userId, table.createdAt)]);
+
+export const verificationEvidence = mysqlTable('verification_evidence', {
+  id: uuidBinary('id').primaryKey(),
+  userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  operationId: uuidBinary('operation_id').notNull().references(() => sideEffectOperations.id, { onDelete: 'restrict' }),
+  caseId: uuidBinary('case_id').references(() => reconciliationCases.id, { onDelete: 'restrict' }),
+  actionIntentId: uuidBinary('action_intent_id').references(() => actionIntents.id, { onDelete: 'restrict' }),
+  policyId: uuidBinary('policy_id').notNull().references(() => verificationPolicies.id, { onDelete: 'restrict' }),
+  method: varchar('method', { length: 32 }).notNull(),
+  resultState: varchar('result_state', { length: 32 }).notNull(),
+  evidenceKey: varchar('evidence_key', { length: 100 }).notNull(),
+  evidenceJson: json('evidence_json').$type<Record<string, unknown>>().notNull(),
+  evidenceHash: char('evidence_hash', { length: 64 }).notNull(),
+  verifiedAt: datetime('verified_at', { mode: 'date', fsp: 6 }).notNull(),
+}, (table) => [uniqueIndex('verification_evidence_operation_key_uq').on(table.operationId, table.evidenceKey), index('verification_evidence_case_idx').on(table.caseId, table.verifiedAt)]);
 
 export const outboxMessages = mysqlTable('outbox_messages', {
   id: uuidBinary('id').primaryKey(),
@@ -1398,6 +1492,8 @@ export const schema = {
   planConditions,
   planActions,
   executions,
+  actionIntents,
+  actionAdapterBindings,
   executionSteps,
   executionEvents,
   approvalPolicies,
@@ -1406,6 +1502,9 @@ export const schema = {
   temporaryAuthorizations,
   notifications,
   sideEffectOperations,
+  verificationPolicies,
+  verificationEvidence,
+  reconciliationCases,
   outboxMessages,
   auditLogs,
   usageEvents,

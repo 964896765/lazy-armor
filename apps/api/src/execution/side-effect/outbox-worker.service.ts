@@ -1,7 +1,7 @@
 import { Inject, Injectable, OnApplicationShutdown, OnModuleInit } from '@nestjs/common';
 import { ConnectorError, ConnectorRegistry, resolveSideEffectContract, type SideEffectContract } from '@lazy-armor/connector-sdk';
 import { executionSteps, executions, outboxMessages, plans, sideEffectOperations } from '@lazy-armor/database';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, or } from 'drizzle-orm';
 import { DATABASE, type InjectedDatabase } from '../../common/database.module';
 import { AuditService } from '../../audit/audit.service';
 import { SnapshotSanitizer } from '../../common/snapshot-sanitizer.service';
@@ -21,6 +21,8 @@ import { ObservabilityService } from '../../observability/observability.service'
 import { UsageService } from '../../usage/usage.service';
 import { ConnectorRateLimitCoordinator } from '../../infrastructure/connector-rate-limit-coordinator.service';
 import { ProviderCircuitBreakerService } from '../../infrastructure/provider-circuit-breaker.service';
+import { ActionAdapter } from '../action-adapter.service';
+import { VerificationService } from '../verification.service';
 
 const MAX_OUTBOX_ATTEMPTS = 5;
 const RETRY_MAX_MS = 10_000;
@@ -52,6 +54,8 @@ export class OutboxWorker implements OnModuleInit, OnApplicationShutdown {
     private readonly usage: UsageService,
     private readonly rateLimits: ConnectorRateLimitCoordinator,
     private readonly circuits: ProviderCircuitBreakerService,
+    private readonly actionAdapter: ActionAdapter,
+    private readonly verification: VerificationService,
   ) {}
 
   onModuleInit() {
@@ -128,7 +132,7 @@ export class OutboxWorker implements OnModuleInit, OnApplicationShutdown {
         return;
       }
       // 终态不可重放。
-      if (operation.status === 'outcome_unknown' || operation.status === 'cancelled') {
+      if (operation.status === 'outcome_unknown' || operation.status === 'cancelled' || operation.status === 'failed') {
         this.telemetry.increment('outbox.dead', 1, { reason: `OPERATION_${operation.status.toUpperCase()}` });
         await this.outbox.markDead(message.id, `OPERATION_${operation.status.toUpperCase()}`, 'Operation reached a terminal state that cannot be redelivered');
         return;
@@ -140,6 +144,7 @@ export class OutboxWorker implements OnModuleInit, OnApplicationShutdown {
   private async dispatch(operation: typeof sideEffectOperations.$inferSelect, message: typeof outboxMessages.$inferSelect) {
     const payload = message.payloadJson as { operationId: string; executionStepId: string; executionId: string };
     let contract: SideEffectContract | null = null;
+    let dispatchStarted = false;
     let connectorKeyForMetrics = 'unknown';
     const startedAt = Date.now();
     try {
@@ -172,14 +177,29 @@ export class OutboxWorker implements OnModuleInit, OnApplicationShutdown {
       // §42/§43：Side Effect Contract 解析；未知能力默认最保守。
       const capability = this.registry.capability(connectorKey, operation.capabilityKey);
       contract = capability ? resolveSideEffectContract(capability) : null;
+      if (operation.status === 'executing' && contract?.retrySafety !== 'safe') {
+        // A crashed/expired unsafe dispatch may already have committed at the provider. Recovery is lookup-only.
+        await this.unknownOutcome(operation, message, new ExecutionRuntimeError('OUTCOME_UNKNOWN', 'Unsafe dispatch was interrupted after acquisition'), payload.executionId);
+        return;
+      }
       const connector = this.registry.get(connectorKey);
       await this.circuits.beforeRequest(connectorKey);
       await this.rateLimits.acquire({ provider: connectorKey, connectionId: operation.connectionId });
       const rebuilt = await this.operations.rebuildRequest(operation.executionStepId);
+      await this.actionAdapter.assertOperation(operation.executionId, operation.executionStepId);
       await this.events.append(payload.executionId, 'side_effect_dispatch_started', { operationId: operation.id, attempt: operation.attemptCount + 1 }, operation.executionStepId);
       await this.stepStates.transition(operation.executionStepId, 'running', { dispatchStatus: 'executing' });
-      await this.operations.mark(operation.id, { status: 'executing', attemptCount: operation.attemptCount + 1, startedAt: operation.startedAt ?? new Date(), errorCode: null, errorMessage: null });
+      if (contract?.retrySafety !== 'safe') {
+        // Fence even overlapping workers before an unsafe external call. Only one prepared/retry_wait operation can acquire dispatch.
+        const acquired = await this.db.update(sideEffectOperations).set({ status: 'executing', attemptCount: operation.attemptCount + 1,
+          startedAt: operation.startedAt ?? new Date(), errorCode: null, errorMessage: null, updatedAt: new Date() })
+          .where(and(eq(sideEffectOperations.id, operation.id), or(eq(sideEffectOperations.status, 'prepared'), eq(sideEffectOperations.status, 'retry_wait'))));
+        if (!acquired[0].affectedRows) return;
+      } else {
+        await this.operations.mark(operation.id, { status: 'executing', attemptCount: operation.attemptCount + 1, startedAt: operation.startedAt ?? new Date(), errorCode: null, errorMessage: null });
+      }
       this.telemetry.increment('connector.calls', 1, { connectorKey, capability: operation.capabilityKey ?? 'unknown', operation: 'execute' });
+      dispatchStarted = true;
       const result = await this.telemetry.runWithContext({ connectorKey, requestId: rebuilt.requestId }, () => connector.execute?.({
         capability: operation.capabilityKey!,
         input: { context: rebuilt.triggerPayload, config: rebuilt.actionConfig },
@@ -219,12 +239,21 @@ export class OutboxWorker implements OnModuleInit, OnApplicationShutdown {
       const mapped = asRuntimeError(error);
       // 审批后权限/连接/凭证变化 → 受控失败，绝不无限重试（§53-55）。
       if (BLOCKING_CODES.has(mapped.code)) {
+        if (operation.status === 'executing') {
+          await this.unknownOutcome(operation, message, new ExecutionRuntimeError('OUTCOME_UNKNOWN', 'Dispatch recovery cannot confirm the prior effect'), payload.executionId);
+          return;
+        }
         this.telemetry.increment('connector.auth_failure', 1, { errorCode: mapped.code, connectorKey: connectorKeyForMetrics, capability: operation.capabilityKey ?? 'unknown' });
         await this.failOperation(operation, message, mapped.code, this.sanitizer.sanitizeText(mapped));
         return;
       }
       // §14：请求发送后结果未知（timeout/ambiguous）与发送前失败必须区分。
       const ambiguous = ['TIMEOUT', 'NETWORK_ERROR', 'CONNECTOR_TEMPORARY_ERROR', 'INTERNAL_EXECUTION_ERROR'].includes(mapped.code);
+      if (ambiguous && !dispatchStarted) {
+        // Integrity/approval checks failed before any provider call: this is a known blocked action, not an unknown side effect.
+        await this.failOperation(operation, message, mapped.code, this.sanitizer.sanitizeText(mapped));
+        return;
+      }
       // §43：retrySafety=unsafe 的 Provider 不自动盲重试模糊失败。
       const contractUnsafe = contract?.retrySafety === 'unsafe';
       if (ambiguous && (contractUnsafe || message.attemptCount + 1 >= MAX_OUTBOX_ATTEMPTS)) {
@@ -277,8 +306,15 @@ export class OutboxWorker implements OnModuleInit, OnApplicationShutdown {
     const providerOperationId = String(data.providerOperationId ?? data.id ?? data.postId ?? data.orderId ?? data.messageId ?? null) || null;
     const resultHash = this.operations.hashResult(data);
     // §52：operation succeeded + step succeeded + outbox published + audit 同一 DB 事务。
-    await this.db.transaction(async (tx) => {
+    const accepted = await this.db.transaction(async (tx) => {
+      const live = (await tx.select().from(sideEffectOperations).where(eq(sideEffectOperations.id, operation.id)).limit(1).for('update'))[0];
+      if (live?.status === 'outcome_unknown') {
+        await this.verification.recordResponse(operation, true, data, 'late-provider-response', tx);
+        return false;
+      }
+      if (!live || ['succeeded', 'failed', 'cancelled'].includes(live.status)) return false;
       await this.operations.mark(operation.id, { status: 'succeeded', resultSnapshotJson: this.sanitizer.sanitize(data), resultHash, providerOperationId, finishedAt: now }, tx);
+      await this.verification.recordResponse(operation, true, data, 'dispatch-succeeded', tx);
       await this.stepStates.transition(operation.executionStepId, 'succeeded', { dispatchStatus: 'succeeded', outputSnapshotJson: this.sanitizer.sanitize(data), finishedAt: now }, tx);
       await tx.update(outboxMessages).set({ status: 'published', publishedAt: now, lockedBy: null, lockExpiresAt: null, updatedAt: now }).where(eq(outboxMessages.id, message.id));
       await this.audit.append({ actorType: 'outbox_worker', actorUserId: null, action: 'SIDE_EFFECT_SUCCEEDED', resourceType: 'side_effect_operation', resourceId: operation.id, userId: operation.userId, executionId, executionStepId: operation.executionStepId, sideEffectOperationId: operation.id, outboxMessageId: message.id, correlationId: operation.correlationId, causationId: operation.id, after: { providerOperationId, resultHash }, changeSummary: 'Side effect succeeded', source: 'outbox_worker', result: 'success' }, tx);
@@ -295,19 +331,30 @@ export class OutboxWorker implements OnModuleInit, OnApplicationShutdown {
         usageIdentity: 'connector.operation:side-effect:' + operation.id,
         billable: true,
       }, tx);
+      return true;
     });
+    if (!accepted) return;
     await this.events.append(executionId, 'side_effect_succeeded', { operationId: operation.id, providerOperationId }, operation.executionStepId);
     await this.resumeExecution(operation.userId, executionId);
   }
 
   private async failOperation(operation: typeof sideEffectOperations.$inferSelect, message: typeof outboxMessages.$inferSelect, code: string, text: string) {
     const now = new Date();
-    await this.db.transaction(async (tx) => {
+    const accepted = await this.db.transaction(async (tx) => {
+      const live = (await tx.select().from(sideEffectOperations).where(eq(sideEffectOperations.id, operation.id)).limit(1).for('update'))[0];
+      if (live?.status === 'outcome_unknown') {
+        await this.verification.recordResponse(operation, false, { reasonCode: code }, 'late-provider-failure', tx);
+        return false;
+      }
+      if (!live || ['succeeded', 'failed', 'cancelled'].includes(live.status)) return false;
       await this.operations.mark(operation.id, { status: 'failed', errorCode: code, errorMessage: text.slice(0, 1000), finishedAt: now }, tx);
+      await this.verification.recordResponse(operation, false, { reasonCode: code }, 'dispatch-failed', tx);
       await this.stepStates.transition(operation.executionStepId, 'failed', { dispatchStatus: 'failed', errorCode: code, errorMessage: text.slice(0, 1000), finishedAt: now }, tx);
       await tx.update(outboxMessages).set({ status: 'dead', lockedBy: null, lockExpiresAt: null, lastErrorCode: code, lastErrorMessage: text.slice(0, 1000), updatedAt: now }).where(eq(outboxMessages.id, message.id));
-      await this.audit.append({ actorType: 'outbox_worker', actorUserId: null, action: 'SIDE_EFFECT_FAILED', resourceType: 'side_effect_operation', resourceId: operation.id, userId: operation.userId, executionId: operation.executionId, executionStepId: operation.executionStepId, sideEffectOperationId: operation.id, outboxMessageId: message.id, correlationId: operation.correlationId, causationId: operation.id, source: 'outbox_worker', result: 'failure', reasonCode: code });
+      await this.audit.append({ actorType: 'outbox_worker', actorUserId: null, action: 'SIDE_EFFECT_FAILED', resourceType: 'side_effect_operation', resourceId: operation.id, userId: operation.userId, executionId: operation.executionId, executionStepId: operation.executionStepId, sideEffectOperationId: operation.id, outboxMessageId: message.id, correlationId: operation.correlationId, causationId: operation.id, source: 'outbox_worker', result: 'failure', reasonCode: code }, tx);
+      return true;
     });
+    if (!accepted) return;
     await this.events.append(operation.executionId, 'side_effect_failed', { operationId: operation.id, errorCode: code }, operation.executionStepId);
     await this.finalizeExecution(operation.userId, operation.executionId);
   }
@@ -315,12 +362,18 @@ export class OutboxWorker implements OnModuleInit, OnApplicationShutdown {
   private async unknownOutcome(operation: typeof sideEffectOperations.$inferSelect, message: typeof outboxMessages.$inferSelect, error: ExecutionRuntimeError, executionId: string) {
     const now = new Date();
     // §50：无 Idempotency / 无 Lookup 的 Provider 在请求可能已到达时 → outcome_unknown，禁止盲 Retry。
-    await this.db.transaction(async (tx) => {
+    const accepted = await this.db.transaction(async (tx) => {
+      const live = (await tx.select().from(sideEffectOperations).where(eq(sideEffectOperations.id, operation.id)).limit(1).for('update'))[0];
+      // A stale lease holder cannot overwrite a terminal outcome committed by another worker.
+      if (!live || ['succeeded', 'failed', 'cancelled', 'outcome_unknown'].includes(live.status)) return false;
       await this.operations.mark(operation.id, { status: 'outcome_unknown', errorCode: error.code, errorMessage: this.sanitizer.sanitizeText(error), finishedAt: now }, tx);
+      await this.verification.openUnknown(operation, error.code, tx);
       await this.stepStates.transition(operation.executionStepId, 'failed', { dispatchStatus: 'outcome_unknown', errorCode: error.code, errorMessage: '操作结果未知，为避免重复已停止自动重试', finishedAt: now }, tx);
       await tx.update(outboxMessages).set({ status: 'dead', lockedBy: null, lockExpiresAt: null, lastErrorCode: error.code, lastErrorMessage: this.sanitizer.sanitizeText(error), updatedAt: now }).where(eq(outboxMessages.id, message.id));
       await this.audit.append({ actorType: 'outbox_worker', actorUserId: null, action: 'SIDE_EFFECT_OUTCOME_UNKNOWN', resourceType: 'side_effect_operation', resourceId: operation.id, userId: operation.userId, executionId, executionStepId: operation.executionStepId, sideEffectOperationId: operation.id, outboxMessageId: message.id, correlationId: operation.correlationId, causationId: operation.id, source: 'outbox_worker', result: 'unknown', reasonCode: error.code, changeSummary: 'Ambiguous outcome; automatic retry stopped' }, tx);
+      return true;
     });
+    if (!accepted) return;
     await this.notifications.emit({ userId: operation.userId, executionId, executionStepId: operation.executionStepId, priority: 'P0', eventType: 'side_effect_outcome_unknown', dedupeKey: `outcome-unknown:${operation.id}`, title: '操作结果待确认', body: '这一步已向外部服务发出请求，但暂时无法确认最终结果。为了避免重复操作，系统已停止自动重试，需要人工处理。', actionRequired: true });
     await this.events.append(executionId, 'side_effect_outcome_unknown', { operationId: operation.id, errorCode: error.code }, operation.executionStepId);
     await this.finalizeExecution(operation.userId, executionId, 'OUTCOME_UNKNOWN');
@@ -332,7 +385,7 @@ export class OutboxWorker implements OnModuleInit, OnApplicationShutdown {
       await this.operations.mark(operation.id, { status: 'failed', errorCode: error.code, errorMessage: this.sanitizer.sanitizeText(error), finishedAt: now }, tx);
       await this.stepStates.transition(operation.executionStepId, 'failed', { dispatchStatus: 'failed', errorCode: error.code, errorMessage: this.sanitizer.sanitizeText(error), finishedAt: now }, tx);
       await tx.update(outboxMessages).set({ status: 'dead', lockedBy: null, lockExpiresAt: null, lastErrorCode: error.code, lastErrorMessage: this.sanitizer.sanitizeText(error), updatedAt: now }).where(eq(outboxMessages.id, message.id));
-      await this.audit.append({ actorType: 'outbox_worker', actorUserId: null, action: 'SIDE_EFFECT_DEAD_LETTER', resourceType: 'side_effect_operation', resourceId: operation.id, userId: operation.userId, executionId, executionStepId: operation.executionStepId, sideEffectOperationId: operation.id, outboxMessageId: message.id, correlationId: operation.correlationId, causationId: operation.id, source: 'outbox_worker', result: 'failure', reasonCode: error.code });
+      await this.audit.append({ actorType: 'outbox_worker', actorUserId: null, action: 'SIDE_EFFECT_DEAD_LETTER', resourceType: 'side_effect_operation', resourceId: operation.id, userId: operation.userId, executionId, executionStepId: operation.executionStepId, sideEffectOperationId: operation.id, outboxMessageId: message.id, correlationId: operation.correlationId, causationId: operation.id, source: 'outbox_worker', result: 'failure', reasonCode: error.code }, tx);
     });
     await this.notifications.emit({ userId: operation.userId, executionId, executionStepId: operation.executionStepId, priority: 'P1', eventType: 'side_effect_dead_letter', dedupeKey: `dead-letter:${operation.id}`, title: '外部动作连续失败', body: '外部操作多次尝试仍未成功，系统已停止重试，需要人工处理。', actionRequired: true });
     await this.events.append(executionId, 'side_effect_dead_letter', { operationId: operation.id, errorCode: error.code }, operation.executionStepId);

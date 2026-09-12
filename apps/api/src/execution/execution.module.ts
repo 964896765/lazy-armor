@@ -8,6 +8,8 @@ import { HouseholdModule } from '../household/household.module';
 import { LogisticsModule } from '../logistics/logistics.module';
 import { PlansModule } from '../plans/plans.module';
 import { ActionExecutor } from './action-executor.service';
+import { ActionAdapter } from './action-adapter.service';
+import { CapabilityResolverModule } from '../capability-resolver/capability-resolver.module';
 import { ConditionEvaluator } from './condition-evaluator.service';
 import { ExecutionDispatchService } from './execution-dispatch.service';
 import { ExecutionEventService } from './execution-event.service';
@@ -40,6 +42,10 @@ import { ProfilesModule } from '../profiles/profiles.module';
 import { OperationsModule } from '../operations/operations.module';
 import { UsageModule } from '../usage/usage.module';
 import { TruthStoreModule } from '../truth-store/truth-store.module';
+import { VerificationPolicyRegistry } from './verification-policy-registry.service';
+import { VerificationService } from './verification.service';
+import { ReconciliationService, ReconciliationWorker } from './reconciliation.service';
+import { VerificationController } from './verification.controller';
 
 export const EXECUTION_WORKER = 'EXECUTION_WORKER';
 export const EXECUTION_RECONCILER = 'EXECUTION_RECONCILER';
@@ -52,8 +58,8 @@ export const SIDE_EFFECT_OPERATIONS_SERVICE = 'SIDE_EFFECT_OPERATIONS_SERVICE';
 export const OUTBOX_SERVICE = 'OUTBOX_SERVICE';
 
 @Module({
-  imports: [PlansModule, ConnectorsModule, ConnectionsModule, RiskModule, NotificationsModule, AuditModule, CredentialsModule, BillingModule, ContentModule, DailySummaryModule, LogisticsModule, HouseholdModule, StudyModule, DeviceModule, ProfilesModule, OperationsModule, UsageModule, TruthStoreModule],
-  controllers: [ExecutionsController],
+  imports: [CapabilityResolverModule, PlansModule, ConnectorsModule, ConnectionsModule, RiskModule, NotificationsModule, AuditModule, CredentialsModule, BillingModule, ContentModule, DailySummaryModule, LogisticsModule, HouseholdModule, StudyModule, DeviceModule, ProfilesModule, OperationsModule, UsageModule, TruthStoreModule],
+  controllers: [ExecutionsController, VerificationController],
   providers: [
     SnapshotSanitizer,
     ExecutionEventService,
@@ -65,6 +71,11 @@ export const OUTBOX_SERVICE = 'OUTBOX_SERVICE';
     RuntimeConnectionGuard,
     SourceResolver,
     ActionExecutor,
+    ActionAdapter,
+    VerificationPolicyRegistry,
+    VerificationService,
+    ReconciliationService,
+    ReconciliationWorker,
     FallbackExecutor,
     ExecutionDispatchService,
     ExecutionsService,

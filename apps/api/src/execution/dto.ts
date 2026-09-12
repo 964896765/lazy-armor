@@ -1,11 +1,15 @@
 import { Type } from 'class-transformer';
-import { IsIn, IsInt, IsISO8601, IsObject, IsOptional, IsString, IsUUID, Length, Max, Min } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsIn, IsInt, IsISO8601, IsObject, IsOptional, IsString, IsUUID, Length, Max, Min } from 'class-validator';
 import { EXECUTION_STATES, type ExecutionStatus } from './execution.types';
 import { CursorPageDto } from '../common/cursor-pagination';
 
 export class ManualExecutionDto {
   @IsString() @Length(1, 255) requestId!: string;
   @IsObject() triggerPayload!: Record<string, unknown>;
+}
+
+export class ResolvedExecutionDto extends ManualExecutionDto {
+  @IsArray() @ArrayMaxSize(100) @IsUUID('all', { each: true }) resolutionDecisionIds!: string[];
 }
 
 export class ListExecutionsDto {

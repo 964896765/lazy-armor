@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
 import type { ReactNode } from 'react';
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -16,6 +16,7 @@ import {
 } from '../../src/execution-presenter';
 import { actionSummary } from '../../src/plan-presenter';
 import { approvalStatusLabel } from '../../src/today-presenter';
+import { canRequestReconciliation, reconciliationStatusLabel, runtimeResultLabel, verificationSafetyCopy, type ReconciliationCaseSummary, type RuntimeResultState } from '../../src/verification-presenter';
 
 interface Step {
   id: string;
@@ -51,6 +52,8 @@ interface NotificationInfo {
 }
 
 interface Detail {
+  resultState?: RuntimeResultState | null;
+  reconciliationCases?: ReconciliationCaseSummary[];
   planName: string;
   planVersionNumber: number;
   triggerType: string;
@@ -65,7 +68,7 @@ interface Detail {
   notifications: NotificationInfo[];
 }
 
-const POLLING_STATES = ['created', 'queued', 'running', 'retry_wait', 'waiting_approval'];
+const POLLING_STATES = ['created', 'queued', 'running', 'retry_wait', 'waiting_approval', 'waiting_dispatch'];
 
 export default function ExecutionDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -74,7 +77,11 @@ export default function ExecutionDetail() {
     queryKey: ['execution', id, token],
     queryFn: () => api<Detail>(`/executions/${id}`, token),
     enabled: Boolean(id && token),
-    refetchInterval: (query) => (POLLING_STATES.includes(query.state.data?.status ?? '') ? 2_000 : false),
+    refetchInterval: (query) => (POLLING_STATES.includes(query.state.data?.status ?? '') || query.state.data?.reconciliationCases?.some((row) => ['OPEN', 'RECONCILING'].includes(row.status)) ? 2_000 : false),
+  });
+  const recheck = useMutation({
+    mutationFn: (caseId: string) => api('/reconciliation-cases/' + caseId + '/recheck', token, { method: 'POST', body: JSON.stringify({}) }),
+    onSuccess: () => { void detail.refetch(); },
   });
 
   const data = detail.data;
@@ -112,9 +119,26 @@ export default function ExecutionDetail() {
             </View>
 
             <Section title="本次结果" accent={needsAttention ? colors.danger : colors.primary}>
+              {data.resultState ? <Text style={styles.result}>{runtimeResultLabel(data.resultState)}</Text> : null}
               <Text style={styles.result}>{data.resultSummary ?? consumerErrorMessage(data.errorMessage) ?? '正在处理'}</Text>
               <Text style={styles.body}>{executionAttentionLabel(data.status)}</Text>
             </Section>
+
+            {data.reconciliationCases?.length ? (
+              <Section title="结果回查与收口" accent={colors.primary}>
+                <Text style={styles.body}>{verificationSafetyCopy()}</Text>
+                {data.reconciliationCases.map((row) => (
+                  <View key={row.id} style={styles.detailRow}>
+                    <View style={styles.detailCopy}>
+                      <Text style={styles.rowTitle}>{reconciliationStatusLabel(row.status)}</Text>
+                      <Text style={styles.rowSubtitle}>{runtimeResultLabel(row.resultState)} · 已回查 {row.attemptCount} 次</Text>
+                    </View>
+                    {canRequestReconciliation(row) ? <Pressable accessibilityRole="button" disabled={recheck.isPending} onPress={() => recheck.mutate(row.id)} style={styles.inlineButton}><Text style={styles.inlineButtonText}>只读回查</Text></Pressable> : null}
+                  </View>
+                ))}
+                {recheck.isError ? <Text style={styles.stepError}>暂时不能回查，请刷新记录。没有重复执行原动作。</Text> : null}
+              </Section>
+            ) : null}
 
             {needsAttention ? (
               <View style={styles.alertSection}>

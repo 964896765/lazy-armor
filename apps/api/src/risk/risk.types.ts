@@ -29,6 +29,8 @@ export interface RiskSnapshot {
   registryRisk: RiskLevel;
   declaredRisk: RiskLevel;
   capabilityRisk: RiskLevel | null;
+  scenarioRisk?: RiskLevel;
+  manifestRiskFloor?: RiskLevel;
   dynamicRisk: RiskLevel;
   effectiveRisk: RiskLevel;
   resolvedRiskLevel: RiskLevel;
@@ -42,5 +44,6 @@ export interface RiskSnapshot {
 }
 
 export function higherRisk(left: RiskLevel, right: RiskLevel): RiskLevel {
+  if (!Object.hasOwn(RISK_SCORE, left) || !Object.hasOwn(RISK_SCORE, right)) throw new Error('Invalid runtime risk floor');
   return RISK_SCORE[left] >= RISK_SCORE[right] ? left : right;
 }

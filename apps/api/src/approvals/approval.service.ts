@@ -73,6 +73,7 @@ export class ApprovalService {
       step = (await tx.select().from(executionSteps).where(eq(executionSteps.id, request.executionStepId)).limit(1).for('update'))[0]!;
       if (!execution || !step || execution.status !== 'waiting_approval') throw new ConflictException('Execution is no longer waiting for approval');
       if (step.inputFingerprint !== request.inputFingerprint || request.contextHash !== this.gate.contextHash({ execution, step }, step.riskSnapshotJson as never)) throw new ConflictException('Approval context fingerprint mismatch');
+      if (decision === 'approved') await this.gate.assertSnapshotValid(request, execution, step, step.riskSnapshotJson as never);
       const assembled = await this.assembler.assembleById(userId, execution.planId, execution.planVersionId, tx);
       if (assembled.computedHash !== execution.definitionHash || assembled.version.definitionHash !== execution.definitionHash) throw new ConflictException('PlanVersion integrity check failed');
       const now = new Date();

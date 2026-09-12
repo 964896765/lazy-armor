@@ -455,3 +455,9 @@ export {
   appReadSessionStatusForEvent, canTransitionAppReadSession, isExactAndroidPackage,
   type AppReadSessionEventType, type AppReadSessionMode, type AppReadSessionStatus,
 } from './app-read-session';
+export {
+  ACTION_ADAPTER_REVISION, ACTION_INTENT_SCHEMA_VERSION, approvalSnapshotHash, approvalSnapshotInvalidation,
+  buildActionIntent, riskMaximum,
+  type ActionIntent, type ActionIntentInput, type ApprovalSnapshot, type ContextRiskSignal,
+} from './action-runtime';
+export * from './verification-runtime';

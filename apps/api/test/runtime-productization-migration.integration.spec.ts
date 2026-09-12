@@ -1,0 +1,39 @@
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import type { Pool, RowDataPacket } from 'mysql2/promise';
+import { createDatabase } from '@lazy-armor/database';
+import { migrate } from 'drizzle-orm/mysql2/migrator';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+
+describe('Batch 7/8 forward migration contracts', () => {
+  let pool: Pool; let db: ReturnType<typeof createDatabase>['db'];
+  const folder = resolve(process.cwd(), '../../packages/database/drizzle');
+  beforeAll(() => {
+    const url = process.env.DATABASE_URL!;
+    if (new URL(url).pathname !== '/lazy_armor_test') throw new Error('Migration integration is restricted to the isolated test database');
+    ({ db, pool } = createDatabase(url));
+  });
+  afterAll(async () => { await pool?.end(); });
+  it('replays migrations without changing the ledger and verifies exact source checksums', async () => {
+    const [before] = await pool.query<RowDataPacket[]>('SELECT id, hash, created_at FROM __drizzle_migrations ORDER BY id');
+    await migrate(db, { migrationsFolder: folder });
+    const [after] = await pool.query<RowDataPacket[]>('SELECT id, hash, created_at FROM __drizzle_migrations ORDER BY id');
+    expect(after).toEqual(before);
+    for (const file of ['0042_action_runtime_integration.sql', '0043_action_adapter_resolution.sql', '0044_verification_reconciliation.sql']) {
+      const source = readFileSync(resolve(folder, file), 'utf8');
+      expect(source).not.toMatch(/\b(?:DROP|TRUNCATE)\b/i);
+      const hash = createHash('sha256').update(source).digest('hex');
+      expect(after.some((row) => row.hash === hash)).toBe(true);
+    }
+  });
+  it('keeps optional historical bindings and restrictive foreign keys with unique evidence identities', async () => {
+    const [columns] = await pool.query<RowDataPacket[]>("SELECT is_nullable FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='execution_steps' AND column_name='action_intent_id'");
+    expect(columns[0].IS_NULLABLE ?? columns[0].is_nullable).toBe('YES');
+    const [keys] = await pool.query<RowDataPacket[]>("SELECT delete_rule FROM information_schema.referential_constraints WHERE constraint_schema=DATABASE() AND table_name IN ('action_intents','action_adapter_bindings','verification_evidence','reconciliation_cases')");
+    expect(keys.length).toBeGreaterThan(10);
+    expect(keys.every((row) => (row.DELETE_RULE ?? row.delete_rule) === 'RESTRICT')).toBe(true);
+    const [indices] = await pool.query<RowDataPacket[]>("SELECT index_name FROM information_schema.statistics WHERE table_schema=DATABASE() AND non_unique=0 AND index_name IN ('verification_evidence_operation_key_uq','reconciliation_operation_uq','action_intents_execution_action_uq') GROUP BY index_name");
+    expect(indices).toHaveLength(3);
+  });
+});

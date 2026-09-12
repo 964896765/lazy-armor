@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
-import { connectorCapabilities } from '@lazy-armor/database';
-import { ACTION_DEFINITIONS, canonicalStringify, type NormalizedAction, type RiskLevel } from '@lazy-armor/plan-schema';
+import { connectorCapabilities, strategyRuntimeBindings } from '@lazy-armor/database';
+import { ACTION_DEFINITIONS, canonicalStringify, scenarioByKey, type NormalizedAction, type RiskLevel } from '@lazy-armor/plan-schema';
 import { and, eq } from 'drizzle-orm';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
 import { higherRisk, MINIMUM_APPROVAL_REQUIREMENT, RISK_POLICY_VERSION, SIDE_EFFECT_CLASS, type RiskSnapshot } from './risk.types';
@@ -23,7 +23,7 @@ export function parseAmountToMinor(value: unknown): number | null {
 export class RiskEngine {
   constructor(@Inject(DATABASE) private readonly db: InjectedDatabase) {}
 
-  async evaluate(action: NormalizedAction, declaredRisk: RiskLevel, input: Record<string, unknown>, connectorId: string | null, executor: RiskExecutor = this.db): Promise<RiskSnapshot> {
+  async evaluate(action: NormalizedAction, declaredRisk: RiskLevel, input: Record<string, unknown>, connectorId: string | null, executor: RiskExecutor = this.db, planVersionId?: string, manifestRiskFloor: RiskLevel = 'R0'): Promise<RiskSnapshot> {
     const definition = ACTION_DEFINITIONS[action.actionType];
     const registryRisk = definition.riskLevel;
     const capabilityRisk = connectorId && action.requiredCapability
@@ -31,6 +31,10 @@ export class RiskEngine {
         .where(and(eq(connectorCapabilities.connectorId, connectorId), eq(connectorCapabilities.key, action.requiredCapability))).limit(1))[0]?.riskLevel as RiskLevel | undefined
       : undefined;
     const factors: string[] = [];
+    const binding = planVersionId ? (await executor.select().from(strategyRuntimeBindings).where(eq(strategyRuntimeBindings.planVersionId, planVersionId)).limit(1))[0] : undefined;
+    const scenario = binding ? scenarioByKey(binding.scenarioKey) : null;
+    if (binding && (!scenario || scenario.revision !== binding.scenarioRevision)) throw new Error('Scenario risk policy revision unavailable');
+    const scenarioRisk: RiskLevel = scenario?.defaultRiskFloor ?? 'R0';
     let dynamicRisk: RiskLevel = 'R0';
     const combined = { ...input, ...action.config } as Record<string, unknown>;
     // 金额字段只能来自 ActionDefinition 的显式声明，禁止扫描任意 JSON。
@@ -47,12 +51,14 @@ export class RiskEngine {
     }
     let effectiveRisk = higherRisk(registryRisk, declaredRisk);
     if (capabilityRisk) effectiveRisk = higherRisk(effectiveRisk, capabilityRisk);
+    effectiveRisk = higherRisk(effectiveRisk, manifestRiskFloor);
+    effectiveRisk = higherRisk(effectiveRisk, scenarioRisk);
     effectiveRisk = higherRisk(effectiveRisk, dynamicRisk);
-    const fingerprintPayload = { actionType: action.actionType, stepOrder: action.stepOrder, connectionId: action.connectionId, requiredCapability: action.requiredCapability, config: action.config, input };
+    const fingerprintPayload = { actionType: action.actionType, stepOrder: action.stepOrder, connectionId: action.connectionId, requiredCapability: action.requiredCapability, config: action.config, input, ...(binding ? { scenarioKey: binding.scenarioKey, scenarioRevision: binding.scenarioRevision, scenarioRisk } : {}) };
     const inputFingerprint = createHash('sha256').update(canonicalStringify(fingerprintPayload)).digest('hex');
     return {
       policyVersion: RISK_POLICY_VERSION, riskPolicyVersion: RISK_POLICY_VERSION, actionType: action.actionType,
-      registryRisk, declaredRisk, capabilityRisk: capabilityRisk ?? null, dynamicRisk, effectiveRisk,
+      registryRisk, declaredRisk, capabilityRisk: capabilityRisk ? higherRisk(capabilityRisk, manifestRiskFloor) : manifestRiskFloor === 'R0' ? null : manifestRiskFloor, manifestRiskFloor, scenarioRisk, dynamicRisk, effectiveRisk,
       resolvedRiskLevel: effectiveRisk, riskReasonCodes: factors,
       sideEffectClass: SIDE_EFFECT_CLASS[effectiveRisk], minimumApprovalRequirement: MINIMUM_APPROVAL_REQUIREMENT[effectiveRisk],
       factors, amountMinor, currency, inputFingerprint,

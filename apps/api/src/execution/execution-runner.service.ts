@@ -6,6 +6,7 @@ import { DATABASE, type InjectedDatabase } from '../common/database.module';
 import { PlanDefinitionAssembler } from '../plans/plan-definition.assembler';
 import { PlansService } from '../plans/plans.service';
 import { ActionExecutor } from './action-executor.service';
+import { ActionAdapter } from './action-adapter.service';
 import { ConditionEvaluator } from './condition-evaluator.service';
 import { ExecutionEventService } from './execution-event.service';
 import { ExecutionPolicyService } from './execution-policy.service';
@@ -51,6 +52,7 @@ export class ExecutionRunner {
     private readonly notifications: NotificationService,
     private readonly coordinator: SideEffectCoordinator,
     private readonly telemetry: ObservabilityService,
+    private readonly actionAdapter: ActionAdapter,
   ) {}
 
   async run(executionId: string, workerToken: string, runContext?: ExecutionRunContext): Promise<RunnerOutcome> {
@@ -120,6 +122,7 @@ export class ExecutionRunner {
         if (step?.status === 'succeeded') continue;
         if (!step) return this.fail(executionId, 'running', 'PLAN_DEFINITION_INTEGRITY_ERROR', 'ExecutionStep snapshot is missing');
 
+        await this.actionAdapter.assertCompatible(execution, step, actionDefinition as NormalizedAction);
         const gate = await this.approvalGate.check({ execution, step, action: actionDefinition as NormalizedAction });
         if (!gate.allowed) return { status: 'waiting_approval' };
 
@@ -207,6 +210,7 @@ export class ExecutionRunner {
       resolvedRetryPolicyJson: executions.resolvedRetryPolicyJson,
       resolvedFallbackPolicyJson: executions.resolvedFallbackPolicyJson,
       resolvedApprovalPolicyJson: executions.resolvedApprovalPolicyJson,
+      resolvedRiskSnapshotJson: executions.resolvedRiskSnapshotJson,
     }).from(executions).innerJoin(plans, and(eq(executions.planId, plans.id), eq(executions.userId, plans.userId))).where(eq(executions.id, id)).limit(1);
     if (!rows[0]) throw new Error('Execution ownership or Plan relation is invalid');
     return rows[0];

@@ -61,6 +61,26 @@ export class CapabilityResolverService {
     return row;
   }
 
+  async revalidate(userId: string, id: string) {
+    const row = await this.get(userId, id);
+    if (hash(row.decisionJson) !== row.decisionHash) throw new ConflictException('Resolution decision integrity check failed');
+    const original = row.decisionJson;
+    if (original.status !== 'RESOLVED' || typeof original.selectedCandidateId !== 'string') throw new ConflictException('Resolution is not usable');
+    const requirement = row.inputJson.requirement as ResolveCapabilityDto['requirement'];
+    if (hash({ planVersionId: row.planVersionId, requestKey: row.requestKey, requirement }) !== row.requestHash) throw new ConflictException('Resolution input integrity check failed');
+    const candidates = await this.collectCandidates(userId, { planVersionId: row.planVersionId, requestKey: row.requestKey, requirement }, new Date());
+    const decision = resolveCapability(requirement, candidates, new Date().toISOString());
+    const eligibility = decision.candidates.find((candidate) => candidate.candidateId === original.selectedCandidateId);
+    const candidate = candidates.find((candidate) => candidate.id === original.selectedCandidateId);
+    const originalCandidate = (row.inputJson.candidates as ResolutionCandidate[]).find((candidate) => candidate.id === original.selectedCandidateId);
+    const frozenCandidates = Array.isArray(original.candidates) ? original.candidates as Array<{ candidateId: string; manifestHash: string; manifestRevision: number }> : [];
+    const frozenDecisionCandidate = frozenCandidates.find((item) => item.candidateId === original.selectedCandidateId);
+    if (!eligibility?.eligible || !candidate || !originalCandidate || candidate.manifestHash !== originalCandidate.manifestHash
+      || candidate.manifestRevision !== originalCandidate.manifestRevision || !frozenDecisionCandidate
+      || candidate.manifestHash !== frozenDecisionCandidate.manifestHash || candidate.manifestRevision !== frozenDecisionCandidate.manifestRevision) throw new ConflictException('Selected capability is no longer usable; explicit re-resolution required');
+    return { row, requirement, candidate };
+  }
+
   private findRequest(userId: string, key: string) {
     return this.db.select().from(capabilityResolutionDecisions)
       .where(and(eq(capabilityResolutionDecisions.userId, userId), eq(capabilityResolutionDecisions.requestKey, key)))

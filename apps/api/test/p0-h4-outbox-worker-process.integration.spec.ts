@@ -87,6 +87,8 @@ describe.sequential('P0-H4 outbox worker true-process reliability', { timeout: 2
       throw new Error('Outbox worker dist entrypoint is missing. Run `pnpm --filter @lazy-armor/api build` before the true-process outbox tests.');
     }
     process.env.NODE_ENV = 'test';
+    // Real child-process startup/lease recovery must fit within the approval validity window.
+    process.env.TEST_APPROVAL_TTL_MS = '900000';
     process.env.APP_ENV = 'development';
     process.env.APP_ROLE = 'api';
     process.env.DATABASE_URL ??= 'mysql://lazy_armor:lazy_armor_dev@127.0.0.1:3307/lazy_armor_test';

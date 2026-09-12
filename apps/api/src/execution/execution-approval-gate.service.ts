@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { ConflictException, Inject, Injectable } from '@nestjs/common';
-import { approvalDecisions, approvalRequests, executionSteps, executions } from '@lazy-armor/database';
-import { canonicalStringify, type NormalizedAction, type RiskLevel } from '@lazy-armor/plan-schema';
+import { actionIntents, approvalDecisions, approvalRequests, executionSteps, executions } from '@lazy-armor/database';
+import { approvalSnapshotHash, approvalSnapshotInvalidation, canonicalStringify, type ApprovalSnapshot, type NormalizedAction, type RiskLevel } from '@lazy-armor/plan-schema';
 import { newId } from '@lazy-armor/shared';
 import { and, eq } from 'drizzle-orm';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
@@ -35,7 +35,7 @@ export class ExecutionApprovalGate {
   }): Promise<{ allowed: boolean; effectiveRisk: RiskLevel }> {
     const snapshot = input.step.riskSnapshotJson as unknown as RiskSnapshot | null;
     if (!snapshot || !input.step.inputFingerprint || !input.step.effectiveRiskLevel) throw new ExecutionRuntimeError('RISK_SNAPSHOT_MISSING', 'ExecutionStep has no immutable Risk Snapshot');
-    const current = await this.risk.evaluate(input.action, input.step.declaredRiskLevel as RiskLevel, input.execution.triggerPayloadJson, input.step.connectorId);
+    const current = await this.risk.evaluate(input.action, input.step.declaredRiskLevel as RiskLevel, input.execution.triggerPayloadJson, input.step.connectorId, this.db, input.execution.planVersionId, snapshot.manifestRiskFloor ?? 'R0');
     if (current.inputFingerprint !== input.step.inputFingerprint || current.effectiveRisk !== input.step.effectiveRiskLevel || snapshot.policyVersion !== current.policyVersion) {
       throw new ExecutionRuntimeError('RISK_CONTEXT_CHANGED', 'Risk or approval input changed after Execution creation');
     }
@@ -51,6 +51,7 @@ export class ExecutionApprovalGate {
       return { allowed: true, effectiveRisk: current.effectiveRisk };
     }
     if (prior?.status === 'approved') {
+      await this.assertSnapshotValid(prior, input.execution, input.step, current);
       if (prior.expiresAt <= new Date() || prior.inputFingerprint !== current.inputFingerprint || prior.contextHash !== this.contextHash(input, current)) throw new ExecutionRuntimeError('APPROVAL_NOT_VALID', 'Approval is expired or no longer matches the action context');
       if (input.step.approvalGateStatus !== 'approved') await this.db.update(executionSteps).set({ approvalGateStatus: 'approved', updatedAt: new Date() }).where(eq(executionSteps.id, input.step.id));
       return { allowed: true, effectiveRisk: current.effectiveRisk };
@@ -88,11 +89,36 @@ export class ExecutionApprovalGate {
     return createHash('sha256').update(canonicalStringify({ executionId: input.execution.id, planVersionId: input.execution.planVersionId, stepId: input.step.id, planActionId: input.step.planActionId, inputFingerprint: risk.inputFingerprint, effectiveRisk: risk.effectiveRisk, amountMinor: risk.amountMinor, currency: risk.currency })).digest('hex');
   }
 
+  async assertSnapshotValid(request: typeof approvalRequests.$inferSelect, execution: { id: string; planVersionId: string }, step: typeof executionSteps.$inferSelect, risk: RiskSnapshot) {
+    if (!request.approvalSnapshotJson || !request.approvalSnapshotHash) {
+      if (step.actionIntentId) throw new ConflictException('Immutable approval snapshot missing');
+      return; // Preserve historical requests under their original fingerprint guard.
+    }
+    const snapshot = request.approvalSnapshotJson as unknown as ApprovalSnapshot;
+    const current = await this.snapshotFor(execution, step, risk, request.expiresAt);
+    if (approvalSnapshotHash(snapshot) !== request.approvalSnapshotHash
+      || approvalSnapshotInvalidation(snapshot, current, new Date().toISOString()).length) throw new ConflictException('Immutable approval snapshot invalidated');
+  }
+
+  private async snapshotFor(execution: { id: string; planVersionId: string }, step: typeof executionSteps.$inferSelect, risk: RiskSnapshot, expiresAt: Date): Promise<ApprovalSnapshot> {
+    const intent = step.actionIntentId ? (await this.db.select().from(actionIntents).where(eq(actionIntents.id, step.actionIntentId)).limit(1))[0] : null;
+    if (step.actionIntentId && (!intent || intent.executionId !== execution.id)) throw new ConflictException('ActionIntent unavailable');
+    return { schemaVersion: '1', executionId: execution.id, executionStepId: step.id, planVersionId: execution.planVersionId,
+      planActionId: step.planActionId, actionIntentId: step.actionIntentId, actionIntentHash: intent?.intentHash ?? null,
+      capabilityKey: step.requiredCapability, connectorId: step.connectorId, connectionId: step.connectionId,
+      inputFingerprint: risk.inputFingerprint, effectiveRisk: risk.effectiveRisk, amountMinor: risk.amountMinor, currency: risk.currency,
+      sideEffectKey: intent?.sideEffectKey ?? null, expiresAt: expiresAt.toISOString() };
+  }
+
   private async createRequest(input: Parameters<ExecutionApprovalGate['check']>[0], risk: RiskSnapshot, reasons: string[]) {
     const id = newId();
     const now = new Date();
-    const expiresAt = new Date(now.getTime() + (process.env.NODE_ENV === 'test' ? 2_000 : (risk.effectiveRisk === 'R4' ? 5 : 15) * 60_000));
+    const testTtl = Number(process.env.TEST_APPROVAL_TTL_MS ?? 2_000);
+    const ttl = process.env.NODE_ENV === 'test' && Number.isFinite(testTtl) && testTtl >= 2_000 && testTtl <= 900_000
+      ? testTtl : (risk.effectiveRisk === 'R4' ? 5 : 15) * 60_000;
+    const expiresAt = new Date(now.getTime() + ttl);
     const actionSummary = this.summary(input.action, risk);
+    const approvalSnapshot = await this.snapshotFor(input.execution, input.step, risk, expiresAt);
     const reason = reasons.includes('system_risk_floor')
       ? `系统安全底线要求 ${risk.effectiveRisk} 动作必须经你确认`
       : `当前计划的确认策略（${(input.execution.resolvedApprovalPolicyJson as unknown as ResolvedApprovalPolicy).type}）要求本次执行经你确认`;
@@ -101,6 +127,7 @@ export class ExecutionApprovalGate {
       await tx.insert(approvalRequests).values({
         id, userId: input.execution.userId, executionId: input.execution.id, executionStepId: input.step.id, planId: input.execution.planId, planVersionId: input.execution.planVersionId, planActionId: input.step.planActionId,
         actionType: input.step.actionType, policySnapshotJson: input.execution.resolvedApprovalPolicyJson, reason, requestedAt: now,
+        approvalSnapshotJson: approvalSnapshot as unknown as Record<string, unknown>, approvalSnapshotHash: approvalSnapshotHash(approvalSnapshot),
         inputFingerprint: risk.inputFingerprint, contextHash: this.contextHash(input, risk), effectiveRiskLevel: risk.effectiveRisk, amountMinor: risk.amountMinor, currency: risk.currency,
         actionSummary, status: 'pending', expiresAt, decidedAt: null, decision: null, decisionReason: null, createdAt: now, updatedAt: now,
       }).onDuplicateKeyUpdate({ set: { updatedAt: now } });

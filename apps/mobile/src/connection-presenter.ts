@@ -195,7 +195,7 @@ export function consumerErrorNextStep(detail: string | null | undefined) {
     return '去“我的连接”重新授权后，这条计划会继续工作。';
   }
   if (normalized.includes('outcome_unknown')) {
-    return '打开记录确认实际结果；如未成功，再重新执行一次。';
+    return '打开记录回查实际结果；结果未核实前不要重复执行原动作。';
   }
   if (
     normalized.includes('connection expired')

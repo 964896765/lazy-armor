@@ -91,7 +91,7 @@ describe('P2 mobile connection presenter', () => {
     ['missing connection', '这条计划缺少可用连接，补上后就能继续运行。', '重新连接对应账号后，再回来启用或重试。'],
     ['configuration incomplete', '这条计划还没配置完整，补齐后就能继续运行。', '回到计划详情补齐设置，再重新启用。'],
     ['plan failed', '这次计划没有按预期完成。', '如果连续失败，请检查连接和权限。'],
-    ['OUTCOME_UNKNOWN', '这次结果暂时无法自动确认，需要你看一下是否已经处理成功。', '打开记录确认实际结果；如未成功，再重新执行一次。'],
+    ['OUTCOME_UNKNOWN', '这次结果暂时无法自动确认，需要你看一下是否已经处理成功。', '打开记录回查实际结果；结果未核实前不要重复执行原动作。'],
     ['network failure', '网络暂时不可用，这次没能完成同步。', '先确认网络恢复，再重新加载或手动执行。'],
     ['unknown internal error', '这次处理暂时没有完成，可以稍后再试。', '如果连续失败，请检查连接和权限。'],
   ])('covers failure matrix copy for %s', (detail, message, nextStep) => {

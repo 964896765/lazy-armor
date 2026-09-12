@@ -295,6 +295,27 @@
       "when": 1789344000000,
       "tag": "0041_capability_resolution",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1789430400000,
+      "tag": "0042_action_runtime_integration",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1789516800000,
+      "tag": "0043_action_adapter_resolution",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1789603200000,
+      "tag": "0044_verification_reconciliation",
+      "breakpoints": true
     }
   ]
 }
