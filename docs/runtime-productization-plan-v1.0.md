@@ -24,8 +24,8 @@
 | Batch 8 — Verification / Result / Reconciliation | 已完成 | [runtime-productization-batch-8-report.md](./runtime-productization-batch-8-report.md) |
 | Batch 9A — Provider Runtime Common Layer | 已完成；main@87da4ed 同提交远端三项 CI 全部成功 | [runtime-productization-batch-9a-report.md](./runtime-productization-batch-9a-report.md) |
 | Batch 9B — Gmail Real Integration | main@fb57464 自己的远端 #65 Fast/RC Full/Android 全部成功；Full API 487 passed/4 skipped、Monorepo 16/16；真实账号验收缺 Secret，尚未关闭 9B；后续安全回归见报告 | [runtime-productization-batch-9b-report.md](./runtime-productization-batch-9b-report.md) |
-| Batch 9C — Google Calendar | 非 Secret 实现与完整本地门禁通过；专项 49 项、Full API 511 passed/4 skipped、Monorepo 16/16、build/typecheck 8/8；同提交远端待验；真实账号验收未执行，9C/9F 不关闭 | [runtime-productization-batch-9c-report.md](./runtime-productization-batch-9c-report.md) |
-| Batch 9D — GitHub | 已开始官方 OAuth/Token 权限、5 Capability、限流与签名 Webhook 接入设计；Adapter 实现/真实账号验收尚未完成 | [runtime-productization-batch-9d-design.md](./runtime-productization-batch-9d-design.md) |
+| Batch 9C — Google Calendar | 非 Secret 实现与完整本地门禁通过；专项 49 项、Full API 511 passed/4 skipped、Monorepo 16/16、build/typecheck 8/8；main@02e77bd 远端 #66 Fast/RC Full/Android 全部成功，同 SHA 的 MySQL/Android artifact digest 已核对；真实账号验收未执行，9C/9F 不关闭 | [runtime-productization-batch-9c-report.md](./runtime-productization-batch-9c-report.md) |
+| Batch 9D — GitHub | OAuth/五 Capability/Service/API/Generic Truth 快照/既有审批执行与只读对账核心已实现；联合专项 130 项、Full API 592 通过/4 既有跳过、Monorepo 16/16、build/typecheck 8/8；Webhook ingestion、PR 连续 Truth 版本与静默 Journey、真实账号验收及本次独立远端门禁未完成，不关闭 9D | [runtime-productization-batch-9d-core-report.md](./runtime-productization-batch-9d-core-report.md) |
 
 2026-09-13 用户显式修订 Secret 边界，见 [执行修订](./runtime-productization-execution-revision-2026-09-13.md)。9B 非 Secret 开发持续执行；真实账号授权与 Journey 验收缺口单独记录，不得以此停掉整个开发。
 

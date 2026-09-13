@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'crypto';
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { ConnectorError, ConnectorRegistry, type ConnectorRequest } from '@lazy-armor/connector-sdk';
+import { ConnectorError, ConnectorRegistry, ProviderConnectorBridge, type ConnectorRequest } from '@lazy-armor/connector-sdk';
 import { connections, connectors, credentialRefs, credentialVersions, connectionCapabilityGrants, connectionPermissions, connectorCapabilities, oauthAuthorizationStates, planActions, planSources, planVersions, plans, providerCapabilityHealth } from '@lazy-armor/database';
 import { newId } from '@lazy-armor/shared';
 import { and, eq, isNull, sql } from 'drizzle-orm';
@@ -759,7 +759,7 @@ export class ConnectionsService {
       await tx.update(connections).set({ status, statusReason: connectorError.message, lastErrorCode: connectorError.code, updatedAt: now })
         .where(eq(connections.id, connectionId));
       const catalog = (await tx.select({ key: connectors.key }).from(connectors).where(eq(connectors.id, current.connectorId)))[0];
-      if (catalog && ['gmail', 'google_calendar'].includes(catalog.key) && this.registry.get(catalog.key).metadata().version === '0.2.0') {
+      if (catalog && this.registry.get(catalog.key) instanceof ProviderConnectorBridge) {
         const healthStatus = connectorError.providerCode === 'SCOPE_MISSING' ? 'PERMISSION_REVOKED'
           : status === 'degraded' ? 'RATE_LIMITED' : status === 'reauthorization_required' ? 'REAUTHORIZATION_REQUIRED' : 'PROVIDER_UNAVAILABLE';
         await tx.update(providerCapabilityHealth).set({ status: healthStatus, checkedAt: now, validUntil: now,

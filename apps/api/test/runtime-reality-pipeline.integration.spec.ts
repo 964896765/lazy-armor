@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { INestApplication } from '@nestjs/common';
+import { REALITY_ADAPTER_REGISTRY, REALITY_POLICY_REGISTRY, catalogHash } from '@lazy-armor/plan-schema';
 import type { Pool, RowDataPacket } from 'mysql2/promise';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -27,18 +28,21 @@ describe.sequential('runtime productization batch 3 reality pipeline', { timeout
 
   it('persists immutable parser, normalizer and policy registries', async () => {
     const [[adapters], [policies]] = await Promise.all([
-      pool.query<RowDataPacket[]>('SELECT adapter_kind, COUNT(*) total FROM reality_adapter_definitions GROUP BY adapter_kind'),
-      pool.query<RowDataPacket[]>('SELECT policy_kind, COUNT(*) total FROM reality_policy_definitions GROUP BY policy_kind'),
+      pool.query<RowDataPacket[]>('SELECT adapter_key, adapter_kind, revision, definition_hash FROM reality_adapter_definitions'),
+      pool.query<RowDataPacket[]>('SELECT policy_key, policy_kind, revision, definition_hash FROM reality_policy_definitions'),
     ]);
-    expect(adapters).toEqual(expect.arrayContaining([
-      expect.objectContaining({ adapter_kind: 'PARSER', total: 6 }),
-      expect.objectContaining({ adapter_kind: 'NORMALIZER', total: 5 }),
-    ]));
-    expect(policies).toEqual(expect.arrayContaining([
-      expect.objectContaining({ policy_kind: 'DEDUPE', total: 1 }),
-      expect.objectContaining({ policy_kind: 'FRESHNESS', total: 5 }),
-      expect.objectContaining({ policy_kind: 'CONFLICT', total: 1 }),
-    ]));
+    // Assert every published definition and immutable hash, not a frozen count:
+    // adding a provider must not invalidate the shared pipeline's contract.
+    for (const definition of REALITY_ADAPTER_REGISTRY) {
+      expect(adapters.filter((row) => row.adapter_key === definition.key && row.revision === definition.revision)).toEqual([
+        expect.objectContaining({ adapter_kind: definition.kind, definition_hash: catalogHash(definition) }),
+      ]);
+    }
+    for (const definition of REALITY_POLICY_REGISTRY) {
+      expect(policies.filter((row) => row.policy_key === definition.key && row.revision === definition.revision)).toEqual([
+        expect.objectContaining({ policy_kind: definition.kind, definition_hash: catalogHash(definition) }),
+      ]);
+    }
   });
 
   it('exposes a protected ingestion contract and owner-scoped candidate decisions', async () => {

@@ -69,6 +69,7 @@ export interface ScenarioReadiness {
 
 const resourceSeeds: readonly [string, string, ProductDomainKey][] = [
   ['EmailMessage', '邮件', 'work'], ['CalendarEvent', '日历事件', 'work'], ['Task', '任务', 'work'], ['File', '文件', 'work'], ['Contact', '联系人', 'social'], ['Conversation', '会话', 'social'],
+  ['Repository', '代码仓库', 'work'], ['Issue', '议题', 'work'], ['PullRequest', '合并请求', 'work'], ['Workflow', '工作流运行', 'work'],
   ['Transaction', '交易', 'finance'], ['AccountBalance', '账户余额', 'finance'], ['Bill', '账单', 'finance'], ['Budget', '预算', 'finance'], ['Subscription', '订阅', 'finance'], ['Refund', '退款', 'finance'], ['Invoice', '发票', 'finance'],
   ['Order', '订单', 'operations'], ['Shipment', '物流', 'daily_life'], ['Product', '商品', 'daily_life'], ['InventoryItem', '库存项', 'operations'], ['AfterSalesCase', '售后事项', 'operations'],
   ['Household', '家庭', 'family'], ['HouseholdMember', '家庭成员', 'family'], ['HouseholdTask', '家庭任务', 'family'], ['SupplyItem', '家庭补给', 'family'], ['UtilityAccount', '生活缴费账户', 'housing'],
@@ -144,6 +145,10 @@ for (const scenario of SCENARIO_DEFINITIONS) {
   }
 }
 export const FACT_SCHEMA_CATALOG: readonly FactSchemaDefinition[] = Object.freeze([...factMap.values(),
+  ...[['Repository', 'repository.metadata'], ['Issue', 'issue.state'], ['PullRequest', 'pull_request.state'], ['Workflow', 'workflow.run_status']].map(([resourceType, key]): FactSchemaDefinition => Object.freeze({
+    schemaVersion: '1', key, resourceType, field: key.split('.').slice(1).join('.'), valueType: 'object_ref', unit: null, nullable: false, enumValues: Object.freeze([]),
+    freshnessTtlSeconds: 300, semanticIdentity: Object.freeze(['connection_id', 'repository_id', 'resource_id']), sensitivity: 'SENSITIVE', minimumReality: 'OBSERVED',
+    acceptedVerificationMethods: Object.freeze(['SOURCE_EVIDENCE', 'USER_CONFIRMATION', 'READ_BACK']), revision: 1, status: 'ACTIVE' })),
   Object.freeze({ schemaVersion: '1' as const, key: 'calendar_event.schedule', resourceType: 'CalendarEvent', field: 'schedule', valueType: 'object_ref' as const,
     unit: null, nullable: false, enumValues: Object.freeze([]), freshnessTtlSeconds: 300,
     semanticIdentity: Object.freeze(['connection_id', 'calendar_id', 'event_id']), sensitivity: 'SENSITIVE' as const, minimumReality: 'OBSERVED' as const,

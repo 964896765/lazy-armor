@@ -16,7 +16,8 @@ import {
 import { ConnectorCatalogSyncService } from './connector-catalog-sync.service';
 import { ConnectorsController } from './connectors.controller';
 import { ConnectorsService } from './connectors.service';
-import { resolveGmailOAuthConfig, resolveGoogleCalendarOAuthConfig } from '@lazy-armor/config';
+import { resolveGmailOAuthConfig, resolveGoogleCalendarOAuthConfig, resolveGitHubOAuthConfig } from '@lazy-armor/config';
+import { DisabledGitHubConnector } from '../providers/github/disabled-github.connector';
 import { DisabledGmailConnector } from '../providers/gmail/disabled-gmail.connector';
 import { DisabledGoogleCalendarConnector } from '../providers/calendar/disabled-calendar.connector';
 
@@ -37,6 +38,9 @@ export function createConnectorRegistry(env: NodeJS.ProcessEnv = process.env) {
   const calendar = resolveGoogleCalendarOAuthConfig({ GMAIL_OAUTH_CLIENT_ID: env.GMAIL_OAUTH_CLIENT_ID, GMAIL_OAUTH_CLIENT_SECRET: env.GMAIL_OAUTH_CLIENT_SECRET,
     GMAIL_OAUTH_REDIRECT_URI: env.GMAIL_OAUTH_REDIRECT_URI, GOOGLE_CALENDAR_OAUTH_REDIRECT_URI: env.GOOGLE_CALENDAR_OAUTH_REDIRECT_URI });
   if (!calendar) registry.register(env.NODE_ENV === 'test' ? new GoogleCalendarConnector() : new DisabledGoogleCalendarConnector());
+  const github = resolveGitHubOAuthConfig({ GITHUB_OAUTH_CLIENT_ID: env.GITHUB_OAUTH_CLIENT_ID, GITHUB_OAUTH_CLIENT_SECRET: env.GITHUB_OAUTH_CLIENT_SECRET,
+    GITHUB_OAUTH_REDIRECT_URI: env.GITHUB_OAUTH_REDIRECT_URI });
+  if (!github && env.NODE_ENV !== 'test') registry.register(new DisabledGitHubConnector());
   registry.register(new FileProviderConnector());
   registry.register(new LogisticsProviderConnector());
   registry.register(new ContentProviderConnector());

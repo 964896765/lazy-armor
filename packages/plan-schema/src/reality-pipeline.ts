@@ -2,13 +2,13 @@ import { createHash } from 'node:crypto';
 import { canonicalStringify, type JsonValue } from './index';
 
 export const SOURCE_MODES = ['OFFICIAL_API', 'WEBHOOK', 'NOTIFICATION', 'SHARE', 'FILE', 'MANUAL', 'INTERNAL'] as const;
-export const PARSER_KEYS = ['generic.transaction.v1', 'generic.shipment-status.v1', 'generic.connection-health.v1', 'mobile-notification-billing.v1', 'generic.email-message.v1', 'generic.calendar-event.v1'] as const;
+export const PARSER_KEYS = ['generic.transaction.v1', 'generic.shipment-status.v1', 'generic.connection-health.v1', 'mobile-notification-billing.v1', 'generic.email-message.v1', 'generic.calendar-event.v1', 'generic.repository-resource.v1'] as const;
 export type SourceMode = typeof SOURCE_MODES[number];
 export type ParserKey = typeof PARSER_KEYS[number];
 
 export const REALITY_ADAPTER_REGISTRY = Object.freeze([
   ...PARSER_KEYS.map((key) => Object.freeze({ key, kind: 'PARSER' as const, revision: 1 as const, status: 'ACTIVE' as const })),
-  ...['money.v1', 'shipment-status.v1', 'connection-health.v1', 'email-message.v1', 'calendar-event.v1'].map((key) => Object.freeze({ key, kind: 'NORMALIZER' as const, revision: 1 as const, status: 'ACTIVE' as const })),
+  ...['money.v1', 'shipment-status.v1', 'connection-health.v1', 'email-message.v1', 'calendar-event.v1', 'repository-resource.v1'].map((key) => Object.freeze({ key, kind: 'NORMALIZER' as const, revision: 1 as const, status: 'ACTIVE' as const })),
 ]);
 
 export interface SourceObservationInput {
@@ -19,10 +19,10 @@ export interface SourceObservationInput {
 }
 
 export interface NormalizedFactDraft {
-  resourceType: 'finance.transaction' | 'shipment' | 'digital_account.connection' | 'EmailMessage' | 'CalendarEvent';
-  resourceKey: string; subjectKey: string; factKey: 'finance.transaction.amount' | 'shipment.status' | 'digital_account.connection.health' | 'email_message.metadata' | 'email_message.body' | 'email_message.labels' | 'calendar_event.schedule';
+  resourceType: 'finance.transaction' | 'shipment' | 'digital_account.connection' | 'EmailMessage' | 'CalendarEvent' | 'Repository' | 'Issue' | 'PullRequest' | 'Workflow';
+  resourceKey: string; subjectKey: string; factKey: 'finance.transaction.amount' | 'shipment.status' | 'digital_account.connection.health' | 'email_message.metadata' | 'email_message.body' | 'email_message.labels' | 'calendar_event.schedule' | 'repository.metadata' | 'issue.state' | 'pull_request.state' | 'workflow.run_status';
   value: Record<string, JsonValue>; confidence: number; normalizerKey: string;
-  freshnessPolicyKey: 'transaction.default' | 'shipment.status' | 'connection.health' | 'email.message' | 'calendar.event';
+  freshnessPolicyKey: 'transaction.default' | 'shipment.status' | 'connection.health' | 'email.message' | 'calendar.event' | 'repository.resource';
   conflictPolicyKey: 'latest_verified_then_observed';
   compatibilityResourceKey?: string;
 }
@@ -39,6 +39,7 @@ export const REALITY_POLICY_REGISTRY: readonly RealityPolicyDefinition[] = Objec
   policy('connection.health', 'FRESHNESS', { ttlSeconds: 300, onStale: 'refresh' }),
   policy('email.message', 'FRESHNESS', { ttlSeconds: 86400, onStale: 'refresh' }),
   policy('calendar.event', 'FRESHNESS', { ttlSeconds: 300, onStale: 'refresh' }),
+  policy('repository.resource', 'FRESHNESS', { ttlSeconds: 300, onStale: 'refresh' }),
   policy('latest_verified_then_observed', 'CONFLICT', { order: ['verificationLevel', 'occurredAt', 'observedAt'], unresolved: 'block' }),
 ]);
 
@@ -50,6 +51,21 @@ const requireInteger = (payload: Record<string, JsonValue>, key: string) => {
 };
 
 export function parseAndNormalizeObservation(input: SourceObservationInput): NormalizedFactDraft[] {
+  if (input.parserKey === 'generic.repository-resource.v1') {
+    if (!input.connectionId) throw new Error('Repository resource observation requires connectionId');
+    const type = requireString(input.payload, 'resourceType'); const id = requireString(input.payload, 'resourceId');
+    const repositoryId = requireInteger(input.payload, 'repositoryId');
+    const keys = { Repository: 'repository.metadata', Issue: 'issue.state', PullRequest: 'pull_request.state', Workflow: 'workflow.run_status' } as const;
+    if (!Object.hasOwn(keys, type) || repositoryId <= 0 || !/^[1-9][0-9]*$/.test(id)) throw new Error('Invalid repository resource identity');
+    if ((type === 'Issue' || type === 'PullRequest') && !['open', 'closed'].includes(String(input.payload.state))) throw new Error('Invalid issue/PR state');
+    if (type === 'PullRequest' && typeof input.payload.merged !== 'boolean') throw new Error('PR requires actual merged evidence');
+    if (type === 'Workflow' && typeof input.payload.status !== 'string') throw new Error('Workflow requires actual run status');
+    if (type === 'Repository' && (String(repositoryId) !== id || typeof input.payload.owner !== 'string' || typeof input.payload.name !== 'string'
+      || typeof input.payload.private !== 'boolean')) throw new Error('Invalid repository metadata');
+    const subjectKey = `${input.connectionId}:${repositoryId}:${type}:${id}`;
+    return [{ resourceType: type as keyof typeof keys, resourceKey: subjectKey, subjectKey, factKey: keys[type as keyof typeof keys], value: input.payload,
+      confidence: 1, normalizerKey: 'repository-resource.v1', freshnessPolicyKey: 'repository.resource', conflictPolicyKey: 'latest_verified_then_observed' }];
+  }
   if (input.parserKey === 'generic.calendar-event.v1') {
     if (!input.connectionId) throw new Error('Calendar observation requires connectionId');
     const id = requireString(input.payload, 'eventId'); const calendarId = requireString(input.payload, 'calendarId');

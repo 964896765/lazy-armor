@@ -22,6 +22,10 @@ const envSchema = z.object({
   GMAIL_OAUTH_CLIENT_SECRET: z.string().trim().optional(),
   GMAIL_OAUTH_REDIRECT_URI: z.string().trim().optional(),
   GOOGLE_CALENDAR_OAUTH_REDIRECT_URI: z.string().trim().optional(),
+  GITHUB_OAUTH_CLIENT_ID: z.string().trim().optional(),
+  GITHUB_OAUTH_CLIENT_SECRET: z.string().trim().optional(),
+  GITHUB_OAUTH_REDIRECT_URI: z.string().trim().optional(),
+  GITHUB_WEBHOOK_SECRET: z.string().trim().optional().refine((v) => !v || (v.length >= 32 && !/replace-with|inject-|placeholder/i.test(v)), 'GITHUB_WEBHOOK_SECRET must contain a non-placeholder secret of at least 32 characters'),
   TRUSTED_PROXY_CIDRS: z.string().optional().refine((value) => !value || value.split(',').every((entry) => {
     const [ip, mask, extra] = entry.trim().split('/'); const family = isIP(ip);
     return !extra && family > 0 && (mask === undefined || (/^\d+$/.test(mask) && Number(mask) > 0 && Number(mask) <= (family === 4 ? 32 : 128)));
@@ -55,6 +59,7 @@ export const parseEnv = (input: NodeJS.ProcessEnv): AppEnv => {
   const parsed = envSchema.parse(input);
   resolveGmailOAuthConfig(parsed);
   resolveGoogleCalendarOAuthConfig(parsed);
+  resolveGitHubOAuthConfig(parsed);
   return {
     ...parsed,
     APP_ENV: parsed.APP_ENV ?? (parsed.NODE_ENV === 'production' ? 'production' : 'development'),
@@ -64,6 +69,21 @@ export const parseEnv = (input: NodeJS.ProcessEnv): AppEnv => {
 export interface GoogleOAuthConfig { clientId: string; clientSecret: string; redirectUri: string }
 export const GMAIL_CALLBACK_PATH = '/api/providers/google/oauth/gmail/callback';
 export const GOOGLE_CALENDAR_CALLBACK_PATH = '/api/providers/google/oauth/calendar/callback';
+export const GITHUB_CALLBACK_PATH = '/api/providers/github/oauth/callback';
+export interface GitHubOAuthConfig { clientId: string; clientSecret: string; redirectUri: string }
+
+export function resolveGitHubOAuthConfig(input: Pick<AppEnv, 'GITHUB_OAUTH_CLIENT_ID' | 'GITHUB_OAUTH_CLIENT_SECRET' | 'GITHUB_OAUTH_REDIRECT_URI'>): GitHubOAuthConfig | null {
+  const values = [input.GITHUB_OAUTH_CLIENT_ID?.trim(), input.GITHUB_OAUTH_CLIENT_SECRET?.trim(), input.GITHUB_OAUTH_REDIRECT_URI?.trim()];
+  if (values.every((value) => !value)) return null;
+  if (values.some((value) => !value || /replace-with|inject-|placeholder/i.test(value))) throw new Error('GITHUB_OAUTH_CLIENT_ID / GITHUB_OAUTH_CLIENT_SECRET / GITHUB_OAUTH_REDIRECT_URI must be completely configured');
+  const [clientId, clientSecret, redirectUri] = values as [string, string, string];
+  if (!/^[A-Za-z0-9_.-]{1,200}$/.test(clientId) || clientSecret.length < 8) throw new Error('Invalid GITHUB_OAUTH_CLIENT_ID / GITHUB_OAUTH_CLIENT_SECRET');
+  let url: URL;
+  try { url = new URL(redirectUri); } catch { throw new Error('Invalid GITHUB_OAUTH_REDIRECT_URI'); }
+  if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash || url.pathname !== GITHUB_CALLBACK_PATH
+    || ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)) throw new Error('GITHUB_OAUTH_REDIRECT_URI must use HTTPS and the registered backend callback path');
+  return { clientId, clientSecret, redirectUri };
+}
 
 export function resolveGoogleCalendarOAuthConfig(input: Pick<AppEnv, 'GMAIL_OAUTH_CLIENT_ID' | 'GMAIL_OAUTH_CLIENT_SECRET' | 'GMAIL_OAUTH_REDIRECT_URI' | 'GOOGLE_CALENDAR_OAUTH_REDIRECT_URI'>): GoogleOAuthConfig | null {
   const redirectUri = input.GOOGLE_CALENDAR_OAUTH_REDIRECT_URI?.trim();

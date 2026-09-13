@@ -36,3 +36,11 @@ Full API **80 文件 passed、1 skipped；511 passed、4 skipped / 515**（17:40
 ## 单独待办的真实验收
 
 尚无真实 Google Secret/用户授权，未读取真实日历/邮件、未创建真实邀请。真实主日历读写、OAuth/refresh/revoke/实际 scope/account access、429、网络断开、unknown、eventId read-back 与真实 Gmail→Calendar Journey 全部通过后才能关闭 9C/9F。Secret 只经本地安全配置或 secret manager 注入，禁止聊天/提交 Git。
+
+## 同提交远端门禁进度
+
+main@02e77bd74d51024444450aa56bceba4417066245 的 [release-candidate-ci #66](https://github.com/964896765/lazy-armor/actions/runs/34750300128)：Fast Gate（103705523689）、RC Full（103705709563）、Android（103705709586）**全部 success**。RC Full 的 MySQL 8.4 migration/backup-restore、实际 DB concurrency Monorepo 与完整 build 步骤已逐项核验 success。证据属于本提交，不从 #65 继承；远端代码/构建通过不替代真实 Google 账号或真机验收，不关闭 9C/9F。
+
+MySQL artifact **10315288872**：`mysql84-migration-evidence-02e77bd74d51024444450aa56bceba4417066245`，expired=false，head_sha 与本批提交一致，digest `sha256:0835bbc0889b8fc4a6f0beda666fa8affbaef44d16f1717b2dd6900597cd2589`。GitHub 插件查询遇到网络失败，已用该公开仓库的 GitHub REST 只读查询继续核验，不索取/暴露任何新 Token。
+
+Android artifact **10316706244**：`android-verification-02e77bd74d51024444450aa56bceba4417066245`，expired=false，head_sha 与本批提交一致，digest `sha256:14325730edc68bfe1a1380d0523ceafe3c37892b483bca2788c11c415a9caa93`。这是 DEBUG_VERIFICATION_ONLY 构建产物，不是可发布包或真实 Android Beta 验收。
