@@ -20,15 +20,17 @@ export function prepareGitHubAction(input: Record<string, unknown>, key: string 
 }
 const positive = (value: unknown): value is number => Number.isSafeInteger(value) && (value as number) > 0;
 const failed = (): never => { throw new ProviderRuntimeError('PROVIDER_UNAVAILABLE', 'AFTER_DISPATCH'); };
-export function normalizeGitHubRepository(raw: Record<string, unknown>, expected?: GitHubRepository) {
+export function normalizeGitHubRepository(raw: Record<string, unknown>, expected?: GitHubRepository, requireUpdateTime = false) {
   const owner = raw.owner as Record<string, unknown> | undefined;
   const parsed = githubRepositorySchema.safeParse({ id: raw.id, name: raw.name, owner: owner?.login });
   if (!parsed.success) return failed();
   if (typeof raw.private !== 'boolean' || raw.full_name !== `${parsed.data.owner}/${parsed.data.name}`) return failed();
+  if (requireUpdateTime && (typeof raw.updated_at !== 'string' || !Number.isFinite(Date.parse(raw.updated_at)))) return failed();
   const actual = parsed.data;
   if (expected && (expected.id !== actual.id || expected.owner.toLowerCase() !== actual.owner.toLowerCase()
     || expected.name.toLowerCase() !== actual.name.toLowerCase())) throw new ProviderRuntimeError('PERMISSION_DENIED', 'AFTER_DISPATCH');
-  return { resourceType: 'Repository' as const, resourceId: String(actual.id), repositoryId: actual.id, owner: actual.owner, name: actual.name, private: raw.private as boolean };
+  return { resourceType: 'Repository' as const, resourceId: String(actual.id), repositoryId: actual.id, owner: actual.owner, name: actual.name, private: raw.private as boolean,
+    ...(requireUpdateTime ? { updatedAt: new Date(raw.updated_at as string).toISOString() } : {}) };
 }
 export function normalizeGitHubResource(raw: Record<string, unknown>, repository: GitHubRepository, kind: 'Issue' | 'PullRequest' | 'Workflow') {
   if (!positive(raw.id) || typeof raw.updated_at !== 'string' || !Number.isFinite(Date.parse(raw.updated_at))) failed();

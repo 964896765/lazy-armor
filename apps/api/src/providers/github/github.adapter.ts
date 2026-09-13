@@ -41,7 +41,7 @@ export class GitHubProviderAdapter implements ProviderAdapter {
       || (input.capability !== 'READ_WORKFLOW_STATUS' && input.input.runId !== undefined)
       || (input.input.number !== undefined && input.input.runId !== undefined)) throw new ProviderRuntimeError('PERMISSION_DENIED', 'BEFORE_DISPATCH');
     await this.oauth.identity(credential);
-    const actualRepo = normalizeGitHubRepository(await this.api(this.repoPath(repository), credential), repository);
+    const actualRepo = normalizeGitHubRepository(await this.api(this.repoPath(repository), credential), repository, true);
     const kind = input.capability === 'READ_ISSUE' ? 'Issue' : input.capability === 'READ_PULL_REQUEST' ? 'PullRequest' : 'Workflow';
     const suffix = kind === 'Issue' ? '/issues' : kind === 'PullRequest' ? '/pulls' : '/actions/runs';
     const id = input.input.number ?? input.input.runId;
@@ -54,7 +54,9 @@ export class GitHubProviderAdapter implements ProviderAdapter {
       if (!Array.isArray(values) || values.length > (limit as number)) throw new ProviderRuntimeError('PROVIDER_UNAVAILABLE', 'AFTER_DISPATCH');
       records = values.filter((raw) => kind !== 'Issue' || (raw as Record<string, unknown>).pull_request === undefined) as Record<string, unknown>[];
     }
-    return { ok: true, data: { resources: [actualRepo, ...records.map((raw) => normalizeGitHubResource(raw, repository, kind))] } };
+    return { ok: true, data: { resources: [actualRepo, ...records.map((raw) => normalizeGitHubResource(raw, repository, kind))],
+      acquisition: { capabilityKey: input.capability, credentialVersion: input.credentials?.version ?? 0,
+        requestId: input.requestId, acquiredAt: new Date().toISOString() } } };
   }
   async execute(input: ConnectorRequest) {
     const credential = this.credentials(input); this.assertCapability(input, credential, true);

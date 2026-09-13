@@ -40,7 +40,9 @@ Schema/Type 已包含 GitHub config、transport、OAuth、批准写入结构、�
 
 增量已 stage 后 repository hygiene **656 tracked files**、cached diff whitespace 与 47 个 migration replay 通过。首次 Full API 的唯一失败来自旧目录测试写死 parser/normalizer 数量；改为逐项验证正式 Registry 的 key/revision/不可变 hash 和唯一持久化记录，单项 DB 专项 5/5 通过，再完整重跑得到上述 592 项通过。没有删除历史 Registry、放松 hash 校验或将目录扩展误判为运行时失败。
 
-日志：`.data/batch-9d-core-focused.log`、`.data/batch-9d-registry-regression.log`、`.data/batch-9d-core-typecheck-final.log`、`.data/batch-9d-core-build.log`、`.data/batch-9d-core-monorepo-final.log`；首次失败日志 `.data/batch-9d-core-monorepo.log` 保留。Config 的独立 51 项证据与既有预备子步骤见 [foundation report](./runtime-productization-batch-9d-foundation-report.md)。远端 Calendar #66 只支持其自己的 SHA，不作为 GitHub 新源码远端证据；本次 GitHub 推送后的远端门禁需要独立核对，不提前标远端全部通过。
+日志：`.data/batch-9d-core-focused.log`、`.data/batch-9d-registry-regression.log`、`.data/batch-9d-core-typecheck-final.log`、`.data/batch-9d-core-build.log`、`.data/batch-9d-core-monorepo-final.log`；首次失败日志 `.data/batch-9d-core-monorepo.log` 保留。Config 的独立 51 项证据与既有预备子步骤见 [foundation report](./runtime-productization-batch-9d-foundation-report.md)。远端 Calendar #66 只支持其自己的 SHA，不作为 GitHub 新源码远端证据。
+
+2026-09-14 独立核对：GitHub 核心提交 `607e0b01db094efc3dd6184c25704dbeacb5fb3c` 的 [CI #67](https://github.com/964896765/lazy-armor/actions/runs/34753118204) 已全部成功；Fast job `103712882551`、RC Full job `103713148374`、Android job `103713148377`。同 SHA、未过期 artifacts：MySQL `10316333413`，digest `sha256:09fde9bec8bb18b76a622aec5a19724e951b41dada6c382661e52c06269a5d4f`；Android `10317026095`，digest `sha256:188f4cc0135336f2c6a9bc75cd92109c9ec143d5c9f043d9b48f849b550ec494`。这只验收上述核心提交；Android 是隔离构建验证，不是真机/正式发布证据，不支持后续未推送源码或真实账号完成声明。
 
 ## 未完成项与连续开发顺序
 
@@ -49,6 +51,8 @@ raw-byte HMAC primitive 已测试，但完整 signed Webhook ingestion（连接/
 已核对下一 Journey 的实际映射缺口：当前 ScenarioPlanCompiler 仍使用 catalog scenario 的 requiredFacts，SILENT_FOLLOW_UP 默认 OBSERVE/record；不能将 pull_request.state 伪装成 EmailMessage 的目录事实，也不能把任意字段或 updatedAt 变化当 merged/failed。后续应以增量、版本化的 Scenario/Fact 映射及 terminal Condition 复用现有 Operator/Strategy/Condition/Execution，使正常阶段仅记录、terminal 状态才通知；不改变历史 PlanVersion/Scenario/Binding hash，不另造 PR Engine 或手工伪造依赖。
 
 进一步核对 Generic Pipeline：当前 confirmCandidate 对不同值的 Candidate 新建 Truth Record/version 1，同一 Candidate 的并发确认可去重，但尚不等于同一 PR 的连续版本链。PR Journey 需要增量接入稳定事实身份和既有 Truth Record/Truth Version 的追加机制，再评估 CHANGED/terminal 条件；不能把独立快照声称为已验证的连续状态变化。历史 billing/notification、PlanVersion、Audit 与已保存 Truth Version 不重写、不回填猜测身份。
+
+上述连续版本缺口是 `607e0b0` 核心提交时的状态。后续 additive v2 扩展与独立验收记录见 [连续资源 Truth 报告](./runtime-productization-batch-9d-versioned-truth-report.md)，不改写本报告历史测试证据。
 
 真实 GitHub OAuth/Token 权限、repository webhook、限流、撤权与实际创建测试 Issue/Comment 尚未验收。不得关闭 9D、不得标真实 GitHub 已完成/FULL GREEN。
 

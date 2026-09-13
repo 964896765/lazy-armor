@@ -14,6 +14,7 @@ import { GitHubOAuthClient } from './github-oauth.client';
 import { GitHubProviderAdapter } from './github.adapter';
 import { githubManifest, githubEvidence, githubPolicy } from './github-manifest';
 import type { GitHubObservationDto } from './github.controller';
+import type { ResourceReadProof } from '../../reality-pipeline/versioned-resource-truth.service';
 
 @Injectable()
 export class GitHubService implements OnModuleInit {
@@ -49,9 +50,10 @@ export class GitHubService implements OnModuleInit {
     for (const resource of Array.isArray(read.data.resources) ? read.data.resources : []) {
       const payload = resource as Record<string, JsonValue>; const hash = realityValueHash(payload); const observedAt = new Date().toISOString();
       const observation = await this.pipeline.ingest(userId, { sourceMode: 'OFFICIAL_API', providerKey: 'github', connectionId,
-        externalEventKey: `${connectionId}:${payload.repositoryId}:${payload.resourceType}:${payload.resourceId}:${hash}`, parserKey: 'generic.repository-resource.v1', resourceHint: payload.resourceType as string,
+        externalEventKey: `v2:${connectionId}:${payload.repositoryId}:${payload.resourceType}:${payload.resourceId}:${hash}`, parserKey: 'generic.repository-resource.v2', resourceHint: payload.resourceType as string,
         payload, evidenceHash: hash, observedAt, occurredAt: typeof payload.updatedAt === 'string' ? payload.updatedAt : null });
-      const truth = []; for (const candidate of observation.candidates) truth.push(await this.pipeline.confirmCandidate(userId, candidate.id, { verifiedBy: 'authenticated_provider_read', verificationMethod: 'READ_BACK' }));
+      const truth = []; for (const candidate of observation.candidates) truth.push(await this.pipeline.confirmCandidate(userId, candidate.id, {
+        verifiedBy: 'authenticated_provider_read', verificationMethod: 'READ_BACK', readProof: read.data.acquisition as ResourceReadProof }));
       result.push({ ...observation, truth });
     }
     return { observations: result };

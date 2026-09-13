@@ -20,7 +20,7 @@ const json = (value: unknown, status = 200, headers: Record<string, string> = {}
 function setup(mutate?: (url: string, init: RequestInit) => Response | undefined) {
   const transport = vi.fn<GitHubTransport>(async (url, init) => mutate?.(url, init)
     ?? (url === 'https://api.github.com/user' ? json({ id: 7, login: 'isolated-owner' }, 200, { 'x-oauth-scopes': 'repo' })
-      : url === root ? json({ ...repository, owner: { login: repository.owner }, full_name: repository.owner + '/' + repository.name, private: true })
+      : url === root ? json({ ...repository, owner: { login: repository.owner }, full_name: repository.owner + '/' + repository.name, private: true, updated_at: rawIssue.updated_at })
         : url.includes('?') ? json([rawIssue]) : json(rawIssue)));
   const http = new GitHubHttpClient(transport); return { transport, adapter: new GitHubProviderAdapter(new GitHubOAuthClient(config, http), http) };
 }

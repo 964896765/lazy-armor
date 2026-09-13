@@ -446,7 +446,7 @@ export {
 } from './strategy-runtime';
 export {
   PARSER_KEYS, REALITY_ADAPTER_REGISTRY, REALITY_POLICY_REGISTRY, SOURCE_MODES, candidateDedupeKey, observationIdentity,
-  parseAndNormalizeObservation, realityValueHash,
+  parseAndNormalizeObservation, realityValueHash, versionedFactIdentity,
   type NormalizedFactDraft, type ParserKey, type RealityPolicyDefinition, type SourceMode, type SourceObservationInput,
 } from './reality-pipeline';
 export {

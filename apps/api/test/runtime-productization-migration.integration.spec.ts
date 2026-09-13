@@ -20,7 +20,7 @@ describe('Batch 7/8 forward migration contracts', () => {
     await migrate(db, { migrationsFolder: folder });
     const [after] = await pool.query<RowDataPacket[]>('SELECT id, hash, created_at FROM __drizzle_migrations ORDER BY id');
     expect(after).toEqual(before);
-    for (const file of ['0042_action_runtime_integration.sql', '0043_action_adapter_resolution.sql', '0044_verification_reconciliation.sql', '0045_provider_runtime_common.sql', '0046_google_oauth_completion.sql']) {
+    for (const file of ['0042_action_runtime_integration.sql', '0043_action_adapter_resolution.sql', '0044_verification_reconciliation.sql', '0045_provider_runtime_common.sql', '0046_google_oauth_completion.sql', '0047_generic_truth_identity.sql']) {
       const source = readFileSync(resolve(folder, file), 'utf8');
       expect(source).not.toMatch(/\b(?:DROP|TRUNCATE)\b/i);
       const hash = createHash('sha256').update(source).digest('hex');
@@ -58,5 +58,22 @@ describe('Batch 7/8 forward migration contracts', () => {
     const [columns] = await pool.query<RowDataPacket[]>("SELECT is_nullable FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='oauth_authorization_states' AND column_name IN ('completion_status','failure_code')");
     expect(columns).toHaveLength(2);
     expect(columns.every((row) => (row.IS_NULLABLE ?? row.is_nullable) === 'YES')).toBe(true);
+  });
+  it('adds nullable stable fact identity without guessing historical identity or weakening existing unique constraints', async () => {
+    const [columns] = await pool.query<RowDataPacket[]>("SELECT is_nullable,column_type FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='truth_records' AND column_name='fact_identity_hash'");
+    expect(columns[0].IS_NULLABLE ?? columns[0].is_nullable).toBe('YES'); expect(columns[0].COLUMN_TYPE ?? columns[0].column_type).toBe('char(64)');
+    const [indices] = await pool.query<RowDataPacket[]>("SELECT index_name FROM information_schema.statistics WHERE table_schema=DATABASE() AND non_unique=0 AND index_name IN ('truth_records_fact_identity_uq','truth_records_user_receipt_uq','truth_record_versions_record_version_uq','truth_provenance_candidate_uq') GROUP BY index_name"); expect(indices).toHaveLength(4);
+    const source = readFileSync(resolve(folder, '0047_generic_truth_identity.sql'), 'utf8'); expect(source).not.toMatch(/\b(?:UPDATE|INSERT|DELETE)\b/i);
+    const isolated = await pool.getConnection();
+    try {
+      await isolated.beginTransaction();
+      await isolated.query("SET @migration_user=UUID_TO_BIN(UUID())");
+      await isolated.query("INSERT INTO users(id,status,created_at,updated_at) VALUES(@migration_user,'active',UTC_TIMESTAMP(6),UTC_TIMESTAMP(6))");
+      for (let i = 0; i < 2; i++) await isolated.query("INSERT INTO truth_records(id,user_id,resource_key,subject_key,status,verified_by,verified_at,created_at,updated_at) VALUES(UUID_TO_BIN(UUID()),@migration_user,'historical','legacy','verified','migration_contract',UTC_TIMESTAMP(6),UTC_TIMESTAMP(6),UTC_TIMESTAMP(6))");
+      const [legacy] = await isolated.query<RowDataPacket[]>('SELECT fact_identity_hash FROM truth_records WHERE user_id=@migration_user'); expect(legacy).toHaveLength(2); expect(legacy.every((row) => row.fact_identity_hash === null)).toBe(true);
+    } finally { await isolated.rollback(); isolated.release(); }
+    const [before] = await pool.query<RowDataPacket[]>('SELECT id,current_version_id,verified_at FROM truth_records WHERE fact_identity_hash IS NULL ORDER BY id LIMIT 10');
+    await migrate(db, { migrationsFolder: folder });
+    const [after] = await pool.query<RowDataPacket[]>('SELECT id,current_version_id,verified_at FROM truth_records WHERE fact_identity_hash IS NULL ORDER BY id LIMIT 10'); expect(after).toEqual(before);
   });
 });

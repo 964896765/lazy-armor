@@ -518,6 +518,7 @@ export const truthRecords = mysqlTable('truth_records', {
   userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
   resourceKey: varchar('resource_key', { length: 120 }).notNull(),
   subjectKey: varchar('subject_key', { length: 255 }).notNull(),
+  factIdentityHash: char('fact_identity_hash', { length: 64 }),
   status: varchar('status', { length: 32 }).notNull(),
   currentVersionId: uuidBinary('current_version_id'),
   sourceReceiptId: uuidBinary('source_receipt_id').references(() => mobileNotificationReceipts.id, { onDelete: 'restrict' }),
@@ -527,6 +528,7 @@ export const truthRecords = mysqlTable('truth_records', {
   ...timestamps,
 }, (table) => [
   uniqueIndex('truth_records_user_receipt_uq').on(table.userId, table.sourceReceiptId),
+  uniqueIndex('truth_records_fact_identity_uq').on(table.factIdentityHash),
   index('truth_records_user_resource_status_idx').on(table.userId, table.resourceKey, table.status, table.verifiedAt),
 ]);
 

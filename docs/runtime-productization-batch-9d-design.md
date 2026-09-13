@@ -61,3 +61,16 @@ verifyGitHubWebhookSignature 只提供 raw Buffer 的 HMAC SHA-256 常量时间�
 ## 后续实际核心实现
 
 上述描述是 foundation 子步骤的历史边界。现已继续实现 OAuth App transport/PKCE/Scope/身份/refresh/revoke、五 Capability、实际授权仓库快照、批准资源可见性、Generic Resource/Fact/Truth、现有 R3 Approval/Runner 与纯 GET 对账，并通过联合专项 130 项。准确当前边界与完整门禁见 [9D core report](./runtime-productization-batch-9d-core-report.md)。Webhook ingestion 与 PR SILENT_FOLLOW_UP Journey 仍未完成，不能仅凭五项 Adapter 和验签函数关闭 9D。已持久化的 Manifest/Evidence/Policy 不可变，后续 webhook 扩展使用新 revision。
+
+## 2026-09-14 Webhook ingestion 落地设计（待实现，不是验收）
+
+连续资源 Truth v2 的实现与独立测试见 [versioned Truth report](./runtime-productization-batch-9d-versioned-truth-report.md)。下一子步骤冻结以下边界，尚未启用 endpoint/worker，supportsWebhook 仍 false：
+
+1. Admission 只接受精确 HTTPS 路由与 JSON raw body，复用现有 captureRawBody 和 256 KiB HTTP 安全上限；不能扩大普通 API body budget。raw SHA-256 HMAC 校验在解析/存储之前完成。event/action 必须同时匹配 signed body 的允许结构；Delivery/Event/Hook-ID header 不在 HMAC 内，不能单独证明资源授权。sender 不是当前连接拥有者的证明，不能拒绝合法 ghost 事件后转而信任 sender 进行授权。
+2. Signed body 仅作为刷新提示，不直接确认 payload 中的 state/merged/conclusion 为 VERIFIED Truth。提示只保留目标 repository ID/规范名称、Issue/PR number 或 run ID、实际资源 ID、action 与 hash；不保存原始 title/body/token。连接、READ Capability、实际仓库快照及 Grant 在 admission 和真正读取/发布时都检查。先通过已有 Provider Runtime 执行有权的 API GET，再比对实际资源 ID，最后由 Generic v2/现有 TruthVersion 追加；缺 Secret/撤权/权限变化均 fail-closed。
+3. 复用现有 webhook_receipts 两个 unique identity：delivery 与 signed-body hash 均参与 connection-scoped 去重；相同 delivery 不同 body 拒绝，同 body 改 unsigned delivery header 命中原 receipt。存储成功才返回 accepted/PENDING，不假称已获取 Truth 或已完成 Journey。GitHub [最佳实践](https://docs.github.com/en/webhooks/using-webhooks/best-practices-for-using-webhooks) 要求及时回复，网络回读放到异步 worker，不能等串行 GET 后才确认接收。
+4. 通过前向 migration 为既有 receipt 扩展 nullable processing status/attempt/nextAttempt/lease/result metadata，历史行保持 NULL，不新增另一张 provider 专属 receipt 表。Worker 用现有角色机制与数据库 SKIP LOCKED/lease CAS，旧行不自动入队；读取重试受已有 RateLimit/Health/quota 和尝试上限约束，过期/冲突/撤权不假成功。进程中止后允许有权的只读刷新恢复，不创建或重试外部写动作。
+5. Manifest github@2、Evidence@1、RuntimePolicy@1 已发布，不原地扩展 sourceModes/realtimeModes/fields。实现后发布新 revision，与实际能力差异测试一起落库；不自动创建 webhook、不新增未授权 admin API、不声称 broad repo Scope 等于已配置 webhook。
+6. 隔离验收至少覆盖 raw bytes/重新 stringify/缺 Secret、事件头篡改与 signed body 不符、资源错配/歧义 body、header 变化重放、真实 DB 并发唯一 receipt、GET 中撤权/旋转、worker lease takeover、429/断线恢复、读取后连续 TruthVersion 与无重复 wakeup。真实 GitHub repository delivery 和账号授权另外验收，不用 isolation transport 关闭 9D。
+
+PR 静默 Journey 需要版本化 Scenario/Fact 投影和 terminal Condition，不能篡改旧 96 场景或旧 binding hash。新 dispatcher 必须在 handoff 前复核当前 Truth 状态/版本、Grant/资源边界；conflicted/revoked/superseded version 不作为有效当前事实。历史 StrategyDecision/Audit 保持不可变，不能把旧 READY_FOR_PLAN_ENGINE decision replay 当成当前授权证据。现有 Operator/Strategy/Execution 重用，不以任意字段或 updatedAt 的 CHANGED 代替 merged/failed。

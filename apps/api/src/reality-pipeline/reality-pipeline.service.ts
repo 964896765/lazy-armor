@@ -12,6 +12,7 @@ import { and, desc, eq } from 'drizzle-orm';
 import { AuditService } from '../audit/audit.service';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
 import { StrategyRuntimeService } from '../strategy-runtime/strategy-runtime.service';
+import { VersionedResourceTruthService, type ResourceReadProof } from './versioned-resource-truth.service';
 
 @Injectable()
 export class RealityPipelineService implements OnModuleInit {
@@ -19,10 +20,23 @@ export class RealityPipelineService implements OnModuleInit {
     @Inject(DATABASE) private readonly db: InjectedDatabase,
     private readonly audit: AuditService,
     private readonly strategyRuntime: StrategyRuntimeService,
+    private readonly versioned: VersionedResourceTruthService,
   ) {}
   async onModuleInit() { await this.syncRegistry(); }
 
-  async ingest(userId: string, input: SourceObservationInput) {
+  async ingest(userId: string, input: SourceObservationInput, retryCount = 0): Promise<Awaited<ReturnType<RealityPipelineService['ingestOnce']>>> {
+    try { return await this.ingestOnce(userId, input); }
+    catch (error) {
+      // Publication now locks the authorization fence. An ingest INSERT may be
+      // selected as a deadlock victim while acquiring its parent FK/unique locks.
+      // Retry only that local idempotent materialization, never the Provider GET
+      // or any external write. Partial autocommit inserts retain their identities.
+      if (isDeadlock(error) && retryCount < 3) return this.ingest(userId, input, retryCount + 1);
+      throw error;
+    }
+  }
+
+  private async ingestOnce(userId: string, input: SourceObservationInput) {
     const observedAt = validDate(input.observedAt, 'observedAt');
     const occurredAt = input.occurredAt ? validDate(input.occurredAt, 'occurredAt') : null;
     if (!/^[a-f0-9]{64}$/.test(input.evidenceHash)) throw new BadRequestException('evidenceHash must be SHA-256');
@@ -76,8 +90,11 @@ export class RealityPipelineService implements OnModuleInit {
     return Promise.all(rows.map((row) => this.truthResponse(userId, row.id)));
   }
 
-  async confirmCandidate(userId: string, candidateId: string, options: { sourceReceiptId?: string | null; verifiedBy?: string; verificationMethod?: string } = {}, retryCount = 0): Promise<Awaited<ReturnType<RealityPipelineService['truthResponse']>>> {
+  async confirmCandidate(userId: string, candidateId: string, options: { sourceReceiptId?: string | null; verifiedBy?: string; verificationMethod?: string; readProof?: ResourceReadProof } = {}, retryCount = 0): Promise<Awaited<ReturnType<RealityPipelineService['truthResponse']>>> {
     const existing = await this.getCandidate(userId, candidateId);
+    if (existing.normalizerKey === 'repository-resource.v2') {
+      return this.truthResponse(userId, await this.versioned.confirm(userId, candidateId, options.readProof!));
+    }
     if (existing.status === 'VERIFIED' && existing.truthRecordId) return this.truthResponse(userId, existing.truthRecordId);
     if (existing.status !== 'PENDING') throw new ConflictException('Candidate has already been decided');
     const observation = (await this.db.select().from(sourceObservations).where(eq(sourceObservations.id, existing.observationId)).limit(1))[0];
