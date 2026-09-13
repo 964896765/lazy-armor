@@ -1,6 +1,6 @@
 # Batch 9C — Google Calendar 接入设计与验收边界
 
-日期：2026-09-13。状态：官方接口核对与接入设计开始；**不是代码完成报告，不是实际账号验收证据**。9B 真实账号验收仍独立待办，缺 Secret 不阻止本文件的非账号设计工作。
+日期：2026-09-13。状态：下述非 Secret 接入已实现，专项隔离回归通过；实现与门禁证据见 [9C report](./runtime-productization-batch-9c-report.md)。**不是实际账号验收证据，9B/9C 真实账号验收仍独立待办**。
 
 ## 不变的公共链
 
@@ -36,3 +36,17 @@
 - [Conditional resource versions / ETags](https://developers.google.com/workspace/calendar/api/guides/version-resources)
 - [Errors](https://developers.google.com/workspace/calendar/api/guides/errors)
 - [Quota](https://developers.google.com/workspace/calendar/api/guides/quota)
+
+## 本次实现落地的精确契约
+
+Calendar 不增加另一套 Client ID/Secret，复用 GMAIL_OAUTH_CLIENT_ID / GMAIL_OAUTH_CLIENT_SECRET；新增 GOOGLE_CALENDAR_OAUTH_REDIRECT_URI，必须为 HTTPS 且精确路径 `/api/providers/google/oauth/calendar/callback`。该 URI 缺失时 Calendar 独立禁用；显式设置而共享配置不完整时 bootstrap fail-closed。GoogleOAuthSessions 只适配 HTTP callback，全部状态 CAS、凭证 version、refresh/revoke 仍属于已有 Connections/Credentials。
+
+第一版只操作实际 `/calendars/primary` 返回的本人主日历，Token 另需 calendar.calendars.readonly 以核对实际账号身份；不推断 arbitrary calendarId 访问权限。读 Scope 为 calendar.events.readonly，写 Scope 为 calendar.events。批准上下文是 `triggerPayload.calendarEvent`：calendarId、title、带 offset 的起止 dateTime 与 IANA timeZone、attendees（最多 20）、明确 sendUpdates；更新另有 eventId 和带引号的 ETag。未知字段、跨账号、无 Scope、无 ETag 或结束不晚于开始全部写前拒绝。
+
+写能力通过既有 publish 外部动作承载（config.visibility=private），Capability 为 CREATE_CALENDAR_EVENT / UPDATE_CALENDAR_EVENT。publish 是已有通用外部动作，不是内容平台专属 Engine；审批固定完整 Calendar 上下文，Risk Floor R3，Outbox 仍从不可变批准上下文重建动作。没有直接 POST/PATCH Calendar 的 consumer API。
+
+Generic CalendarEvent 新增 calendar_event.schedule Fact Schema、Parser/Normalizer 和 300 秒 Freshness，语义标识包含 connectionId/calendarId/eventId。不建立 Calendar 认证表、事实表或引擎。DDL migration N/A：使用既有 47 个迁移和现有 Registry/Observation/Truth/Verification 表，通过 additive catalog revision 发布，不修改已应用 SQL。
+
+Google HTTP 只新增固定 `www.googleapis.com/calendar/v3/` origin/path 白名单，不允许任意 Google API 或替代生产 base URL。主日历身份 GET、条件 PATCH、写后 GET 均计入本地 request budget；预算不是 Google 官方项目 quota 的声明。只读有界重试，写仅一次。任何 POST/PATCH 后的 GET 失败（包括 403）统一 AFTER_DISPATCH/OUTCOME_UNKNOWN；GET 无副作用不能证明先前写无副作用。同一安全修正同步用于 Gmail，并增加回归，不改其已发布 Manifest/Evidence/Policy。
+
+当前没有真实账号验收、没有 Workspace 共享日历覆盖、没有 Calendar webhook；列表最多 50 项且须显式 pageToken 翻页，不把单页读取宣称为完整同步。

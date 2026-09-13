@@ -48,6 +48,12 @@ describe('Batch 7/8 forward migration contracts', () => {
     const [indices] = await pool.query<RowDataPacket[]>("SELECT index_name FROM information_schema.statistics WHERE table_schema=DATABASE() AND non_unique=0 AND index_name IN ('provider_runtime_policy_revision_uq','provider_official_evidence_revision_uq') GROUP BY index_name");
     expect(indices).toHaveLength(2);
   });
+  it('reuses one existing OAuth and verification store for Calendar without domain-specific engine or duplicate auth tables', async () => {
+    const [tables] = await pool.query<RowDataPacket[]>("SELECT table_name FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name IN ('oauth_authorization_states','credential_refs','provider_runtime_policies','verification_policies','verification_evidence','reconciliation_cases')");
+    expect(tables).toHaveLength(6);
+    const [duplicates] = await pool.query<RowDataPacket[]>("SELECT table_name FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name IN ('calendar_oauth_states','calendar_credentials','calendar_execution_engine','gmail_execution_engine')");
+    expect(duplicates).toHaveLength(0);
+  });
   it('extends existing OAuth attempts with nullable completion metadata without rewriting historical states', async () => {
     const [columns] = await pool.query<RowDataPacket[]>("SELECT is_nullable FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='oauth_authorization_states' AND column_name IN ('completion_status','failure_code')");
     expect(columns).toHaveLength(2);

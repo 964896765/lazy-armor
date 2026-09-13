@@ -2,9 +2,7 @@ import { ForbiddenException, Inject, Injectable, OnModuleInit, ServiceUnavailabl
 import { ConfigService } from '@nestjs/config';
 import { GMAIL_CALLBACK_PATH, resolveGmailOAuthConfig } from '@lazy-armor/config';
 import { ConnectorRegistry } from '@lazy-armor/connector-sdk';
-import { oauthAuthorizationStates } from '@lazy-armor/database';
 import { realityValueHash, type JsonValue } from '@lazy-armor/plan-schema';
-import { and, eq, isNull } from 'drizzle-orm';
 import { DATABASE, type InjectedDatabase } from '../../common/database.module';
 import { ConnectionsService } from '../../connections/connections.service';
 import { ConnectorCatalogSyncService } from '../../connectors/connector-catalog-sync.service';
@@ -12,6 +10,7 @@ import { ProviderRuntimeService } from '../../provider-runtime/provider-runtime.
 import { RealityPipelineService } from '../../reality-pipeline/reality-pipeline.service';
 import { GOOGLE_TRANSPORT, GoogleHttpClient, type GoogleTransport } from '../google/google-http.client';
 import { GoogleOAuthClient } from '../google/google-oauth.client';
+import { GoogleOAuthSessions } from '../google/google-oauth.sessions';
 import { GmailProviderAdapter } from './gmail.adapter';
 import { GMAIL_SCOPES, gmailManifest, gmailEvidence, gmailPolicy } from './gmail-manifest';
 
@@ -37,23 +36,9 @@ export class GmailService implements OnModuleInit {
   }
   status() { return { providerKey: 'gmail', oauthConfigured: Boolean(this.oauthConfig), implementation: this.oauthConfig ? 'BETA' : 'DISABLED',
     realAccountAcceptance: 'NOT_VERIFIED', callbackPath: GMAIL_CALLBACK_PATH }; }
-  start(userId: string) { return this.connections.startOAuth(userId, 'gmail', { redirectUri: this.requireConfig().redirectUri }); }
+  start(userId: string) { return new GoogleOAuthSessions(this.requireConfig(), 'gmail', this.connections, this.db).start(userId); }
   async callback(state: string, code?: string, error?: string) {
-    const config = this.requireConfig();
-    if (!/^[a-f0-9]{48}$/.test(state) || (!code && !error) || (code && error) || (code && code.length > 500)) throw new ForbiddenException('Invalid OAuth callback');
-    const row = (await this.db.select().from(oauthAuthorizationStates).where(and(eq(oauthAuthorizationStates.state, state),
-      eq(oauthAuthorizationStates.providerKey, 'gmail'), isNull(oauthAuthorizationStates.consumedAt))).limit(1))[0];
-    if (!row || row.expiresAt <= new Date() || row.redirectUri !== config.redirectUri) throw new ForbiddenException('Invalid OAuth state');
-    if (error) {
-      const result = await this.db.update(oauthAuthorizationStates).set({ consumedAt: new Date(), codeVerifier: null,
-        completionStatus: 'CANCELLED', failureCode: 'OAUTH_CONSENT_DENIED', updatedAt: new Date() })
-        .where(and(eq(oauthAuthorizationStates.id, row.id), isNull(oauthAuthorizationStates.consumedAt)));
-      if (result[0].affectedRows !== 1) throw new ForbiddenException('OAuth state already consumed');
-      return { status: 'CANCELLED' };
-    }
-    const connection = await this.connections.completeOAuth(row.userId, 'gmail', { state, code: code!, redirectUri: config.redirectUri });
-    const validated = await this.connections.validate(row.userId, connection.id);
-    return { connectionId: connection.id, status: validated.connection.status };
+    return new GoogleOAuthSessions(this.requireConfig(), 'gmail', this.connections, this.db).callback(state, code, error);
   }
   async observe(userId: string, connectionId: string, input: { capability: string; messageId?: string; maxItems?: number; q?: string; pageToken?: string }) {
     this.requireConfig();

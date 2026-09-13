@@ -66,7 +66,10 @@ export class GmailProviderAdapter implements ProviderAdapter {
       method: 'POST', body: JSON.stringify(draft ? { message: { raw: desired.raw } } : { raw: desired.raw }),
     }, true);
     const id = this.id(created.id, true);
-    const readback = await this.api(`${draft ? 'drafts' : 'messages'}/${id}?format=full`, credential);
+    let readback: Record<string, unknown>;
+    try { readback = await this.api(`${draft ? 'drafts' : 'messages'}/${id}?format=full`, credential); }
+    // A GET rejection says nothing about the already submitted mutation.
+    catch { throw new ProviderRuntimeError('OUTCOME_UNKNOWN', 'AFTER_DISPATCH'); }
     const actual = normalizeMessage(draft ? readback.message as Record<string, unknown> : readback, true);
     return { ok: true, data: { messageId: actual.messageId, ...(draft ? { draftId: id } : {}),
       verificationEvidence: readbackEvidence(actual, desired, draft ? 'DRAFT' : 'SENT') } };

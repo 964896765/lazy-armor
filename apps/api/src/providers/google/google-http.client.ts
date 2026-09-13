@@ -2,13 +2,18 @@ import { ProviderRuntimeError, type ProviderRuntimeErrorCode } from '@lazy-armor
 
 export type GoogleTransport = (url: string, init: RequestInit) => Promise<Response>;
 export const GOOGLE_TRANSPORT = Symbol('GOOGLE_TRANSPORT');
-const allowedOrigins = new Set(['https://oauth2.googleapis.com', 'https://gmail.googleapis.com']);
+const allowedOrigins = new Set(['https://oauth2.googleapis.com', 'https://gmail.googleapis.com', 'https://www.googleapis.com']);
 const codes: Record<string, ProviderRuntimeErrorCode> = {
   invalid_grant: 'AUTH_REVOKED', invalid_token: 'AUTH_EXPIRED', insufficientPermissions: 'SCOPE_MISSING',
   authError: 'AUTH_EXPIRED', rateLimitExceeded: 'RATE_LIMITED', userRateLimitExceeded: 'RATE_LIMITED',
   dailyLimitExceeded: 'QUOTA_EXCEEDED', quotaExceeded: 'QUOTA_EXCEEDED', notFound: 'RESOURCE_NOT_FOUND',
   forbidden: 'PERMISSION_DENIED', backendError: 'PROVIDER_UNAVAILABLE',
+  duplicate: 'PERMISSION_DENIED', conditionNotMet: 'PERMISSION_DENIED', gone: 'RESOURCE_NOT_FOUND',
 };
+export class GoogleApiError extends ProviderRuntimeError {
+  constructor(code: ProviderRuntimeErrorCode, retryAfterMs: number | null, definitiveNoEffect: boolean,
+    readonly httpStatus: number, readonly providerReason: string) { super(code, 'AFTER_DISPATCH', retryAfterMs, definitiveNoEffect); }
+}
 
 // Fixed Google origins only. Tests inject transport, never alternate production URLs.
 // No implicit retries: especially token exchange, refresh, revoke and Gmail writes.
@@ -17,6 +22,7 @@ export class GoogleHttpClient {
   async request(url: string, init: RequestInit = {}, write = false): Promise<Record<string, unknown>> {
     const target = new URL(url);
     if (!allowedOrigins.has(target.origin) || target.username || target.password || target.hash) throw new ProviderRuntimeError('PERMISSION_DENIED', 'BEFORE_DISPATCH');
+    if (target.origin === 'https://www.googleapis.com' && !target.pathname.startsWith('/calendar/v3/')) throw new ProviderRuntimeError('PERMISSION_DENIED', 'BEFORE_DISPATCH');
     let response: Response;
     try { response = await this.transport(url, { ...init, redirect: 'error', signal: AbortSignal.timeout(this.timeoutMs) }); }
     catch (error) { throw new ProviderRuntimeError(error instanceof Error && ['AbortError', 'TimeoutError'].includes(error.name) ? 'TIMEOUT' : 'NETWORK_ERROR', 'AFTER_DISPATCH'); }
@@ -38,7 +44,7 @@ export class GoogleHttpClient {
       const date = header ? Date.parse(header) - Date.now() : NaN;
       const retryAfter = Number.isFinite(seconds) ? seconds * 1000 : Number.isFinite(date) && date > 0 ? date : null;
       // An authenticated explicit 4xx rejection is definitive; transport/5xx is not.
-      throw new ProviderRuntimeError(code, 'AFTER_DISPATCH', retryAfter, response.status >= 400 && response.status < 500 && response.status !== 408);
+      throw new GoogleApiError(code, retryAfter, response.status >= 400 && response.status < 500 && response.status !== 408, response.status, reason);
     }
     return data;
   }

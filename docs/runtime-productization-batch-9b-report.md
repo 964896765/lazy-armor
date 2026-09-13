@@ -1,6 +1,6 @@
 # Batch 9B — Gmail 非 Secret 实现与隔离回归报告
 
-日期：2026-09-13；基线 main@87da4ed。状态：非 Secret 实现与完整本地门禁通过；提交自己的远端门禁待验；**真实 Gmail 账号验收未通过，9B 尚未关闭**。
+日期：2026-09-13；基线 main@87da4ed。状态：非 Secret 实现与完整本地门禁通过；main@fb57464 自己的远端门禁全部通过；**真实 Gmail 账号验收未通过，9B 尚未关闭**。
 
 ## 已实现
 
@@ -42,3 +42,12 @@ Repository hygiene **624 tracked files OK**、Production data-truth **passed**�
 Secret 通过安全本地配置/secret manager 注入，不粘贴聊天、不提交 Git。回调 URI 必须精确 `/api/providers/google/oauth/gmail/callback`，部署 HTTPS ingress 需显式 trusted proxy allowlist。之后跑 OAuth/refresh/Scope/真实读取/测试草稿/测试发送/revoke/429/断网/unknown/write-readback 全部验收，再关闭 9B。
 
 缺 Secret 仅暂停该真实账户验收链；不再把它解释成停止非 Secret 开发。Calendar 已开始官方接口核对与接入设计，见 [9C design](./runtime-productization-batch-9c-design.md)，不是实现完成或真实账号验收；继续复用 GoogleOAuthClient 和同一公共 Provider Runtime，不重造认证、Execution、Truth、Risk 或 Verification。
+
+## 自己的远端门禁与后续安全回归
+
+main@fb57464acc320522e928dc6890406faa83d29d07 的 [release-candidate-ci #65](https://github.com/964896765/lazy-armor/actions/runs/34740518418) 已独立核验：Fast Gate（103679325066）、RC Full Gate（103679585709）、Android Verification（103679585715）全部 success。RC Full 含 MySQL 8.4 Migration / Integration / Backup-Restore；Android Candidate 属于编译与既定隔离门禁，不等于 Google 真账号或 Android 真机验收。
+
+- MySQL artifact 10312585006：`mysql84-migration-evidence-fb57464acc320522e928dc6890406faa83d29d07`；digest `sha256:20ac30a47076c4b5efa26b995e031c6a7e126ab01393a128fb682219dfd5ba97`。
+- Android artifact 10312493660：`android-verification-fb57464acc320522e928dc6890406faa83d29d07`；digest `sha256:41f18eea7bc722e0e3710247524ba50e786dbf2cd7ef9a2d06fa8c0e32a9b218`。
+
+9C 接入时修正 Gmail 写后读取 403/404 的安全分类：读失败不代表已完成的 POST 无副作用，必须 OUTCOME_UNKNOWN/AFTER_DISPATCH/definitiveNoEffect=false。新增实际 Adapter 单元回归（Gmail unit 现在 13 项），保留既有 Manifest revision 2 / Evidence revision 1 / Policy revision 1 不变。真实 Gmail 仍 NOT_VERIFIED，不能因为 #65 成功关闭 9B。

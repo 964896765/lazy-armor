@@ -73,6 +73,13 @@ describe('Gmail isolated provider contract (not real account acceptance)', () =>
     await expect(adapter.execute(request)).rejects.toMatchObject({ code: 'PROVIDER_UNAVAILABLE', phase: 'AFTER_DISPATCH' });
     expect(transport).toHaveBeenCalledTimes(1);
   });
+  it('preserves possible side effects when write succeeds but read-back is rejected', async () => {
+    const transport = vi.fn(async (_url: string, init: RequestInit) => init.method === 'POST' ? json({ id: 'message1' })
+      : json({ error: { errors: [{ reason: 'forbidden' }] } }, 403)); const http = new GoogleHttpClient(transport);
+    const adapter = new GmailProviderAdapter(new GoogleOAuthClient(config, http, []), http);
+    await expect(adapter.execute(request)).rejects.toMatchObject({ code: 'OUTCOME_UNKNOWN', phase: 'AFTER_DISPATCH', definitiveNoEffect: false });
+    expect(transport.mock.calls.filter(([, init]) => init.method === 'POST')).toHaveLength(1);
+  });
   it('does not mistake mismatched content for success', async () => {
     const changed = message(); changed.payload.body.data = Buffer.from('different').toString('base64url');
     const http = new GoogleHttpClient(async (_url, init) => json(init.method === 'POST' ? { id: 'message1' } : changed));

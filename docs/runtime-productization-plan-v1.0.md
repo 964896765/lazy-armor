@@ -23,8 +23,9 @@
 | Batch 7 — Risk / Approval / Execution Integration | 已完成 | [runtime-productization-batch-7-report.md](./runtime-productization-batch-7-report.md) |
 | Batch 8 — Verification / Result / Reconciliation | 已完成 | [runtime-productization-batch-8-report.md](./runtime-productization-batch-8-report.md) |
 | Batch 9A — Provider Runtime Common Layer | 已完成；main@87da4ed 同提交远端三项 CI 全部成功 | [runtime-productization-batch-9a-report.md](./runtime-productization-batch-9a-report.md) |
-| Batch 9B — Gmail Real Integration | 非 Secret 实现与专项 25 项通过；Full API 487 passed/4 skipped、Monorepo 16/16、build/typecheck 8/8；同提交远端待验；真实账号验收缺 Secret，尚未关闭 9B | [runtime-productization-batch-9b-report.md](./runtime-productization-batch-9b-report.md) |
-| Batch 9C — Google Calendar | 已开始官方接口核对与接入设计；实现/账号验收未完成 | [runtime-productization-batch-9c-design.md](./runtime-productization-batch-9c-design.md) |
+| Batch 9B — Gmail Real Integration | main@fb57464 自己的远端 #65 Fast/RC Full/Android 全部成功；Full API 487 passed/4 skipped、Monorepo 16/16；真实账号验收缺 Secret，尚未关闭 9B；后续安全回归见报告 | [runtime-productization-batch-9b-report.md](./runtime-productization-batch-9b-report.md) |
+| Batch 9C — Google Calendar | 非 Secret 实现与完整本地门禁通过；专项 49 项、Full API 511 passed/4 skipped、Monorepo 16/16、build/typecheck 8/8；同提交远端待验；真实账号验收未执行，9C/9F 不关闭 | [runtime-productization-batch-9c-report.md](./runtime-productization-batch-9c-report.md) |
+| Batch 9D — GitHub | 已开始官方 OAuth/Token 权限、5 Capability、限流与签名 Webhook 接入设计；Adapter 实现/真实账号验收尚未完成 | [runtime-productization-batch-9d-design.md](./runtime-productization-batch-9d-design.md) |
 
 2026-09-13 用户显式修订 Secret 边界，见 [执行修订](./runtime-productization-execution-revision-2026-09-13.md)。9B 非 Secret 开发持续执行；真实账号授权与 Journey 验收缺口单独记录，不得以此停掉整个开发。
 

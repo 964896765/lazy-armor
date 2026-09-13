@@ -144,6 +144,10 @@ for (const scenario of SCENARIO_DEFINITIONS) {
   }
 }
 export const FACT_SCHEMA_CATALOG: readonly FactSchemaDefinition[] = Object.freeze([...factMap.values(),
+  Object.freeze({ schemaVersion: '1' as const, key: 'calendar_event.schedule', resourceType: 'CalendarEvent', field: 'schedule', valueType: 'object_ref' as const,
+    unit: null, nullable: false, enumValues: Object.freeze([]), freshnessTtlSeconds: 300,
+    semanticIdentity: Object.freeze(['connection_id', 'calendar_id', 'event_id']), sensitivity: 'SENSITIVE' as const, minimumReality: 'OBSERVED' as const,
+    acceptedVerificationMethods: Object.freeze(['SOURCE_EVIDENCE', 'USER_CONFIRMATION', 'READ_BACK']), revision: 1, status: 'ACTIVE' as const }),
   ...['metadata', 'body', 'labels'].map((field): FactSchemaDefinition => Object.freeze({ schemaVersion: '1', key: `email_message.${field}`,
     resourceType: 'EmailMessage', field, valueType: 'object_ref', unit: null, nullable: false, enumValues: Object.freeze([]),
     freshnessTtlSeconds: 86400, semanticIdentity: Object.freeze(['connection_id', 'message_id', 'field']), sensitivity: 'SENSITIVE',

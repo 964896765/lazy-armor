@@ -759,7 +759,7 @@ export class ConnectionsService {
       await tx.update(connections).set({ status, statusReason: connectorError.message, lastErrorCode: connectorError.code, updatedAt: now })
         .where(eq(connections.id, connectionId));
       const catalog = (await tx.select({ key: connectors.key }).from(connectors).where(eq(connectors.id, current.connectorId)))[0];
-      if (catalog?.key === 'gmail' && this.registry.get('gmail').metadata().version === '0.2.0') {
+      if (catalog && ['gmail', 'google_calendar'].includes(catalog.key) && this.registry.get(catalog.key).metadata().version === '0.2.0') {
         const healthStatus = connectorError.providerCode === 'SCOPE_MISSING' ? 'PERMISSION_REVOKED'
           : status === 'degraded' ? 'RATE_LIMITED' : status === 'reauthorization_required' ? 'REAUTHORIZATION_REQUIRED' : 'PROVIDER_UNAVAILABLE';
         await tx.update(providerCapabilityHealth).set({ status: healthStatus, checkedAt: now, validUntil: now,

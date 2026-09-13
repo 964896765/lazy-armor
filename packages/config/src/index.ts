@@ -21,6 +21,7 @@ const envSchema = z.object({
   GMAIL_OAUTH_CLIENT_ID: z.string().trim().optional(),
   GMAIL_OAUTH_CLIENT_SECRET: z.string().trim().optional(),
   GMAIL_OAUTH_REDIRECT_URI: z.string().trim().optional(),
+  GOOGLE_CALENDAR_OAUTH_REDIRECT_URI: z.string().trim().optional(),
   TRUSTED_PROXY_CIDRS: z.string().optional().refine((value) => !value || value.split(',').every((entry) => {
     const [ip, mask, extra] = entry.trim().split('/'); const family = isIP(ip);
     return !extra && family > 0 && (mask === undefined || (/^\d+$/.test(mask) && Number(mask) > 0 && Number(mask) <= (family === 4 ? 32 : 128)));
@@ -53,6 +54,7 @@ export type AppEnv = Omit<z.infer<typeof envSchema>, 'APP_ENV'> & { APP_ENV: Dep
 export const parseEnv = (input: NodeJS.ProcessEnv): AppEnv => {
   const parsed = envSchema.parse(input);
   resolveGmailOAuthConfig(parsed);
+  resolveGoogleCalendarOAuthConfig(parsed);
   return {
     ...parsed,
     APP_ENV: parsed.APP_ENV ?? (parsed.NODE_ENV === 'production' ? 'production' : 'development'),
@@ -61,6 +63,19 @@ export const parseEnv = (input: NodeJS.ProcessEnv): AppEnv => {
 
 export interface GoogleOAuthConfig { clientId: string; clientSecret: string; redirectUri: string }
 export const GMAIL_CALLBACK_PATH = '/api/providers/google/oauth/gmail/callback';
+export const GOOGLE_CALENDAR_CALLBACK_PATH = '/api/providers/google/oauth/calendar/callback';
+
+export function resolveGoogleCalendarOAuthConfig(input: Pick<AppEnv, 'GMAIL_OAUTH_CLIENT_ID' | 'GMAIL_OAUTH_CLIENT_SECRET' | 'GMAIL_OAUTH_REDIRECT_URI' | 'GOOGLE_CALENDAR_OAUTH_REDIRECT_URI'>): GoogleOAuthConfig | null {
+  const redirectUri = input.GOOGLE_CALENDAR_OAUTH_REDIRECT_URI?.trim();
+  if (!redirectUri) return null;
+  const shared = resolveGmailOAuthConfig(input);
+  if (!shared) throw new Error('Calendar requires the existing Google OAuth client configuration');
+  let url: URL;
+  try { url = new URL(redirectUri); } catch { throw new Error('Invalid GOOGLE_CALENDAR_OAUTH_REDIRECT_URI'); }
+  if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash || url.pathname !== GOOGLE_CALENDAR_CALLBACK_PATH
+    || ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)) throw new Error('GOOGLE_CALENDAR_OAUTH_REDIRECT_URI must use HTTPS and the registered backend callback path');
+  return { ...shared, redirectUri };
+}
 
 // All absent means disabled, never fixture fallback. Partial/unsafe configuration
 // fails before any external I/O; error messages contain names only, not secrets.

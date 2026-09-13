@@ -16,8 +16,9 @@ import {
 import { ConnectorCatalogSyncService } from './connector-catalog-sync.service';
 import { ConnectorsController } from './connectors.controller';
 import { ConnectorsService } from './connectors.service';
-import { resolveGmailOAuthConfig } from '@lazy-armor/config';
+import { resolveGmailOAuthConfig, resolveGoogleCalendarOAuthConfig } from '@lazy-armor/config';
 import { DisabledGmailConnector } from '../providers/gmail/disabled-gmail.connector';
+import { DisabledGoogleCalendarConnector } from '../providers/calendar/disabled-calendar.connector';
 
 export const CONNECTOR_REGISTRY = 'CONNECTOR_REGISTRY';
 
@@ -33,7 +34,9 @@ export function createConnectorRegistry(env: NodeJS.ProcessEnv = process.env) {
   const gmail = resolveGmailOAuthConfig({ GMAIL_OAUTH_CLIENT_ID: env.GMAIL_OAUTH_CLIENT_ID,
     GMAIL_OAUTH_CLIENT_SECRET: env.GMAIL_OAUTH_CLIENT_SECRET, GMAIL_OAUTH_REDIRECT_URI: env.GMAIL_OAUTH_REDIRECT_URI });
   if (!gmail) registry.register(env.NODE_ENV === 'test' ? new GmailConnector() : new DisabledGmailConnector());
-  registry.register(new GoogleCalendarConnector());
+  const calendar = resolveGoogleCalendarOAuthConfig({ GMAIL_OAUTH_CLIENT_ID: env.GMAIL_OAUTH_CLIENT_ID, GMAIL_OAUTH_CLIENT_SECRET: env.GMAIL_OAUTH_CLIENT_SECRET,
+    GMAIL_OAUTH_REDIRECT_URI: env.GMAIL_OAUTH_REDIRECT_URI, GOOGLE_CALENDAR_OAUTH_REDIRECT_URI: env.GOOGLE_CALENDAR_OAUTH_REDIRECT_URI });
+  if (!calendar) registry.register(env.NODE_ENV === 'test' ? new GoogleCalendarConnector() : new DisabledGoogleCalendarConnector());
   registry.register(new FileProviderConnector());
   registry.register(new LogisticsProviderConnector());
   registry.register(new ContentProviderConnector());

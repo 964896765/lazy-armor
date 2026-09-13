@@ -44,6 +44,7 @@ import { RuntimeCatalogModule } from './runtime-catalog/runtime-catalog.module';
 import { AppReadSessionsModule } from './app-read-sessions/app-read-sessions.module';
 import { ProviderRuntimeModule } from './provider-runtime/provider-runtime.module';
 import { GmailModule } from './providers/gmail/gmail.module';
+import { GoogleCalendarModule } from './providers/calendar/calendar.module';
 
 @Module({
   imports: [
@@ -85,6 +86,7 @@ import { GmailModule } from './providers/gmail/gmail.module';
     ProviderCapabilitiesModule,
     ProviderRuntimeModule,
     GmailModule,
+    GoogleCalendarModule,
     RuntimeCatalogModule,
     AppReadSessionsModule,
     PlansModule,

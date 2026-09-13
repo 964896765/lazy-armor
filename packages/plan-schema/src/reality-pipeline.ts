@@ -2,13 +2,13 @@ import { createHash } from 'node:crypto';
 import { canonicalStringify, type JsonValue } from './index';
 
 export const SOURCE_MODES = ['OFFICIAL_API', 'WEBHOOK', 'NOTIFICATION', 'SHARE', 'FILE', 'MANUAL', 'INTERNAL'] as const;
-export const PARSER_KEYS = ['generic.transaction.v1', 'generic.shipment-status.v1', 'generic.connection-health.v1', 'mobile-notification-billing.v1', 'generic.email-message.v1'] as const;
+export const PARSER_KEYS = ['generic.transaction.v1', 'generic.shipment-status.v1', 'generic.connection-health.v1', 'mobile-notification-billing.v1', 'generic.email-message.v1', 'generic.calendar-event.v1'] as const;
 export type SourceMode = typeof SOURCE_MODES[number];
 export type ParserKey = typeof PARSER_KEYS[number];
 
 export const REALITY_ADAPTER_REGISTRY = Object.freeze([
   ...PARSER_KEYS.map((key) => Object.freeze({ key, kind: 'PARSER' as const, revision: 1 as const, status: 'ACTIVE' as const })),
-  ...['money.v1', 'shipment-status.v1', 'connection-health.v1', 'email-message.v1'].map((key) => Object.freeze({ key, kind: 'NORMALIZER' as const, revision: 1 as const, status: 'ACTIVE' as const })),
+  ...['money.v1', 'shipment-status.v1', 'connection-health.v1', 'email-message.v1', 'calendar-event.v1'].map((key) => Object.freeze({ key, kind: 'NORMALIZER' as const, revision: 1 as const, status: 'ACTIVE' as const })),
 ]);
 
 export interface SourceObservationInput {
@@ -19,10 +19,10 @@ export interface SourceObservationInput {
 }
 
 export interface NormalizedFactDraft {
-  resourceType: 'finance.transaction' | 'shipment' | 'digital_account.connection' | 'EmailMessage';
-  resourceKey: string; subjectKey: string; factKey: 'finance.transaction.amount' | 'shipment.status' | 'digital_account.connection.health' | 'email_message.metadata' | 'email_message.body' | 'email_message.labels';
+  resourceType: 'finance.transaction' | 'shipment' | 'digital_account.connection' | 'EmailMessage' | 'CalendarEvent';
+  resourceKey: string; subjectKey: string; factKey: 'finance.transaction.amount' | 'shipment.status' | 'digital_account.connection.health' | 'email_message.metadata' | 'email_message.body' | 'email_message.labels' | 'calendar_event.schedule';
   value: Record<string, JsonValue>; confidence: number; normalizerKey: string;
-  freshnessPolicyKey: 'transaction.default' | 'shipment.status' | 'connection.health' | 'email.message';
+  freshnessPolicyKey: 'transaction.default' | 'shipment.status' | 'connection.health' | 'email.message' | 'calendar.event';
   conflictPolicyKey: 'latest_verified_then_observed';
   compatibilityResourceKey?: string;
 }
@@ -38,6 +38,7 @@ export const REALITY_POLICY_REGISTRY: readonly RealityPolicyDefinition[] = Objec
   policy('shipment.status', 'FRESHNESS', { ttlSeconds: 86400, onStale: 'refresh' }),
   policy('connection.health', 'FRESHNESS', { ttlSeconds: 300, onStale: 'refresh' }),
   policy('email.message', 'FRESHNESS', { ttlSeconds: 86400, onStale: 'refresh' }),
+  policy('calendar.event', 'FRESHNESS', { ttlSeconds: 300, onStale: 'refresh' }),
   policy('latest_verified_then_observed', 'CONFLICT', { order: ['verificationLevel', 'occurredAt', 'observedAt'], unresolved: 'block' }),
 ]);
 
@@ -49,6 +50,18 @@ const requireInteger = (payload: Record<string, JsonValue>, key: string) => {
 };
 
 export function parseAndNormalizeObservation(input: SourceObservationInput): NormalizedFactDraft[] {
+  if (input.parserKey === 'generic.calendar-event.v1') {
+    if (!input.connectionId) throw new Error('Calendar observation requires connectionId');
+    const id = requireString(input.payload, 'eventId'); const calendarId = requireString(input.payload, 'calendarId');
+    if (typeof input.payload.title !== 'string' || !input.payload.start || typeof input.payload.start !== 'object'
+      || !input.payload.end || typeof input.payload.end !== 'object' || !Array.isArray(input.payload.attendees)
+      || !input.payload.attendees.every((v) => typeof v === 'string')) throw new Error('Invalid calendar event');
+    const subjectKey = `${input.connectionId}:${calendarId}:${id}`;
+    return [{ resourceType: 'CalendarEvent', resourceKey: subjectKey, subjectKey, factKey: 'calendar_event.schedule',
+      value: { eventId: id, calendarId, title: input.payload.title, start: input.payload.start, end: input.payload.end,
+        attendees: input.payload.attendees, status: requireString(input.payload, 'status'), etag: requireString(input.payload, 'etag'), updatedAt: requireString(input.payload, 'updatedAt') },
+      confidence: 1, normalizerKey: 'calendar-event.v1', freshnessPolicyKey: 'calendar.event', conflictPolicyKey: 'latest_verified_then_observed' }];
+  }
   if (input.parserKey === 'generic.email-message.v1') {
     if (!input.connectionId) throw new Error('Email observation requires connectionId');
     const id = requireString(input.payload, 'messageId');
