@@ -282,6 +282,8 @@ export const oauthAuthorizationStates = mysqlTable('oauth_authorization_states',
   codeVerifier: varchar('code_verifier', { length: 255 }),
   expiresAt: datetime('expires_at', { mode: 'date', fsp: 6 }).notNull(),
   consumedAt: datetime('consumed_at', { mode: 'date', fsp: 6 }),
+  completionStatus: varchar('completion_status', { length: 32 }),
+  failureCode: varchar('failure_code', { length: 80 }),
   createdAt: datetime('created_at', { mode: 'date', fsp: 6 }).notNull(),
   updatedAt: datetime('updated_at', { mode: 'date', fsp: 6 }).notNull(),
 }, (table) => [

@@ -20,7 +20,7 @@ describe('Batch 7/8 forward migration contracts', () => {
     await migrate(db, { migrationsFolder: folder });
     const [after] = await pool.query<RowDataPacket[]>('SELECT id, hash, created_at FROM __drizzle_migrations ORDER BY id');
     expect(after).toEqual(before);
-    for (const file of ['0042_action_runtime_integration.sql', '0043_action_adapter_resolution.sql', '0044_verification_reconciliation.sql', '0045_provider_runtime_common.sql']) {
+    for (const file of ['0042_action_runtime_integration.sql', '0043_action_adapter_resolution.sql', '0044_verification_reconciliation.sql', '0045_provider_runtime_common.sql', '0046_google_oauth_completion.sql']) {
       const source = readFileSync(resolve(folder, file), 'utf8');
       expect(source).not.toMatch(/\b(?:DROP|TRUNCATE)\b/i);
       const hash = createHash('sha256').update(source).digest('hex');
@@ -47,5 +47,10 @@ describe('Batch 7/8 forward migration contracts', () => {
     expect(keys.every((row) => (row.DELETE_RULE ?? row.delete_rule) === 'RESTRICT')).toBe(true);
     const [indices] = await pool.query<RowDataPacket[]>("SELECT index_name FROM information_schema.statistics WHERE table_schema=DATABASE() AND non_unique=0 AND index_name IN ('provider_runtime_policy_revision_uq','provider_official_evidence_revision_uq') GROUP BY index_name");
     expect(indices).toHaveLength(2);
+  });
+  it('extends existing OAuth attempts with nullable completion metadata without rewriting historical states', async () => {
+    const [columns] = await pool.query<RowDataPacket[]>("SELECT is_nullable FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='oauth_authorization_states' AND column_name IN ('completion_status','failure_code')");
+    expect(columns).toHaveLength(2);
+    expect(columns.every((row) => (row.IS_NULLABLE ?? row.is_nullable) === 'YES')).toBe(true);
   });
 });

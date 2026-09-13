@@ -96,7 +96,7 @@ describe.sequential('P2-0 provider capability matrix', () => {
   it('keeps connector catalog and capability rows synchronized in the database', async () => {
     const [providerRows] = await pool.query<any[]>("SELECT connector_key, provider_type, production_status, authentication_type FROM connectors WHERE connector_key IN ('gmail','google_calendar','content_provider') ORDER BY connector_key");
     expect(providerRows).toHaveLength(3);
-    const [capabilityRows] = await pool.query<any[]>("SELECT capability_key, provider_availability, retry_safety FROM connector_capabilities cc JOIN connectors c ON c.id = cc.connector_id WHERE c.connector_key='gmail' ORDER BY capability_key");
+    const [capabilityRows] = await pool.query<any[]>("SELECT capability_key, provider_availability, retry_safety FROM connector_capabilities cc JOIN connectors c ON c.id = cc.connector_id WHERE c.connector_key='gmail' AND cc.provider_availability<>'disabled' ORDER BY capability_key");
     expect(capabilityRows.map((row) => row.capability_key)).toEqual(['CREATE_DRAFT', 'READ_EMAIL', 'READ_EMAIL_METADATA']);
     expect(capabilityRows.every((row) => typeof row.provider_availability === 'string' && typeof row.retry_safety === 'string')).toBe(true);
   });

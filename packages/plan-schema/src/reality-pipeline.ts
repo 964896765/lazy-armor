@@ -2,13 +2,13 @@ import { createHash } from 'node:crypto';
 import { canonicalStringify, type JsonValue } from './index';
 
 export const SOURCE_MODES = ['OFFICIAL_API', 'WEBHOOK', 'NOTIFICATION', 'SHARE', 'FILE', 'MANUAL', 'INTERNAL'] as const;
-export const PARSER_KEYS = ['generic.transaction.v1', 'generic.shipment-status.v1', 'generic.connection-health.v1', 'mobile-notification-billing.v1'] as const;
+export const PARSER_KEYS = ['generic.transaction.v1', 'generic.shipment-status.v1', 'generic.connection-health.v1', 'mobile-notification-billing.v1', 'generic.email-message.v1'] as const;
 export type SourceMode = typeof SOURCE_MODES[number];
 export type ParserKey = typeof PARSER_KEYS[number];
 
 export const REALITY_ADAPTER_REGISTRY = Object.freeze([
   ...PARSER_KEYS.map((key) => Object.freeze({ key, kind: 'PARSER' as const, revision: 1 as const, status: 'ACTIVE' as const })),
-  ...['money.v1', 'shipment-status.v1', 'connection-health.v1'].map((key) => Object.freeze({ key, kind: 'NORMALIZER' as const, revision: 1 as const, status: 'ACTIVE' as const })),
+  ...['money.v1', 'shipment-status.v1', 'connection-health.v1', 'email-message.v1'].map((key) => Object.freeze({ key, kind: 'NORMALIZER' as const, revision: 1 as const, status: 'ACTIVE' as const })),
 ]);
 
 export interface SourceObservationInput {
@@ -19,10 +19,10 @@ export interface SourceObservationInput {
 }
 
 export interface NormalizedFactDraft {
-  resourceType: 'finance.transaction' | 'shipment' | 'digital_account.connection';
-  resourceKey: string; subjectKey: string; factKey: 'finance.transaction.amount' | 'shipment.status' | 'digital_account.connection.health';
+  resourceType: 'finance.transaction' | 'shipment' | 'digital_account.connection' | 'EmailMessage';
+  resourceKey: string; subjectKey: string; factKey: 'finance.transaction.amount' | 'shipment.status' | 'digital_account.connection.health' | 'email_message.metadata' | 'email_message.body' | 'email_message.labels';
   value: Record<string, JsonValue>; confidence: number; normalizerKey: string;
-  freshnessPolicyKey: 'transaction.default' | 'shipment.status' | 'connection.health';
+  freshnessPolicyKey: 'transaction.default' | 'shipment.status' | 'connection.health' | 'email.message';
   conflictPolicyKey: 'latest_verified_then_observed';
   compatibilityResourceKey?: string;
 }
@@ -37,6 +37,7 @@ export const REALITY_POLICY_REGISTRY: readonly RealityPolicyDefinition[] = Objec
   policy('transaction.default', 'FRESHNESS', { ttlSeconds: 31536000, onStale: 'retain_historical' }),
   policy('shipment.status', 'FRESHNESS', { ttlSeconds: 86400, onStale: 'refresh' }),
   policy('connection.health', 'FRESHNESS', { ttlSeconds: 300, onStale: 'refresh' }),
+  policy('email.message', 'FRESHNESS', { ttlSeconds: 86400, onStale: 'refresh' }),
   policy('latest_verified_then_observed', 'CONFLICT', { order: ['verificationLevel', 'occurredAt', 'observedAt'], unresolved: 'block' }),
 ]);
 
@@ -48,6 +49,21 @@ const requireInteger = (payload: Record<string, JsonValue>, key: string) => {
 };
 
 export function parseAndNormalizeObservation(input: SourceObservationInput): NormalizedFactDraft[] {
+  if (input.parserKey === 'generic.email-message.v1') {
+    if (!input.connectionId) throw new Error('Email observation requires connectionId');
+    const id = requireString(input.payload, 'messageId');
+    const emailSubject = `${input.connectionId}:${id}`;
+    if (typeof input.payload.subject !== 'string' || typeof input.payload.from !== 'string'
+      || !Array.isArray(input.payload.to) || !input.payload.to.every((v) => typeof v === 'string')
+      || !Array.isArray(input.payload.labels) || !input.payload.labels.every((v) => typeof v === 'string')) throw new Error('Invalid email metadata');
+    const draft = (factKey: NormalizedFactDraft['factKey'], value: Record<string, JsonValue>): NormalizedFactDraft => ({
+      resourceType: 'EmailMessage', resourceKey: emailSubject, subjectKey: emailSubject, factKey, value, confidence: 1,
+      normalizerKey: 'email-message.v1', freshnessPolicyKey: 'email.message', conflictPolicyKey: 'latest_verified_then_observed' });
+    const facts = [draft('email_message.metadata', { messageId: id, subject: input.payload.subject, from: input.payload.from,
+      to: input.payload.to, occurredAt: requireString(input.payload, 'occurredAt') }), draft('email_message.labels', { labels: input.payload.labels })];
+    if (typeof input.payload.plainText === 'string') facts.push(draft('email_message.body', { plainText: input.payload.plainText }));
+    return facts;
+  }
   const subjectKey = typeof input.payload.subjectKey === 'string' && input.payload.subjectKey ? input.payload.subjectKey : input.externalEventKey;
   if (input.parserKey === 'generic.transaction.v1' || input.parserKey === 'mobile-notification-billing.v1') {
     const amountMinor = requireInteger(input.payload, 'amountMinor');

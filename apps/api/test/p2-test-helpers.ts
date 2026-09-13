@@ -14,7 +14,7 @@ export interface Session {
 
 export const auth = (token: string) => ({ authorization: `Bearer ${token}` });
 
-export async function bootP2App(unique: string): Promise<{ app: INestApplication; worker: ExecutionWorker; pool: Pool }> {
+export async function bootP2App(unique: string, overrides: Array<{ token: symbol; value: unknown }> = []): Promise<{ app: INestApplication; worker: ExecutionWorker; pool: Pool }> {
   process.env.NODE_ENV = 'test';
   process.env.DATABASE_URL ??= 'mysql://lazy_armor:lazy_armor_dev@127.0.0.1:3307/lazy_armor_test';
   process.env.REDIS_URL ??= 'redis://127.0.0.1:6379';
@@ -24,7 +24,9 @@ export async function bootP2App(unique: string): Promise<{ app: INestApplication
   process.env.SUBSCRIPTION_BILLING_PROVIDER = 'sandbox';
   process.env.SUBSCRIPTION_BILLING_SANDBOX_WEBHOOK_SECRET = 'test-sandbox-subscription-webhook-secret';
   const { AppModule } = await import('../src/app.module');
-  const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+  const builder = Test.createTestingModule({ imports: [AppModule] });
+  for (const override of overrides) builder.overrideProvider(override.token).useValue(override.value);
+  const moduleRef = await builder.compile();
   const app = moduleRef.createNestApplication({ bodyParser: false });
   const captureRawBody = (req: import('express').Request, _res: import('express').Response, body: Buffer) => {
     (req as import('express').Request & { rawBody?: Buffer }).rawBody = Buffer.from(body);

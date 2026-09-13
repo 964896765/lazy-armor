@@ -61,7 +61,7 @@ describe.sequential('P2 consumer connector public contract', () => {
       connector.capabilities().map((capability) => capability.key).sort(),
     ]));
     const [rows] = await pool.query<RowDataPacket[]>(
-      'SELECT c.connector_key, cc.capability_key FROM connectors c JOIN connector_capabilities cc ON cc.connector_id=c.id ORDER BY c.connector_key, cc.capability_key',
+      'SELECT c.connector_key, cc.capability_key, cc.provider_availability FROM connectors c JOIN connector_capabilities cc ON cc.connector_id=c.id ORDER BY c.connector_key, cc.capability_key',
     );
     const databaseMatrix = new Map<string, string[]>();
     for (const row of rows) {
@@ -73,7 +73,10 @@ describe.sequential('P2 consumer connector public contract', () => {
     for (const provider of response.body as Array<{ key: string; capabilities: Array<{ key: string }> }>) {
       const publicKeys = provider.capabilities.map((capability) => capability.key).sort();
       expect(publicKeys).toEqual(registryMatrix.get(provider.key));
-      expect(publicKeys).toEqual(databaseMatrix.get(provider.key));
+      const persisted = databaseMatrix.get(provider.key) ?? [];
+      expect(persisted).toEqual(expect.arrayContaining(publicKeys));
+      const retired = rows.filter((row) => row.connector_key === provider.key && !publicKeys.includes(row.capability_key as string));
+      expect(retired.every((row) => row.provider_availability === 'disabled')).toBe(true);
     }
     const logistics = response.body.find((provider: { key: string }) => provider.key === 'logistics_provider');
     expect(logistics.capabilities.map((capability: { key: string }) => capability.key)).toContain('READ_TRACKING');

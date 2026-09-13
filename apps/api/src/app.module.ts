@@ -43,6 +43,7 @@ import { ProviderCapabilitiesModule } from './provider-capabilities/provider-cap
 import { RuntimeCatalogModule } from './runtime-catalog/runtime-catalog.module';
 import { AppReadSessionsModule } from './app-read-sessions/app-read-sessions.module';
 import { ProviderRuntimeModule } from './provider-runtime/provider-runtime.module';
+import { GmailModule } from './providers/gmail/gmail.module';
 
 @Module({
   imports: [
@@ -83,6 +84,7 @@ import { ProviderRuntimeModule } from './provider-runtime/provider-runtime.modul
     CapabilityResolverModule,
     ProviderCapabilitiesModule,
     ProviderRuntimeModule,
+    GmailModule,
     RuntimeCatalogModule,
     AppReadSessionsModule,
     PlansModule,

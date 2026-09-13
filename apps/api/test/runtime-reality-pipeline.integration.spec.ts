@@ -31,12 +31,12 @@ describe.sequential('runtime productization batch 3 reality pipeline', { timeout
       pool.query<RowDataPacket[]>('SELECT policy_kind, COUNT(*) total FROM reality_policy_definitions GROUP BY policy_kind'),
     ]);
     expect(adapters).toEqual(expect.arrayContaining([
-      expect.objectContaining({ adapter_kind: 'PARSER', total: 4 }),
-      expect.objectContaining({ adapter_kind: 'NORMALIZER', total: 3 }),
+      expect.objectContaining({ adapter_kind: 'PARSER', total: 5 }),
+      expect.objectContaining({ adapter_kind: 'NORMALIZER', total: 4 }),
     ]));
     expect(policies).toEqual(expect.arrayContaining([
       expect.objectContaining({ policy_kind: 'DEDUPE', total: 1 }),
-      expect.objectContaining({ policy_kind: 'FRESHNESS', total: 3 }),
+      expect.objectContaining({ policy_kind: 'FRESHNESS', total: 4 }),
       expect.objectContaining({ policy_kind: 'CONFLICT', total: 1 }),
     ]));
   });

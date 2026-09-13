@@ -2,6 +2,8 @@
 
 日期：2026-09-13。状态：Hard Stop — 缺少真实 Google OAuth Secret；不是 Gmail 接入完成报告。
 
+执行修订：用户在 2026-09-13 明确此缺口只阻塞真实授权验收，不阻塞非 Secret 开发。下列为原始预检历史，不再作为停止整个开发的依据。后续实现与隔离回归进度见 [9B 开发报告](./runtime-productization-batch-9b-report.md)。
+
 ## 前置结果
 
 Batch 6～8 在 main@311f472 的远端完整 CI #63 全部成功，包含 Android。Batch 9A 公共层实现和本地完整门禁已完成，随后立即进行本批预检，没有在公共层完成前以 Secret 为理由停止。

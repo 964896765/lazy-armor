@@ -3,7 +3,7 @@ import { BadRequestException, ConflictException, ForbiddenException, Inject, Inj
 import { ConnectorError, ConnectorRegistry, type ConnectorRequest } from '@lazy-armor/connector-sdk';
 import { connections, connectors, credentialRefs, credentialVersions, connectionCapabilityGrants, connectionPermissions, connectorCapabilities, oauthAuthorizationStates, planActions, planSources, planVersions, plans, providerCapabilityHealth } from '@lazy-armor/database';
 import { newId } from '@lazy-armor/shared';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
 import { AuditService } from '../audit/audit.service';
 import { CREDENTIAL_PROVIDER, CredentialProviderError, type CredentialProvider } from '../credentials/credential-provider';
@@ -184,6 +184,14 @@ export class ConnectionsService {
     if (!pending) throw new ForbiddenException('OAuth state is invalid or already consumed');
     if (pending.expiresAt <= new Date()) throw new ForbiddenException('OAuth state has expired');
     if (pending.redirectUri !== input.redirectUri) throw new ForbiddenException('OAuth callback redirect is not allowed');
+    // Claim before external token exchange: one callback may dispatch, including
+    // when its response is lost. Failure requires a fresh authorization flow.
+    const claimed = await this.db.update(oauthAuthorizationStates).set({ consumedAt: new Date(),
+      completionStatus: 'CLAIMED', codeVerifier: null, updatedAt: new Date() }).where(and(
+      eq(oauthAuthorizationStates.id, pending.id), isNull(oauthAuthorizationStates.consumedAt),
+    ));
+    if (claimed[0].affectedRows !== 1) throw new ForbiddenException('OAuth state is invalid or already consumed');
+    try {
     const completed = await connector.completeAuthorization({
       userId,
       state: input.state,
@@ -191,7 +199,6 @@ export class ConnectionsService {
       redirectUri: input.redirectUri,
       codeVerifier: pending.codeVerifier ?? undefined,
     });
-    await this.db.update(oauthAuthorizationStates).set({ consumedAt: new Date(), updatedAt: new Date() }).where(eq(oauthAuthorizationStates.id, pending.id));
     const connectionId = pending.connectionId
       ? await this.reconnectFromAuthorization(userId, pending.connectionId, providerKey, completed)
       : await this.createConnectionRecord(userId, {
@@ -204,7 +211,13 @@ export class ConnectionsService {
         status: 'connected',
         statusReason: null,
       });
+    await this.db.update(oauthAuthorizationStates).set({ completionStatus: 'CONNECTED', updatedAt: new Date() }).where(eq(oauthAuthorizationStates.id, pending.id));
     return this.get(userId, connectionId);
+    } catch (error) {
+      await this.db.update(oauthAuthorizationStates).set({ completionStatus: 'FAILED', failureCode: 'OAUTH_COMPLETION_FAILED', updatedAt: new Date() })
+        .where(eq(oauthAuthorizationStates.id, pending.id));
+      throw mapConnectorError(error);
+    }
   }
 
   async reconnect(userId: string, id: string, input: StartOAuthConnectionDto) {
@@ -510,7 +523,7 @@ export class ConnectionsService {
           createdAt: now,
           updatedAt: now,
         });
-        await this.seedGrantedCapabilities(tx, connectionId, input.connectorId, input.connectorKey, input.grantedCapabilities, now);
+        await this.seedGrantedCapabilities(tx, connectionId, input.connectorId, input.connectorKey, input.grantedCapabilities, now, input.credentials?.scopes?.split(/\s+/));
         await this.audit.append({
           actorType: 'user',
           actorUserId: userId,
@@ -574,7 +587,7 @@ export class ConnectionsService {
           expiresAt: completed.expiresAt ? new Date(completed.expiresAt) : null,
           updatedAt: now,
         }).where(eq(connections.id, connectionId));
-        await this.seedGrantedCapabilities(tx, connectionId, current.connectorCatalogId, providerKey, completed.grantedCapabilities ?? [], now);
+        await this.seedGrantedCapabilities(tx, connectionId, current.connectorCatalogId, providerKey, completed.grantedCapabilities ?? [], now, completed.credentials.scopes?.split(/\s+/));
         await this.audit.append({
           actorType: 'user',
           actorUserId: userId,
@@ -597,11 +610,11 @@ export class ConnectionsService {
       statusReason: null,
       lastErrorCode: null,
       updatedAt: now,
-    }).where(eq(connections.id, connectionId));
+    }).where(and(eq(connections.id, connectionId), sql`${connections.status} <> 'revoked'`));
     return connectionId;
   }
 
-  private async seedGrantedCapabilities(tx: { select: InjectedDatabase['select']; insert: InjectedDatabase['insert'] }, connectionId: string, connectorId: string, providerKey: string, capabilityKeys: string[], now: Date) {
+  private async seedGrantedCapabilities(tx: { select: InjectedDatabase['select']; insert: InjectedDatabase['insert'] }, connectionId: string, connectorId: string, providerKey: string, capabilityKeys: string[], now: Date, actualScopes?: string[]) {
     if (capabilityKeys.length === 0) return;
     const rows = await tx.select({ id: connectorCapabilities.id, key: connectorCapabilities.key })
       .from(connectorCapabilities)
@@ -627,10 +640,10 @@ export class ConnectionsService {
       });
       await tx.insert(connectionCapabilityGrants).values({
         id: newId(), connectionId, providerKey, capabilityKey: capability.key, status: 'GRANTED',
-        grantedScopesJson: [capability.key], grantedAt: now, expiresAt: null, revokedAt: null,
+        grantedScopesJson: actualScopes ?? [capability.key], grantedAt: now, expiresAt: null, revokedAt: null,
         source: 'oauth_projection', createdAt: now, updatedAt: now,
       }).onDuplicateKeyUpdate({ set: {
-        status: 'GRANTED', grantedScopesJson: [capability.key], grantedAt: now, expiresAt: null,
+        status: 'GRANTED', grantedScopesJson: actualScopes ?? [capability.key], grantedAt: now, expiresAt: null,
         revokedAt: null, source: 'oauth_projection', updatedAt: now,
       } });
     }
@@ -650,21 +663,21 @@ export class ConnectionsService {
         credentialData = await this.credentials.get(current.credentialRef, current.credentialCurrentVersion);
       } catch (error) {
         if (error instanceof CredentialProviderError && error.retryable) {
-          await this.db.update(connections).set({ status: 'provider_error', statusReason: 'credential_provider_unavailable', lastErrorCode: error.code, updatedAt: new Date() }).where(eq(connections.id, current.id));
+          await this.db.update(connections).set({ status: 'provider_error', statusReason: 'credential_provider_unavailable', lastErrorCode: error.code, updatedAt: new Date() }).where(and(eq(connections.id, current.id), sql`${connections.status} <> 'revoked'`));
           throw new BadRequestException('Credential provider is temporarily unavailable');
         }
-        await this.db.update(connections).set({ status: 'reauthorization_required', statusReason: 'credential_invalid', lastErrorCode: 'CREDENTIAL_INVALID', updatedAt: new Date() }).where(eq(connections.id, current.id));
+        await this.db.update(connections).set({ status: 'reauthorization_required', statusReason: 'credential_invalid', lastErrorCode: 'CREDENTIAL_INVALID', updatedAt: new Date() }).where(and(eq(connections.id, current.id), sql`${connections.status} <> 'revoked'`));
         throw new ForbiddenException('Connection credentials are no longer valid');
       }
       const expiresAt = credentialData.expiresAt ? new Date(credentialData.expiresAt) : current.credentialExpiresAt;
       if (expiresAt && expiresAt.getTime() <= Date.now() + 60_000) {
         if (!adapter.refreshCredentials || !credentialData.refreshToken) {
-          await this.db.update(connections).set({ status: 'reauthorization_required', statusReason: 'refresh_required', lastErrorCode: 'AUTH_REQUIRED', updatedAt: new Date() }).where(eq(connections.id, current.id));
+          await this.db.update(connections).set({ status: 'reauthorization_required', statusReason: 'refresh_required', lastErrorCode: 'AUTH_REQUIRED', updatedAt: new Date() }).where(and(eq(connections.id, current.id), sql`${connections.status} <> 'revoked'`));
           throw new ForbiddenException('Connection requires reauthorization');
         }
         try {
           const refreshed = await adapter.refreshCredentials({ credential: credentialData });
-          const rotated = await this.credentials.rotate(current.credentialRef, refreshed.credentials);
+          const rotated = await this.credentials.rotate(current.credentialRef, refreshed.credentials, current.credentialCurrentVersion);
           credentialData = refreshed.credentials;
           credentialVersion = rotated.version;
           credentialExpiresAt = refreshed.expiresAt ?? credentialData.expiresAt ?? null;
@@ -672,6 +685,10 @@ export class ConnectionsService {
           const credentialRefId = current.credentialRefId;
           if (credentialRefId) {
             await this.db.transaction(async (tx) => {
+              const locked = (await tx.select().from(connections).where(eq(connections.id, current.id)).for('update'))[0];
+              const ref = (await tx.select().from(credentialRefs).where(eq(credentialRefs.id, credentialRefId)).for('update'))[0];
+              if (!locked || locked.status === 'revoked' || !ref || ref.status !== 'active' || ref.currentVersion !== current.credentialCurrentVersion)
+                throw new ForbiddenException('Connection changed during credential refresh');
               await tx.update(credentialVersions).set({ status: 'superseded' }).where(and(eq(credentialVersions.credentialRefId, credentialRefId), eq(credentialVersions.status, 'active')));
               await tx.insert(credentialVersions).values({
                 id: newId(),
@@ -700,7 +717,7 @@ export class ConnectionsService {
             statusReason: mapped?.message ?? 'refresh_failed',
             lastErrorCode: mapped?.code ?? 'REFRESH_FAILED',
             updatedAt: new Date(),
-          }).where(eq(connections.id, current.id));
+          }).where(and(eq(connections.id, current.id), sql`${connections.status} <> 'revoked'`));
           throw mapConnectorError(error);
         }
       }
@@ -727,7 +744,7 @@ export class ConnectionsService {
   private async handleConnectorFailure(connectionId: string, error: unknown) {
     const connectorError = asConnectorError(error);
     if (!connectorError) return;
-    const status = connectorError.category === 'AUTH_REQUIRED'
+    const status = connectorError.category === 'AUTH_REQUIRED' || connectorError.providerCode === 'SCOPE_MISSING'
       ? 'reauthorization_required'
       : connectorError.category === 'RATE_LIMITED'
         ? 'degraded'
@@ -735,17 +752,25 @@ export class ConnectionsService {
           ? 'provider_error'
           : null;
     if (!status) return;
-    await this.db.update(connections).set({
-      status,
-      statusReason: connectorError.message,
-      lastErrorCode: connectorError.code,
-      updatedAt: new Date(),
-    }).where(eq(connections.id, connectionId));
+    await this.db.transaction(async (tx) => {
+      const current = (await tx.select().from(connections).where(eq(connections.id, connectionId)).for('update'))[0];
+      if (!current || current.status === 'revoked') return;
+      const now = new Date();
+      await tx.update(connections).set({ status, statusReason: connectorError.message, lastErrorCode: connectorError.code, updatedAt: now })
+        .where(eq(connections.id, connectionId));
+      const catalog = (await tx.select({ key: connectors.key }).from(connectors).where(eq(connectors.id, current.connectorId)))[0];
+      if (catalog?.key === 'gmail' && this.registry.get('gmail').metadata().version === '0.2.0') {
+        const healthStatus = connectorError.providerCode === 'SCOPE_MISSING' ? 'PERMISSION_REVOKED'
+          : status === 'degraded' ? 'RATE_LIMITED' : status === 'reauthorization_required' ? 'REAUTHORIZATION_REQUIRED' : 'PROVIDER_UNAVAILABLE';
+        await tx.update(providerCapabilityHealth).set({ status: healthStatus, checkedAt: now, validUntil: now,
+          reasonCode: connectorError.code, updatedAt: now }).where(eq(providerCapabilityHealth.connectionId, connectionId));
+      }
+    });
   }
 }
 
 function sourceCapabilities(sourceType: string) {
-  if (sourceType === 'email') return ['READ_EMAIL_METADATA', 'READ_EMAIL'];
+  if (sourceType === 'email') return ['READ_EMAIL_METADATA', 'READ_EMAIL', 'READ_EMAIL_BODY'];
   if (sourceType === 'calendar') return ['READ_EVENT'];
   if (sourceType === 'file') return ['READ_FILE_METADATA', 'READ_FILE'];
   if (sourceType === 'content_platform') return ['READ_CONTENT'];

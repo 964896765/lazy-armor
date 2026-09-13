@@ -1,5 +1,5 @@
 import { ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { connectionCapabilityGrants, connectionPermissions, connections, connectorCapabilities, connectors } from '@lazy-armor/database';
+import { connectionCapabilityGrants, connectionPermissions, connections, connectorCapabilities, connectors, credentialRefs } from '@lazy-armor/database';
 import { newId } from '@lazy-armor/shared';
 import { and, eq } from 'drizzle-orm';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
@@ -7,10 +7,12 @@ import { AuditService } from '../audit/audit.service';
 import type { PermissionUpdateDto } from '../connections/dto';
 import { ConnectorRegistry } from '@lazy-armor/connector-sdk';
 import { TRUE_PROCESS_HARNESS_CONNECTOR_KEY, trueProcessHarnessEnabled } from '../connectors/base-connectors';
+import { CREDENTIAL_PROVIDER, type CredentialProvider } from '../credentials/credential-provider';
 
 @Injectable()
 export class PermissionsService {
-  constructor(@Inject(DATABASE) private readonly db: InjectedDatabase, private readonly audit: AuditService, private readonly registry: ConnectorRegistry) {}
+  constructor(@Inject(DATABASE) private readonly db: InjectedDatabase, private readonly audit: AuditService, private readonly registry: ConnectorRegistry,
+    @Inject(CREDENTIAL_PROVIDER) private readonly credentials: CredentialProvider) {}
 
   async list(userId: string, connectionId: string) {
     await this.assertOwnedConnection(userId, connectionId);
@@ -49,6 +51,17 @@ export class PermissionsService {
         .limit(1);
       const capability = capabilities[0];
       if (!capability) throw new NotFoundException(`Capability not found: ${update.capability}`);
+      const declared = this.registry.get(connection.connectorKey).capabilities().find((c) => c.key === update.capability) as { oauthScopes?: string[] } | undefined;
+      let scopes = [capability.key];
+      if (declared?.oauthScopes?.length) {
+        const current = (await this.db.select().from(connections).where(eq(connections.id, connectionId)).limit(1))[0];
+        if (!current?.credentialRefId) throw new ForbiddenException('Provider authorization is missing');
+        const ref = (await this.db.select().from(credentialRefs).where(eq(credentialRefs.id, current.credentialRefId)).limit(1))[0];
+        if (!ref || ref.status !== 'active') throw new ForbiddenException('Provider authorization is missing');
+        const secret = await this.credentials.get(ref.ref, ref.currentVersion);
+        scopes = (secret.scopes ?? '').split(/\s+/).filter(Boolean);
+        if (update.granted && !declared.oauthScopes.every((scope) => scopes.includes(scope))) throw new ForbiddenException('Provider scope has not been granted');
+      }
       const expiresAt = update.expiresAt ? new Date(update.expiresAt) : null;
       const before = await this.db.select({ granted: connectionPermissions.granted, revokedAt: connectionPermissions.revokedAt, expiresAt: connectionPermissions.expiresAt })
         .from(connectionPermissions)
@@ -78,7 +91,7 @@ export class PermissionsService {
           providerKey: connection.connectorKey,
           capabilityKey: capability.key,
           status: update.granted ? 'GRANTED' : 'REVOKED',
-          grantedScopesJson: update.granted ? [capability.key] : [],
+          grantedScopesJson: update.granted ? scopes : [],
           grantedAt: update.granted ? now : null,
           expiresAt,
           revokedAt: update.granted ? null : now,
@@ -87,7 +100,7 @@ export class PermissionsService {
           updatedAt: now,
         }).onDuplicateKeyUpdate({ set: {
           status: update.granted ? 'GRANTED' : 'REVOKED',
-          grantedScopesJson: update.granted ? [capability.key] : [],
+          grantedScopesJson: update.granted ? scopes : [],
           grantedAt: update.granted ? now : null,
           expiresAt,
           revokedAt: update.granted ? null : now,

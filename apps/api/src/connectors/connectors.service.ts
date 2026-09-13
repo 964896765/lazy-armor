@@ -38,6 +38,7 @@ export class ConnectorsService {
     const connector = this.registry.get(key);
     const metadata = connector.metadata();
     const capabilities = connector.capabilities();
+    const connectable = metadata.authentication.type !== 'none' && metadata.productionStatus !== 'DISABLED';
     return {
       key: metadata.key,
       name: metadata.name,
@@ -45,7 +46,7 @@ export class ConnectorsService {
       providerType: metadata.providerType,
       productionStatus: metadata.productionStatus,
       authentication: { type: metadata.authentication.type },
-      connectable: metadata.authentication.type !== 'none',
+      connectable,
       supportsRefresh: metadata.supportsRefresh,
       supportsRevoke: metadata.supportsRevoke,
       draftOnly: metadata.productionStatus === 'DRAFT_ONLY',
@@ -54,7 +55,7 @@ export class ConnectorsService {
           key: capability.key,
           name: capability.userFacingName ?? capability.name,
           operation: capability.operation,
-          connectable: metadata.authentication.type !== 'none',
+          connectable,
           draftOnly: capability.providerAvailability === 'draft_only' || metadata.productionStatus === 'DRAFT_ONLY',
           requiresConfirmation: capability.riskLevel === 'R3' || capability.riskLevel === 'R4',
         };

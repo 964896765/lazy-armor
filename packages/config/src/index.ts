@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { isIP } from 'node:net';
 
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -17,6 +18,13 @@ const envSchema = z.object({
     }
   }, 'CREDENTIAL_MASTER_KEY must be a base64-encoded 32-byte key'),
   CREDENTIAL_STORE_PATH: z.string().default('.data/credentials'),
+  GMAIL_OAUTH_CLIENT_ID: z.string().trim().optional(),
+  GMAIL_OAUTH_CLIENT_SECRET: z.string().trim().optional(),
+  GMAIL_OAUTH_REDIRECT_URI: z.string().trim().optional(),
+  TRUSTED_PROXY_CIDRS: z.string().optional().refine((value) => !value || value.split(',').every((entry) => {
+    const [ip, mask, extra] = entry.trim().split('/'); const family = isIP(ip);
+    return !extra && family > 0 && (mask === undefined || (/^\d+$/.test(mask) && Number(mask) > 0 && Number(mask) <= (family === 4 ? 32 : 128)));
+  }), 'TRUSTED_PROXY_CIDRS must contain explicit IP addresses or nonzero CIDRs'),
   // Auth production hardening
   ACCESS_TOKEN_TTL_SECONDS: z.coerce.number().int().positive().default(900),
   REFRESH_TOKEN_TTL_SECONDS: z.coerce.number().int().positive().default(2_592_000),
@@ -44,11 +52,30 @@ export type AppEnv = Omit<z.infer<typeof envSchema>, 'APP_ENV'> & { APP_ENV: Dep
 
 export const parseEnv = (input: NodeJS.ProcessEnv): AppEnv => {
   const parsed = envSchema.parse(input);
+  resolveGmailOAuthConfig(parsed);
   return {
     ...parsed,
     APP_ENV: parsed.APP_ENV ?? (parsed.NODE_ENV === 'production' ? 'production' : 'development'),
   };
 };
+
+export interface GoogleOAuthConfig { clientId: string; clientSecret: string; redirectUri: string }
+export const GMAIL_CALLBACK_PATH = '/api/providers/google/oauth/gmail/callback';
+
+// All absent means disabled, never fixture fallback. Partial/unsafe configuration
+// fails before any external I/O; error messages contain names only, not secrets.
+export function resolveGmailOAuthConfig(input: Pick<AppEnv, 'GMAIL_OAUTH_CLIENT_ID' | 'GMAIL_OAUTH_CLIENT_SECRET' | 'GMAIL_OAUTH_REDIRECT_URI'>): GoogleOAuthConfig | null {
+  const values = [input.GMAIL_OAUTH_CLIENT_ID?.trim(), input.GMAIL_OAUTH_CLIENT_SECRET?.trim(), input.GMAIL_OAUTH_REDIRECT_URI?.trim()];
+  if (values.every((value) => !value)) return null;
+  if (values.some((value) => !value || /replace-with|inject-|placeholder/i.test(value))) throw new Error('GMAIL_OAUTH_CLIENT_ID / GMAIL_OAUTH_CLIENT_SECRET / GMAIL_OAUTH_REDIRECT_URI must be completely configured with non-placeholder values');
+  const [clientId, clientSecret, redirectUri] = values as [string, string, string];
+  let url: URL;
+  try { url = new URL(redirectUri); } catch { throw new Error('GMAIL_OAUTH_REDIRECT_URI must be a valid HTTPS backend callback'); }
+  if (!/^[A-Za-z0-9_.-]+\.apps\.googleusercontent\.com$/.test(clientId) || clientSecret.length < 8) throw new Error('Invalid GMAIL_OAUTH_CLIENT_ID / GMAIL_OAUTH_CLIENT_SECRET');
+  if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash || url.pathname !== GMAIL_CALLBACK_PATH
+    || ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)) throw new Error('GMAIL_OAUTH_REDIRECT_URI must use HTTPS and the registered backend callback path');
+  return { clientId, clientSecret, redirectUri };
+}
 
 // 部署环境 fail-closed 配置校验：production/staging 缺少关键配置直接启动失败。
 export function assertProductionSafe(env: AppEnv): void {

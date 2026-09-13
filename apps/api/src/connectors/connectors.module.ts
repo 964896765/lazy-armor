@@ -16,6 +16,8 @@ import {
 import { ConnectorCatalogSyncService } from './connector-catalog-sync.service';
 import { ConnectorsController } from './connectors.controller';
 import { ConnectorsService } from './connectors.service';
+import { resolveGmailOAuthConfig } from '@lazy-armor/config';
+import { DisabledGmailConnector } from '../providers/gmail/disabled-gmail.connector';
 
 export const CONNECTOR_REGISTRY = 'CONNECTOR_REGISTRY';
 
@@ -28,7 +30,9 @@ export function createConnectorRegistry(env: NodeJS.ProcessEnv = process.env) {
   registry.register(new ManualConnector());
   registry.register(new InternalConnector());
   registry.register(new WebhookConnector());
-  registry.register(new GmailConnector());
+  const gmail = resolveGmailOAuthConfig({ GMAIL_OAUTH_CLIENT_ID: env.GMAIL_OAUTH_CLIENT_ID,
+    GMAIL_OAUTH_CLIENT_SECRET: env.GMAIL_OAUTH_CLIENT_SECRET, GMAIL_OAUTH_REDIRECT_URI: env.GMAIL_OAUTH_REDIRECT_URI });
+  if (!gmail) registry.register(env.NODE_ENV === 'test' ? new GmailConnector() : new DisabledGmailConnector());
   registry.register(new GoogleCalendarConnector());
   registry.register(new FileProviderConnector());
   registry.register(new LogisticsProviderConnector());
@@ -51,6 +55,6 @@ export function createConnectorRegistry(env: NodeJS.ProcessEnv = process.env) {
     ConnectorCatalogSyncService,
     ConnectorsService,
   ],
-  exports: [ConnectorRegistry, CONNECTOR_REGISTRY, ConnectorsService],
+  exports: [ConnectorRegistry, CONNECTOR_REGISTRY, ConnectorsService, ConnectorCatalogSyncService],
 })
 export class ConnectorsModule {}

@@ -58,6 +58,14 @@ export class ConnectorCatalogSyncService implements OnModuleInit {
       });
       const row = (await this.db.select({ id: connectors.id }).from(connectors).where(eq(connectors.key, metadata.key)).limit(1))[0];
       if (!row) continue;
+      const implemented = new Set(connector.capabilities().map((capability) => capability.key));
+      // Preserve historical FK references and contracts; retiring a handler is
+      // a current availability change, never deletion of its catalog identity.
+      const historical = await this.db.select({ id: connectorCapabilities.id, key: connectorCapabilities.key })
+        .from(connectorCapabilities).where(eq(connectorCapabilities.connectorId, row.id));
+      for (const capability of historical.filter((item) => !implemented.has(item.key))) {
+        await this.db.update(connectorCapabilities).set({ providerAvailability: 'disabled' }).where(eq(connectorCapabilities.id, capability.id));
+      }
       for (const capability of connector.capabilities()) {
         const contract = resolveSideEffectContract(capability);
         await this.db.insert(connectorCapabilities).values({

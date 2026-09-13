@@ -49,4 +49,10 @@ SDK 专项包含 schema、错误、Scope/Expiry、hash、写入上下文、只�
 
 ## 下一步
 
+2026-09-13 远端追加验收：main@87da4ed58d4924470bb2baa232b570ab8ac36256 的 [CI #64](https://github.com/964896765/lazy-armor/actions/runs/34733518570) 三项 job 均 success：PR Fast Gate 103660657675、RC Full Gate 103660915526、Android Verification Artifact 103660915561。RC Full 为 463 passed / 6 skipped；本地 465/4 与远端条件跳过差异不混写。MySQL 8.4.11 的 migration / checksum replay / backup-restore 同提交通过。
+
+Android artifact 10310847154：`android-verification-87da4ed58d4924470bb2baa232b570ab8ac36256`，digest `sha256:99340ca5c9663005f668a343fc522ad9a99a02eb02c42b6af57e4428ac238774`；MySQL artifact 10309829147，digest `sha256:a61bb0d4c8f98a884fd96cec9f8d8c7f525cf6d5c10612fdfe695bc15327deed`。这证明 9A 同提交远端门禁全绿，不代表 Gmail、真机 Beta 或最终 Runtime RC 已验收。
+
+下述预检停顿解释已由 [2026-09-13 执行修订](./runtime-productization-execution-revision-2026-09-13.md) 覆盖：缺 Secret 仅阻塞真实账户验收，9B 非 Secret 实现和隔离测试继续。保留原预检记录用于追溯。
+
 公共层适用门禁完成后已直接进入 Batch 9B 预检。仓库加载的 .env 以及 Process / User / Machine 环境均未发现 Google / Gmail / OAuth 配置变量，仅输出变量名称和计数，没有输出任何 Secret 值。缺少真实 OAuth Client Secret 触发既定 Hard Stop；详见 [Batch 9B 预检报告](./runtime-productization-batch-9b-preflight-report.md)。不得用现有 Gmail fixture、图片里的官方开放示例或本地网络测试冒充真实平台接入。9B～9F 未完成，也未越过依赖开始 Batch 10～14。

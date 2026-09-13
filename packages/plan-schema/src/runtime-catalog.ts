@@ -143,7 +143,12 @@ for (const scenario of SCENARIO_DEFINITIONS) {
     }));
   }
 }
-export const FACT_SCHEMA_CATALOG: readonly FactSchemaDefinition[] = Object.freeze([...factMap.values()]);
+export const FACT_SCHEMA_CATALOG: readonly FactSchemaDefinition[] = Object.freeze([...factMap.values(),
+  ...['metadata', 'body', 'labels'].map((field): FactSchemaDefinition => Object.freeze({ schemaVersion: '1', key: `email_message.${field}`,
+    resourceType: 'EmailMessage', field, valueType: 'object_ref', unit: null, nullable: false, enumValues: Object.freeze([]),
+    freshnessTtlSeconds: 86400, semanticIdentity: Object.freeze(['connection_id', 'message_id', 'field']), sensitivity: 'SENSITIVE',
+    minimumReality: 'OBSERVED', acceptedVerificationMethods: Object.freeze(['SOURCE_EVIDENCE', 'USER_CONFIRMATION', 'READ_BACK']), revision: 1, status: 'ACTIVE' })),
+]);
 
 const strategyDefaults: Record<StrategyKey, Omit<StrategyProfile, 'schemaVersion' | 'key' | 'label' | 'revision' | 'status'>> = {
   STATE_GUARD: { triggerModes: ['EVENT', 'FACT_CHANGED', 'THRESHOLD'], defaultActionMode: 'REMIND', attentionPolicy: 'ON_CHANGE', approvalPolicy: 'RISK_BASED', verificationPolicy: 'READ_BACK', allowedAutomationCeiling: 'R2' },

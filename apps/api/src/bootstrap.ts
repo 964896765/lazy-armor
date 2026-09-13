@@ -6,6 +6,7 @@ import { AppModule } from './app.module';
 import { resolveCorrelationId, runWithRequestContext } from './common/request-context';
 import { SafeLoggerService } from './common/safe-logger.service';
 import { ObservabilityService } from './observability/observability.service';
+import { ConfigService } from '@nestjs/config';
 
 type RequestWithRawBody = Request & { rawBody?: Buffer };
 const captureRawBody = (req: Request, _res: Response, body: Buffer) => {
@@ -17,6 +18,8 @@ export async function createHttpApp() {
   const app = await NestFactory.create(AppModule, { bodyParser: false, bufferLogs: true });
   const logger = app.get(SafeLoggerService);
   const telemetry = app.get(ObservabilityService);
+  const trustedProxies = app.get(ConfigService).get<string>('TRUSTED_PROXY_CIDRS');
+  if (trustedProxies) app.getHttpAdapter().getInstance().set('trust proxy', trustedProxies.split(',').map((ip) => ip.trim()));
   app.useLogger(logger);
   // Base64 adds ~33% overhead. Only the authenticated local-file import path
   // receives the larger parser budget; every other API keeps the tighter cap.
