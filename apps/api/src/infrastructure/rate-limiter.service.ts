@@ -23,12 +23,13 @@ export class RateLimiterService implements OnApplicationShutdown {
     if (this.redis.status === 'wait') await this.redis.connect();
   }
 
-  async consume(key: string, limit: number, windowSeconds: number): Promise<RateLimitResult> {
+  async consume(key: string, limit: number, windowSeconds: number, quantity = 1): Promise<RateLimitResult> {
+    if (![limit, windowSeconds, quantity].every((value) => Number.isSafeInteger(value) && value > 0 && value <= 100_000_000)) throw new Error('Invalid rate limit budget');
     await this.ensureConnected();
     const now = Math.floor(Date.now() / 1000);
     const windowKey = `${this.keyPrefix}ratelimit:${key}:${Math.floor(now / windowSeconds)}`;
-    const count = await this.redis.incr(windowKey);
-    if (count === 1) await this.redis.expire(windowKey, windowSeconds + 1);
+    // Counter and expiry are one atomic operation, including weighted quota units.
+    const count = Number(await this.redis.eval("local n=redis.call('INCRBY',KEYS[1],ARGV[1]); if n==tonumber(ARGV[1]) then redis.call('EXPIRE',KEYS[1],ARGV[2]); end; return n", 1, windowKey, quantity, windowSeconds + 1));
     if (count > limit) {
       const ttl = await this.redis.ttl(windowKey);
       return { allowed: false, retryAfterSeconds: ttl > 0 ? ttl : windowSeconds };

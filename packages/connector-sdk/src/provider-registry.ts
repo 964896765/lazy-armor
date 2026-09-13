@@ -40,7 +40,16 @@ export const PROVIDER_REGISTRY: readonly ProviderCapabilityManifest[] = Object.f
 
 export class ProviderCapabilityRegistry {
   private readonly manifests = new Map(PROVIDER_REGISTRY.map((manifest) => [manifest.providerKey, validateProviderCapabilityManifest(manifest)]));
-  list() { return [...this.manifests.values()]; }
-  get(providerKey: string) { return this.manifests.get(providerKey); }
+  list() { return [...this.manifests.values()].map((manifest) => structuredClone(manifest)); }
+  get(providerKey: string) { const manifest = this.manifests.get(providerKey); return manifest ? structuredClone(manifest) : undefined; }
+  register(value: ProviderCapabilityManifest) {
+    const { manifestHash: _hash, ...raw } = value as ProviderCapabilityManifest & { manifestHash?: string };
+    const manifest = validateProviderCapabilityManifest(structuredClone(raw));
+    if (_hash && _hash !== manifest.manifestHash) throw new Error('Provider manifest digest mismatch');
+    const prior = this.manifests.get(manifest.providerKey);
+    if (prior && (manifest.revision < prior.revision || (manifest.revision === prior.revision && manifest.manifestHash !== prior.manifestHash))) throw new Error('Provider manifest revisions are immutable and monotonic');
+    this.manifests.set(manifest.providerKey, manifest);
+    return structuredClone(manifest);
+  }
   require(providerKey: string) { const manifest = this.get(providerKey); if (!manifest) throw new Error(`Unknown provider capability manifest: ${providerKey}`); return manifest; }
 }

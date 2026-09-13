@@ -42,6 +42,7 @@ import { CapabilityResolverModule } from './capability-resolver/capability-resol
 import { ProviderCapabilitiesModule } from './provider-capabilities/provider-capabilities.module';
 import { RuntimeCatalogModule } from './runtime-catalog/runtime-catalog.module';
 import { AppReadSessionsModule } from './app-read-sessions/app-read-sessions.module';
+import { ProviderRuntimeModule } from './provider-runtime/provider-runtime.module';
 
 @Module({
   imports: [
@@ -81,6 +82,7 @@ import { AppReadSessionsModule } from './app-read-sessions/app-read-sessions.mod
     StrategyRuntimeModule,
     CapabilityResolverModule,
     ProviderCapabilitiesModule,
+    ProviderRuntimeModule,
     RuntimeCatalogModule,
     AppReadSessionsModule,
     PlansModule,

@@ -98,11 +98,24 @@ export class ConnectionsService {
     const current = await this.getWithSecretRef(userId, id);
     if (current.status === 'revoked') throw new ForbiddenException('Connection has been revoked');
     const request = await this.connectorRequestFor(userId, current);
-    const health = await (this.registry.get(current.connectorKey).validateConnection?.(request) ?? Promise.resolve({ status: 'healthy' as const, checkedAt: new Date().toISOString(), reason: undefined }));
+    const health = await (this.registry.get(current.connectorKey).validateConnection?.(request) ?? Promise.resolve({ status: 'healthy' as const, checkedAt: new Date().toISOString(), reason: undefined, validUntil: undefined }));
     const status = mapHealthToConnectionStatus(health.status);
     const checkedAt = new Date();
+    const healthExpiry = health.validUntil ? Date.parse(health.validUntil) : NaN;
+    const validUntil = Number.isFinite(healthExpiry) && healthExpiry > checkedAt.getTime() && healthExpiry <= checkedAt.getTime() + 86_400_000 ? new Date(healthExpiry) : null;
     const capabilities = await this.db.select({ key: connectorCapabilities.key }).from(connectorCapabilities).where(eq(connectorCapabilities.connectorId, current.connectorCatalogId));
     await this.db.transaction(async (tx) => {
+      const locked = (await tx.select({ status: connections.status, credentialRefId: connections.credentialRefId })
+        .from(connections).where(and(eq(connections.id, id), eq(connections.userId, userId))).for('update'))[0];
+      if (!locked || locked.status === 'revoked') throw new ForbiddenException('Connection has been revoked');
+      if (locked.credentialRefId !== current.credentialRefId) throw new ConflictException('Credential changed during health probe');
+      if (current.credentialRefId) {
+        const credential = (await tx.select({ currentVersion: credentialRefs.currentVersion, status: credentialRefs.status })
+          .from(credentialRefs).where(eq(credentialRefs.id, current.credentialRefId)).for('update'))[0];
+        // connectorRequestFor may legitimately refresh and rotate before the probe.
+        // Compare the version actually probed, not the pre-refresh snapshot.
+        if (!credential || credential.status !== 'active' || credential.currentVersion !== request.credentials?.version) throw new ConflictException('Credential changed during health probe');
+      }
       await tx.update(connections).set({
         status,
         statusReason: health.reason ?? null,
@@ -113,10 +126,10 @@ export class ConnectionsService {
       for (const capability of capabilities) await tx.insert(providerCapabilityHealth).values({
         id: newId(), connectionId: id, providerKey: current.connectorKey, capabilityKey: capability.key,
         status: mapHealthToCapabilityStatus(health.status), reasonCode: health.reason ?? null, detail: health.reason ?? null,
-        checkedAt, validUntil: null, createdAt: checkedAt, updatedAt: checkedAt,
+        checkedAt, validUntil, createdAt: checkedAt, updatedAt: checkedAt,
       }).onDuplicateKeyUpdate({ set: {
         status: mapHealthToCapabilityStatus(health.status), reasonCode: health.reason ?? null, detail: health.reason ?? null,
-        checkedAt, validUntil: null, updatedAt: checkedAt,
+        checkedAt, validUntil, updatedAt: checkedAt,
       } });
     });
     return { connection: await this.get(userId, id), health };
@@ -239,6 +252,8 @@ export class ConnectionsService {
     await this.db.transaction(async (tx) => {
       await tx.update(connections).set({ status: 'revoked', updatedAt: now }).where(and(eq(connections.id, id), eq(connections.userId, userId)));
       await tx.update(connectionPermissions).set({ granted: 0, revokedAt: now, updatedAt: now }).where(eq(connectionPermissions.connectionId, id));
+      await tx.update(connectionCapabilityGrants).set({ status: 'REVOKED', revokedAt: now, updatedAt: now }).where(eq(connectionCapabilityGrants.connectionId, id));
+      await tx.update(providerCapabilityHealth).set({ status: 'PERMISSION_REVOKED', checkedAt: now, validUntil: now, updatedAt: now }).where(eq(providerCapabilityHealth.connectionId, id));
       if (current.credentialRefId) {
         await tx.update(credentialRefs).set({ status: 'revoked', updatedAt: now }).where(eq(credentialRefs.id, current.credentialRefId));
         await tx.update(credentialVersions).set({ status: 'revoked', revokedAt: now }).where(eq(credentialVersions.credentialRefId, current.credentialRefId));
@@ -247,7 +262,9 @@ export class ConnectionsService {
       await this.audit.append({ actorType: 'user', actorUserId: userId, action: 'CONNECTION_REVOKED', resourceType: 'connection', resourceId: id, userId, correlationId: id, changeSummary: `Connection ${id} revoked`, source: 'api', result: 'success' }, tx);
     });
     try {
-      await this.registry.get(current.connectorKey).revoke?.();
+      await this.registry.get(current.connectorKey).revoke?.({ userId, connectionId: id, connectorKey: current.connectorKey,
+        capability: 'REVOKE_AUTHORIZATION', requestId: id, input: {},
+        credentials: { ref: current.credentialRef ?? undefined, version: current.credentialCurrentVersion ?? undefined } });
     } catch (error) {
       await this.audit.append({
         actorType: 'system',

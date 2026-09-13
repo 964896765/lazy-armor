@@ -81,6 +81,7 @@ export interface ConnectionHealth {
   status: ConnectionHealthStatus;
   checkedAt: string;
   reason?: string;
+  validUntil?: string;
 }
 
 export interface ConnectorCredentialContext {
@@ -187,7 +188,7 @@ export interface Connector {
   startAuthorization?(request: AuthorizationStartRequest): Promise<AuthorizationStartResult>;
   completeAuthorization?(request: AuthorizationCallbackRequest): Promise<AuthorizationCallbackResult>;
   refreshCredentials?(request: CredentialRefreshRequest): Promise<CredentialRefreshResult>;
-  revoke?(): Promise<void>;
+  revoke?(request?: ConnectorRequest): Promise<void>;
 }
 
 export interface ConnectorManifest {
@@ -363,3 +364,4 @@ export class ConnectorRegistry {
 export * from './capability-manifest';
 export * from './provider-registry';
 export * from './capability-resolver';
+export * from './provider-runtime';

@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
-import { ProviderCapabilityRegistry, type VersionedProviderCapabilityManifest } from '@lazy-armor/connector-sdk';
+import { ProviderCapabilityRegistry, type ProviderCapabilityManifest, type VersionedProviderCapabilityManifest } from '@lazy-armor/connector-sdk';
 import { providerCapabilityEvidence, providerCapabilityManifests } from '@lazy-armor/database';
 import { newId } from '@lazy-armor/shared';
 import { and, eq } from 'drizzle-orm';
@@ -11,7 +11,12 @@ export class ProviderCapabilityRegistryService implements OnModuleInit {
 
   constructor(@Inject(DATABASE) private readonly db: InjectedDatabase) {}
 
-  async onModuleInit() { await this.sync(); }
+  async onModuleInit() {
+    await this.sync();
+    const active = await this.db.select().from(providerCapabilityManifests).where(eq(providerCapabilityManifests.status, 'ACTIVE'));
+    for (const row of active) this.installRevision(row.manifestJson as unknown as ProviderCapabilityManifest);
+  }
+  installRevision(manifest: ProviderCapabilityManifest) { return this.registry.register(manifest); }
   list() { return this.registry.list(); }
   get(providerKey: string) { const manifest = this.registry.get(providerKey); if (!manifest) throw new NotFoundException('Provider capability manifest not found'); return manifest; }
 

@@ -2,6 +2,8 @@
 
 日期：2026-09-12。冻结完成基线：`b679250e75ac5528bcd913f463d151d1801bb6bf`。
 
+最终远端验收：**FULL GREEN**，严格限定于 `main@311f4729777466d40957409f29854eaaee84bbf7` 的 [release-candidate-ci #63](https://github.com/964896765/lazy-armor/actions/runs/34688655512)。2026-09-12 11:18:16 UTC 整轮 completed / success，PR Fast Gate / RC Full Gate / Android Verification Artifact 均 completed / success。后续提交必须重新核实自身门禁，不能继承本标记。
+
 ## 基线与安全修复
 
 - 初始工作区 clean，当前分支 main；已 fetch / push，GitHub main 与 b679250 一致。
@@ -17,7 +19,11 @@
 - 本地 monorepo build：8/8 成功；typecheck / migration safety / repository hygiene / production data truth 通过。
 - 本地完整 monorepo / Full API / 真实数据库并发回归通过：16/16 任务，API 72 文件通过、1 文件按条件跳过，434 项通过、4 项按条件跳过。
 - 修复提交 `4f6bb61` 的 [远端 CI #62](https://github.com/964896765/lazy-armor/actions/runs/34688176216) 快速门禁通过，RC 的 MySQL 8.4 Migration / Backup-Restore 通过；完整 API 测试因迁移测试硬编码只接受本地库名而失败，CI 使用的 lazy_armor_ci_test 被错误拒绝。修复为显式接受 lazy_armor_test / lazy_armor_ci_test 两个既有隔离库，其他名称、错误协议和无效 URL 仍在打开连接前拒绝；新增安全边界单元回归。未修改任何历史迁移源文件或 ledger。
-- 新修复提交的远端完整 CI 尚待执行。本报告明确不是 FULL GREEN；只有 Production Dependency Audit、Migration / MySQL 8.4 / Backup-Restore、Full API / Monorepo Test / Build / Mobile、Android 全部远端成功后，才更新最终验收状态。
+- `311f4729777466d40957409f29854eaaee84bbf7` 的 [远端 CI #63](https://github.com/964896765/lazy-armor/actions/runs/34688655512)：PR Fast Gate、RC Full Gate、Android Verification Artifact 全部成功，整轮远端 CI 已完成。
+- 远端 RC：Production Dependency Audit 无已知漏洞；MySQL 8.4.11；45 个迁移通过、破坏性语句 0；备份/恢复通过；Full API 73 文件通过、1 文件按条件跳过，445 项通过、6 项按条件跳过；monorepo test 16/16、build 8/8；Mobile 16 文件、99 项测试通过。
+- 本地第二次完整回归：Full API 73 文件通过、1 文件按条件跳过，447 项通过、4 项按条件跳过；monorepo 16/16 成功。最新日志：`.data/batch-6-8-ci-migration-fix-monorepo.log`。Migration 安全边界专项：2 文件、15 项通过，日志 `.data/batch-6-8-ci-migration-fix.log`。
+- MySQL 8.4 migration evidence 已上传，artifact ID `10296226987`，名称 `mysql84-migration-evidence-311f4729777466d40957409f29854eaaee84bbf7`，digest `sha256:114c300ea88b94a66b15d2e8f2d912c3592134bd58ca43945d54e2a921f58b02`。
+- Android debug-signed verification AAB 与 metadata 已上传：artifact ID `10297252623`，名称 `android-verification-311f4729777466d40957409f29854eaaee84bbf7`，大小 70,080,475 字节，zip digest `sha256:b87c73376b83ef30854e0e5ef77d0dda26d86f9e1e6ff4e69cd3a2ef42b8ce20`。这是验证候选产物，不是真实 Beta/Staging、生产签名或手机实测完成声明。
 
 本地日志：`.data/batch-6-8-ci-fix-build.log`、`.data/batch-6-8-ci-fix-typecheck.log`、`.data/batch-6-8-ci-fix-migration.log`、`.data/batch-6-8-ci-fix-monorepo.log`。
 

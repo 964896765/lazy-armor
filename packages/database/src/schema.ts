@@ -326,8 +326,26 @@ export const providerCapabilityEvidence = mysqlTable('provider_capability_eviden
   summary: varchar('summary', { length: 1000 }).notNull(),
   verifiedAt: datetime('verified_at', { mode: 'date', fsp: 6 }),
   lastCheckedAt: datetime('last_checked_at', { mode: 'date', fsp: 6 }),
+  providerKey: varchar('provider_key', { length: 80 }),
+  evidenceKey: varchar('evidence_key', { length: 160 }),
+  revision: int('revision'),
+  evidenceHash: char('evidence_hash', { length: 64 }),
+  definitionJson: json('definition_json').$type<Record<string, unknown>>(),
   createdAt: datetime('created_at', { mode: 'date', fsp: 6 }).notNull(),
-}, (table) => [index('provider_capability_evidence_manifest_capability_idx').on(table.manifestId, table.capabilityKey)]);
+}, (table) => [index('provider_capability_evidence_manifest_capability_idx').on(table.manifestId, table.capabilityKey),
+  uniqueIndex('provider_official_evidence_revision_uq').on(table.providerKey, table.evidenceKey, table.revision)]);
+
+export const providerRuntimePolicies = mysqlTable('provider_runtime_policies', {
+  id: uuidBinary('id').primaryKey(),
+  providerKey: varchar('provider_key', { length: 80 }).notNull(),
+  revision: int('revision').notNull(),
+  manifestId: uuidBinary('manifest_id').notNull().references(() => providerCapabilityManifests.id, { onDelete: 'restrict' }),
+  evidenceId: uuidBinary('evidence_id').notNull().references(() => providerCapabilityEvidence.id, { onDelete: 'restrict' }),
+  definitionHash: char('definition_hash', { length: 64 }).notNull(),
+  definitionJson: json('definition_json').$type<Record<string, unknown>>().notNull(),
+  createdAt: datetime('created_at', { mode: 'date', fsp: 6 }).notNull(),
+}, (table) => [uniqueIndex('provider_runtime_policy_revision_uq').on(table.providerKey, table.revision),
+  index('provider_runtime_policy_manifest_idx').on(table.manifestId)]);
 
 export const connectionCapabilityGrants = mysqlTable('connection_capability_grants', {
   id: uuidBinary('id').primaryKey(),
@@ -1456,6 +1474,7 @@ export const schema = {
   connectionPermissions,
   providerCapabilityManifests,
   providerCapabilityEvidence,
+  providerRuntimePolicies,
   connectionCapabilityGrants,
   providerCapabilityHealth,
   resourceCatalogDefinitions,

@@ -22,6 +22,8 @@
 | Batch 6 — Capability Resolver | 已完成 | [runtime-productization-batch-6-report.md](./runtime-productization-batch-6-report.md) |
 | Batch 7 — Risk / Approval / Execution Integration | 已完成 | [runtime-productization-batch-7-report.md](./runtime-productization-batch-7-report.md) |
 | Batch 8 — Verification / Result / Reconciliation | 已完成 | [runtime-productization-batch-8-report.md](./runtime-productization-batch-8-report.md) |
+| Batch 9A — Provider Runtime Common Layer | 实现与本地完整门禁完成；本批远端 CI 待验证 | [runtime-productization-batch-9a-report.md](./runtime-productization-batch-9a-report.md) |
+| Batch 9B — Gmail Real Integration | 预检后 Hard Stop：缺少真实 Google OAuth Secret；未声明接入完成 | [runtime-productization-batch-9b-preflight-report.md](./runtime-productization-batch-9b-preflight-report.md) |
 
 ---
 
@@ -2866,6 +2868,17 @@ Plan 不依赖 Provider 名称，也能选择正确 Source/Action Provider。
 Journey 5 网络中断测试能够证明“不会重复外部副作用”。
 
 ## 105. Batch 9 — Provider Group 1 真接入
+
+2026-09-12 显式执行修订：[用户执行指令归档](./runtime-productization-execution-revision-2026-09-12.md)。先以 b679250 冻结 Batch 6～8 完成基线并完成远端完整 CI 收口，再依次执行：
+
+1. Batch 9A — Provider Runtime Common Layer：统一 ProviderAdapter 生命周期、错误映射、RateLimit / Quota / Retry / Health / Verification Policy、Official Evidence Revision；复用既有凭据、Manifest / Grant / Health 和 Execution / Verification / Reconciliation，不创建平行运行链。
+2. Batch 9B — Gmail：READ_EMAIL_METADATA / READ_EMAIL_BODY / READ_EMAIL_LABELS / CREATE_EMAIL_DRAFT / SEND_EMAIL；真实 OAuth、刷新与撤销、Observation → EmailMessage → Candidate → Truth、既有 Risk / Approval / Resolver / Execution、发送验证与未知结果保护。
+3. Batch 9C — Google Calendar：READ_CALENDAR_EVENT / CREATE_CALENDAR_EVENT / UPDATE_CALENDAR_EVENT；标准 CalendarEvent；创建后按 eventId Read-back 比较 title / time / attendees。
+4. Batch 9D — GitHub：Repository / Issue / PullRequest / Workflow；READ_REPOSITORY / READ_ISSUE / READ_PULL_REQUEST / READ_WORKFLOW_STATUS / CREATE_ISSUE / CREATE_COMMENT / Webhook；PR 长期静默跟踪 Golden Journey。
+5. Batch 9E — Notion：READ_PAGE / READ_DATA_SOURCE / CREATE_PAGE / UPDATE_PAGE；Workspace / Page / DataSource 授权与写入 Read-back。
+6. Batch 9F — Cross-Provider Journeys：Gmail 会议 → Truth → Calendar 创建与验证，以及 GitHub PR/Issue → Truth → Condition → Notion 工作记录更新与验证；必须证明共享 Resource / Fact / Strategy / Resolver / Execution，不以 Connector 数量替代验收。
+
+Batch 9 完成后按下文 Batch 10 → 11 → 12 → 13 → 14 连续推进，无阶段停等；每批同步 schema / migration / service / API / unit / DB / concurrency / contract / Full API / monorepo / typecheck 等适用门禁与报告。真实平台能力、账号测试证据和 Mobile 遥测禁止伪造；缺少真实 Secret 或需真实账号高风险动作时按 Hard Stop 暂停相关链路。
 
 - Gmail
 - Google Calendar
