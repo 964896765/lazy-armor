@@ -24,6 +24,14 @@
 
 完整 Monorepo/Full API、build、typecheck 正在执行；结果完成后补充。不得用 Signed Webhook 基线 [CI #69](https://github.com/964896765/lazy-armor/actions/runs/34832033652) 的成功替代本增量自己的远端门禁。
 
+## main@058151e 独立远端门禁收口
+
+以 `058151e36dfce918ef9505e0341c9b85d1f2b4ac` 为唯一增量基线，不回退或重做 Webhook、Versioned Truth、Terminal handoff。[CI #70](https://github.com/964896765/lazy-armor/actions/runs/34857931750) 的 Fast Gate 成功；RC Full Gate 的 migration / MySQL 8.4 backup-restore / dependency audit 成功，但完整 API 为 **678 通过、2 失败、6 跳过**，不可标本提交 FULL GREEN。
+
+两个失败均为历史 Scenario Foundation 测试的 SQL 行数断言：增加两个不可变 `@2` 定义后共有 98 个版本行，而 canonical 场景仍是 96 个。增量修复只更新测试契约：逐项校验 96 个 `@1` 的 key/hash，分别核对两个已注册 terminal revision 的 hash；并发 sync 前后的完整 key/revision/hash 集合必须严格相等。不删除新版本、不修改 Registry 或任何已发布定义。
+
+修复后专项 **24/24**（Scenario Foundation、terminal 规则、Strategy Runtime），2026-09-14 23:04:11 开始，15.67s；全仓 typecheck **8/8**。日志 `.data/batch-9d-ci70-regression.log`、`.data/batch-9d-ci70-typecheck.log`。完整本地及修复提交自己的远端门禁尚待完成；真实账号验收仍为独立 Hard Stop。
+
 ## 真实验收与后续
 
 只读检查 root `.env` 和当前 process：GitHub OAuth 三项与 Webhook Secret、Notion OAuth 三项均未提供值（不输出 Secret）。真实 OAuth/hook/权限/撤权/429/Issue-Comment 读写验证和真实账号 terminal Journey 未执行，9D 保持未关闭。缺 Secret 只暂停相应真实验收，继续 Notion 和跨 Provider 的非 Secret 实现。

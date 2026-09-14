@@ -2,6 +2,7 @@ import type { INestApplication } from '@nestjs/common';
 import type { Pool, RowDataPacket } from 'mysql2/promise';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { SCENARIO_DEFINITIONS, TERMINAL_FOLLOW_UP_RULES, catalogHash, terminalFollowUpScenario } from '@lazy-armor/plan-schema';
 import { RuntimeCatalogRegistryService } from '../src/runtime-catalog/runtime-catalog-registry.service';
 import { auth, bootP2App, register, type Session } from './p2-test-helpers';
 
@@ -21,7 +22,7 @@ describe.sequential('runtime productization batch 2 scenario foundation', () => 
 
   it('persists immutable complete catalogs', async () => {
     const [[scenarioCount], [resourceCount], [factCount], [strategyCount]] = await Promise.all([
-      pool.query<RowDataPacket[]>("SELECT COUNT(*) total FROM scenario_definitions WHERE status='CATALOG_ONLY'"),
+      pool.query<RowDataPacket[]>("SELECT COUNT(*) total FROM scenario_definitions WHERE status='CATALOG_ONLY' AND revision=1"),
       pool.query<RowDataPacket[]>("SELECT COUNT(*) total FROM resource_catalog_definitions WHERE status='ACTIVE'"),
       pool.query<RowDataPacket[]>("SELECT COUNT(*) total FROM fact_schema_definitions WHERE status='ACTIVE'"),
       pool.query<RowDataPacket[]>("SELECT COUNT(*) total FROM strategy_profile_definitions WHERE status='ACTIVE'"),
@@ -30,6 +31,15 @@ describe.sequential('runtime productization batch 2 scenario foundation', () => 
     expect(resourceCount[0].total).toBeGreaterThanOrEqual(50);
     expect(factCount[0].total).toBeGreaterThanOrEqual(96);
     expect(strategyCount[0].total).toBe(8);
+    const [canonical] = await pool.query<RowDataPacket[]>('SELECT scenario_key, definition_hash FROM scenario_definitions WHERE revision=1 ORDER BY scenario_key');
+    expect(canonical.map((row) => ({ key: row.scenario_key, hash: row.definition_hash }))).toEqual(
+      SCENARIO_DEFINITIONS.map((item) => ({ key: item.key, hash: catalogHash(item) })).sort((a, b) => a.key.localeCompare(b.key)),
+    );
+    for (const rule of TERMINAL_FOLLOW_UP_RULES) {
+      const [rows] = await pool.query<RowDataPacket[]>('SELECT definition_hash FROM scenario_definitions WHERE scenario_key=? AND revision=?', [rule.scenarioKey, rule.scenarioRevision]);
+      expect(rows).toHaveLength(1);
+      expect(rows[0].definition_hash).toBe(catalogHash(terminalFollowUpScenario(rule)));
+    }
   });
 
   it('serves domains, scenarios, resource facts and strategies from the shared registry', async () => {
@@ -62,8 +72,10 @@ describe.sequential('runtime productization batch 2 scenario foundation', () => 
 
   it('keeps repeated concurrent registry sync idempotent', async () => {
     const catalog = app.get(RuntimeCatalogRegistryService);
+    const [before] = await pool.query<RowDataPacket[]>('SELECT scenario_key, revision, definition_hash FROM scenario_definitions ORDER BY scenario_key, revision');
     await Promise.all([catalog.sync(), catalog.sync(), catalog.sync()]);
-    const [rows] = await pool.query<RowDataPacket[]>('SELECT COUNT(*) total FROM scenario_definitions');
-    expect(rows[0].total).toBe(96);
+    const [after] = await pool.query<RowDataPacket[]>('SELECT scenario_key, revision, definition_hash FROM scenario_definitions ORDER BY scenario_key, revision');
+    expect(after).toEqual(before);
+    expect(after.filter((row) => row.revision === 1)).toHaveLength(96);
   });
 });
