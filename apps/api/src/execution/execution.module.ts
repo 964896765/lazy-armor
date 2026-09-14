@@ -46,6 +46,7 @@ import { VerificationPolicyRegistry } from './verification-policy-registry.servi
 import { VerificationService } from './verification.service';
 import { ReconciliationService, ReconciliationWorker } from './reconciliation.service';
 import { VerificationController } from './verification.controller';
+import { TerminalHandoffGuardModule } from '../strategy-runtime/terminal-handoff-guard.module';
 
 export const EXECUTION_WORKER = 'EXECUTION_WORKER';
 export const EXECUTION_RECONCILER = 'EXECUTION_RECONCILER';
@@ -58,7 +59,7 @@ export const SIDE_EFFECT_OPERATIONS_SERVICE = 'SIDE_EFFECT_OPERATIONS_SERVICE';
 export const OUTBOX_SERVICE = 'OUTBOX_SERVICE';
 
 @Module({
-  imports: [CapabilityResolverModule, PlansModule, ConnectorsModule, ConnectionsModule, RiskModule, NotificationsModule, AuditModule, CredentialsModule, BillingModule, ContentModule, DailySummaryModule, LogisticsModule, HouseholdModule, StudyModule, DeviceModule, ProfilesModule, OperationsModule, UsageModule, TruthStoreModule],
+  imports: [TerminalHandoffGuardModule, CapabilityResolverModule, PlansModule, ConnectorsModule, ConnectionsModule, RiskModule, NotificationsModule, AuditModule, CredentialsModule, BillingModule, ContentModule, DailySummaryModule, LogisticsModule, HouseholdModule, StudyModule, DeviceModule, ProfilesModule, OperationsModule, UsageModule, TruthStoreModule],
   controllers: [ExecutionsController, VerificationController],
   providers: [
     SnapshotSanitizer,

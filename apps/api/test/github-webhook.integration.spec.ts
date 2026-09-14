@@ -10,7 +10,11 @@ import { githubWebhookManifest } from '../src/providers/github/github-webhook-ma
 import { GitHubWebhookService } from '../src/providers/github/github-webhook.service';
 import { GitHubService } from '../src/providers/github/github.service';
 import { ProviderCapabilityRegistryService } from '../src/provider-capabilities/provider-capability-registry.service';
-import { auth, bootP2App, register, type Session } from './p2-test-helpers';
+import { activatePlan, auth, bootP2App, register, type Session } from './p2-test-helpers';
+import { ExecutionWorker } from '../src/execution/execution-worker.service';
+import { TerminalHandoffService } from '../src/strategy-runtime/terminal-handoff.service';
+import { TerminalHandoffGuard } from '../src/strategy-runtime/terminal-handoff-guard.service';
+import { AuditService } from '../src/audit/audit.service';
 import { VersionedResourceTruthService } from '../src/reality-pipeline/versioned-resource-truth.service';
 
 describe.sequential('9D signed HTTP webhook / actual adapter TCP / MySQL leased acquisition; not real platform acceptance', () => {
@@ -24,8 +28,8 @@ describe.sequential('9D signed HTTP webhook / actual adapter TCP / MySQL leased 
   const route = '/repos/webhook-owner/webhook-repo'; const base = 'https://api.github.com' + route;
   const rawRepo = { ...repository, owner: { login: repository.owner }, full_name: 'webhook-owner/webhook-repo', private: true, updated_at: '2026-09-14T06:00:00Z' };
   let issue = { id: 799, number: 1, title: 'Actual API title', body: 'Actual API body', state: 'open', user: { id: 77 }, url: base + '/issues/1', updated_at: '2026-09-14T06:00:00Z' };
-  const pullRequest = { ...issue, id: 800, number: 2, url: base + '/pulls/2', merged: false };
-  const workflowRun = { id: 803, workflow_id: 300, status: 'completed', conclusion: 'success', head_sha: 'b'.repeat(40), updated_at: '2026-09-14T06:00:00Z' };
+  let pullRequest = { ...issue, id: 800, number: 2, url: base + '/pulls/2', merged: false };
+  let workflowRun: { id: number; workflow_id: number; status: string; conclusion: string | null; head_sha: string; updated_at: string } = { id: 803, workflow_id: 300, status: 'completed', conclusion: 'success', head_sha: 'b'.repeat(40), updated_at: '2026-09-14T06:00:00Z' };
   const keys = ['GITHUB_OAUTH_CLIENT_ID', 'GITHUB_OAUTH_CLIENT_SECRET', 'GITHUB_OAUTH_REDIRECT_URI', 'GITHUB_WEBHOOK_SECRET', 'REDIS_KEY_PREFIX'] as const;
   const saved = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
   beforeAll(async () => {
@@ -88,6 +92,56 @@ describe.sequential('9D signed HTTP webhook / actual adapter TCP / MySQL leased 
   async function enqueue(extra: Record<string, unknown> = {}) { return (await send(signed({ nonce: randomUUID(), ...extra })).expect(202)).body.receiptId as string; }
   const claim = () => worker.claim(4, 45_000, connection);
   async function claimOne(id: string) { const rows = await claim(); const row = rows.find((r) => r.id === id); expect(row).toBeDefined(); return row!; }
+  let terminalEpoch = 0;
+  const nextEpoch = () => new Date(Date.parse('2026-09-14T07:00:00Z') + ++terminalEpoch * 1000).toISOString();
+  async function terminalPlan(kind: 'PullRequest' | 'Workflow' = 'PullRequest') {
+    const scenarioKey = kind === 'PullRequest' ? 'work.tasks' : 'work.recurring_work';
+    const subjectKey = `${connection}:742:${kind}:${kind === 'PullRequest' ? 800 : 803}`;
+    const compiled = await request(app.getHttpServer()).post(`/api/scenarios/${scenarioKey}/compile`).set(auth(owner.token))
+      .send({ scenarioRevision: 2, subjectKey, name: 'Terminal ' + randomUUID() }).expect(201);
+    const created = await request(app.getHttpServer()).post('/api/plans').set(auth(owner.token)).send(compiled.body.definitionInput).expect(201);
+    await activatePlan(app, owner.token, created.body.id);
+    const forgedTrigger = kind === 'PullRequest' ? { pull_request: { state: { merged: true } } } : { workflow: { run_status: { status: 'completed' } } };
+    await request(app.getHttpServer()).post(`/api/plans/${created.body.id}/executions`).set(auth(owner.token))
+      .send({ requestId: randomUUID(), triggerPayload: forgedTrigger }).expect(409);
+    const binding = await request(app.getHttpServer()).post('/api/strategy-runtime/bindings').set(auth(owner.token))
+      .send({ planVersionId: created.body.currentVersion.id, scenarioKey, scenarioRevision: 2, subjectKey }).expect(201);
+    expect(binding.body.dependencies).toHaveLength(1);
+    expect(binding.body.dependencies[0]).toMatchObject({ field: kind === 'PullRequest' ? 'merged' : 'status', scope: 'EXACT_SUBJECT', subjectKey });
+    await request(app.getHttpServer()).post(`/api/plans/${created.body.id}/executions`).set(auth(owner.token))
+      .send({ requestId: randomUUID(), triggerPayload: forgedTrigger }).expect(409);
+    return { id: created.body.id as string, bindingId: binding.body.id as string };
+  }
+  async function terminalRead(kind: 'PullRequest' | 'Workflow' = 'PullRequest') {
+    const event = kind === 'PullRequest'
+      ? signed({ nonce: randomUUID(), issue: undefined, number: 2, action: 'closed', pull_request: { ...pullRequest, merged: false, base: { repo: rawRepo } } })
+      : signed({ nonce: randomUUID(), issue: undefined, action: 'completed', workflow_run: { ...workflowRun, url: base + '/actions/runs/803', conclusion: 'SIGNED_NOT_AUTHORITATIVE', repository: rawRepo } });
+    const id = (await send(event, true, kind === 'PullRequest' ? 'pull_request' : 'workflow_run').expect(202)).body.receiptId;
+    await worker.process(await claimOne(id)); expect((await view(id)).body.status).toBe('READ_BACK_COMPLETE');
+  }
+  async function terminalWakeup(bindingId: string) {
+    const rows = (await request(app.getHttpServer()).get('/api/strategy-runtime/wakeups').set(auth(owner.token)).expect(200)).body;
+    const row = rows.find((r: { wakeup: { bindingId: string } }) => r.wakeup.bindingId === bindingId);
+    expect(row).toBeDefined(); return row.wakeup.id as string;
+  }
+  const handoff = (id: string, token = owner.token) => request(app.getHttpServer()).post(`/api/strategy-runtime/wakeups/${id}/handoff`).set(auth(token));
+  async function readyTerminal() {
+    const plan = await terminalPlan();
+    pullRequest = { ...pullRequest, merged: false, state: 'open', updated_at: nextEpoch() }; await terminalRead();
+    await handoff(await terminalWakeup(plan.bindingId)).expect(201);
+    pullRequest = { ...pullRequest, merged: true, state: 'closed', updated_at: nextEpoch() }; await terminalRead();
+    const wakeupId = await terminalWakeup(plan.bindingId);
+    await request(app.getHttpServer()).post(`/api/strategy-runtime/wakeups/${wakeupId}/evaluate`).set(auth(owner.token)).expect(201);
+    return { ...plan, wakeupId };
+  }
+  async function pauseTerminal(planId: string) {
+    await request(app.getHttpServer()).post(`/api/plans/${planId}/status`).set(auth(owner.token)).send({ status: 'paused' }).expect(201);
+  }
+  async function rotateTerminalCredential() {
+    await request(app.getHttpServer()).post(`/api/connections/${connection}/credentials/rotate`).set(auth(owner.token)).send({ credentials: {
+      accessToken: 'isolated-webhook-access-' + randomUUID(), scopes: 'repo', tokenMode: 'OAUTH_APP', githubUserId: '77', githubLogin: 'webhook-owner',
+      repositories: JSON.stringify([repository]), expiresAt: new Date(Date.now() + 86400000).toISOString() } }).expect(201);
+  }
   it('requires HTTPS JSON signature and matching signed body shape, before accepting a receipt', async () => {
     await send(signed(), false).expect(403); await send({ ...signed(), signature: 'sha256=' + '0'.repeat(64) }).expect(403);
     await send(signed(), true, 'pull_request').expect(403); await send(signed({ pull_request: {} })).expect(403);
@@ -140,6 +194,129 @@ describe.sequential('9D signed HTTP webhook / actual adapter TCP / MySQL leased 
     const claims = await claim(); expect(claims.map((r) => r.id).sort()).toEqual([a, b].sort());
     await Promise.all(claims.map((r) => worker.process(r))); expect((await view(a)).body.status).toBe('READ_BACK_COMPLETE'); expect((await view(b)).body.status).toBe('READ_BACK_COMPLETE');
     expect((await counts()).versions).toBe(before.versions); expect(mutations).toBe(0);
+  });
+  it('hands off actual PR Truth through the formal Dependency Index once under concurrent replay, then runs Notification/Record', async () => {
+    const plan = await readyTerminal();
+    try {
+      await handoff(plan.wakeupId, other.token).expect(404);
+      const replies = await Promise.all(Array.from({ length: 4 }, () => handoff(plan.wakeupId)));
+      replies.forEach((r) => expect(r.status, JSON.stringify(r.body)).toBe(201));
+      expect(new Set(replies.map((r) => r.body.executionId)).size).toBe(1);
+      const executionId = replies[0].body.executionId;
+      await app.get(ExecutionWorker).processExecution(executionId);
+      const execution = await request(app.getHttpServer()).get(`/api/executions/${executionId}`).set(auth(owner.token)).expect(200);
+      expect(execution.body.status, JSON.stringify(execution.body)).toBe('succeeded');
+      expect(execution.body.steps.map((s: { status: string }) => s.status)).toEqual(['succeeded', 'succeeded']);
+      await handoff(plan.wakeupId).expect(201); await app.get(TerminalHandoffService).tick(owner.userId);
+      const [rows] = await pool.query<RowDataPacket[]>("SELECT COUNT(*) total FROM notifications WHERE execution_id=UUID_TO_BIN(?) AND event_type='github_terminal_follow_up'", [executionId]);
+      expect(rows[0].total).toBe(1);
+      const [executions] = await pool.query<RowDataPacket[]>('SELECT COUNT(*) total FROM executions WHERE plan_id=UUID_TO_BIN(?)', [plan.id]);
+      expect(executions[0].total).toBe(1);
+      pullRequest = { ...pullRequest, title: 'Terminal metadata changed', updated_at: nextEpoch() }; await terminalRead();
+      expect((await handoff(await terminalWakeup(plan.bindingId)).expect(201)).body.status).toBe('QUIET');
+      const terminalSnapshot = pullRequest; const beforeOldEvent = await counts();
+      pullRequest = { ...pullRequest, merged: false, state: 'open', updated_at: '2026-09-14T06:00:00Z' };
+      await terminalRead(); expect((await counts()).versions).toBe(beforeOldEvent.versions);
+      expect((await handoff(await terminalWakeup(plan.bindingId)).expect(201)).body.status).toBe('QUIET'); pullRequest = terminalSnapshot;
+      await request(app.getHttpServer()).post(`/api/plans/${plan.id}/executions`).set(auth(owner.token))
+        .send({ requestId: `strategy:${plan.wakeupId}`, triggerPayload: { forged: true } }).expect(409);
+    } finally { await pauseTerminal(plan.id); }
+  });
+  it('uses actual Workflow completed/failure Truth, remains quiet while running, and records the terminal result', async () => {
+    const plan = await terminalPlan('Workflow');
+    try {
+      workflowRun = { ...workflowRun, status: 'in_progress', conclusion: null, updated_at: nextEpoch() }; await terminalRead('Workflow');
+      expect((await handoff(await terminalWakeup(plan.bindingId)).expect(201)).body.status).toBe('QUIET');
+      workflowRun = { ...workflowRun, status: 'completed', conclusion: 'failure', updated_at: nextEpoch() }; await terminalRead('Workflow');
+      const result = await handoff(await terminalWakeup(plan.bindingId));
+      expect(result.status, JSON.stringify(result.body)).toBe(201);
+      await app.get(ExecutionWorker).processExecution(result.body.executionId);
+      const [notifications] = await pool.query<RowDataPacket[]>("SELECT body FROM notifications WHERE execution_id=UUID_TO_BIN(?) AND event_type='github_terminal_follow_up'", [result.body.executionId]);
+      expect(notifications).toHaveLength(1); expect(notifications[0].body).toContain('failure'); expect(notifications[0].body).not.toContain('SIGNED_NOT_AUTHORITATIVE');
+    } finally { await pauseTerminal(plan.id); }
+  });
+  it.each(['paused', 'permission', 'grant', 'credential', 'health', 'conflict', 'superseded', 'freshness'] as const)(
+    'does not authorize an immutable READY decision after %s changed', async (change) => {
+      const plan = await readyTerminal();
+      const [truth] = await pool.query<RowDataPacket[]>("SELECT BIN_TO_UUID(id) id FROM truth_records WHERE user_id=UUID_TO_BIN(?) AND subject_key=?", [owner.userId, `${connection}:742:PullRequest:800`]);
+      try {
+        if (change === 'paused') await pauseTerminal(plan.id);
+        if (change === 'permission') await request(app.getHttpServer()).put(`/api/connections/${connection}/permissions`).set(auth(owner.token))
+          .send({ permissions: [{ capability: 'READ_PULL_REQUEST', granted: false }] }).expect(200);
+        if (change === 'credential') await rotateTerminalCredential();
+        if (change === 'grant') await pool.query("UPDATE connection_capability_grants SET status='REVOKED',revoked_at=UTC_TIMESTAMP(6) WHERE connection_id=UUID_TO_BIN(?) AND capability_key='READ_PULL_REQUEST'", [connection]);
+        if (change === 'health') await pool.query("UPDATE provider_capability_health SET valid_until=UTC_TIMESTAMP(6)-INTERVAL 1 SECOND WHERE connection_id=UUID_TO_BIN(?) AND capability_key='READ_PULL_REQUEST'", [connection]);
+        if (change === 'conflict') await pool.query("UPDATE truth_records SET status='conflicted' WHERE id=UUID_TO_BIN(?)", [truth[0].id]);
+        if (change === 'superseded') { pullRequest = { ...pullRequest, title: 'Newer actual truth', updated_at: nextEpoch() }; await terminalRead(); }
+        if (change === 'freshness') await pool.query('UPDATE truth_records SET verified_at=UTC_TIMESTAMP(6)-INTERVAL 301 SECOND WHERE id=UUID_TO_BIN(?)', [truth[0].id]);
+        await handoff(plan.wakeupId).expect(change === 'paused' ? 409 : 403);
+        const replay = await request(app.getHttpServer()).post(`/api/strategy-runtime/wakeups/${plan.wakeupId}/evaluate`).set(auth(owner.token)).expect(201);
+        expect(replay.body.result).toBe('READY_FOR_PLAN_ENGINE');
+        const [rows] = await pool.query<RowDataPacket[]>('SELECT COUNT(*) total FROM executions WHERE plan_id=UUID_TO_BIN(?)', [plan.id]); expect(rows[0].total).toBe(0);
+      } finally {
+        if (change === 'permission') await request(app.getHttpServer()).put(`/api/connections/${connection}/permissions`).set(auth(owner.token))
+          .send({ permissions: [{ capability: 'READ_PULL_REQUEST', granted: true }] }).expect(200);
+        if (change === 'grant') await pool.query("UPDATE connection_capability_grants SET status='GRANTED',revoked_at=NULL WHERE connection_id=UUID_TO_BIN(?) AND capability_key='READ_PULL_REQUEST'", [connection]);
+        if (change === 'health') await pool.query("UPDATE provider_capability_health SET valid_until=UTC_TIMESTAMP(6)+INTERVAL 5 MINUTE WHERE connection_id=UUID_TO_BIN(?) AND capability_key='READ_PULL_REQUEST'", [connection]);
+        if (change === 'conflict') await pool.query("UPDATE truth_records SET status='verified' WHERE id=UUID_TO_BIN(?)", [truth[0].id]);
+        if (change === 'freshness') await pool.query('UPDATE truth_records SET verified_at=UTC_TIMESTAMP(6) WHERE id=UUID_TO_BIN(?)', [truth[0].id]);
+        if (change !== 'paused') await pauseTerminal(plan.id);
+      }
+    });
+  it('rechecks authorization after dispatch precheck and before the existing Execution transaction creates any row', async () => {
+    const plan = await readyTerminal(); const guard = app.get(TerminalHandoffGuard); const original = guard.lock.bind(guard);
+    let reached!: () => void; let release!: () => void;
+    const started = new Promise<void>((r) => { reached = r; }); const paused = new Promise<void>((r) => { release = r; });
+    const spy = vi.spyOn(guard, 'lock').mockImplementationOnce(async (...args) => { reached(); await paused; return original(...args); });
+    const pending = handoff(plan.wakeupId).then((r) => r);
+    try {
+      await started; await request(app.getHttpServer()).put(`/api/connections/${connection}/permissions`).set(auth(owner.token))
+        .send({ permissions: [{ capability: 'READ_PULL_REQUEST', granted: false }] }).expect(200);
+      release(); expect((await pending).status).toBe(403);
+      const [rows] = await pool.query<RowDataPacket[]>('SELECT COUNT(*) total FROM executions WHERE plan_id=UUID_TO_BIN(?)', [plan.id]); expect(rows[0].total).toBe(0);
+    } finally {
+      release(); await pending; spy.mockRestore();
+      await request(app.getHttpServer()).put(`/api/connections/${connection}/permissions`).set(auth(owner.token)).send({ permissions: [{ capability: 'READ_PULL_REQUEST', granted: true }] }).expect(200);
+      await pauseTerminal(plan.id);
+    }
+  });
+  it('rechecks a revoked READ grant after queueing and before Notification/Record persistence', async () => {
+    const plan = await readyTerminal();
+    try {
+      const result = await handoff(plan.wakeupId).expect(201);
+      await request(app.getHttpServer()).put(`/api/connections/${connection}/permissions`).set(auth(owner.token)).send({ permissions: [{ capability: 'READ_PULL_REQUEST', granted: false }] }).expect(200);
+      expect((await app.get(ExecutionWorker).processExecution(result.body.executionId)).status).toBe('failed');
+      const [rows] = await pool.query<RowDataPacket[]>("SELECT COUNT(*) total FROM notifications WHERE execution_id=UUID_TO_BIN(?) AND event_type='github_terminal_follow_up'", [result.body.executionId]); expect(rows[0].total).toBe(0);
+      expect((await handoff(plan.wakeupId).expect(201)).body.executionId).toBe(result.body.executionId); // Historical replay, not a new authorization.
+    } finally {
+      await request(app.getHttpServer()).put(`/api/connections/${connection}/permissions`).set(auth(owner.token)).send({ permissions: [{ capability: 'READ_PULL_REQUEST', granted: true }] }).expect(200);
+      await pauseTerminal(plan.id);
+    }
+  });
+  it.each(['Truth lock', 'Audit append'] as const)('rolls back the entire handoff when Health expires at the later %s barrier', async (barrier) => {
+    const plan = await readyTerminal(); let release!: () => void; let reached!: () => void;
+    const paused = new Promise<void>((r) => { release = r; }); const started = new Promise<void>((r) => { reached = r; });
+    const lock = await pool.getConnection(); const audit = app.get(AuditService); const original = audit.append.bind(audit);
+    const spy = vi.spyOn(audit, 'append').mockImplementation(async (...args) => {
+      if (barrier === 'Audit append' && args[0].action === 'EXECUTION_CREATED') { reached(); await paused; }
+      return original(...args);
+    });
+    await pool.query("UPDATE provider_capability_health SET valid_until=UTC_TIMESTAMP(6)+INTERVAL 2 SECOND WHERE connection_id=UUID_TO_BIN(?) AND capability_key='READ_PULL_REQUEST'", [connection]);
+    if (barrier === 'Truth lock') {
+      await lock.beginTransaction(); await lock.query('SELECT id FROM truth_records WHERE user_id=UUID_TO_BIN(?) AND subject_key=? FOR UPDATE', [owner.userId, `${connection}:742:PullRequest:800`]);
+    }
+    const pending = handoff(plan.wakeupId).then((r) => r);
+    try {
+      if (barrier === 'Audit append') await started;
+      await new Promise((r) => setTimeout(r, 2200));
+      await lock.rollback(); release(); expect((await pending).status).toBe(403);
+      const [rows] = await pool.query<RowDataPacket[]>('SELECT COUNT(*) total FROM executions WHERE plan_id=UUID_TO_BIN(?)', [plan.id]); expect(rows[0].total).toBe(0);
+      const [intents] = await pool.query<RowDataPacket[]>('SELECT COUNT(*) total FROM action_intents WHERE plan_id=UUID_TO_BIN(?)', [plan.id]); expect(intents[0].total).toBe(0);
+    } finally {
+      await lock.rollback(); release(); await pending; lock.release(); spy.mockRestore();
+      await pool.query("UPDATE provider_capability_health SET valid_until=UTC_TIMESTAMP(6)+INTERVAL 5 MINUTE WHERE connection_id=UUID_TO_BIN(?) AND capability_key='READ_PULL_REQUEST'", [connection]);
+      await pauseTerminal(plan.id);
+    }
   });
   it('lets a successor recover an expired READ lease without stale worker completion or re-publication', async () => {
     const before = await counts(); const id = await enqueue(); const stale = await claimOne(id);

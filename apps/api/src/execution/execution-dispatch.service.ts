@@ -1,6 +1,6 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { actionIntents, actionAdapterBindings, executionSteps, executions, planActions, plans } from '@lazy-armor/database';
-import { ACTION_ADAPTER_REVISION, buildActionIntent, catalogHash, definitionHash, riskMaximum, type ContextRiskSignal, type RiskLevel } from '@lazy-armor/plan-schema';
+import { actionIntents, actionAdapterBindings, executionSteps, executions, planActions, plans, strategyRuntimeWakeups } from '@lazy-armor/database';
+import { ACTION_ADAPTER_REVISION, TERMINAL_FOLLOW_UP_RULES, buildActionIntent, catalogHash, definitionHash, riskMaximum, type ContextRiskSignal, type RiskLevel } from '@lazy-armor/plan-schema';
 import { newId } from '@lazy-armor/shared';
 import { and, asc, eq } from 'drizzle-orm';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
@@ -15,6 +15,7 @@ import { RiskEngine } from '../risk/risk-engine.service';
 import { SafetyPolicyService } from '../risk/safety-policy.service';
 import { RISK_SCORE } from '../risk/risk.types';
 import { CapabilityResolverService } from '../capability-resolver/capability-resolver.service';
+import { TerminalHandoffGuard, type TerminalHandoffProof } from '../strategy-runtime/terminal-handoff-guard.service';
 
 @Injectable()
 export class ExecutionDispatchService {
@@ -30,17 +31,31 @@ export class ExecutionDispatchService {
     private readonly safetyPolicies: SafetyPolicyService,
     private readonly audit: AuditService,
     private readonly resolver: CapabilityResolverService,
+    private readonly terminalGuard: TerminalHandoffGuard,
   ) {}
 
   async dispatchManual(userId: string, planId: string, requestId: string, triggerPayload: Record<string, unknown>, resolutionDecisionIds?: string[]) {
+    if (requestId.startsWith('strategy:')) throw new ConflictException('Strategy execution identity is server-owned');
+    return this.dispatch(userId, planId, requestId, triggerPayload, resolutionDecisionIds);
+  }
+
+  async dispatchStrategy(userId: string, planId: string, wakeupId: string) {
+    return this.dispatch(userId, planId, `strategy:${wakeupId}`, {}, undefined, wakeupId);
+  }
+
+  private async dispatch(userId: string, planId: string, requestId: string, triggerPayload: Record<string, unknown>, resolutionDecisionIds?: string[], wakeupId?: string) {
     const resolvedDispatchInputHash = resolutionDecisionIds ? catalogHash({ planId, requestId, triggerPayload: this.sanitizer.sanitize(triggerPayload), resolutionDecisionIds: [...resolutionDecisionIds].sort() }) : null;
     const duplicate = await this.findDuplicate(userId, requestId);
-    if (duplicate) return this.replayResolved(duplicate, resolvedDispatchInputHash);
+    if (duplicate) {
+      if (wakeupId && (duplicate.planId !== planId || (duplicate.resolvedRiskSnapshotJson?.terminalHandoffProof as TerminalHandoffProof | undefined)?.wakeupId !== wakeupId)) throw new ConflictException('Strategy execution identity conflict');
+      return this.replayResolved(duplicate, resolvedDispatchInputHash);
+    }
     const resolutions = resolutionDecisionIds ? await Promise.all(resolutionDecisionIds.map((resolutionId) => this.resolver.revalidate(userId, resolutionId))) : [];
     if (new Set(resolutionDecisionIds).size !== (resolutionDecisionIds?.length ?? 0)) throw new ConflictException('Duplicate resolution decision');
     const id = newId();
     const now = new Date();
-    const triggerSnapshot = this.sanitizer.sanitize(triggerPayload);
+    let triggerSnapshot = this.sanitizer.sanitize(triggerPayload);
+    let terminalHandoffProof: TerminalHandoffProof | undefined;
     let pinnedVersionId = '';
     try {
       await this.db.transaction(async (tx) => {
@@ -50,9 +65,17 @@ export class ExecutionDispatchService {
         if (plan.status !== 'active') throw new ConflictException('Only active plans can create Executions');
         if (!plan.activeVersionId) throw new ConflictException('Plan has no active version');
         pinnedVersionId = plan.activeVersionId;
+        const handoff = wakeupId ? await this.terminalGuard.lock(userId, planId, wakeupId, tx) : undefined;
+        if (handoff) {
+          terminalHandoffProof = handoff.proof;
+          triggerSnapshot = this.sanitizer.sanitize(handoff.triggerPayload);
+        }
         if (resolutions.some((resolution) => resolution.row.planVersionId !== pinnedVersionId || resolution.requirement.operation !== 'execute')) throw new ConflictException('Resolution must authorize an execute capability on the active PlanVersion');
         const assembled = await this.assembler.assembleById(userId, planId, pinnedVersionId, tx);
         if (assembled.computedHash !== assembled.version.definitionHash) throw new ConflictException('PLAN_DEFINITION_INTEGRITY_ERROR');
+        if (!handoff && assembled.definition.actions.some((action) => TERMINAL_FOLLOW_UP_RULES.some((rule) => action.config.templateKey === rule.key))) {
+          throw new ConflictException('Registered terminal templates require a server-owned Truth handoff');
+        }
         const actionRows = await tx.select().from(planActions).where(eq(planActions.planVersionId, pinnedVersionId)).orderBy(asc(planActions.stepOrder));
         if (actionRows.length !== assembled.definition.actions.length) throw new ConflictException('PLAN_DEFINITION_INTEGRITY_ERROR');
         if (resolutions.some((resolution) => !actionRows.some((action) => resolution.candidate.id === action.connectionId + ':' + action.requiredCapability))) throw new ConflictException('Resolution is not used by this PlanVersion');
@@ -71,7 +94,7 @@ export class ExecutionDispatchService {
           declaredRiskLevel: risk, approvalStatus: 'not_requested', executionPolicyVersion: this.policy.current.version,
           resolvedRetryPolicyJson: this.policy.retry as unknown as Record<string, unknown>, resolvedFallbackPolicyJson: this.policy.fallback as unknown as Record<string, unknown>,
           riskPolicyVersion: riskSnapshots[0]?.policyVersion ?? 'p0-6-risk-v1',
-          resolvedRiskSnapshotJson: this.sanitizer.sanitize({ steps: riskSnapshots, actionIntentSchemaVersion: '1', ...(resolvedDispatchInputHash ? { resolvedDispatchInputHash } : {}) }) as Record<string, unknown>,
+          resolvedRiskSnapshotJson: this.sanitizer.sanitize({ steps: riskSnapshots, actionIntentSchemaVersion: '1', ...(resolvedDispatchInputHash ? { resolvedDispatchInputHash } : {}), ...(terminalHandoffProof ? { terminalHandoffProof } : {}) }) as Record<string, unknown>,
           resolvedApprovalPolicyJson: approvalPolicy as unknown as Record<string, unknown>,
           resultCode: null, resultSummary: null, errorCode: null, errorMessage: null, cancellationRequestedAt: null,
           queuedAt: null, startedAt: null, finishedAt: null, workerToken: null, heartbeatAt: null, leaseExpiresAt: null, createdAt: now, updatedAt: now,
@@ -115,10 +138,16 @@ export class ExecutionDispatchService {
           });
         }
         await this.audit.append({ actorType: 'user', actorUserId: userId, action: 'EXECUTION_CREATED', resourceType: 'execution', resourceId: id, userId, executionId: id, requestId, correlationId: requestId, changeSummary: `Execution created for plan ${planId}`, source: 'api', result: 'success' }, tx);
+        if (handoff) await tx.update(strategyRuntimeWakeups).set({ handoffStatus: 'DISPATCHED', handoffExecutionId: id, handoffReason: null })
+          .where(and(eq(strategyRuntimeWakeups.id, wakeupId!), eq(strategyRuntimeWakeups.userId, userId)));
+        handoff?.assertCurrent(); // Final deadline barrier; the Execution and ActionIntents roll back together.
       });
     } catch (error) {
       const raced = await this.findDuplicate(userId, requestId);
-      if (raced) return this.replayResolved(raced, resolvedDispatchInputHash);
+      if (raced) {
+        if (wakeupId && (raced.planId !== planId || (raced.resolvedRiskSnapshotJson?.terminalHandoffProof as TerminalHandoffProof | undefined)?.wakeupId !== wakeupId)) throw new ConflictException('Strategy execution identity conflict');
+        return this.replayResolved(raced, resolvedDispatchInputHash);
+      }
       throw error;
     }
     await this.events.append(id, 'execution_created', { triggerType: 'manual', planVersionId: pinnedVersionId });

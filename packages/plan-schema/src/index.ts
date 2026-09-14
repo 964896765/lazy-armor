@@ -461,3 +461,4 @@ export {
   type ActionIntent, type ActionIntentInput, type ApprovalSnapshot, type ContextRiskSignal,
 } from './action-runtime';
 export * from './verification-runtime';
+export * from './terminal-follow-up';

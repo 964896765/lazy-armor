@@ -40,6 +40,8 @@
 
 ## 未完成
 
+2026-09-14 后续基线收口：`main@fdfc2c18f194ed2df214268d58659fae022d2a83` 的独立 [CI #69](https://github.com/964896765/lazy-armor/actions/runs/34832033652) 已 completed/success。Fast `103937335407`、RC Full `103938023993`、Android `103938024091` 均成功。同 SHA artifacts 未过期：MySQL `10342089541` / `sha256:6b0737e64ae6ebce7af8a868a2a8fa35248a5d1c146485571468cc86508da7d6`；Android `10344905095` / `sha256:895aed39a6f9d1542d2e7dd7ed882b2f40100544f6b91e09396edbeb7bb863a9`。这是 Signed Webhook 基线证据，不是之后新增 handoff 源码或真实账号 Journey 的验收。
+
 PR SILENT_FOLLOW_UP 的版本化 Scenario/Fact 投影、terminal Condition、当前 Truth/Grant dispatch guard 和既有 Execution 通知 handoff 仍待实现。现有 96 场景/Readiness 不自动升级，不手工伪造依赖，也不把 PR 当 EmailMessage。没有证明带真实 Strategy 依赖的 PR 通知去重 Journey，本次只验证现有 Generic Truth 版本去重/追加；不能用“没有额外版本”代替完整 Strategy/Execution Journey 验收。
 
 没有真实账号 OAuth/repository hook 交付、真实 token 权限/429/撤权、真实 Issue/Comment 写后验收、Notion/cross-provider Journey 或 Android 真机验收。只有相关真实账号链路受 Secret/授权验收阻塞，其余 9D → 9E/9F → Batch 10/11 按总规划继续。不得标整个 9D 或 Runtime `FULL GREEN`。

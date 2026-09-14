@@ -519,6 +519,7 @@ export const truthRecords = mysqlTable('truth_records', {
   resourceKey: varchar('resource_key', { length: 120 }).notNull(),
   subjectKey: varchar('subject_key', { length: 255 }).notNull(),
   factIdentityHash: char('fact_identity_hash', { length: 64 }),
+  sourceReadFenceJson: json('source_read_fence_json').$type<Record<string, unknown>>(),
   status: varchar('status', { length: 32 }).notNull(),
   currentVersionId: uuidBinary('current_version_id'),
   sourceReceiptId: uuidBinary('source_receipt_id').references(() => mobileNotificationReceipts.id, { onDelete: 'restrict' }),
@@ -1059,11 +1060,15 @@ export const strategyRuntimeWakeups = mysqlTable('strategy_runtime_wakeups', {
   subjectKey: varchar('subject_key', { length: 255 }).notNull(),
   triggerMode: varchar('trigger_mode', { length: 32 }).notNull(),
   status: varchar('status', { length: 32 }).notNull(),
+  handoffStatus: varchar('handoff_status', { length: 32 }),
+  handoffExecutionId: uuidBinary('handoff_execution_id'),
+  handoffReason: varchar('handoff_reason', { length: 120 }),
   createdAt: datetime('created_at', { mode: 'date', fsp: 6 }).notNull(),
   evaluatedAt: datetime('evaluated_at', { mode: 'date', fsp: 6 }),
 }, (table) => [
   uniqueIndex('strategy_runtime_wakeups_key_uq').on(table.wakeupKey),
   index('strategy_runtime_wakeups_user_status_idx').on(table.userId, table.status, table.createdAt),
+  index('strategy_runtime_wakeups_handoff_idx').on(table.handoffStatus, table.createdAt),
 ]);
 
 export const strategyRuntimeDecisions = mysqlTable('strategy_runtime_decisions', {

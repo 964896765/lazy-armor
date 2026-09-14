@@ -15,6 +15,15 @@ describe('Batch 7/8 forward migration contracts', () => {
     ({ db, pool } = createDatabase(url));
   });
   afterAll(async () => { await pool?.end(); });
+  it('extends Truth read authorization and terminal wakeups without backfilling historical bindings or rewriting TruthVersions', async () => {
+    const source = readFileSync(resolve(folder, '0049_strategy_terminal_handoff.sql'), 'utf8');
+    expect(source).not.toMatch(/\b(?:DROP|TRUNCATE|UPDATE|INSERT|DELETE)\b/i);
+    const [columns] = await pool.query<RowDataPacket[]>("SELECT column_name,is_nullable FROM information_schema.columns WHERE table_schema=DATABASE() AND ((table_name='truth_records' AND column_name='source_read_fence_json') OR (table_name='strategy_runtime_wakeups' AND column_name IN ('handoff_status','handoff_execution_id','handoff_reason')))");
+    expect(columns).toHaveLength(4); expect(columns.every((row) => (row.IS_NULLABLE ?? row.is_nullable) === 'YES')).toBe(true);
+    const [before] = await pool.query<RowDataPacket[]>('SELECT id,value_hash,evidence_hash FROM truth_record_versions ORDER BY id LIMIT 10');
+    await migrate(db, { migrationsFolder: folder });
+    const [after] = await pool.query<RowDataPacket[]>('SELECT id,value_hash,evidence_hash FROM truth_record_versions ORDER BY id LIMIT 10'); expect(after).toEqual(before);
+  });
   it('extends existing webhook receipts with nullable leased acquisition, preserving legacy dedupe and no historical enqueue', async () => {
     const [columns] = await pool.query<RowDataPacket[]>("SELECT column_name,is_nullable FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='webhook_receipts' AND column_name LIKE 'acquisition_%'");
     expect(columns).toHaveLength(7); expect(columns.every((row) => (row.IS_NULLABLE ?? row.is_nullable) === 'YES')).toBe(true);
@@ -31,7 +40,7 @@ describe('Batch 7/8 forward migration contracts', () => {
     await migrate(db, { migrationsFolder: folder });
     const [after] = await pool.query<RowDataPacket[]>('SELECT id, hash, created_at FROM __drizzle_migrations ORDER BY id');
     expect(after).toEqual(before);
-    for (const file of ['0042_action_runtime_integration.sql', '0043_action_adapter_resolution.sql', '0044_verification_reconciliation.sql', '0045_provider_runtime_common.sql', '0046_google_oauth_completion.sql', '0047_generic_truth_identity.sql', '0048_webhook_acquisition.sql']) {
+    for (const file of ['0042_action_runtime_integration.sql', '0043_action_adapter_resolution.sql', '0044_verification_reconciliation.sql', '0045_provider_runtime_common.sql', '0046_google_oauth_completion.sql', '0047_generic_truth_identity.sql', '0048_webhook_acquisition.sql', '0049_strategy_terminal_handoff.sql']) {
       const source = readFileSync(resolve(folder, file), 'utf8');
       expect(source).not.toMatch(/\b(?:DROP|TRUNCATE)\b/i);
       const hash = createHash('sha256').update(source).digest('hex');

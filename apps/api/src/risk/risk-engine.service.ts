@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import { connectorCapabilities, strategyRuntimeBindings } from '@lazy-armor/database';
-import { ACTION_DEFINITIONS, canonicalStringify, scenarioByKey, type NormalizedAction, type RiskLevel } from '@lazy-armor/plan-schema';
+import { ACTION_DEFINITIONS, canonicalStringify, scenarioByRevision, type NormalizedAction, type RiskLevel } from '@lazy-armor/plan-schema';
 import { and, eq } from 'drizzle-orm';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
 import { higherRisk, MINIMUM_APPROVAL_REQUIREMENT, RISK_POLICY_VERSION, SIDE_EFFECT_CLASS, type RiskSnapshot } from './risk.types';
@@ -32,7 +32,7 @@ export class RiskEngine {
       : undefined;
     const factors: string[] = [];
     const binding = planVersionId ? (await executor.select().from(strategyRuntimeBindings).where(eq(strategyRuntimeBindings.planVersionId, planVersionId)).limit(1))[0] : undefined;
-    const scenario = binding ? scenarioByKey(binding.scenarioKey) : null;
+    const scenario = binding ? scenarioByRevision(binding.scenarioKey, binding.scenarioRevision) : null;
     if (binding && (!scenario || scenario.revision !== binding.scenarioRevision)) throw new Error('Scenario risk policy revision unavailable');
     const scenarioRisk: RiskLevel = scenario?.defaultRiskFloor ?? 'R0';
     let dynamicRisk: RiskLevel = 'R0';

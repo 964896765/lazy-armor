@@ -1,8 +1,9 @@
-import { Inject, Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
 import {
   FACT_SCHEMA_CATALOG, RESOURCE_CATALOG, SCENARIO_DEFINITIONS, STRATEGY_PROFILES, catalogHash,
   compileScenarioPlan, evaluateScenarioReadiness, scenarioByKey, PRODUCT_DOMAINS,
   type StrategyKey,
+  TERMINAL_FOLLOW_UP_RULES, terminalFollowUpScenario,
 } from '@lazy-armor/plan-schema';
 import {
   connections, factSchemaDefinitions, resourceCatalogDefinitions, scenarioDefinitions, strategyProfileDefinitions,
@@ -46,13 +47,13 @@ export class RuntimeCatalogRegistryService implements OnModuleInit {
     });
   }
 
-  async compile(userId: string, key: string, input: { strategy?: StrategyKey; name?: string; subjectKey?: string }) {
+  async compile(userId: string, key: string, input: { scenarioRevision?: number; strategy?: StrategyKey; name?: string; subjectKey?: string }) {
     const readiness = await this.readiness(userId, key);
-    return compileScenarioPlan({ scenarioKey: key, strategy: input.strategy, name: input.name, subjectKey: input.subjectKey, mode: 'DRAFT', readiness: {
+    try { return compileScenarioPlan({ scenarioKey: key, scenarioRevision: input.scenarioRevision, strategy: input.strategy, name: input.name, subjectKey: input.subjectKey, mode: 'DRAFT', readiness: {
       manualInputAvailable: readiness.state === 'MANUAL_READY',
       observationPipelineAvailable: false,
       executionPipelineAvailable: true,
-    } });
+    } }); } catch (error) { throw new BadRequestException(error instanceof Error ? error.message : 'Scenario compilation failed'); }
   }
 
   async sync() {
@@ -60,6 +61,7 @@ export class RuntimeCatalogRegistryService implements OnModuleInit {
     for (const item of FACT_SCHEMA_CATALOG) await this.syncFact(item);
     for (const item of STRATEGY_PROFILES) await this.syncStrategy(item);
     for (const item of SCENARIO_DEFINITIONS) await this.syncScenario(item);
+    for (const rule of TERMINAL_FOLLOW_UP_RULES) await this.syncScenario(terminalFollowUpScenario(rule));
   }
 
   private async syncResource(item: typeof RESOURCE_CATALOG[number]) {

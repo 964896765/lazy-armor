@@ -2907,6 +2907,8 @@ sandbox/test account evidence
 
 ## 106. Batch 10 — Wave 1 Scenario Reality
 
+2026-09-14 用户执行修订：以 `f6752cb` 为 Versioned Truth 里程碑、当前 `main@fdfc2c1` 为代码基线，不回退、不重复 Signed Webhook；先完成 PR/Workflow SILENT_FOLLOW_UP → Existing Execution Notification/Record 的当前授权 handoff，再完成 GitHub 写后 Verification 与真实账号验收。缺 Secret 仅暂停相关真实验收链路。之后连续 9E Notion → 9F Cross-Provider → Batch 10 **46** 个 Wave 1 Scenario → Batch 11 数据驱动 Mobile → Batch 12 剩余 **50** 个 Scenario，最终执行 **96/96 Coverage Gate**。46/50 是本次明确修订后的目标，优先于本规划历史 35～40 的估算；目录 96 项、策略 8 项或静态页面存在，不等于现实 Coverage Gate 已通过。
+
 用 Group 1 Provider + Android Notification + internal/manual source，逐步把 Wave 1 约 35～40 场景提升到 `OBSERVE_READY / ASSISTED_READY`。
 
 不是要求全部自动执行。

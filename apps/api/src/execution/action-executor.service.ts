@@ -1,4 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
+import { executions } from '@lazy-armor/database';
+import { eq } from 'drizzle-orm';
+import { DATABASE, type InjectedDatabase } from '../common/database.module';
+import { TerminalHandoffGuard, type HandoffTransaction, type TerminalHandoffProof } from '../strategy-runtime/terminal-handoff-guard.service';
 import { ConnectorRegistry } from '@lazy-armor/connector-sdk';
 import { ACTION_DEFINITIONS, type NormalizedAction, type RiskLevel } from '@lazy-armor/plan-schema';
 import { BillingService } from '../billing/billing.service';
@@ -25,11 +29,26 @@ export class ActionExecutor {
     private readonly logistics: LogisticsService,
     private readonly household: HouseholdService,
     private readonly study: StudyService,
+    @Inject(DATABASE) private readonly db: InjectedDatabase,
+    private readonly terminalGuard: TerminalHandoffGuard,
   ) {}
 
   supports(actionType: string): boolean { return ['record', 'compare', 'update_internal_record', 'classify', 'summarize', 'notify', 'prepare_purchase', 'generate_content', 'create_draft', 'prepare_publish', 'create_task', 'archive'].includes(actionType); }
 
-  async execute(userId: string, executionId: string, action: NormalizedAction, context: Record<string, unknown>, effectiveRisk: RiskLevel = action.riskLevel): Promise<Record<string, unknown>> {
+  async execute(userId: string, executionId: string, action: NormalizedAction, context: Record<string, unknown>, effectiveRisk: RiskLevel = action.riskLevel, terminalTx?: HandoffTransaction): Promise<Record<string, unknown>> {
+    if (!terminalTx) {
+      const execution = (await this.db.select().from(executions).where(eq(executions.id, executionId)).limit(1))[0];
+      const proof = execution?.resolvedRiskSnapshotJson?.terminalHandoffProof as TerminalHandoffProof | undefined;
+      if (proof) {
+        if (execution.userId !== userId || !['notify', 'record'].includes(action.actionType) || action.connectionId) throw new ExecutionRuntimeError('TERMINAL_HANDOFF_NOT_AUTHORIZED', 'Terminal action boundary is invalid');
+        return this.db.transaction(async (tx) => {
+          const handoff = await this.terminalGuard.lock(userId, execution.planId, proof.wakeupId, tx, proof);
+          const output = await this.execute(userId, executionId, action, context, effectiveRisk, tx);
+          handoff.assertCurrent(); // Includes notification/usage persistence in this transaction.
+          return output;
+        });
+      }
+    }
     // 批准后的每一次执行都必须先重新过 Runtime Connection Guard（连接归属/状态/权限/能力/凭据），
     // Approval 永远不能覆盖 Permission Guard；随后才是 P0-7 Safety Gate。
     const checked = action.requiredCapability ? await this.assertConnectorInput(userId, action) : null;
@@ -513,7 +532,7 @@ export class ActionExecutor {
         dedupeKey: typeof context.notificationDedupeKey === 'string' ? context.notificationDedupeKey : `execution:${executionId}:step:${action.stepOrder}`,
         title,
         body,
-      });
+      }, terminalTx);
       return { notified: true, priority, title, body };
     }
     if (action.actionType !== 'record' && action.actionType !== 'update_internal_record') {

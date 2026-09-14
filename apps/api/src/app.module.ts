@@ -46,6 +46,7 @@ import { ProviderRuntimeModule } from './provider-runtime/provider-runtime.modul
 import { GmailModule } from './providers/gmail/gmail.module';
 import { GoogleCalendarModule } from './providers/calendar/calendar.module';
 import { GitHubModule } from './providers/github/github.module';
+import { TerminalHandoffController, TerminalHandoffService } from './strategy-runtime/terminal-handoff.service';
 
 @Module({
   imports: [
@@ -101,7 +102,9 @@ import { GitHubModule } from './providers/github/github.module';
     AiAdapterModule,
     AdminModule,
   ],
+  controllers: [TerminalHandoffController],
   providers: [
+    TerminalHandoffService,
     SafeLoggerService,
     { provide: APP_FILTER, useClass: AllExceptionsFilter },
   ],

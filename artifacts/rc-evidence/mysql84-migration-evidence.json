@@ -1,0 +1,18 @@
+{
+  "schema": "lazy-armor.mysql84-migration-evidence.v1",
+  "generatedAt": "2026-09-14T14:25:39.529Z",
+  "ok": true,
+  "mysqlVersion": "8.4.11",
+  "database": "lazy_armor_test",
+  "requiredTables": [
+    "trusted_devices",
+    "trusted_device_challenges",
+    "trusted_device_request_sessions",
+    "trusted_device_request_proofs",
+    "device_app_connections",
+    "mobile_notification_receipts",
+    "truth_records",
+    "truth_record_versions"
+  ],
+  "drizzleMigrationCount": 50
+}

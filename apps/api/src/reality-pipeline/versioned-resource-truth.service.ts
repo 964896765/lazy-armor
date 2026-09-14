@@ -67,6 +67,8 @@ export class VersionedResourceTruthService {
         || health.status !== 'HEALTHY' || health.checkedAt > now || !health.validUntil || health.validUntil <= now) {
         throw new ForbiddenException('Resource authorization changed before publication');
       }
+      const sourceReadFence = { connectionId: observation.connectionId, credentialRefId: credential.id,
+        credentialVersion: credential.currentVersion, capabilityKey: proof.capabilityKey };
       let assertAcquisitionCurrent: (() => void) | undefined;
       if (proof.acquisitionLease) {
         // Close the precheck→publication race. Holding the receipt row until
@@ -145,7 +147,7 @@ export class VersionedResourceTruthService {
       }, tx);
       if (record && previous && realityValueHash(oldValue) === candidate.valueHash) {
         if (acquiredAt > record.verifiedAt) {
-          await tx.update(truthRecords).set({ verifiedAt: acquiredAt, updatedAt: now }).where(eq(truthRecords.id, record.id));
+          await tx.update(truthRecords).set({ verifiedAt: acquiredAt, sourceReadFenceJson: sourceReadFence, updatedAt: now }).where(eq(truthRecords.id, record.id));
           await audit('GENERIC_TRUTH_REVALIDATED', 'success', { truthRecordVersionId: previous.id });
         }
         assertAcquisitionCurrent?.(); // Roll back if waiting for Audit consumed the deadline.
@@ -176,7 +178,7 @@ export class VersionedResourceTruthService {
       await tx.insert(truthProvenance).values({ id: newId(), truthRecordVersionId: versionId, candidateFactId: candidateId,
         observationId: observation.id, providerKey: observation.providerKey, sourceMode: observation.sourceMode,
         evidenceHash: observation.evidenceHash, observedAt: observation.observedAt, createdAt: now });
-      await tx.update(truthRecords).set({ currentVersionId: versionId, verifiedAt: acquiredAt > record.verifiedAt ? acquiredAt : record.verifiedAt, updatedAt: now }).where(eq(truthRecords.id, record.id));
+      await tx.update(truthRecords).set({ currentVersionId: versionId, sourceReadFenceJson: sourceReadFence, verifiedAt: acquiredAt > record.verifiedAt ? acquiredAt : record.verifiedAt, updatedAt: now }).where(eq(truthRecords.id, record.id));
       await tx.update(candidateFacts).set({ status: 'VERIFIED', truthRecordId: record.id, decidedAt: now }).where(eq(candidateFacts.id, candidateId));
       await this.strategy.enqueueTruthChange(userId, { truthRecordVersionId: versionId, factKey: candidate.factKey,
         resourceType: candidate.resourceType, subjectKey: candidate.subjectKey }, tx);

@@ -4,6 +4,7 @@ import {
   CONDITION_AST_SCHEMA_VERSION, OPERATOR_REGISTRY, OPERATOR_REGISTRY_REVISION, PLAN_EXECUTION_LIFECYCLE,
   canonicalStringify, compileScenarioPlan, definitionHash, evaluateConditionAst,
   type CompiledStrategyRuntime, type RuntimeFactInput, type StrategyKey,
+  terminalFollowUpRule,
 } from '@lazy-armor/plan-schema';
 import {
   plans, planVersions, strategyRuntimeBindings, strategyRuntimeDecisions, strategyRuntimeWakeups,
@@ -15,7 +16,7 @@ import { AuditService } from '../audit/audit.service';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
 
 type StrategyRuntimeExecutor = Pick<InjectedDatabase, 'select' | 'insert'>;
-type BindingInput = { planVersionId: string; scenarioKey: string; strategy?: StrategyKey; subjectKey?: string };
+type BindingInput = { planVersionId: string; scenarioKey: string; scenarioRevision?: number; strategy?: StrategyKey; subjectKey?: string };
 type DependencyQuery = { factKey?: string; resourceType?: string; subjectKey?: string };
 type TruthChangeInput = { truthRecordVersionId: string; factKey: string; resourceType: string; subjectKey: string };
 
@@ -37,6 +38,7 @@ export class StrategyRuntimeService {
     try {
       compiled = compileScenarioPlan({
         scenarioKey: input.scenarioKey,
+        scenarioRevision: input.scenarioRevision,
         strategy: input.strategy,
         subjectKey: input.subjectKey,
         name: owned.version.name,
@@ -159,6 +161,7 @@ export class StrategyRuntimeService {
           subjectKey: input.subjectKey,
           triggerMode: 'FACT_CHANGED',
           status: 'PENDING',
+          handoffStatus: terminalFollowUpRule(row.binding.scenarioKey, row.binding.scenarioRevision) ? 'PENDING' : null,
           createdAt: new Date(),
           evaluatedAt: null,
         });

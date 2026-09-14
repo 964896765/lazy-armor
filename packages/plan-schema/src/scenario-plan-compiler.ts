@@ -2,9 +2,11 @@ import { normalizePlanDefinition, type PlanDefinition, type PlanDefinitionInput 
 import { evaluateScenarioReadiness, scenarioByKey, type ScenarioReadinessInput, type StrategyKey } from './runtime-catalog';
 import { productDomainFromStorageKey } from './product-model';
 import { buildStrategyRuntime, type CompiledStrategyRuntime } from './strategy-runtime';
+import { buildTerminalFollowUpRuntime, terminalFollowUpRule, terminalFollowUpScenario } from './terminal-follow-up';
 
 export interface ScenarioCompileInput {
   scenarioKey: string;
+  scenarioRevision?: number;
   strategy?: StrategyKey;
   name?: string;
   mode?: 'DRAFT' | 'EXECUTABLE';
@@ -25,7 +27,9 @@ export interface CompiledScenarioPlan {
 
 /** Compiles a catalog scenario and strategy into the existing Plan Engine schema. */
 export function compileScenarioPlan(input: ScenarioCompileInput): CompiledScenarioPlan {
-  const scenario = scenarioByKey(input.scenarioKey);
+  const revision = input.scenarioRevision ?? 1;
+  const terminalRule = terminalFollowUpRule(input.scenarioKey, revision);
+  const scenario = terminalRule ? terminalFollowUpScenario(terminalRule) : revision === 1 ? scenarioByKey(input.scenarioKey) : undefined;
   if (!scenario) throw new Error(`Unknown scenario: ${input.scenarioKey}`);
   const strategy = input.strategy ?? scenario.defaultStrategy;
   if (!scenario.supportedStrategies.includes(strategy)) throw new Error(`Strategy ${strategy} is not supported by ${scenario.key}`);
@@ -36,7 +40,7 @@ export function compileScenarioPlan(input: ScenarioCompileInput): CompiledScenar
   }
   const productDomain = productDomainFromStorageKey(scenario.domain);
   if (!productDomain) throw new Error(`Scenario domain is not in the product catalog: ${scenario.domain}`);
-  const runtime = buildStrategyRuntime(scenario, strategy, input.subjectKey ?? null);
+  const runtime = terminalRule ? buildTerminalFollowUpRuntime(terminalRule, input.subjectKey) : buildStrategyRuntime(scenario, strategy, input.subjectKey ?? null);
   const definitionInput: PlanDefinitionInput = {
     name: input.name ?? scenario.label,
     description: `${scenario.label} · ${strategy} · Scenario ${scenario.key}@${scenario.revision}`,
@@ -48,6 +52,14 @@ export function compileScenarioPlan(input: ScenarioCompileInput): CompiledScenar
     conditions: [{ groupId: 'root', logicalOperator: 'AND', fieldPath: scenario.requiredFacts[0], operator: 'EXISTS', sortOrder: 0 }],
     actions: [actionFor(runtime.actionMode, scenario.key, productDomain.storageKey)],
   };
+  if (terminalRule) {
+    definitionInput.conditions = [{ groupId: 'root', logicalOperator: 'AND',
+      fieldPath: `${terminalRule.factKey}.${terminalRule.field}`, operator: 'EQ', comparisonValue: terminalRule.terminal, sortOrder: 0 }];
+    definitionInput.actions = [
+      { actionType: 'notify', config: { channel: 'in_app', priority: 'P2', eventType: 'github_terminal_follow_up', templateKey: terminalRule.key }, stepOrder: 0 },
+      { actionType: 'record', config: { recordType: terminalRule.key }, stepOrder: 1 },
+    ];
+  }
   const definition = normalizePlanDefinition(definitionInput);
   return { scenarioKey: scenario.key, scenarioRevision: scenario.revision, strategy, mode, readiness, runtime, definitionInput, definition };
 }
