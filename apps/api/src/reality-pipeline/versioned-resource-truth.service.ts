@@ -1,7 +1,7 @@
 import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { validateProviderCapabilityManifest, type ProviderCapabilityManifest } from '@lazy-armor/connector-sdk';
 import { candidateFacts, connectionCapabilityGrants, connectionPermissions, connections, connectorCapabilities, connectors,
-  credentialRefs, providerCapabilityHealth, providerCapabilityManifests, sourceObservations, truthProvenance, truthRecords, truthRecordVersions, users } from '@lazy-armor/database';
+  credentialRefs, providerCapabilityHealth, providerCapabilityManifests, sourceObservations, truthProvenance, truthRecords, truthRecordVersions, users, webhookReceipts } from '@lazy-armor/database';
 import { candidateDedupeKey, parseAndNormalizeObservation, realityValueHash, versionedFactIdentity, type JsonValue } from '@lazy-armor/plan-schema';
 import { newId } from '@lazy-armor/shared';
 import { and, eq } from 'drizzle-orm';
@@ -9,7 +9,10 @@ import { AuditService } from '../audit/audit.service';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
 import { StrategyRuntimeService } from '../strategy-runtime/strategy-runtime.service';
 
-export interface ResourceReadProof { capabilityKey: string; credentialVersion: number; requestId: string; acquiredAt: string }
+export interface ResourceReadProof {
+  capabilityKey: string; credentialVersion: number; requestId: string; acquiredAt: string;
+  acquisitionLease?: { receiptId: string; leaseToken: string };
+}
 
 // Additive generic projection into the EXISTING Truth tables. No new store or Engine.
 // Only server-acquired read proofs may enter this path; consumer confirmation cannot manufacture one.
@@ -19,9 +22,12 @@ export class VersionedResourceTruthService {
     private readonly strategy: StrategyRuntimeService) {}
 
   async confirm(userId: string, candidateId: string, proof: ResourceReadProof, retry = 0): Promise<string> {
+    const uuid = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i;
     if (!proof || !Number.isSafeInteger(proof.credentialVersion) || proof.credentialVersion < 1
       || typeof proof.requestId !== 'string' || !/^[A-Za-z0-9:_.-]{1,255}$/.test(proof.requestId)
-      || typeof proof.capabilityKey !== 'string' || !Number.isFinite(Date.parse(proof.acquiredAt))) {
+      || typeof proof.capabilityKey !== 'string' || !Number.isFinite(Date.parse(proof.acquiredAt))
+      || (proof.acquisitionLease !== undefined && (!proof.acquisitionLease || typeof proof.acquisitionLease.receiptId !== 'string'
+        || !uuid.test(proof.acquisitionLease.receiptId) || typeof proof.acquisitionLease.leaseToken !== 'string' || !uuid.test(proof.acquisitionLease.leaseToken)))) {
       throw new ForbiddenException('A server-acquired resource read proof is required');
     }
     const acquiredAt = new Date(proof.acquiredAt);
@@ -61,6 +67,31 @@ export class VersionedResourceTruthService {
         || health.status !== 'HEALTHY' || health.checkedAt > now || !health.validUntil || health.validUntil <= now) {
         throw new ForbiddenException('Resource authorization changed before publication');
       }
+      let assertAcquisitionCurrent: (() => void) | undefined;
+      if (proof.acquisitionLease) {
+        // Close the precheck→publication race. Holding the receipt row until
+        // append commits serializes confirmation BEFORE any successor claim.
+        // Normal direct API reads have no lease and preserve the previous path.
+        const receipt = (await tx.select().from(webhookReceipts).where(and(eq(webhookReceipts.id, proof.acquisitionLease.receiptId),
+          eq(webhookReceipts.connectionId, observation.connectionId!))).limit(1).for('update'))[0];
+        const leaseToken = proof.acquisitionLease.leaseToken;
+        assertAcquisitionCurrent = () => {
+          const leaseNow = new Date(); // Recompute after EVERY publication lock barrier.
+          if ((owned.connection.expiresAt && owned.connection.expiresAt <= leaseNow)
+            || (permission.permission.expiresAt && permission.permission.expiresAt <= leaseNow)
+            || (grant.expiresAt && grant.expiresAt <= leaseNow)
+            || (credential.expiresAt && credential.expiresAt <= leaseNow)) {
+            throw new ForbiddenException('Resource authorization expired while waiting for publication locks');
+          }
+          if (!receipt || receipt.acquisitionProviderKey !== owned.providerKey || receipt.acquisitionStatus !== 'PROCESSING'
+            || receipt.acquisitionLeaseToken !== leaseToken || !receipt.acquisitionLeaseUntil || receipt.acquisitionLeaseUntil <= leaseNow
+            || !receipt.expiresAt || receipt.expiresAt <= leaseNow || receipt.purgedAt || receipt.payloadSnapshotJson?.capability !== proof.capabilityKey
+            || receipt.acquisitionResultJson?.hintHash !== realityValueHash(receipt.payloadSnapshotJson) || health.validUntil! <= leaseNow) {
+            throw new ConflictException('Acquisition authorization lease changed before Truth publication');
+          }
+        };
+        assertAcquisitionCurrent();
+      }
       const candidate = (await tx.select().from(candidateFacts).where(and(eq(candidateFacts.id, candidateId), eq(candidateFacts.userId, userId))).limit(1).for('update'))[0]!;
       let draft;
       try { draft = parseAndNormalizeObservation({ providerKey: observation.providerKey, connectionId: observation.connectionId,
@@ -97,6 +128,7 @@ export class VersionedResourceTruthService {
         if (!previous || previous.valueHash !== realityValueHash(previous.valueJson) || previous.valueJson.factKey !== candidate.factKey
           || previous.valueJson.resourceKey !== candidate.resourceKey) throw new ConflictException('Truth version integrity check failed');
       }
+      assertAcquisitionCurrent?.(); // Candidate/manifest/Truth locks may also have waited.
       if (candidate.status === 'SUPERSEDED' && record && candidate.truthRecordId === record.id) return record.id;
       if (!['PENDING', 'VERIFIED'].includes(candidate.status) || (candidate.status === 'VERIFIED' && candidate.truthRecordId !== record?.id)) {
         throw new ConflictException('Versioned candidate has already been decided');
@@ -116,6 +148,7 @@ export class VersionedResourceTruthService {
           await tx.update(truthRecords).set({ verifiedAt: acquiredAt, updatedAt: now }).where(eq(truthRecords.id, record.id));
           await audit('GENERIC_TRUTH_REVALIDATED', 'success', { truthRecordVersionId: previous.id });
         }
+        assertAcquisitionCurrent?.(); // Roll back if waiting for Audit consumed the deadline.
         return record.id; // No value mutation, new version or false CHANGED wakeup.
       }
       if (record && previous && oldEpoch !== null && epoch <= oldEpoch) {
@@ -124,6 +157,7 @@ export class VersionedResourceTruthService {
         await tx.update(candidateFacts).set({ status: conflict ? 'CONFLICT' : 'SUPERSEDED', truthRecordId: record.id, decidedAt: now }).where(eq(candidateFacts.id, candidateId));
         if (conflict) await tx.update(truthRecords).set({ status: 'conflicted', updatedAt: now }).where(eq(truthRecords.id, record.id));
         await audit(conflict ? 'GENERIC_TRUTH_CONFLICT_BLOCKED' : 'GENERIC_TRUTH_CANDIDATE_SUPERSEDED', 'blocked', { currentVersionId: previous.id, incomingEpoch: epoch, currentEpoch: oldEpoch });
+        assertAcquisitionCurrent?.();
         return record.id;
       }
       if (!record) {
@@ -147,6 +181,7 @@ export class VersionedResourceTruthService {
       await this.strategy.enqueueTruthChange(userId, { truthRecordVersionId: versionId, factKey: candidate.factKey,
         resourceType: candidate.resourceType, subjectKey: candidate.subjectKey }, tx);
       await audit('GENERIC_TRUTH_VERSION_APPENDED', 'success', { truthRecordVersionId: versionId, versionNumber: number });
+      assertAcquisitionCurrent?.(); // Last fence BEFORE commit; all appends roll back together.
       return record.id;
     }); } catch (error) {
       if (retry < 3 && concurrencyError(error)) return this.confirm(userId, candidateId, proof, retry + 1);

@@ -5,7 +5,7 @@ import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { GITHUB_CALLBACK_PATH } from '@lazy-armor/config';
 import { GITHUB_TRANSPORT, type GitHubTransport } from '../src/providers/github/github-http.client';
-import { githubManifest } from '../src/providers/github/github-manifest';
+import { githubWebhookManifest } from '../src/providers/github/github-webhook-manifest';
 import { auth, bootP2App, register, activatePlan, type Session } from './p2-test-helpers';
 import { ReconciliationService } from '../src/execution/reconciliation.service';
 import type { ExecutionWorker } from '../src/execution/execution-worker.service';
@@ -82,8 +82,9 @@ describe.sequential('9D actual GitHub adapter over isolated TCP/MySQL; not real 
     const local = pipeline as unknown as { ingestOnce: typeof pipeline.ingest }; const materialize = local.ingestOnce.bind(pipeline);
     vi.spyOn(local, 'ingestOnce').mockImplementation(async (...args) => { try { return await materialize(...args); } catch (error) { recordFailure('materialization', error); throw error; } });
     await pool.query("UPDATE provider_capability_manifests SET status='SUPERSEDED',superseded_at=UTC_TIMESTAMP(6) WHERE provider_key='github' AND revision=1");
-    await pool.query("UPDATE provider_capability_manifests SET status='ACTIVE',superseded_at=NULL WHERE provider_key='github' AND revision=2");
-    app.get(ProviderCapabilityRegistryService).installRevision(githubManifest);
+    await pool.query("UPDATE provider_capability_manifests SET status='SUPERSEDED',superseded_at=UTC_TIMESTAMP(6) WHERE provider_key='github' AND revision=2");
+    await pool.query("UPDATE provider_capability_manifests SET status='ACTIVE',superseded_at=NULL WHERE provider_key='github' AND revision=3");
+    app.get(ProviderCapabilityRegistryService).installRevision(githubWebhookManifest);
     owner = await register(app, 'github-owner-' + unique + '@example.com', 'GitHub owner'); other = await register(app, 'github-other-' + unique + '@example.com', 'Other');
   });
   afterAll(async () => {
@@ -91,7 +92,7 @@ describe.sequential('9D actual GitHub adapter over isolated TCP/MySQL; not real 
     if (databaseFailures.length) console.info('Safe local acquisition diagnostics', JSON.stringify(databaseFailures));
     vi.restoreAllMocks();
     releaseIssueRead?.();
-    if (pool) { await pool.query("UPDATE provider_capability_manifests SET status='SUPERSEDED',superseded_at=UTC_TIMESTAMP(6) WHERE provider_key='github' AND revision=2");
+    if (pool) { await pool.query("UPDATE provider_capability_manifests SET status='SUPERSEDED',superseded_at=UTC_TIMESTAMP(6) WHERE provider_key='github' AND revision IN (2,3)");
       await pool.query("UPDATE provider_capability_manifests SET status='ACTIVE',superseded_at=NULL WHERE provider_key='github' AND revision=1"); }
     await app?.close(); await pool?.end(); if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
     for (const key of keys) if (saved[key] === undefined) delete process.env[key]; else process.env[key] = saved[key];

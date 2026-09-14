@@ -7,12 +7,12 @@ import { githubManifest } from './github-manifest';
 import { githubRepositorySchema, normalizeGitHubRepository, normalizeGitHubResource, prepareGitHubAction, gitHubWriteEvidence, type GitHubRepository } from './github-resource';
 const base = 'https://api.github.com';
 export class GitHubProviderAdapter implements ProviderAdapter {
-  constructor(private readonly oauth: GitHubOAuthClient, private readonly http: GitHubHttpClient) {}
+  constructor(private readonly oauth: GitHubOAuthClient, private readonly http: GitHubHttpClient, private readonly definition = githubManifest) {}
   metadata(): ConnectorMetadata { return { key: 'github', name: 'GitHub', description: 'OAuth App REST adapter; real-account acceptance is separate.',
     version: '0.2.0', connectorSdkVersion: '0.1.0', providerType: 'content', productionStatus: 'BETA',
     authentication: { type: 'oauth2', oauth2: { authorizationCapability: 'READ_ISSUE', supportsRefresh: true, supportsRevoke: true, supportsPKCE: true, requiresRedirect: true } },
-    supportsRefresh: true, supportsRevoke: true, supportsWebhook: false, supportsHealthCheck: true, sandboxSupport: 'none', rateLimitStrategy: 'retry_after' }; }
-  capabilities() { return structuredClone(githubManifest.capabilities); }
+    supportsRefresh: true, supportsRevoke: true, supportsWebhook: (this.definition ?? githubManifest).revision >= 3, supportsHealthCheck: true, sandboxSupport: 'none', rateLimitStrategy: 'retry_after' }; }
+  capabilities() { return structuredClone(this.definition.capabilities); }
   async authorize(input: ProviderAuthorizationRequest) {
     if (input.phase === 'START') return { phase: 'START' as const, result: this.oauth.start(input.request) };
     const token = await this.oauth.exchange(input.request); const scopes = gitHubOAuthScopes(token.credentials.scopes);

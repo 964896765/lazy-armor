@@ -74,3 +74,20 @@ verifyGitHubWebhookSignature 只提供 raw Buffer 的 HMAC SHA-256 常量时间�
 6. 隔离验收至少覆盖 raw bytes/重新 stringify/缺 Secret、事件头篡改与 signed body 不符、资源错配/歧义 body、header 变化重放、真实 DB 并发唯一 receipt、GET 中撤权/旋转、worker lease takeover、429/断线恢复、读取后连续 TruthVersion 与无重复 wakeup。真实 GitHub repository delivery 和账号授权另外验收，不用 isolation transport 关闭 9D。
 
 PR 静默 Journey 需要版本化 Scenario/Fact 投影和 terminal Condition，不能篡改旧 96 场景或旧 binding hash。新 dispatcher 必须在 handoff 前复核当前 Truth 状态/版本、Grant/资源边界；conflicted/revoked/superseded version 不作为有效当前事实。历史 StrategyDecision/Audit 保持不可变，不能把旧 READY_FOR_PLAN_ENGINE decision replay 当成当前授权证据。现有 Operator/Strategy/Execution 重用，不以任意字段或 updatedAt 的 CHANGED 代替 merged/failed。
+
+## 后续签名接收与只读 acquisition 实现
+
+上文“待实现”保留为设计时历史状态。现已增量接入 HTTPS JSON raw-body endpoint、最小 refresh hint、既有 webhook_receipts 扩展、connection delivery/raw-hash 去重、SKIP LOCKED/lease CAS worker、真实授权 API 回读及 Generic v2。最终提示不保留 action/title/body/state/sender，只保留 schema/目标 repository/capability/resource ID/number/runId，并以 hintHash 做存储完整性校验；原始正文只在内存验签，不保存。共用 HTTP JSON parser 会做基本 JSON 解析，业务提示解析/保存前再验证捕获的原始字节 HMAC；没有改写公共 parser 或扩大 256KiB body budget。
+
+新增 Manifest github@3、Official Evidence@2、RuntimePolicy@2；原 @2/@1/@1 定义保持不变。已实现的 supportsWebhook 不等于 signing Secret 已配置、仓库 hook 已建立或真实账号已验收。三类事件均只触发有权的现有 READ，不触发写入或绕过 Approval。准确测试和未完成边界见 [Webhook acquisition report](./runtime-productization-batch-9d-webhook-report.md)。PR 静默 Journey/既有 Execution handoff 与真实平台验收仍未完成。
+
+## 下一子步骤：terminal 静默跟进的交接约束（设计，尚未实现）
+
+当前代码复核确认：ScenarioPlanCompiler 默认只编译 canonical revision；SILENT_FOLLOW_UP@1 使用 CHANGED/OBSERVE；evaluateWakeup 会重放不可变历史决定，并未派发 Execution。因此接收 Webhook、追加 TruthVersion 或取得 READY_FOR_PLAN_ENGINE 都不能视为通知 Journey 已完成。
+
+1. 使用注册且版本化的 Scenario 编译规则，显式绑定既有 PullRequest / Workflow Fact；保留原 96 个 canonical 场景、默认编译结果与 SILENT_FOLLOW_UP@1 hash，不接受客户端提供任意 AST/field/action 来伪造规则。只为新 PlanVersion 绑定 terminal 规则，旧 binding 不更新。
+2. PullRequest 从实际 API Truth 的 `merged` 字段判断；Workflow 从实际 API Truth 的 `status` 判断 completed，再展示实际 `conclusion`。复用现有 EQ/CHANGED/逻辑 AST 与字段投影，不以 `updatedAt` 或整个对象 CHANGED 冒充 merged/failed。通知仅走 existing in_app Action/Runner，不新增外部发送权限。
+3. 新交接入口将 Wakeup、Binding、StrategyDecision、TruthVersion、PlanVersion 和定义 hash 固定为服务器 proof。历史 READY 决策仍为历史记录；交接时必须重新检查 parent Truth 当前 version/status/freshness、实际 connection、当前 READ Grant/permission/credential/Health、repo/subject 与 active PlanVersion。历史决定不被改写为“现在已授权”。
+4. 交接检查不能止于 dispatch 前的异步 precheck；最终检查与创建 Execution 必须在同一锁事务中完成，封住撤权/冲突/Truth version 替换/Plan 激活变更窗口。增量接入既有 Dispatch 的事务边界，不复制其 Risk/ActionIntent/Approval/Runner/Outbox。正常手动执行路径不携带 Strategy proof，保持现有契约。
+5. 使用既有 Execution requestId unique identity 做 connection/plan/decision 作用域去重。并发或进程重启最多创建一条 Execution；失去租约的 worker 不覆盖后继，READY/已入队也不假称通知已完成。只有现有 Runner/Result/Audit 的实际结果可呈现完成。
+6. 隔离 Journey 必须通过正式 Registry → Compiler → PlanVersion → Binding API 建立依赖，不能手工插入 truth_fact_dependencies。覆盖 open 静默、merged 通知、重复事件无重复 Execution、workflow completed/failed、旧 READY replay、handoff 前撤权/冲突/过期/旧版本、事务间并发变更和重启恢复；真实 GitHub hook/账号验收仍独立记录。

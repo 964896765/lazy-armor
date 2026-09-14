@@ -910,10 +910,18 @@ export const webhookReceipts = mysqlTable('webhook_receipts', {
   receivedAt: datetime('received_at', { mode: 'date', fsp: 6 }).notNull(),
   expiresAt: datetime('expires_at', { mode: 'date', fsp: 6 }),
   purgedAt: datetime('purged_at', { mode: 'date', fsp: 6 }),
+  acquisitionProviderKey: varchar('acquisition_provider_key', { length: 64 }),
+  acquisitionStatus: varchar('acquisition_status', { length: 32 }),
+  acquisitionAttemptCount: int('acquisition_attempt_count'),
+  acquisitionNextAttemptAt: datetime('acquisition_next_attempt_at', { mode: 'date', fsp: 6 }),
+  acquisitionLeaseToken: uuidBinary('acquisition_lease_token'),
+  acquisitionLeaseUntil: datetime('acquisition_lease_until', { mode: 'date', fsp: 6 }),
+  acquisitionResultJson: json('acquisition_result_json').$type<Record<string, unknown>>(),
 }, (table) => [
   uniqueIndex('webhook_receipts_connection_event_uq').on(table.connectionId, table.eventId),
   uniqueIndex('webhook_receipts_connection_idempotency_uq').on(table.connectionId, table.idempotencyKey),
   index('webhook_receipts_retention_idx').on(table.expiresAt, table.purgedAt),
+  index('webhook_receipts_acquisition_claim_idx').on(table.acquisitionProviderKey, table.acquisitionStatus, table.acquisitionNextAttemptAt, table.acquisitionLeaseUntil),
 ]);
 
 export const plans = mysqlTable('plans', {

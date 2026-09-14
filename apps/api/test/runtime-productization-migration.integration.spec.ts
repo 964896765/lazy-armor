@@ -15,12 +15,23 @@ describe('Batch 7/8 forward migration contracts', () => {
     ({ db, pool } = createDatabase(url));
   });
   afterAll(async () => { await pool?.end(); });
+  it('extends existing webhook receipts with nullable leased acquisition, preserving legacy dedupe and no historical enqueue', async () => {
+    const [columns] = await pool.query<RowDataPacket[]>("SELECT column_name,is_nullable FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='webhook_receipts' AND column_name LIKE 'acquisition_%'");
+    expect(columns).toHaveLength(7); expect(columns.every((row) => (row.IS_NULLABLE ?? row.is_nullable) === 'YES')).toBe(true);
+    const [indices] = await pool.query<RowDataPacket[]>("SELECT index_name FROM information_schema.statistics WHERE table_schema=DATABASE() AND table_name='webhook_receipts' AND index_name IN ('webhook_receipts_connection_event_uq','webhook_receipts_connection_idempotency_uq','webhook_receipts_retention_idx','webhook_receipts_acquisition_claim_idx') GROUP BY index_name");
+    expect(indices).toHaveLength(4);
+    const source = readFileSync(resolve(folder, '0048_webhook_acquisition.sql'), 'utf8'); expect(source).not.toMatch(/\b(?:DROP|TRUNCATE|UPDATE|INSERT|DELETE)\b/i);
+    const [before] = await pool.query<RowDataPacket[]>('SELECT id,event_id,idempotency_key,payload_hash,received_at,acquisition_status FROM webhook_receipts WHERE acquisition_provider_key IS NULL ORDER BY id LIMIT 10');
+    expect(before.every((row) => row.acquisition_status === null)).toBe(true);
+    await migrate(db, { migrationsFolder: folder });
+    const [after] = await pool.query<RowDataPacket[]>('SELECT id,event_id,idempotency_key,payload_hash,received_at,acquisition_status FROM webhook_receipts WHERE acquisition_provider_key IS NULL ORDER BY id LIMIT 10'); expect(after).toEqual(before);
+  });
   it('replays migrations without changing the ledger and verifies exact source checksums', async () => {
     const [before] = await pool.query<RowDataPacket[]>('SELECT id, hash, created_at FROM __drizzle_migrations ORDER BY id');
     await migrate(db, { migrationsFolder: folder });
     const [after] = await pool.query<RowDataPacket[]>('SELECT id, hash, created_at FROM __drizzle_migrations ORDER BY id');
     expect(after).toEqual(before);
-    for (const file of ['0042_action_runtime_integration.sql', '0043_action_adapter_resolution.sql', '0044_verification_reconciliation.sql', '0045_provider_runtime_common.sql', '0046_google_oauth_completion.sql', '0047_generic_truth_identity.sql']) {
+    for (const file of ['0042_action_runtime_integration.sql', '0043_action_adapter_resolution.sql', '0044_verification_reconciliation.sql', '0045_provider_runtime_common.sql', '0046_google_oauth_completion.sql', '0047_generic_truth_identity.sql', '0048_webhook_acquisition.sql']) {
       const source = readFileSync(resolve(folder, file), 'utf8');
       expect(source).not.toMatch(/\b(?:DROP|TRUNCATE)\b/i);
       const hash = createHash('sha256').update(source).digest('hex');

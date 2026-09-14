@@ -30,6 +30,15 @@ GitHub readback 迁移到上述 v2。Repository 的 updatedAt 来自实际 GET �
 
 本子步骤将作为独立 main 提交推送，远端 CI 待其自身 SHA 验收。`607e0b0` 的 CI #67 仅支持旧核心 SHA，不作为本次源码的远端验收证据；没有标本子步骤远端 FULL GREEN。
 
+### 后续独立远端证据（2026-09-14）
+
+上述待推送是开发时的历史状态。实际源码提交为 `f6752cbe5833b4ba13a708f3555dbe651f94320b`，[CI #68](https://github.com/964896765/lazy-armor/actions/runs/34779065452) 对应同一 main SHA，PR Fast Gate `103782592509`、RC Full Gate `103782938032`、Android Verification Artifact `103782937972` 均 success。API REST artifact 元数据核对 head SHA 一致、expired=false：
+
+- MySQL 8.4 migration evidence `10323614451`：`sha256:563a76ee258b50c5a1b6725424344401d23443b76bc8502fb3ac96f87a5d914b`。
+- Android verification `10325312677`：`sha256:aa53aacadf6d06a88c1bc5d08d9b19ae69a64b4b0c37761891f127af1f7d093a`。
+
+该远端证据仅支持 f6752cb 的连续 Truth 子步骤，不支持后续 Webhook 源码，也不代表真实账号/Provider Journey 验收或整个 9D 关闭。
+
 日志：`.data/batch-9d-versioned-regression-focused-final.log`、`.data/batch-9d-versioned-typecheck-regression.log`、`.data/batch-9d-versioned-build-regression.log`、`.data/batch-9d-versioned-monorepo-final.log`；首次失败 `.data/batch-9d-versioned-monorepo.log` 与十次专项 `.data/batch-9d-concurrency-diagnostic-1.log` … `-10.log` 保留。
 
 ## 未完成与后续
