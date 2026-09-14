@@ -32,6 +32,8 @@
 
 修复后专项 **24/24**（Scenario Foundation、terminal 规则、Strategy Runtime），2026-09-14 23:04:11 开始，15.67s；全仓 typecheck **8/8**。日志 `.data/batch-9d-ci70-regression.log`、`.data/batch-9d-ci70-typecheck.log`。完整本地及修复提交自己的远端门禁尚待完成；真实账号验收仍为独立 Hard Stop。
 
+修复提交 `553f2fc7b10e8eea036d7c3d953a034bef763229` 已推送 main。完整本地回归于 23:07:13 开始、543.94s：Full API **682 通过 / 4 既有跳过**，90 文件通过 / 1 文件跳过；Monorepo **16/16** 成功，日志 `.data/batch-9d-ci70-monorepo.log`。stage 后 hygiene 678 tracked files 通过。修复推送触发既有 workflow concurrency，#70 的 Android 因新 main 运行被取消（不能称 #70 Android 成功）；其 RC 两条失败日志已核对并保留原因。修复提交自己的 [CI #71](https://github.com/964896765/lazy-armor/actions/runs/34860017067) Fast 已成功，RC Full 与 Android 尚在执行，完成后核对同 SHA artifact。
+
 ## 真实验收与后续
 
 只读检查 root `.env` 和当前 process：GitHub OAuth 三项与 Webhook Secret、Notion OAuth 三项均未提供值（不输出 Secret）。真实 OAuth/hook/权限/撤权/429/Issue-Comment 读写验证和真实账号 terminal Journey 未执行，9D 保持未关闭。缺 Secret 只暂停相应真实验收，继续 Notion 和跨 Provider 的非 Secret 实现。
