@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   compileScenarioPlan,
   evaluateConditionAst,
+  requiresTerminalHandoffProof,
   terminalFollowUpRule,
   terminalTargetContext,
   terminalTargetFromPlanAction,
@@ -91,6 +92,14 @@ describe('Batch 9F cross-provider golden handoff contracts', () => {
       requiredCapability: 'CREATE_CALENDAR_EVENT', configJson: action.config })).toThrow('unavailable');
     expect(() => terminalTargetFromPlanAction(notionRule, { connectorKey: action.connectorKey, connectionId: action.connectionId,
       requiredCapability: action.requiredCapability, configJson: { ...action.config, handoffTarget: { ...(action.config.handoffTarget as object), capabilityKey: 'CREATE_CALENDAR_EVENT' } } })).toThrow('invalid');
+  });
+
+  it('marks every stored handoff target as server-owned, including malformed markers', () => {
+    const action = compileScenarioPlan({ scenarioKey: 'work.tasks', scenarioRevision: 3, subjectKey: githubSubject,
+      target: { kind: 'NOTION_UPDATE', connectionId: notionConnection, action: notionAction } }).definition.actions[0]!;
+    expect(requiresTerminalHandoffProof(action.config)).toBe(true);
+    expect(requiresTerminalHandoffProof({ handoffTarget: null })).toBe(true);
+    expect(requiresTerminalHandoffProof({ templateKey: 'ordinary-notification' })).toBe(false);
   });
 
   it.each([

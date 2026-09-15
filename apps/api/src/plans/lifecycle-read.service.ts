@@ -10,8 +10,6 @@ import {
   notifications,
   reconciliationCases,
   sideEffectOperations,
-  strategyRuntimeDecisions,
-  strategyRuntimeWakeups,
   verificationEvidence,
 } from '@lazy-armor/database';
 import {
@@ -56,7 +54,7 @@ export class LifecycleReadService {
       .limit(1))[0];
     if (!execution) throw new NotFoundException('Execution not found');
 
-    const [steps, cases, evidence, approvals, events, bindings, notices, audits, wakeup] = await Promise.all([
+    const [steps, cases, evidence, approvals, events, bindings, notices, audits] = await Promise.all([
       this.db.select({
         status: executionSteps.status,
         dispatchStatus: executionSteps.dispatchStatus,
@@ -82,24 +80,12 @@ export class LifecycleReadService {
         .from(notifications).where(and(eq(notifications.executionId, executionId), eq(notifications.userId, userId))),
       this.db.select({ result: auditLogs.result })
         .from(auditLogs).where(and(eq(auditLogs.executionId, executionId), eq(auditLogs.userId, userId))),
-      this.db.select({ id: strategyRuntimeWakeups.id })
-        .from(strategyRuntimeWakeups)
-        .where(and(eq(strategyRuntimeWakeups.handoffExecutionId, executionId), eq(strategyRuntimeWakeups.userId, userId)))
-        .limit(1),
     ]);
 
     const observations = new Map<LifecycleReadObservation['key'], LifecycleReadObservation>();
     const observe = (observation: LifecycleReadObservation | null) => {
       if (observation) observations.set(observation.key, observation);
     };
-
-    if (wakeup[0]) {
-      const decision = (await this.db.select({ lifecycleTraceJson: strategyRuntimeDecisions.lifecycleTraceJson })
-        .from(strategyRuntimeDecisions)
-        .where(and(eq(strategyRuntimeDecisions.wakeupId, wakeup[0].id), eq(strategyRuntimeDecisions.userId, userId)))
-        .limit(1))[0];
-      for (const observation of strategyTraceObservations(decision?.lifecycleTraceJson)) observe(observation);
-    }
 
     // These stages all have direct immutable/persisted backing records.
     observe({ key: 'TRIGGER', state: 'SUCCEEDED', reason: execution.triggerType === 'manual' ? 'MANUAL_EXECUTION_PERSISTED' : 'EXECUTION_TRIGGER_PERSISTED' });
@@ -175,21 +161,6 @@ function approvalObservation(rows: Array<{ status: string; decision: string | nu
   if (gates.length > 0 && gates.every((gate) => gate === 'not_required' || gate === 'authorized')) return { key: 'APPROVAL', state: 'SKIPPED', reason: 'APPROVAL_NOT_REQUIRED_OR_PREAUTHORIZED' };
   if (executionStatus === 'pending') return { key: 'APPROVAL', state: 'RUNNING', reason: 'EXECUTION_APPROVAL_PENDING' };
   return null;
-}
-
-function strategyTraceObservations(value: unknown): LifecycleReadObservation[] {
-  if (!Array.isArray(value)) return [];
-  const states: Record<string, LifecycleReadObservation['state'] | undefined> = {
-    SUCCEEDED: 'SUCCEEDED', SKIPPED: 'SKIPPED', BLOCKED: 'BLOCKED', FAILED: 'FAILED',
-    RUNNING: 'RUNNING', UNKNOWN: 'UNKNOWN', OUTCOME_UNKNOWN: 'OUTCOME_UNKNOWN',
-  };
-  return value.flatMap((item) => {
-    if (!item || typeof item !== 'object') return [];
-    const row = item as { key?: unknown; state?: unknown; reason?: unknown };
-    const state = typeof row.state === 'string' ? states[row.state] : undefined;
-    if (!state || typeof row.key !== 'string') return [];
-    return [{ key: row.key as LifecycleReadObservation['key'], state, reason: typeof row.reason === 'string' ? row.reason : 'STRATEGY_LIFECYCLE_TRACE' }];
-  });
 }
 
 function executionResultObservation(status: string, resultCode: string | null, cases: Array<{ status: string; resultState: string }>): StageObservation | null {

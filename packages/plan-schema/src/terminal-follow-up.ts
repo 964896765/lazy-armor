@@ -158,6 +158,15 @@ export function terminalTargetContext(target: TerminalHandoffTarget | undefined)
   return !target ? {} : target.kind === 'NOTION_UPDATE' ? { notionAction: target.action } : { calendarEvent: target.action };
 }
 
+/**
+ * A stored Plan action carrying this marker is server-owned: it may only be
+ * dispatched from an authenticated Strategy wakeup. Treat even a malformed
+ * marker as protected so callers cannot bypass the handoff by corrupting it.
+ */
+export function requiresTerminalHandoffProof(config: Record<string, unknown>): boolean {
+  return Object.prototype.hasOwnProperty.call(config, 'handoffTarget');
+}
+
 export function terminalTargetFromPlanAction(rule: TerminalFollowUpRule, action: {
   connectorKey: string | null;
   connectionId: string | null;

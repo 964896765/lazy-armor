@@ -1,6 +1,7 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { actionIntents, actionAdapterBindings, executionSteps, executions, planActions, plans, strategyRuntimeWakeups } from '@lazy-armor/database';
-import { ACTION_ADAPTER_REVISION, TERMINAL_FOLLOW_UP_RULES, buildActionIntent, catalogHash, definitionHash, riskMaximum, type ContextRiskSignal, type RiskLevel } from '@lazy-armor/plan-schema';
+import { ACTION_ADAPTER_REVISION, TERMINAL_FOLLOW_UP_RULES, buildActionIntent, catalogHash, definitionHash,
+  requiresTerminalHandoffProof, riskMaximum, type ContextRiskSignal, type RiskLevel } from '@lazy-armor/plan-schema';
 import { newId } from '@lazy-armor/shared';
 import { and, asc, eq } from 'drizzle-orm';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
@@ -16,6 +17,11 @@ import { SafetyPolicyService } from '../risk/safety-policy.service';
 import { RISK_SCORE } from '../risk/risk.types';
 import { CapabilityResolverService } from '../capability-resolver/capability-resolver.service';
 import { TerminalHandoffGuard, type TerminalHandoffProof } from '../strategy-runtime/terminal-handoff-guard.service';
+
+export function requiresServerOwnedTerminalHandoff(actions: readonly { config: Record<string, unknown> }[]): boolean {
+  return actions.some((action) => requiresTerminalHandoffProof(action.config)
+    || TERMINAL_FOLLOW_UP_RULES.some((rule) => action.config.templateKey === rule.key));
+}
 
 @Injectable()
 export class ExecutionDispatchService {
@@ -73,8 +79,9 @@ export class ExecutionDispatchService {
         if (resolutions.some((resolution) => resolution.row.planVersionId !== pinnedVersionId || resolution.requirement.operation !== 'execute')) throw new ConflictException('Resolution must authorize an execute capability on the active PlanVersion');
         const assembled = await this.assembler.assembleById(userId, planId, pinnedVersionId, tx);
         if (assembled.computedHash !== assembled.version.definitionHash) throw new ConflictException('PLAN_DEFINITION_INTEGRITY_ERROR');
-        if (!handoff && assembled.definition.actions.some((action) => TERMINAL_FOLLOW_UP_RULES.some((rule) => action.config.templateKey === rule.key))) {
-          throw new ConflictException('Registered terminal templates require a server-owned Truth handoff');
+        const requiresHandoff = requiresServerOwnedTerminalHandoff(assembled.definition.actions);
+        if (!handoff && requiresHandoff) {
+          throw new ConflictException('Registered terminal actions require a server-owned Truth handoff');
         }
         const actionRows = await tx.select().from(planActions).where(eq(planActions.planVersionId, pinnedVersionId)).orderBy(asc(planActions.stepOrder));
         if (actionRows.length !== assembled.definition.actions.length) throw new ConflictException('PLAN_DEFINITION_INTEGRITY_ERROR');

@@ -42,13 +42,19 @@ export class RuntimeCatalogRegistryService implements OnModuleInit {
     const rows = await this.db.select({ id: connections.id }).from(connections).where(eq(connections.userId, userId));
     const resolved = await Promise.all(rows.map((row) => this.capabilityUsability.resolveConnection(userId, row.id)));
     const usableCapabilities = resolved.flatMap((connection) => connection.capabilities.filter((item) => item.usable).map((item) => item.key));
+    const requiredCapabilities = [...scenario.sourceRequirements, ...scenario.actionRequirements]
+      .filter((requirement) => !requirement.optional)
+      .map((requirement) => requirement.capabilityKey);
+    const providerBlocked = requiredCapabilities.some((capability) => !usableCapabilities.includes(capability));
     return evaluateScenarioReadiness(scenario, {
       usableCapabilities,
       availableFacts: [],
-      manualInputAvailable: true,
+      // Until this read model is joined to current TruthVersions and an
+      // explicit manual-input requirement, missing facts are not called ready.
+      manualInputAvailable: scenario.sourceRequirements.some((item) => item.capabilityKey === 'MANUAL_INPUT'),
       observationPipelineAvailable: false,
-      executionPipelineAvailable: true,
-      providerBlocked: resolved.length > 0 && usableCapabilities.length === 0,
+      executionPipelineAvailable: false,
+      providerBlocked,
     });
   }
 
@@ -57,7 +63,9 @@ export class RuntimeCatalogRegistryService implements OnModuleInit {
     try { return compileScenarioPlan({ scenarioKey: key, scenarioRevision: input.scenarioRevision, strategy: input.strategy, name: input.name, subjectKey: input.subjectKey, target: input.target, mode: 'DRAFT', readiness: {
       manualInputAvailable: readiness.state === 'MANUAL_READY',
       observationPipelineAvailable: false,
-      executionPipelineAvailable: true,
+      executionPipelineAvailable: false,
+      providerBlocked: readiness.state === 'BLOCKED_PROVIDER',
+      implementationBlocked: readiness.state === 'BLOCKED_IMPLEMENTATION',
     } }); } catch (error) { throw new BadRequestException(error instanceof Error ? error.message : 'Scenario compilation failed'); }
   }
 

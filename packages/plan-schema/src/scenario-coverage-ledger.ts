@@ -56,6 +56,7 @@ type CoverageResource = Readonly<Pick<ResourceDefinition, 'key' | 'label' | 'dom
 type CoverageFact = Readonly<Pick<FactSchemaDefinition,
   'key' | 'resourceType' | 'field' | 'valueType' | 'minimumReality' | 'revision' | 'status'> & { required: boolean }>;
 type CoverageRequirement = Readonly<CapabilityRequirement>;
+type CoverageRuntimeEvidenceStatus = 'NOT_COMPLETED_IN_BATCH_10_WAVE_1' | 'COMPLETED';
 
 export interface ScenarioCoverageLedgerEntry {
   schemaVersion: '1';
@@ -90,23 +91,23 @@ export interface ScenarioCoverageLedgerEntry {
     action: readonly CoverageRequirement[];
   }>;
   sourceCapability: Readonly<{
-    providerKey: 'manual';
-    capabilityKey: 'MANUAL_INPUT';
-    operation: 'READ';
-    evidenceReference: 'apps/api/src/connectors/base-connectors.ts#ManualConnector.MANUAL_INPUT';
+    providerKey: string | null;
+    capabilityKey: string;
+    operation: CoverageRequirement['operation'];
+    evidenceReference: string | null;
   }>;
   provider: Readonly<{
-    source: Readonly<{ providerKey: 'manual'; productionStatus: 'PRODUCTION_READY'; evidenceReference: 'apps/api/src/connectors/base-connectors.ts#ManualConnector' }>;
-    action: Readonly<{ providerKey: 'internal'; productionStatus: 'PRODUCTION_READY'; evidenceReference: 'apps/api/src/connectors/base-connectors.ts#InternalConnector' }>;
+    source: Readonly<{ providerKey: string | null; productionStatus: 'UNRESOLVED'; evidenceReference: null }>;
+    action: Readonly<{ providerKey: string | null; productionStatus: 'UNRESOLVED'; evidenceReference: null }>;
   }>;
   actionCapability: Readonly<{
-    providerKey: 'internal';
-    capabilityKey: 'WRITE_INTERNAL';
-    operation: 'EXECUTE';
-    risk: 'R1';
-    evidenceReference: 'apps/api/src/connectors/base-connectors.ts#InternalConnector.WRITE_INTERNAL';
+    providerKey: string | null;
+    capabilityKey: string;
+    operation: CoverageRequirement['operation'];
+    risk: ScenarioDefinition['defaultRiskFloor'];
+    evidenceReference: string | null;
   }>;
-  risk: Readonly<{ floor: ScenarioDefinition['defaultRiskFloor']; actionRisk: 'R1' }>;
+  risk: Readonly<{ floor: ScenarioDefinition['defaultRiskFloor']; actionRisk: ScenarioDefinition['defaultRiskFloor'] }>;
   approval: Readonly<{ strategyPolicy: StrategyProfile['approvalPolicy']; requiredForExternalEffects: boolean }>;
   verification: Readonly<{
     strategyPolicy: StrategyProfile['verificationPolicy'];
@@ -125,21 +126,21 @@ export interface ScenarioCoverageLedgerEntry {
   test: Readonly<{
     contractTest: 'packages/plan-schema/test/scenario-coverage-ledger.spec.ts';
     apiProjectionTest: 'apps/api/test/scenario-coverage-ledger.spec.ts';
-    fullDatabaseE2e: 'NOT_COMPLETED_IN_BATCH_10_WAVE_1';
-    realProviderJourney: 'NOT_COMPLETED_IN_BATCH_10_WAVE_1';
-    mobileJourney: 'NOT_COMPLETED_IN_BATCH_10_WAVE_1';
+    fullDatabaseE2e: CoverageRuntimeEvidenceStatus;
+    realProviderJourney: CoverageRuntimeEvidenceStatus;
+    mobileJourney: CoverageRuntimeEvidenceStatus;
   }>;
   blockReason: Readonly<{ backend: readonly string[]; mobile: readonly string[] }>;
 }
 
 const BACKEND_RUNTIME_EVIDENCE: Readonly<ScenarioCoverageReadinessInput> = Object.freeze({
-  // ManualConnector and InternalConnector are registered production-ready paths.
-  // No provider-derived Scenario Fact is falsely claimed as observed here.
+  // The catalog has no per-Scenario Provider binding or real acceptance
+  // evidence yet, so the generated baseline must remain blocked.
   manualCapture: 'IMPLEMENTED',
   observationPipeline: 'NOT_IMPLEMENTED',
   executionPipeline: 'IMPLEMENTED',
-  sourceCapability: Object.freeze({ providerStatus: 'SUPPORTED', implementationStatus: 'IMPLEMENTED', authorizationStatus: 'NOT_REQUIRED' }),
-  actionCapability: Object.freeze({ providerStatus: 'SUPPORTED', implementationStatus: 'IMPLEMENTED', authorizationStatus: 'NOT_REQUIRED' }),
+  sourceCapability: Object.freeze({ providerStatus: 'UNKNOWN', implementationStatus: 'NOT_IMPLEMENTED', authorizationStatus: 'NOT_REQUIRED' }),
+  actionCapability: Object.freeze({ providerStatus: 'UNKNOWN', implementationStatus: 'NOT_IMPLEMENTED', authorizationStatus: 'NOT_REQUIRED' }),
   observedFactKeys: Object.freeze([]),
 });
 
@@ -247,6 +248,9 @@ function coverageEntry(scenario: ScenarioDefinition): ScenarioCoverageLedgerEntr
   const mobileReadiness = evaluateScenarioCoverageReadiness(scenario, strategy, MOBILE_RUNTIME_EVIDENCE);
   const sourceRequirements = freezeRequirements(scenario.sourceRequirements);
   const actionRequirements = freezeRequirements(scenario.actionRequirements);
+  const sourceRequirement = sourceRequirements.find((item) => !item.optional) ?? sourceRequirements[0];
+  const actionRequirement = actionRequirements.find((item) => !item.optional) ?? actionRequirements[0];
+  if (!sourceRequirement || !actionRequirement) throw new Error(`Coverage ledger requires source and action capability contracts: ${scenario.key}`);
   return Object.freeze({
     schemaVersion: '1' as const,
     ledgerRevision: SCENARIO_COVERAGE_LEDGER_REVISION,
@@ -268,18 +272,15 @@ function coverageEntry(scenario: ScenarioDefinition): ScenarioCoverageLedgerEntr
     truthPolicy: Object.freeze({ minimumReality: scenario.minimumReality, candidate: scenario.truthPolicy,
       freshness: scenario.freshnessPolicy, conflict: scenario.conflictPolicy }),
     capabilityRequirements: Object.freeze({ source: sourceRequirements, action: actionRequirements }),
-    sourceCapability: Object.freeze({ providerKey: 'manual' as const, capabilityKey: 'MANUAL_INPUT' as const, operation: 'READ' as const,
-      evidenceReference: 'apps/api/src/connectors/base-connectors.ts#ManualConnector.MANUAL_INPUT' as const }),
+    sourceCapability: Object.freeze({ providerKey: null, capabilityKey: sourceRequirement.capabilityKey,
+      operation: sourceRequirement.operation, evidenceReference: null }),
     provider: Object.freeze({
-      source: Object.freeze({ providerKey: 'manual' as const, productionStatus: 'PRODUCTION_READY' as const,
-        evidenceReference: 'apps/api/src/connectors/base-connectors.ts#ManualConnector' as const }),
-      action: Object.freeze({ providerKey: 'internal' as const, productionStatus: 'PRODUCTION_READY' as const,
-        evidenceReference: 'apps/api/src/connectors/base-connectors.ts#InternalConnector' as const }),
+      source: Object.freeze({ providerKey: null, productionStatus: 'UNRESOLVED' as const, evidenceReference: null }),
+      action: Object.freeze({ providerKey: null, productionStatus: 'UNRESOLVED' as const, evidenceReference: null }),
     }),
-    actionCapability: Object.freeze({ providerKey: 'internal' as const, capabilityKey: 'WRITE_INTERNAL' as const,
-      operation: 'EXECUTE' as const, risk: 'R1' as const,
-      evidenceReference: 'apps/api/src/connectors/base-connectors.ts#InternalConnector.WRITE_INTERNAL' as const }),
-    risk: Object.freeze({ floor: scenario.defaultRiskFloor, actionRisk: 'R1' as const }),
+    actionCapability: Object.freeze({ providerKey: null, capabilityKey: actionRequirement.capabilityKey,
+      operation: actionRequirement.operation, risk: scenario.defaultRiskFloor, evidenceReference: null }),
+    risk: Object.freeze({ floor: scenario.defaultRiskFloor, actionRisk: scenario.defaultRiskFloor }),
     approval: Object.freeze({ strategyPolicy: strategy.approvalPolicy, requiredForExternalEffects: strategy.approvalPolicy !== 'NEVER_EXTERNAL' }),
     verification: Object.freeze({ strategyPolicy: strategy.verificationPolicy, requirements: scenario.verificationRequirements }),
     fallback: scenario.fallbackPolicy,
@@ -324,6 +325,8 @@ export interface Batch10Wave1Conclusion {
   wave: 1;
   numerator: number;
   denominator: number;
+  contractComplete: boolean;
+  runtimeComplete: boolean;
   complete: boolean;
   expectedCounts: typeof BATCH_10_WAVE_1_EXPECTED_COUNTS;
   actualCounts: Readonly<Record<Batch10Wave1Domain, number>>;
@@ -343,7 +346,8 @@ function readinessCounts(entries: readonly ScenarioCoverageLedgerEntry[], field:
 
 const REQUIRED_FIELDS: readonly (keyof ScenarioCoverageLedgerEntry)[] = Object.freeze([
   'definition', 'resources', 'facts', 'sourceRequirements', 'strategy', 'truthPolicy', 'capabilityRequirements',
-  'risk', 'approval', 'verification', 'fallback', 'mobilePresentation', 'backendReadiness', 'mobileReadiness', 'test', 'blockReason',
+  'sourceCapability', 'provider', 'actionCapability', 'risk', 'approval', 'verification', 'fallback',
+  'mobilePresentation', 'backendReadiness', 'mobileReadiness', 'test', 'blockReason',
 ]);
 
 function isCoverageComplete(entry: ScenarioCoverageLedgerEntry) {
@@ -369,20 +373,28 @@ export function batch10Wave1Conclusion(entries: readonly ScenarioCoverageLedgerE
     selected.filter((entry) => entry.definition.domain === domain).length])) as Record<Batch10Wave1Domain, number>);
   const numerator = selected.filter(isCoverageComplete).length;
   const denominator = Object.values(BATCH_10_WAVE_1_EXPECTED_COUNTS).reduce((sum, count) => sum + count, 0);
-  const complete = selected.length === denominator && numerator === denominator
+  const contractComplete = selected.length === denominator && numerator === denominator
     && domains.every((domain) => actualCounts[domain] === BATCH_10_WAVE_1_EXPECTED_COUNTS[domain]);
+  const runtimeComplete = selected.every((entry) => entry.test.fullDatabaseE2e !== 'NOT_COMPLETED_IN_BATCH_10_WAVE_1'
+    && entry.test.realProviderJourney !== 'NOT_COMPLETED_IN_BATCH_10_WAVE_1'
+    && entry.test.mobileJourney !== 'NOT_COMPLETED_IN_BATCH_10_WAVE_1'
+    && !entry.backendReadiness.state.startsWith('BLOCKED_')
+    && !entry.mobileReadiness.state.startsWith('BLOCKED_'));
+  const complete = contractComplete && runtimeComplete;
   return Object.freeze({
     batch: 10 as const,
     wave: 1 as const,
     numerator,
     denominator,
+    contractComplete,
+    runtimeComplete,
     complete,
     expectedCounts: BATCH_10_WAVE_1_EXPECTED_COUNTS,
     actualCounts,
     scenarioKeys: Object.freeze(selected.map((entry) => entry.scenarioKey).sort()),
     backendReadinessCounts: readinessCounts(selected, 'backendReadiness'),
     mobileReadinessCounts: readinessCounts(selected, 'mobileReadiness'),
-    conclusion: `${numerator}/${denominator} Scenario Coverage Ledger contracts ${complete ? 'complete' : 'incomplete'}`,
+    conclusion: `${numerator}/${denominator} Scenario Coverage Ledger contracts ${contractComplete ? 'complete' : 'incomplete'}; runtime evidence ${runtimeComplete ? 'complete' : 'incomplete'}`,
   });
 }
 
@@ -473,8 +485,8 @@ export function assertScenarioCoverageLedger(entries: readonly ScenarioCoverageL
     throw new Error('Eight strategies must configure one shared Strategy Runtime without copied engines');
   }
   const conclusion = batch10Wave1Conclusion(entries);
-  if (!conclusion.complete || conclusion.numerator !== 46 || conclusion.denominator !== 46) {
-    throw new Error('Batch 10 Wave 1 must be an exact 46/46 coverage conclusion');
+  if (!conclusion.contractComplete || conclusion.numerator !== 46 || conclusion.denominator !== 46) {
+    throw new Error('Batch 10 Wave 1 must be an exact 46/46 contract coverage conclusion');
   }
 }
 

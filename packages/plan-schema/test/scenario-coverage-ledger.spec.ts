@@ -19,7 +19,7 @@ import {
 
 const requiredFields = [
   'definition', 'resources', 'facts', 'sourceRequirements', 'strategy', 'truthPolicy',
-  'capabilityRequirements', 'risk', 'approval', 'verification', 'fallback',
+  'capabilityRequirements', 'sourceCapability', 'provider', 'actionCapability', 'risk', 'approval', 'verification', 'fallback',
   'mobilePresentation', 'backendReadiness', 'mobileReadiness', 'test', 'blockReason',
 ] as const;
 
@@ -60,9 +60,10 @@ describe('Scenario Coverage Ledger contract', () => {
       expect(entry.truthPolicy).toMatchObject({ minimumReality: 'OBSERVED', candidate: { requireEvidence: true }, conflict: { unresolved: 'BLOCK' } });
       expect(entry.capabilityRequirements.source).toEqual(entry.sourceRequirements);
       expect(entry.capabilityRequirements.action.length).toBeGreaterThan(0);
-      expect(entry.sourceCapability).toMatchObject({ providerKey: 'manual', capabilityKey: 'MANUAL_INPUT', operation: 'READ' });
-      expect(entry.provider).toMatchObject({ source: { providerKey: 'manual', productionStatus: 'PRODUCTION_READY' }, action: { providerKey: 'internal', productionStatus: 'PRODUCTION_READY' } });
-      expect(entry.actionCapability).toMatchObject({ capabilityKey: 'WRITE_INTERNAL', operation: 'EXECUTE', risk: 'R1' });
+      expect(entry.sourceCapability).toMatchObject({ providerKey: null, capabilityKey: entry.sourceRequirements[0]?.capabilityKey, operation: entry.sourceRequirements[0]?.operation, evidenceReference: null });
+      expect(entry.provider).toMatchObject({ source: { providerKey: null, productionStatus: 'UNRESOLVED' }, action: { providerKey: null, productionStatus: 'UNRESOLVED' } });
+      expect(entry.actionCapability).toMatchObject({ providerKey: null, capabilityKey: entry.capabilityRequirements.action[0]?.capabilityKey,
+        operation: entry.capabilityRequirements.action[0]?.operation, risk: entry.risk.floor, evidenceReference: null });
       expect(entry.risk.floor).toMatch(/^R[0-4]$/);
       expect(entry.approval.strategyPolicy).toBeTruthy();
       expect(entry.verification.strategyPolicy).toBeTruthy();
@@ -90,7 +91,9 @@ describe('Scenario Coverage Ledger contract', () => {
       wave: 1,
       numerator: 46,
       denominator: 46,
-      complete: true,
+      contractComplete: true,
+      runtimeComplete: false,
+      complete: false,
       expectedCounts: BATCH_10_WAVE_1_EXPECTED_COUNTS,
       actualCounts: { finance: 6, daily_life: 5, family: 5, work: 6, content: 6, vehicle: 6, device: 6, digital_account: 6 },
     });

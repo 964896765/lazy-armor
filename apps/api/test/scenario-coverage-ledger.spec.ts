@@ -17,7 +17,9 @@ describe('Scenario Coverage Ledger API projection', () => {
     expect(wave).toMatchObject({
       numerator: 46,
       denominator: 46,
-      complete: true,
+      contractComplete: true,
+      runtimeComplete: false,
+      complete: false,
       actualCounts: {
         finance: 6,
         daily_life: 5,
@@ -36,9 +38,9 @@ describe('Scenario Coverage Ledger API projection', () => {
     expect(service.get('finance.bill')).toMatchObject({
       scenarioKey: 'finance.bill',
       definition: { immutableRevision: true },
-      sourceCapability: { providerKey: 'manual' },
-      actionCapability: { providerKey: 'internal' },
-      backendReadiness: { state: 'MANUAL_READY' },
+      sourceCapability: { providerKey: null, capabilityKey: 'READ_BILL' },
+      actionCapability: { providerKey: null, capabilityKey: 'SEND_NOTIFICATION' },
+      backendReadiness: { state: 'BLOCKED_PROVIDER' },
       mobileReadiness: { state: 'BLOCKED_PROVIDER' },
     });
     expect(() => service.get('missing.scenario')).toThrow('Scenario Coverage Ledger entry not found');
@@ -49,7 +51,7 @@ describe('Scenario Coverage Ledger API projection', () => {
     expect(summary).toMatchObject({
       ledgerRevision: SCENARIO_COVERAGE_LEDGER_REVISION,
       scenarioCount: 96,
-      batch10Wave1: { numerator: 46, denominator: 46, complete: true },
+      batch10Wave1: { numerator: 46, denominator: 46, contractComplete: true, runtimeComplete: false, complete: false },
     });
     expect(summary).not.toHaveProperty('entries');
   });
