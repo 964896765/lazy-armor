@@ -36,7 +36,7 @@ export default function Records() {
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <ScrollView style={styles.page} contentContainerStyle={styles.content} refreshControl={token ? <RefreshControl tintColor={colors.primary} refreshing={executions.isFetching} onRefresh={() => executions.refetch()} /> : undefined}>
-        <WorkspaceHeader title="执行记录" subtitle="查看装甲为你完成的任务与结果" />
+        <WorkspaceHeader title="执行记录" subtitle="查看装甲为你完成的任务与结果" action={<Pressable accessibilityRole="button" onPress={() => router.push('/reconciliation' as never)} style={styles.reconciliationLink}><Text style={styles.reconciliationLinkText}>Reconciliation</Text></Pressable>} />
         <View style={styles.filters}>{FILTERS.map((item) => <Pressable key={item.key} onPress={() => setFilter(item.key)} style={[styles.filter, filter === item.key && styles.filterSelected]}><Ionicons name={item.icon} size={15} color={filter === item.key ? colors.primary : item.key === 'failed' ? colors.danger : item.key === 'exception' ? colors.warning : colors.textSecondary} /><Text style={[styles.filterText, filter === item.key && styles.filterTextSelected]}>{item.label}</Text></Pressable>)}</View>
 
         {!token ? <Surface style={styles.stateSurface}><EmptyState icon="time-outline" title="登录后查看完成记录" action={{ label: '去登录', onPress: () => router.push('/connections') }} /></Surface> : null}
@@ -109,6 +109,8 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: '#FFFFFF' },
   page: { flex: 1, backgroundColor: '#FFFFFF' },
   content: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: 80 },
+  reconciliationLink: { paddingHorizontal: spacing.sm, paddingVertical: 6, borderRadius: radius.pill, backgroundColor: colors.accentSoft },
+  reconciliationLinkText: { ...typography.label, color: colors.primary },
   filters: { minHeight: 50, flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginTop: spacing.sm, padding: 3, borderRadius: radius.md, backgroundColor: '#F3F6F8' },
   filter: { flex: 1, minHeight: 38, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, borderRadius: radius.sm },
   filterSelected: { backgroundColor: colors.surface },

@@ -42,6 +42,7 @@ import { CapabilityResolverModule } from './capability-resolver/capability-resol
 import { ProviderCapabilitiesModule } from './provider-capabilities/provider-capabilities.module';
 import { RuntimeCatalogModule } from './runtime-catalog/runtime-catalog.module';
 import { AppReadSessionsModule } from './app-read-sessions/app-read-sessions.module';
+import { ScenarioCoverageLedgerModule } from './scenario-coverage-ledger/scenario-coverage-ledger.module';
 import { ProviderRuntimeModule } from './provider-runtime/provider-runtime.module';
 import { GmailModule } from './providers/gmail/gmail.module';
 import { GoogleCalendarModule } from './providers/calendar/calendar.module';
@@ -94,6 +95,7 @@ import { TerminalHandoffController, TerminalHandoffService } from './strategy-ru
     NotionModule,
     RuntimeCatalogModule,
     AppReadSessionsModule,
+    ScenarioCoverageLedgerModule,
     PlansModule,
     TemplatesModule,
     ExecutionModule,

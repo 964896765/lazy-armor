@@ -11,7 +11,11 @@ import { TRUE_PROCESS_HARNESS_CONNECTOR_KEY, trueProcessHarnessEnabled } from '.
 export class RuntimeConnectionGuard {
   constructor(@Inject(DATABASE) private readonly db: InjectedDatabase, @Inject(CREDENTIAL_PROVIDER) private readonly credentials: CredentialProvider, private readonly registry: ConnectorRegistry) {}
 
-  async assertUsable(userId: string, connectionId: string, capabilityKey: string) {
+  async assertUsable(userId: string, connectionId: string, capabilityKey: string, expected?: {
+    connectorKey: string;
+    credentialRef: string | null;
+    credentialVersion: number | null;
+  }) {
     const rows = await this.db.select({
       connectorId: connections.connectorId,
       connectorKey: connectors.key,
@@ -35,9 +39,20 @@ export class RuntimeConnectionGuard {
     if (!['connected', 'degraded'].includes(connection.connectionStatus)) throw new ExecutionRuntimeError('CONNECTION_UNAVAILABLE', 'Connection is unavailable');
     if (connection.credentialRefId && connection.credentialStatus !== 'active') throw new ExecutionRuntimeError('CREDENTIAL_INVALID', 'Credential reference is not active');
     if (connection.credentialExpiresAt && connection.credentialExpiresAt <= new Date()) throw new ExecutionRuntimeError('CREDENTIAL_EXPIRED', 'Credential reference has expired');
+    if (expected && (connection.connectorKey !== expected.connectorKey
+      || (connection.credentialRef ?? null) !== expected.credentialRef
+      || (connection.credentialCurrentVersion ?? null) !== expected.credentialVersion)) {
+      throw new ExecutionRuntimeError('CREDENTIAL_INVALID', 'Target authorization fence changed after side-effect preparation');
+    }
     if (connection.credentialRefId && connection.credentialRef && connection.credentialCurrentVersion) {
-      try { await this.credentials.get(connection.credentialRef, connection.credentialCurrentVersion); }
+      try {
+        if (await this.credentials.currentVersion(connection.credentialRef) !== connection.credentialCurrentVersion) {
+          throw new ExecutionRuntimeError('CREDENTIAL_INVALID', 'Credential reference version does not match the provider store');
+        }
+        await this.credentials.get(connection.credentialRef, connection.credentialCurrentVersion);
+      }
       catch (error) {
+        if (error instanceof ExecutionRuntimeError) throw error;
         if (error instanceof CredentialProviderError && error.retryable) throw new ExecutionRuntimeError('CREDENTIAL_UNAVAILABLE', 'Credential provider is temporarily unavailable', true);
         throw new ExecutionRuntimeError('CREDENTIAL_INVALID', 'Current credential version cannot be resolved');
       }

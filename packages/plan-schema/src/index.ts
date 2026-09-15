@@ -28,6 +28,17 @@ export {
   type ProductDomain,
   type ProductDomainKey,
 } from './product-model';
+export {
+  LIFECYCLE_READ_PROJECTION_VERSION,
+  LIFECYCLE_READ_STATES,
+  buildLifecycleReadProjection,
+  isLifecycleReadProjection,
+  type LifecycleReadObservation,
+  type LifecycleReadProjection,
+  type LifecycleReadState,
+  type LifecycleReadStep,
+  type LifecycleReadStepKey,
+} from './lifecycle-read-projection';
 
 export const SOURCE_TYPES = ['manual', 'email', 'calendar', 'notification', 'file', 'webhook', 'internal', 'commerce', 'device', 'vehicle', 'billing', 'content_platform'] as const;
 export const TRIGGER_TYPES = ['manual', 'schedule', 'event', 'webhook', 'threshold', 'date_before', 'date_after', 'data_changed'] as const;
@@ -200,7 +211,17 @@ const actionConfigSchemas: Record<ActionType, z.ZodTypeAny> = {
     requireApprovalBeforePublish: z.boolean().optional(),
     providerGate: shortText.optional(),
   }).strict(),
-  publish: z.object({ visibility: z.enum(['private', 'unlisted', 'public']) }).strict(),
+  publish: z.object({
+    visibility: z.enum(['private', 'unlisted', 'public']),
+    handoffTarget: z.object({
+      ruleKey: shortText,
+      ruleRevision: z.number().int().positive(),
+      kind: z.enum(['NOTION_UPDATE', 'CALENDAR_EVENT']),
+      providerKey: shortText,
+      capabilityKey: shortText,
+      action: z.record(z.string(), jsonValueSchema),
+    }).strict().optional(),
+  }).strict(),
   prepare_purchase: z.object({
     currency: z.string().length(3).optional(),
     domain: shortText.optional(),
@@ -425,7 +446,32 @@ export {
   type StrategyKey,
   type StrategyProfile,
 } from './runtime-catalog';
+export {
+  BATCH_10_WAVE_1_CONCLUSION,
+  BATCH_10_WAVE_1_EXPECTED_COUNTS,
+  SCENARIO_COVERAGE_LEDGER,
+  SCENARIO_COVERAGE_LEDGER_REVISION,
+  SCENARIO_COVERAGE_READINESS_STATES,
+  STRATEGY_GOLDEN_DEFINITIONS,
+  STRATEGY_GOLDEN_JOURNEYS,
+  assertScenarioCoverageLedger,
+  batch10Wave1Conclusion,
+  evaluateScenarioCoverageReadiness,
+  scenarioCoverageByKey,
+  type Batch10Wave1Conclusion,
+  type Batch10Wave1Domain,
+  type CoverageAuthorizationStatus,
+  type CoverageCapabilityEvidence,
+  type CoverageImplementationStatus,
+  type CoverageProviderStatus,
+  type ScenarioCoverageLedgerEntry,
+  type ScenarioCoverageReadiness,
+  type ScenarioCoverageReadinessInput,
+  type ScenarioCoverageReadinessState,
+  type StrategyGoldenDefinition,
+} from './scenario-coverage-ledger';
 export { compileScenarioPlan, type CompiledScenarioPlan, type ScenarioCompileInput } from './scenario-plan-compiler';
+export { STRATEGY_RUNTIME_KEY, type StrategyRuntimeKey } from './strategy-runtime-identity';
 export {
   CONDITION_AST_SCHEMA_VERSION,
   CONDITION_OPERATORS_V1,

@@ -266,6 +266,7 @@ export default function PlanDetailPage() {
                 <View style={local.settingsBlock}>
                   <Text style={local.cardTitle}>管理这条计划</Text>
                   <View style={local.actions}>
+                    <ActionButton label="查看 15 步生命周期" tone="quiet" onPress={() => router.push(`/plans/${id}/lifecycle` as never)} />
                     <ActionButton label="编辑计划" tone="quiet" onPress={() => router.push(`/plans/${id}/edit` as never)} />
                     <ActionButton label={apply.isPending ? '启用中…' : '启用修改'} onPress={() => apply.mutate()} disabled={apply.isPending || !currentVersionNumber || summary.data.hasMissingConnection} />
                     {summary.data.allowedTransitions.map((status) => <ActionButton key={status} label={statusActionLabel(status)} tone={status === 'archived' ? 'danger' : 'quiet'} onPress={() => changeStatus.mutate(status)} disabled={changeStatus.isPending} />)}

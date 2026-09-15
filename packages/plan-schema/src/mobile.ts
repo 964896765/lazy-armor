@@ -26,3 +26,14 @@ export {
   type ProductDomain,
   type ProductDomainKey,
 } from './product-model';
+export {
+  LIFECYCLE_READ_PROJECTION_VERSION,
+  LIFECYCLE_READ_STATES,
+  buildLifecycleReadProjection,
+  isLifecycleReadProjection,
+  type LifecycleReadObservation,
+  type LifecycleReadProjection,
+  type LifecycleReadState,
+  type LifecycleReadStep,
+  type LifecycleReadStepKey,
+} from './lifecycle-read-projection';

@@ -23,6 +23,37 @@ import { ConnectorRateLimitCoordinator } from '../../infrastructure/connector-ra
 import { ProviderCircuitBreakerService } from '../../infrastructure/provider-circuit-breaker.service';
 import { ActionAdapter } from '../action-adapter.service';
 import { VerificationService } from '../verification.service';
+import { TerminalHandoffGuard, type TerminalHandoffProof } from '../../strategy-runtime/terminal-handoff-guard.service';
+import { requiresTerminalHandoffProof } from '@lazy-armor/plan-schema';
+
+function handoffTargetContext(actionConfig: Record<string, unknown>): Record<string, unknown> {
+  const handoff = actionConfig.handoffTarget;
+  if (!handoff || typeof handoff !== 'object' || Array.isArray(handoff)) return {};
+  const target = handoff as Record<string, unknown>;
+  if (!target.action || typeof target.action !== 'object' || Array.isArray(target.action)) return {};
+  return target.kind === 'NOTION_UPDATE' ? { notionAction: target.action }
+    : target.kind === 'CALENDAR_EVENT' ? { calendarEvent: target.action } : {};
+}
+
+type TargetAuthorizationFence = { connectorKey: string; credentialRef: string | null; credentialVersion: number | null };
+
+function targetAuthorizationFence(snapshot: Record<string, unknown>, required: boolean): TargetAuthorizationFence | null {
+  const raw = snapshot.targetAuthorizationFence;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    if (required) throw new ExecutionRuntimeError('TERMINAL_HANDOFF_NOT_AUTHORIZED', 'Cross-provider action is missing its target authorization fence');
+    return null;
+  }
+  const value = raw as Record<string, unknown>;
+  const credentialRef = value.credentialRef;
+  const credentialVersion = value.credentialVersion;
+  if (typeof value.connectorKey !== 'string' || value.connectorKey.length === 0
+    || !(credentialRef === null || typeof credentialRef === 'string')
+    || !(credentialVersion === null || (typeof credentialVersion === 'number' && Number.isInteger(credentialVersion) && credentialVersion > 0))
+    || ((credentialRef === null) !== (credentialVersion === null))) {
+    throw new ExecutionRuntimeError('TERMINAL_HANDOFF_NOT_AUTHORIZED', 'Target authorization fence is invalid');
+  }
+  return { connectorKey: value.connectorKey, credentialRef, credentialVersion };
+}
 
 const MAX_OUTBOX_ATTEMPTS = 5;
 const RETRY_MAX_MS = 10_000;
@@ -30,7 +61,7 @@ const POLL_INTERVAL_MS = 1_000;
 const CLAIM_BATCH = 8;
 const WORKER_ID = () => `outbox-${process.pid}`;
 // 审批后仍不可覆盖的运行权限阻断码：直接受控失败，绝不无限重试。
-const BLOCKING_CODES = new Set(['CONNECTION_REVOKED', 'CONNECTION_EXPIRED', 'CONNECTION_UNAVAILABLE', 'CONNECTION_NOT_OWNED', 'CAPABILITY_NOT_FOUND', 'CAPABILITY_NOT_GRANTED', 'PERMISSION_REVOKED', 'PERMISSION_EXPIRED', 'CREDENTIAL_INVALID', 'CREDENTIAL_EXPIRED', 'ACTION_INTENT_MISSING', 'ACTION_ADAPTER_INTEGRITY_ERROR', 'ACTION_RESOLUTION_CHANGED', 'RISK_CONTEXT_CHANGED', 'RISK_SNAPSHOT_MISSING', 'APPROVAL_NOT_VALID', 'APPROVAL_EXPIRED']);
+const BLOCKING_CODES = new Set(['TERMINAL_HANDOFF_NOT_AUTHORIZED', 'CONNECTION_REVOKED', 'CONNECTION_EXPIRED', 'CONNECTION_UNAVAILABLE', 'CONNECTION_NOT_OWNED', 'CAPABILITY_NOT_FOUND', 'CAPABILITY_NOT_GRANTED', 'PERMISSION_REVOKED', 'PERMISSION_EXPIRED', 'CREDENTIAL_INVALID', 'CREDENTIAL_EXPIRED', 'ACTION_INTENT_MISSING', 'ACTION_ADAPTER_INTEGRITY_ERROR', 'ACTION_RESOLUTION_CHANGED', 'RISK_CONTEXT_CHANGED', 'RISK_SNAPSHOT_MISSING', 'APPROVAL_NOT_VALID', 'APPROVAL_EXPIRED']);
 
 @Injectable()
 export class OutboxWorker implements OnModuleInit, OnApplicationShutdown {
@@ -56,6 +87,7 @@ export class OutboxWorker implements OnModuleInit, OnApplicationShutdown {
     private readonly circuits: ProviderCircuitBreakerService,
     private readonly actionAdapter: ActionAdapter,
     private readonly verification: VerificationService,
+    private readonly terminalGuard: TerminalHandoffGuard,
   ) {}
 
   onModuleInit() {
@@ -149,7 +181,7 @@ export class OutboxWorker implements OnModuleInit, OnApplicationShutdown {
     const startedAt = Date.now();
     try {
       // §56：Plan 不再 active，不得派发外部副作用。
-      const execution = (await this.db.select({ planId: executions.planId, cancellationRequestedAt: executions.cancellationRequestedAt }).from(executions).where(eq(executions.id, payload.executionId)).limit(1))[0];
+      const execution = (await this.db.select({ planId: executions.planId, cancellationRequestedAt: executions.cancellationRequestedAt, resolvedRiskSnapshotJson: executions.resolvedRiskSnapshotJson }).from(executions).where(eq(executions.id, payload.executionId)).limit(1))[0];
       const plan = execution ? (await this.db.select({ status: plans.status }).from(plans).where(and(eq(plans.id, execution.planId), eq(plans.userId, operation.userId))).limit(1))[0] : null;
       if (execution?.cancellationRequestedAt) {
         if (operation.status === 'executing') {
@@ -167,13 +199,22 @@ export class OutboxWorker implements OnModuleInit, OnApplicationShutdown {
         await this.failOperation(operation, message, 'PLAN_NOT_ACTIVE', 'Plan is no longer active');
         return;
       }
+      const rebuilt = await this.operations.rebuildRequest(operation.executionStepId);
+      // Cross-provider handoffs keep the authenticated source Truth current until the target write boundary.
+      const terminalProof = execution?.resolvedRiskSnapshotJson?.terminalHandoffProof as TerminalHandoffProof | undefined;
+      const terminalAction = requiresTerminalHandoffProof(rebuilt.actionConfig);
+      if (terminalAction && !terminalProof) {
+        throw new ExecutionRuntimeError('TERMINAL_HANDOFF_NOT_AUTHORIZED', 'Cross-provider action is missing its server-owned Truth handoff proof');
+      }
+      if (terminalProof) await this.terminalGuard.assertExecutionCurrent(operation.userId, execution!.planId, terminalProof);
       // §17 Runtime Security Recheck：再次检查 Connection/Permission/Credential（Approval 永远不能覆盖 Permission）。
       let connectorKey: string;
       let credentialRef: string | null | undefined;
       let credentialVersion: number | null | undefined;
       let credentialExpiresAt: Date | null | undefined;
       if (operation.connectionId && operation.capabilityKey) {
-        const checked = await this.guard.assertUsable(operation.userId, operation.connectionId, operation.capabilityKey);
+        const expectedFence = targetAuthorizationFence(operation.requestSnapshotJson, terminalAction);
+        const checked = await this.guard.assertUsable(operation.userId, operation.connectionId, operation.capabilityKey, expectedFence ?? undefined);
         connectorKey = checked.connectorKey;
         connectorKeyForMetrics = checked.connectorKey;
         credentialRef = checked.credentialRef;
@@ -193,7 +234,6 @@ export class OutboxWorker implements OnModuleInit, OnApplicationShutdown {
       const connector = this.registry.get(connectorKey);
       await this.circuits.beforeRequest(connectorKey);
       await this.rateLimits.acquire({ provider: connectorKey, connectionId: operation.connectionId });
-      const rebuilt = await this.operations.rebuildRequest(operation.executionStepId);
       await this.actionAdapter.assertOperation(operation.executionId, operation.executionStepId);
       await this.events.append(payload.executionId, 'side_effect_dispatch_started', { operationId: operation.id, attempt: operation.attemptCount + 1 }, operation.executionStepId);
       await this.stepStates.transition(operation.executionStepId, 'running', { dispatchStatus: 'executing' });
@@ -206,11 +246,21 @@ export class OutboxWorker implements OnModuleInit, OnApplicationShutdown {
       } else {
         await this.operations.mark(operation.id, { status: 'executing', attemptCount: operation.attemptCount + 1, startedAt: operation.startedAt ?? new Date(), errorCode: null, errorMessage: null });
       }
+      // Last authorization barrier before invoking the provider. The target
+      // credential is pinned when the operation is prepared; any rotation or
+      // revocation fails closed instead of silently authorizing a new token.
+      if (terminalProof) await this.terminalGuard.assertExecutionCurrent(operation.userId, execution!.planId, terminalProof);
+      const finalChecked = await this.guard.assertUsable(operation.userId, operation.connectionId, operation.capabilityKey,
+        targetAuthorizationFence(operation.requestSnapshotJson, terminalAction) ?? undefined);
+      if (finalChecked.connectorKey !== connectorKey) throw new ExecutionRuntimeError('CREDENTIAL_INVALID', 'Target connector changed before dispatch');
+      credentialRef = finalChecked.credentialRef;
+      credentialVersion = finalChecked.credentialVersion;
+      credentialExpiresAt = finalChecked.credentialExpiresAt;
       this.telemetry.increment('connector.calls', 1, { connectorKey, capability: operation.capabilityKey ?? 'unknown', operation: 'execute' });
       dispatchStarted = true;
       const result = await this.telemetry.runWithContext({ connectorKey, requestId: rebuilt.requestId }, () => connector.execute?.({
         capability: operation.capabilityKey!,
-        input: { context: rebuilt.triggerPayload, config: rebuilt.actionConfig },
+        input: { context: { ...rebuilt.triggerPayload, ...handoffTargetContext(rebuilt.actionConfig) }, config: rebuilt.actionConfig },
         requestId: rebuilt.requestId,
         idempotencyKey: operation.idempotencyKey,
         providerIdempotencyKey: operation.providerIdempotencyKey ?? undefined,

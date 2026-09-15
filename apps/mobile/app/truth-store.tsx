@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { router } from 'expo-router';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../src/api';
 import { useAuthStore } from '../src/auth-store';
@@ -17,7 +17,7 @@ export default function TruthStorePage() {
     {token && facts.isLoading ? <ActivityIndicator color={colors.primary} /> : null}
     {token && facts.isError ? <Surface><EmptyState icon="alert-circle-outline" title="暂时无法读取事实" description="没有显示任何示例数据，也没有修改你的记录。" action={{ label: '返回通知来源', onPress: () => router.replace('/connections/notification-sources' as never) }} /></Surface> : null}
     {token && !facts.isLoading && !facts.isError && (facts.data?.length ?? 0) === 0 ? <Surface><EmptyState icon="shield-checkmark-outline" title="还没有已验证事实" description="先为已添加应用单独启用通知来源；收到的线索需要由你确认后才会显示在这里。" action={{ label: '管理通知来源', onPress: () => router.push('/connections/notification-sources' as never) }} /></Surface> : null}
-    <View style={styles.list}>{facts.data?.map((fact) => <Surface key={fact.id}><Text style={styles.name}>{resourceLabel(fact.resourceKey)}</Text><Text style={styles.detail}>状态：已验证</Text><Text style={styles.detail}>确认方式：{fact.verifiedBy === 'user_confirmation' ? '你的明确确认' : '已验证方式'}</Text><Text style={styles.detail}>确认时间：{formatTime(fact.verifiedAt)}</Text><Text style={styles.detail}>事实编号：{fact.id.slice(0, 12)}…</Text></Surface>)}</View>
+    <View style={styles.list}>{facts.data?.map((fact) => <Pressable accessibilityRole="button" key={fact.id} onPress={() => router.push(`/truth/${fact.id}` as never)}><Surface><Text style={styles.name}>{resourceLabel(fact.resourceKey)}</Text><Text style={styles.detail}>状态：已验证</Text><Text style={styles.detail}>确认方式：{fact.verifiedBy === 'user_confirmation' ? '你的明确确认' : '已验证方式'}</Text><Text style={styles.detail}>确认时间：{formatTime(fact.verifiedAt)}</Text><Text style={styles.detail}>事实编号：{fact.id.slice(0, 12)}…</Text><Text style={styles.link}>查看 Truth Provenance</Text></Surface></Pressable>)}</View>
     {token ? <View style={styles.action}><ActionButton label="返回通知来源" tone="quiet" onPress={() => router.replace('/connections/notification-sources' as never)} /></View> : null}
   </ScrollView></SafeAreaView>;
 }
@@ -26,5 +26,5 @@ function resourceLabel(resource: string) { return resource === 'mobile.billing.t
 function formatTime(value: string) { const date = new Date(value); return Number.isNaN(date.getTime()) ? '时间不可用' : date.toLocaleString('zh-CN'); }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: colors.background }, page: { flex: 1, backgroundColor: colors.background }, content: { padding: spacing.page, paddingBottom: 72 }, header: { marginBottom: spacing.xxl }, title: { ...typography.display, color: colors.text }, subtitle: { ...typography.body, color: colors.textSecondary, marginTop: spacing.sm, lineHeight: 22 }, list: { gap: spacing.md }, name: { ...typography.cardTitle, color: colors.text }, detail: { ...typography.caption, color: colors.textSecondary, marginTop: spacing.sm }, action: { alignItems: 'center', marginTop: spacing.xxl },
+  safeArea: { flex: 1, backgroundColor: colors.background }, page: { flex: 1, backgroundColor: colors.background }, content: { padding: spacing.page, paddingBottom: 72 }, header: { marginBottom: spacing.xxl }, title: { ...typography.display, color: colors.text }, subtitle: { ...typography.body, color: colors.textSecondary, marginTop: spacing.sm, lineHeight: 22 }, list: { gap: spacing.md }, link: { ...typography.bodyStrong, color: colors.primary, marginTop: spacing.md }, name: { ...typography.cardTitle, color: colors.text }, detail: { ...typography.caption, color: colors.textSecondary, marginTop: spacing.sm }, action: { alignItems: 'center', marginTop: spacing.xxl },
 });
