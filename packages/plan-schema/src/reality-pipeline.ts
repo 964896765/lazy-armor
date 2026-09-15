@@ -2,13 +2,13 @@ import { createHash } from 'node:crypto';
 import { canonicalStringify, type JsonValue } from './index';
 
 export const SOURCE_MODES = ['OFFICIAL_API', 'WEBHOOK', 'NOTIFICATION', 'SHARE', 'FILE', 'MANUAL', 'INTERNAL'] as const;
-export const PARSER_KEYS = ['generic.transaction.v1', 'generic.shipment-status.v1', 'generic.connection-health.v1', 'mobile-notification-billing.v1', 'generic.email-message.v1', 'generic.calendar-event.v1', 'generic.repository-resource.v1', 'generic.repository-resource.v2'] as const;
+export const PARSER_KEYS = ['generic.transaction.v1', 'generic.shipment-status.v1', 'generic.connection-health.v1', 'mobile-notification-billing.v1', 'generic.email-message.v1', 'generic.calendar-event.v1', 'generic.repository-resource.v1', 'generic.repository-resource.v2', 'generic.document-resource.v1'] as const;
 export type SourceMode = typeof SOURCE_MODES[number];
 export type ParserKey = typeof PARSER_KEYS[number];
 
 export const REALITY_ADAPTER_REGISTRY = Object.freeze([
   ...PARSER_KEYS.map((key) => Object.freeze({ key, kind: 'PARSER' as const, revision: 1 as const, status: 'ACTIVE' as const })),
-  ...['money.v1', 'shipment-status.v1', 'connection-health.v1', 'email-message.v1', 'calendar-event.v1', 'repository-resource.v1', 'repository-resource.v2'].map((key) => Object.freeze({ key, kind: 'NORMALIZER' as const, revision: 1 as const, status: 'ACTIVE' as const })),
+  ...['money.v1', 'shipment-status.v1', 'connection-health.v1', 'email-message.v1', 'calendar-event.v1', 'repository-resource.v1', 'repository-resource.v2', 'document-resource.v1'].map((key) => Object.freeze({ key, kind: 'NORMALIZER' as const, revision: 1 as const, status: 'ACTIVE' as const })),
 ]);
 
 export interface SourceObservationInput {
@@ -19,10 +19,10 @@ export interface SourceObservationInput {
 }
 
 export interface NormalizedFactDraft {
-  resourceType: 'finance.transaction' | 'shipment' | 'digital_account.connection' | 'EmailMessage' | 'CalendarEvent' | 'Repository' | 'Issue' | 'PullRequest' | 'Workflow';
-  resourceKey: string; subjectKey: string; factKey: 'finance.transaction.amount' | 'shipment.status' | 'digital_account.connection.health' | 'email_message.metadata' | 'email_message.body' | 'email_message.labels' | 'calendar_event.schedule' | 'repository.metadata' | 'issue.state' | 'pull_request.state' | 'workflow.run_status';
+  resourceType: 'finance.transaction' | 'shipment' | 'digital_account.connection' | 'EmailMessage' | 'CalendarEvent' | 'Repository' | 'Issue' | 'PullRequest' | 'Workflow' | 'Page' | 'DataSource';
+  resourceKey: string; subjectKey: string; factKey: 'finance.transaction.amount' | 'shipment.status' | 'digital_account.connection.health' | 'email_message.metadata' | 'email_message.body' | 'email_message.labels' | 'calendar_event.schedule' | 'repository.metadata' | 'issue.state' | 'pull_request.state' | 'workflow.run_status' | 'page.properties' | 'data_source.schema';
   value: Record<string, JsonValue>; confidence: number; normalizerKey: string;
-  freshnessPolicyKey: 'transaction.default' | 'shipment.status' | 'connection.health' | 'email.message' | 'calendar.event' | 'repository.resource' | 'repository.resource.v2';
+  freshnessPolicyKey: 'transaction.default' | 'shipment.status' | 'connection.health' | 'email.message' | 'calendar.event' | 'repository.resource' | 'repository.resource.v2' | 'document.resource.v1';
   conflictPolicyKey: 'latest_verified_then_observed' | 'latest_verified_then_observed.v2';
   compatibilityResourceKey?: string;
 }
@@ -42,6 +42,7 @@ export const REALITY_POLICY_REGISTRY: readonly RealityPolicyDefinition[] = Objec
   policy('repository.resource', 'FRESHNESS', { ttlSeconds: 300, onStale: 'refresh' }),
   policy('latest_verified_then_observed', 'CONFLICT', { order: ['verificationLevel', 'occurredAt', 'observedAt'], unresolved: 'block' }),
   policy('repository.resource.v2', 'FRESHNESS', { ttlSeconds: 300, onStale: 'refresh', revalidation: 'authenticated_read_audit_without_mutating_truth_version' }),
+  policy('document.resource.v1', 'FRESHNESS', { ttlSeconds: 300, onStale: 'refresh', revalidation: 'authenticated_read_audit_without_mutating_truth_version' }),
   policy('latest_verified_then_observed.v2', 'CONFLICT', { order: ['verificationLevel', 'providerUpdatedAt', 'observedAt'], stale: 'supersede_candidate', equalTimeDifferentValue: 'block', unchanged: 'revalidate', history: 'append_only' }),
 ]);
 
@@ -53,6 +54,17 @@ const requireInteger = (payload: Record<string, JsonValue>, key: string) => {
 };
 
 export function parseAndNormalizeObservation(input: SourceObservationInput): NormalizedFactDraft[] {
+  if (input.parserKey === 'generic.document-resource.v1') {
+    if (!input.connectionId) throw new Error('Document resource observation requires connectionId');
+    const type = requireString(input.payload, 'resourceType'); const id = requireString(input.payload, 'resourceId'); const workspaceId = requireString(input.payload, 'workspaceId');
+    if (!['Page', 'DataSource'].includes(type) || !/^[a-f0-9-]{36}$/i.test(id) || !/^[a-f0-9-]{36}$/i.test(workspaceId)
+      || input.resourceHint !== type || typeof input.payload.updatedAt !== 'string' || !Number.isFinite(Date.parse(input.payload.updatedAt))
+      || !input.payload.properties || typeof input.payload.properties !== 'object' || Array.isArray(input.payload.properties)) throw new Error('Invalid versioned document resource');
+    const subjectKey = `${input.connectionId}:${workspaceId}:${type}:${id}`;
+    return [{ resourceType: type as 'Page' | 'DataSource', resourceKey: subjectKey, subjectKey,
+      factKey: type === 'Page' ? 'page.properties' : 'data_source.schema', value: input.payload, confidence: 1,
+      normalizerKey: 'document-resource.v1', freshnessPolicyKey: 'document.resource.v1', conflictPolicyKey: 'latest_verified_then_observed.v2' }];
+  }
   if (input.parserKey === 'generic.repository-resource.v1' || input.parserKey === 'generic.repository-resource.v2') {
     const versioned = input.parserKey === 'generic.repository-resource.v2';
     if (!input.connectionId) throw new Error('Repository resource observation requires connectionId');
@@ -119,7 +131,8 @@ export function observationIdentity(providerKey: string, externalEventKey: strin
 export function candidateDedupeKey(userId: string, draft: NormalizedFactDraft) {
   const identity = { userId, resourceType: draft.resourceType, resourceKey: draft.resourceKey, subjectKey: draft.subjectKey, factKey: draft.factKey, valueHash: realityValueHash(draft.value) };
   // Only the new normalizer has a new namespace. Every historical v1 hash stays identical.
-  return realityValueHash(draft.normalizerKey === 'repository-resource.v2' ? { ...identity, normalizationRevision: 2 } : identity);
+  return realityValueHash(draft.normalizerKey === 'repository-resource.v2' ? { ...identity, normalizationRevision: 2 }
+    : draft.normalizerKey === 'document-resource.v1' ? { ...identity, normalizationRevision: 'document-1' } : identity);
 }
 export function versionedFactIdentity(userId: string, connectionId: string, draft: { resourceType: string; resourceKey: string; subjectKey: string; factKey: string }) {
   return realityValueHash({ schema: 'generic-resource-identity-v1', userId, connectionId, resourceType: draft.resourceType,

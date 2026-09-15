@@ -1,6 +1,6 @@
 # Batch 9E — Notion 接入差异与安全设计
 
-日期：2026-09-14。状态：官方接口核对/设计，尚未实现真实 Notion Adapter，不计作 Batch 9E 完成。依次承接 GitHub terminal handoff；缺 OAuth Secret 仅阻塞真实 workspace 验收。
+日期：2026-09-14。状态：本设计已由 2026-09-15 的非 Secret 实现落地；实现与验收证据见 [Batch 9E 报告](./runtime-productization-batch-9e-report.md)。真实 Notion workspace 验收仍受 OAuth Secret/账号授权阻塞，不得据此宣称真实平台完成。
 
 ## 官方接口基线
 
@@ -9,9 +9,9 @@
 - Page 属性与 block 正文不是同一接口/能力。第一版读取和写入有界结构化属性；不将属性读取宣称完整正文读取。写后必须用 page ID 再读取、比对 parent/批准 properties，并生成既有 VerificationEvidence；[Update page](https://developers.notion.com/reference/patch-page) 的字段契约为准。
 - [Request limits](https://developers.notion.com/reference/request-limits) 映射 429/Retry-After；本地预算不是官方 quota。禁止 adapter 隐式 write retry；可能已产生副作用但没有 page ID 时保留 OUTCOME_UNKNOWN，只走既有 Reconciliation 的只读/用户确认路径。
 
-## 待实施
+## 已实施边界
 
-配置契约与 HTTPS callback → HTTP/OAuth client → 四项 Manifest/Evidence/Policy 与权限/Health → 有界 Page/DataSource schema → 复用 Generic Observation/Candidate/Truth → 现有 ActionIntent/Resolver/Risk/Approval/Execution/Verification → 实际 HTTP/TCP/MySQL 隔离验收 → 真实 workspace 验收。新增定义使用新 revision，不能改已发布 skeleton；不创建 Notion auth/truth/execution 专属表或 Engine。
+配置契约与 HTTPS callback → HTTP/OAuth client → 四项 Manifest/Evidence/Policy 与权限/Health → 有界 Page/DataSource schema → 复用 Generic Observation/Candidate/Truth → 现有 ActionIntent/Resolver/Risk/Approval/Execution/Verification → 实际 HTTP/TCP/MySQL 隔离验收均已实现。真实 workspace 验收保留为独立 Hard Stop。实现没有新增 Notion 专属 auth/truth/execution 表或 Engine。
 
 ## 058151e 后续实现准备
 

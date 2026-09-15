@@ -92,7 +92,7 @@ export class RealityPipelineService implements OnModuleInit {
 
   async confirmCandidate(userId: string, candidateId: string, options: { sourceReceiptId?: string | null; verifiedBy?: string; verificationMethod?: string; readProof?: ResourceReadProof } = {}, retryCount = 0): Promise<Awaited<ReturnType<RealityPipelineService['truthResponse']>>> {
     const existing = await this.getCandidate(userId, candidateId);
-    if (existing.normalizerKey === 'repository-resource.v2') {
+    if (existing.normalizerKey === 'repository-resource.v2' || existing.normalizerKey === 'document-resource.v1') {
       return this.truthResponse(userId, await this.versioned.confirm(userId, candidateId, options.readProof!));
     }
     if (existing.status === 'VERIFIED' && existing.truthRecordId) return this.truthResponse(userId, existing.truthRecordId);

@@ -1,0 +1,8 @@
+import { describe, expect, it } from 'vitest'; import { NOTION_CALLBACK_PATH, resolveNotionOAuthConfig } from './index';
+const config = { NOTION_OAUTH_CLIENT_ID: 'isolated-notion-client', NOTION_OAUTH_CLIENT_SECRET: 'isolated-notion-secret', NOTION_OAUTH_REDIRECT_URI: 'https://api.example.test' + NOTION_CALLBACK_PATH };
+describe('Notion configuration contract', () => {
+  it('is disabled when absent and accepts only a complete independent configuration', () => { expect(resolveNotionOAuthConfig({})).toBeNull(); expect(resolveNotionOAuthConfig(config)).toEqual({ clientId: config.NOTION_OAUTH_CLIENT_ID, clientSecret: config.NOTION_OAUTH_CLIENT_SECRET, redirectUri: config.NOTION_OAUTH_REDIRECT_URI }); });
+  it.each(Object.keys(config))('rejects partial configuration missing %s without revealing secrets', (key) => { try { resolveNotionOAuthConfig({ ...config, [key]: '' }); throw new Error('accepted'); } catch (error) { expect((error as Error).message).toContain('NOTION_OAUTH_'); expect((error as Error).message).not.toContain(config.NOTION_OAUTH_CLIENT_SECRET); } });
+  it.each(['http://api.example.test', 'https://localhost', 'https://127.0.0.1', 'https://[::1]', 'https://user:password@api.example.test'])('rejects unsafe origin %s', (origin) => { expect(() => resolveNotionOAuthConfig({ ...config, NOTION_OAUTH_REDIRECT_URI: origin + NOTION_CALLBACK_PATH })).toThrow(); });
+  it.each(['/api/providers/github/oauth/callback', NOTION_CALLBACK_PATH + '?next=evil', NOTION_CALLBACK_PATH + '#fragment'])('rejects unsafe callback path %s', (path) => { expect(() => resolveNotionOAuthConfig({ ...config, NOTION_OAUTH_REDIRECT_URI: 'https://api.example.test' + path })).toThrow(); });
+});

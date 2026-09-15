@@ -79,6 +79,7 @@ const resourceSeeds: readonly [string, string, ProductDomainKey][] = [
   ['ContentItem', '内容', 'content'], ['ContentAsset', '内容素材', 'content'], ['ContentDraft', '内容草稿', 'content'], ['Publication', '发布记录', 'content'], ['PublicationTarget', '发布目标', 'content'], ['ContentMetric', '内容指标', 'content'],
   ['Trip', '行程', 'travel'], ['TripSegment', '行程段', 'travel'], ['Ticket', '票务', 'travel'], ['Booking', '预订', 'travel'], ['Place', '地点', 'travel'],
   ['HealthRecord', '健康记录', 'health'], ['PetRecord', '宠物记录', 'pet'], ['Contract', '合同', 'legal_contract'], ['GovernmentCase', '政务事项', 'government'], ['LearningRecord', '学习记录', 'study'], ['EntertainmentItem', '娱乐项目', 'entertainment'],
+  ['Page', 'Notion 页面', 'work'], ['DataSource', 'Notion 数据源', 'work'],
 ] as const;
 
 export const RESOURCE_CATALOG: readonly ResourceDefinition[] = Object.freeze(resourceSeeds.map(([key, label, domain]) => Object.freeze({
@@ -157,6 +158,10 @@ export const FACT_SCHEMA_CATALOG: readonly FactSchemaDefinition[] = Object.freez
     resourceType: 'EmailMessage', field, valueType: 'object_ref', unit: null, nullable: false, enumValues: Object.freeze([]),
     freshnessTtlSeconds: 86400, semanticIdentity: Object.freeze(['connection_id', 'message_id', 'field']), sensitivity: 'SENSITIVE',
     minimumReality: 'OBSERVED', acceptedVerificationMethods: Object.freeze(['SOURCE_EVIDENCE', 'USER_CONFIRMATION', 'READ_BACK']), revision: 1, status: 'ACTIVE' })),
+  ...[['Page', 'page.properties'], ['DataSource', 'data_source.schema']].map(([resourceType, key]): FactSchemaDefinition => Object.freeze({
+    schemaVersion: '1', key, resourceType, field: key.split('.').slice(1).join('.'), valueType: 'object_ref', unit: null, nullable: false, enumValues: Object.freeze([]),
+    freshnessTtlSeconds: 300, semanticIdentity: Object.freeze(['connection_id', 'workspace_id', 'resource_id']), sensitivity: 'SENSITIVE', minimumReality: 'OBSERVED',
+    acceptedVerificationMethods: Object.freeze(['SOURCE_EVIDENCE', 'USER_CONFIRMATION', 'READ_BACK']), revision: 1, status: 'ACTIVE' })),
 ]);
 
 const strategyDefaults: Record<StrategyKey, Omit<StrategyProfile, 'schemaVersion' | 'key' | 'label' | 'revision' | 'status'>> = {

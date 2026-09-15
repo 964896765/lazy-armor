@@ -46,6 +46,7 @@ import { ProviderRuntimeModule } from './provider-runtime/provider-runtime.modul
 import { GmailModule } from './providers/gmail/gmail.module';
 import { GoogleCalendarModule } from './providers/calendar/calendar.module';
 import { GitHubModule } from './providers/github/github.module';
+import { NotionModule } from './providers/notion/notion.module';
 import { TerminalHandoffController, TerminalHandoffService } from './strategy-runtime/terminal-handoff.service';
 
 @Module({
@@ -90,6 +91,7 @@ import { TerminalHandoffController, TerminalHandoffService } from './strategy-ru
     GmailModule,
     GoogleCalendarModule,
     GitHubModule,
+    NotionModule,
     RuntimeCatalogModule,
     AppReadSessionsModule,
     PlansModule,

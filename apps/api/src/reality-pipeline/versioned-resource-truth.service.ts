@@ -34,7 +34,11 @@ export class VersionedResourceTruthService {
     const first = (await this.db.select().from(candidateFacts).where(and(eq(candidateFacts.id, candidateId), eq(candidateFacts.userId, userId))).limit(1))[0];
     if (!first) throw new NotFoundException('Candidate fact not found');
     const observation = (await this.db.select().from(sourceObservations).where(and(eq(sourceObservations.id, first.observationId), eq(sourceObservations.userId, userId))).limit(1))[0];
-    if (!observation?.connectionId || observation.parserKey !== 'generic.repository-resource.v2' || observation.sourceMode !== 'OFFICIAL_API') {
+    const descriptor = observation?.parserKey === 'generic.repository-resource.v2'
+      ? { parserKey: 'generic.repository-resource.v2' as const, normalizerKey: 'repository-resource.v2', freshnessPolicyKey: 'repository.resource.v2' }
+      : observation?.parserKey === 'generic.document-resource.v1'
+        ? { parserKey: 'generic.document-resource.v1' as const, normalizerKey: 'document-resource.v1', freshnessPolicyKey: 'document.resource.v1' } : null;
+    if (!observation?.connectionId || !descriptor || observation.sourceMode !== 'OFFICIAL_API') {
       throw new ForbiddenException('Versioned resource requires an authenticated API acquisition');
     }
     try { return await this.db.transaction(async (tx) => {
@@ -97,12 +101,12 @@ export class VersionedResourceTruthService {
       const candidate = (await tx.select().from(candidateFacts).where(and(eq(candidateFacts.id, candidateId), eq(candidateFacts.userId, userId))).limit(1).for('update'))[0]!;
       let draft;
       try { draft = parseAndNormalizeObservation({ providerKey: observation.providerKey, connectionId: observation.connectionId,
-        sourceMode: 'OFFICIAL_API', parserKey: 'generic.repository-resource.v2', resourceHint: observation.resourceHint,
+        sourceMode: 'OFFICIAL_API', parserKey: descriptor.parserKey, resourceHint: observation.resourceHint,
         externalEventKey: observation.externalEventKey, observedAt: observation.observedAt.toISOString(),
         payload: observation.payloadJson as Record<string, JsonValue>, evidenceHash: observation.evidenceHash })[0]; }
       catch { throw new ConflictException('Versioned source integrity check failed'); }
-      if (candidate.normalizerKey !== 'repository-resource.v2' || candidate.conflictPolicyKey !== 'latest_verified_then_observed.v2'
-        || candidate.freshnessPolicyKey !== 'repository.resource.v2' || candidate.compatibilityResourceKey
+      if (candidate.normalizerKey !== descriptor.normalizerKey || candidate.conflictPolicyKey !== 'latest_verified_then_observed.v2'
+        || candidate.freshnessPolicyKey !== descriptor.freshnessPolicyKey || candidate.compatibilityResourceKey
         || observation.payloadHash !== realityValueHash(observation.payloadJson) || candidate.dedupeKey !== candidateDedupeKey(userId, draft)
         || candidate.resourceType !== draft.resourceType || candidate.resourceKey !== draft.resourceKey
         || candidate.subjectKey !== draft.subjectKey || candidate.factKey !== draft.factKey

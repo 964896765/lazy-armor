@@ -16,10 +16,11 @@ import {
 import { ConnectorCatalogSyncService } from './connector-catalog-sync.service';
 import { ConnectorsController } from './connectors.controller';
 import { ConnectorsService } from './connectors.service';
-import { resolveGmailOAuthConfig, resolveGoogleCalendarOAuthConfig, resolveGitHubOAuthConfig } from '@lazy-armor/config';
+import { resolveGmailOAuthConfig, resolveGoogleCalendarOAuthConfig, resolveGitHubOAuthConfig, resolveNotionOAuthConfig } from '@lazy-armor/config';
 import { DisabledGitHubConnector } from '../providers/github/disabled-github.connector';
 import { DisabledGmailConnector } from '../providers/gmail/disabled-gmail.connector';
 import { DisabledGoogleCalendarConnector } from '../providers/calendar/disabled-calendar.connector';
+import { DisabledNotionConnector } from '../providers/notion/disabled-notion.connector';
 
 export const CONNECTOR_REGISTRY = 'CONNECTOR_REGISTRY';
 
@@ -41,6 +42,8 @@ export function createConnectorRegistry(env: NodeJS.ProcessEnv = process.env) {
   const github = resolveGitHubOAuthConfig({ GITHUB_OAUTH_CLIENT_ID: env.GITHUB_OAUTH_CLIENT_ID, GITHUB_OAUTH_CLIENT_SECRET: env.GITHUB_OAUTH_CLIENT_SECRET,
     GITHUB_OAUTH_REDIRECT_URI: env.GITHUB_OAUTH_REDIRECT_URI });
   if (!github && env.NODE_ENV !== 'test') registry.register(new DisabledGitHubConnector());
+  const notion = resolveNotionOAuthConfig({ NOTION_OAUTH_CLIENT_ID: env.NOTION_OAUTH_CLIENT_ID, NOTION_OAUTH_CLIENT_SECRET: env.NOTION_OAUTH_CLIENT_SECRET, NOTION_OAUTH_REDIRECT_URI: env.NOTION_OAUTH_REDIRECT_URI });
+  if (!notion && env.NODE_ENV !== 'test') registry.register(new DisabledNotionConnector());
   registry.register(new FileProviderConnector());
   registry.register(new LogisticsProviderConnector());
   registry.register(new ContentProviderConnector());
