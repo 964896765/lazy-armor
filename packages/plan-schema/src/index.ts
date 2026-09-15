@@ -435,7 +435,32 @@ export {
   type StrategyKey,
   type StrategyProfile,
 } from './runtime-catalog';
+export {
+  BATCH_10_WAVE_1_CONCLUSION,
+  BATCH_10_WAVE_1_EXPECTED_COUNTS,
+  SCENARIO_COVERAGE_LEDGER,
+  SCENARIO_COVERAGE_LEDGER_REVISION,
+  SCENARIO_COVERAGE_READINESS_STATES,
+  STRATEGY_GOLDEN_DEFINITIONS,
+  STRATEGY_GOLDEN_JOURNEYS,
+  assertScenarioCoverageLedger,
+  batch10Wave1Conclusion,
+  evaluateScenarioCoverageReadiness,
+  scenarioCoverageByKey,
+  type Batch10Wave1Conclusion,
+  type Batch10Wave1Domain,
+  type CoverageAuthorizationStatus,
+  type CoverageCapabilityEvidence,
+  type CoverageImplementationStatus,
+  type CoverageProviderStatus,
+  type ScenarioCoverageLedgerEntry,
+  type ScenarioCoverageReadiness,
+  type ScenarioCoverageReadinessInput,
+  type ScenarioCoverageReadinessState,
+  type StrategyGoldenDefinition,
+} from './scenario-coverage-ledger';
 export { compileScenarioPlan, type CompiledScenarioPlan, type ScenarioCompileInput } from './scenario-plan-compiler';
+export { STRATEGY_RUNTIME_KEY, type StrategyRuntimeKey } from './strategy-runtime-identity';
 export {
   CONDITION_AST_SCHEMA_VERSION,
   CONDITION_OPERATORS_V1,
