@@ -2,7 +2,7 @@ import { BadRequestException, Inject, Injectable, NotFoundException, OnModuleIni
 import {
   FACT_SCHEMA_CATALOG, RESOURCE_CATALOG, SCENARIO_DEFINITIONS, STRATEGY_PROFILES, catalogHash,
   compileScenarioPlan, evaluateScenarioReadiness, scenarioByKey, PRODUCT_DOMAINS,
-  type StrategyKey,
+  type StrategyKey, type TerminalHandoffTarget,
   TERMINAL_FOLLOW_UP_RULES, terminalFollowUpScenario,
 } from '@lazy-armor/plan-schema';
 import {
@@ -47,9 +47,9 @@ export class RuntimeCatalogRegistryService implements OnModuleInit {
     });
   }
 
-  async compile(userId: string, key: string, input: { scenarioRevision?: number; strategy?: StrategyKey; name?: string; subjectKey?: string }) {
+  async compile(userId: string, key: string, input: { scenarioRevision?: number; strategy?: StrategyKey; name?: string; subjectKey?: string; target?: TerminalHandoffTarget }) {
     const readiness = await this.readiness(userId, key);
-    try { return compileScenarioPlan({ scenarioKey: key, scenarioRevision: input.scenarioRevision, strategy: input.strategy, name: input.name, subjectKey: input.subjectKey, mode: 'DRAFT', readiness: {
+    try { return compileScenarioPlan({ scenarioKey: key, scenarioRevision: input.scenarioRevision, strategy: input.strategy, name: input.name, subjectKey: input.subjectKey, target: input.target, mode: 'DRAFT', readiness: {
       manualInputAvailable: readiness.state === 'MANUAL_READY',
       observationPipelineAvailable: false,
       executionPipelineAvailable: true,

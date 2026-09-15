@@ -36,8 +36,14 @@ export class RuntimeConnectionGuard {
     if (connection.credentialRefId && connection.credentialStatus !== 'active') throw new ExecutionRuntimeError('CREDENTIAL_INVALID', 'Credential reference is not active');
     if (connection.credentialExpiresAt && connection.credentialExpiresAt <= new Date()) throw new ExecutionRuntimeError('CREDENTIAL_EXPIRED', 'Credential reference has expired');
     if (connection.credentialRefId && connection.credentialRef && connection.credentialCurrentVersion) {
-      try { await this.credentials.get(connection.credentialRef, connection.credentialCurrentVersion); }
+      try {
+        if (await this.credentials.currentVersion(connection.credentialRef) !== connection.credentialCurrentVersion) {
+          throw new ExecutionRuntimeError('CREDENTIAL_INVALID', 'Credential reference version does not match the provider store');
+        }
+        await this.credentials.get(connection.credentialRef, connection.credentialCurrentVersion);
+      }
       catch (error) {
+        if (error instanceof ExecutionRuntimeError) throw error;
         if (error instanceof CredentialProviderError && error.retryable) throw new ExecutionRuntimeError('CREDENTIAL_UNAVAILABLE', 'Credential provider is temporarily unavailable', true);
         throw new ExecutionRuntimeError('CREDENTIAL_INVALID', 'Current credential version cannot be resolved');
       }

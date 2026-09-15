@@ -200,7 +200,17 @@ const actionConfigSchemas: Record<ActionType, z.ZodTypeAny> = {
     requireApprovalBeforePublish: z.boolean().optional(),
     providerGate: shortText.optional(),
   }).strict(),
-  publish: z.object({ visibility: z.enum(['private', 'unlisted', 'public']) }).strict(),
+  publish: z.object({
+    visibility: z.enum(['private', 'unlisted', 'public']),
+    handoffTarget: z.object({
+      ruleKey: shortText,
+      ruleRevision: z.number().int().positive(),
+      kind: z.enum(['NOTION_UPDATE', 'CALENDAR_EVENT']),
+      providerKey: shortText,
+      capabilityKey: shortText,
+      action: z.record(z.string(), jsonValueSchema),
+    }).strict().optional(),
+  }).strict(),
   prepare_purchase: z.object({
     currency: z.string().length(3).optional(),
     domain: shortText.optional(),

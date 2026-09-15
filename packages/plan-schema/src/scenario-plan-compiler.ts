@@ -2,7 +2,7 @@ import { normalizePlanDefinition, type PlanDefinition, type PlanDefinitionInput 
 import { evaluateScenarioReadiness, scenarioByKey, type ScenarioReadinessInput, type StrategyKey } from './runtime-catalog';
 import { productDomainFromStorageKey } from './product-model';
 import { buildStrategyRuntime, type CompiledStrategyRuntime } from './strategy-runtime';
-import { buildTerminalFollowUpRuntime, terminalFollowUpRule, terminalFollowUpScenario } from './terminal-follow-up';
+import { buildTerminalFollowUpRuntime, terminalFollowUpRule, terminalFollowUpScenario, terminalTargetConfig, validateTerminalTarget, type TerminalHandoffTarget } from './terminal-follow-up';
 
 export interface ScenarioCompileInput {
   scenarioKey: string;
@@ -12,6 +12,7 @@ export interface ScenarioCompileInput {
   mode?: 'DRAFT' | 'EXECUTABLE';
   readiness?: ScenarioReadinessInput;
   subjectKey?: string;
+  target?: TerminalHandoffTarget;
 }
 
 export interface CompiledScenarioPlan {
@@ -35,9 +36,7 @@ export function compileScenarioPlan(input: ScenarioCompileInput): CompiledScenar
   if (!scenario.supportedStrategies.includes(strategy)) throw new Error(`Strategy ${strategy} is not supported by ${scenario.key}`);
   const mode = input.mode ?? 'DRAFT';
   const readiness = evaluateScenarioReadiness(scenario, input.readiness);
-  if (mode === 'EXECUTABLE' && !['ASSISTED_READY', 'AUTOMATED_READY'].includes(readiness.state)) {
-    throw new Error(`Scenario ${scenario.key} is not executable: ${readiness.state}`);
-  }
+  if (mode === 'EXECUTABLE' && !['ASSISTED_READY', 'AUTOMATED_READY'].includes(readiness.state)) throw new Error(`Scenario ${scenario.key} is not executable: ${readiness.state}`);
   const productDomain = productDomainFromStorageKey(scenario.domain);
   if (!productDomain) throw new Error(`Scenario domain is not in the product catalog: ${scenario.domain}`);
   const runtime = terminalRule ? buildTerminalFollowUpRuntime(terminalRule, input.subjectKey) : buildStrategyRuntime(scenario, strategy, input.subjectKey ?? null);
@@ -53,9 +52,14 @@ export function compileScenarioPlan(input: ScenarioCompileInput): CompiledScenar
     actions: [actionFor(runtime.actionMode, scenario.key, productDomain.storageKey)],
   };
   if (terminalRule) {
-    definitionInput.conditions = [{ groupId: 'root', logicalOperator: 'AND',
-      fieldPath: `${terminalRule.factKey}.${terminalRule.field}`, operator: 'EQ', comparisonValue: terminalRule.terminal, sortOrder: 0 }];
-    definitionInput.actions = [
+    const target = validateTerminalTarget(terminalRule, input.target);
+    definitionInput.conditions = [{ groupId: 'root', logicalOperator: 'AND', fieldPath: `${terminalRule.factKey}.${terminalRule.field}`,
+      operator: terminalRule.condition === 'EXISTS' ? 'EXISTS' : 'EQ', ...(terminalRule.condition === 'EXISTS' ? {} : { comparisonValue: terminalRule.terminal }), sortOrder: 0 }];
+    definitionInput.actions = target && terminalRule.target ? [
+      { actionType: 'publish', connectorKey: terminalRule.target.providerKey, connectionId: target.connectionId, requiredCapability: terminalRule.target.capabilityKey,
+        config: { visibility: 'private', handoffTarget: terminalTargetConfig(terminalRule, target)! }, stepOrder: 0 },
+      { actionType: 'record', config: { recordType: terminalRule.key }, stepOrder: 1 },
+    ] : [
       { actionType: 'notify', config: { channel: 'in_app', priority: 'P2', eventType: 'github_terminal_follow_up', templateKey: terminalRule.key }, stepOrder: 0 },
       { actionType: 'record', config: { recordType: terminalRule.key }, stepOrder: 1 },
     ];
@@ -69,7 +73,6 @@ function approvalFor(policy: CompiledStrategyRuntime['approvalPolicy'], riskLeve
   if (policy === 'ALWAYS_FOR_EXTERNAL') return { type: 'always', config: {} };
   return { type: 'above_risk_level', config: { riskLevel } };
 }
-
 function triggerFor(runtime: CompiledStrategyRuntime, factKey: string): PlanDefinitionInput['triggers'][number] {
   switch (runtime.triggerProfile.defaultMode) {
     case 'SCHEDULE': return { triggerType: 'schedule', config: runtime.triggerProfile.schedule!, sortOrder: 0 };
@@ -79,7 +82,6 @@ function triggerFor(runtime: CompiledStrategyRuntime, factKey: string): PlanDefi
     case 'MANUAL': return { triggerType: 'manual', config: {}, sortOrder: 0 };
   }
 }
-
 function actionFor(mode: CompiledStrategyRuntime['actionMode'], scenarioKey: string, domain: string): PlanDefinitionInput['actions'][number] {
   if (mode === 'OBSERVE') return { actionType: 'record', config: { recordType: `scenario.${scenarioKey}` }, stepOrder: 0 };
   if (mode === 'PREPARE') return { actionType: 'create_draft', config: { draftType: `scenario.${scenarioKey}`, domain }, stepOrder: 0 };
