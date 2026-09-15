@@ -31,6 +31,11 @@ export class RuntimeCatalogRegistryService implements OnModuleInit {
     return FACT_SCHEMA_CATALOG.filter((item) => item.resourceType === resourceType);
   }
   listStrategies() { return STRATEGY_PROFILES; }
+  getStrategy(key: string) {
+    const strategy = STRATEGY_PROFILES.find((item) => item.key === key);
+    if (!strategy) throw new NotFoundException('Strategy not found');
+    return strategy;
+  }
 
   async readiness(userId: string, key: string) {
     const scenario = this.getScenario(key);

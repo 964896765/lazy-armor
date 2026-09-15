@@ -13,5 +13,6 @@ export class RuntimeCatalogController {
   @Get('scenarios/:key') scenario(@Param('key') key: string) { return this.catalog.getScenario(key); }
   @Get('resources') resources() { return this.catalog.listResources(); }
   @Get('resources/:type/facts') facts(@Param('type') type: string) { return this.catalog.factsForResource(type); }
-  @Get('strategies') strategies() { return this.catalog.listStrategies(); }
+  @Get('strategies') strategies(@CurrentUser() _user: AuthenticatedUser) { return this.catalog.listStrategies(); }
+  @Get('strategies/:key') strategy(@CurrentUser() _user: AuthenticatedUser, @Param('key') key: string) { return this.catalog.getStrategy(key); }
 }

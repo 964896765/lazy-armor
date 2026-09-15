@@ -28,6 +28,17 @@ export {
   type ProductDomain,
   type ProductDomainKey,
 } from './product-model';
+export {
+  LIFECYCLE_READ_PROJECTION_VERSION,
+  LIFECYCLE_READ_STATES,
+  buildLifecycleReadProjection,
+  isLifecycleReadProjection,
+  type LifecycleReadObservation,
+  type LifecycleReadProjection,
+  type LifecycleReadState,
+  type LifecycleReadStep,
+  type LifecycleReadStepKey,
+} from './lifecycle-read-projection';
 
 export const SOURCE_TYPES = ['manual', 'email', 'calendar', 'notification', 'file', 'webhook', 'internal', 'commerce', 'device', 'vehicle', 'billing', 'content_platform'] as const;
 export const TRIGGER_TYPES = ['manual', 'schedule', 'event', 'webhook', 'threshold', 'date_before', 'date_after', 'data_changed'] as const;

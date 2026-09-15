@@ -122,6 +122,7 @@ export default function ExecutionDetail() {
               {data.resultState ? <Text style={styles.result}>{runtimeResultLabel(data.resultState)}</Text> : null}
               <Text style={styles.result}>{data.resultSummary ?? consumerErrorMessage(data.errorMessage) ?? '正在处理'}</Text>
               <Text style={styles.body}>{executionAttentionLabel(data.status)}</Text>
+              <Pressable accessibilityRole="button" onPress={() => router.push(`/executions/${id}/lifecycle` as never)} style={styles.inlineButton}><Text style={styles.inlineButtonText}>查看 15 步生命周期</Text></Pressable>
             </Section>
 
             {data.reconciliationCases?.length ? (
@@ -133,6 +134,7 @@ export default function ExecutionDetail() {
                       <Text style={styles.rowTitle}>{reconciliationStatusLabel(row.status)}</Text>
                       <Text style={styles.rowSubtitle}>{runtimeResultLabel(row.resultState)} · 已回查 {row.attemptCount} 次</Text>
                     </View>
+                    <Pressable accessibilityRole="button" onPress={() => router.push(`/reconciliation/${row.id}` as never)} style={styles.inlineButton}><Text style={styles.inlineButtonText}>查看 Reconciliation</Text></Pressable>
                     {canRequestReconciliation(row) ? <Pressable accessibilityRole="button" disabled={recheck.isPending} onPress={() => recheck.mutate(row.id)} style={styles.inlineButton}><Text style={styles.inlineButtonText}>只读回查</Text></Pressable> : null}
                   </View>
                 ))}

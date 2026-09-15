@@ -113,6 +113,7 @@ export default function Create() {
 
             <WorkspaceSection title="热门计划">
               <Text style={styles.sectionSubtitle}>没有灵感时，从真实可用的计划中选一个</Text>
+              <View style={styles.catalogAction}><ActionButton label="查看全部模板" tone="quiet" onPress={() => router.push('/templates' as never)} /></View>
               {templates.isLoading ? <ActivityIndicator color={colors.primary} style={styles.loader} /> : null}
               {templates.isError ? <Text style={styles.error}>热门计划暂时没有加载出来，请稍后再试。</Text> : null}
               {popularTemplates.length > 0 ? <View style={styles.templateList}>{popularTemplates.map((template, index) => <MessageRow key={template.key} icon={planVisualIcon(template.name)} title={template.name} description={template.description} tone="brand" onPress={() => router.push(`/templates/${template.key}` as never)} last={index === popularTemplates.length - 1} />)}</View> : null}
@@ -174,6 +175,7 @@ const styles = StyleSheet.create({
   draftValue: { ...typography.caption, color: colors.textSecondary, flex: 1, textAlign: 'right' },
   suggestionActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: spacing.sm, marginTop: spacing.md },
   sectionSubtitle: { ...typography.caption, color: colors.textSecondary, marginBottom: spacing.sm },
+  catalogAction: { alignItems: 'flex-start', marginBottom: spacing.sm },
   loader: { marginVertical: spacing.xl },
   templateList: { backgroundColor: '#FFFFFF' },
   quiet: { minHeight: 62, justifyContent: 'center', paddingHorizontal: spacing.xs, borderBottomWidth: 1, borderBottomColor: colors.border },
