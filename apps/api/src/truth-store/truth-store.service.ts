@@ -1,6 +1,6 @@
-import { BadRequestException, ConflictException, Inject, Injectable, Optional } from '@nestjs/common';
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { createHash } from 'node:crypto';
-import { mobileNotificationReceipts, truthRecords, truthRecordVersions } from '@lazy-armor/database';
+import { mobileNotificationReceipts, truthProvenance, truthRecords, truthRecordVersions } from '@lazy-armor/database';
 import { and, desc, eq } from 'drizzle-orm';
 import { newId } from '@lazy-armor/shared';
 import { AuditService } from '../audit/audit.service';
@@ -94,6 +94,41 @@ export class TruthStoreService {
       };
     }).filter((value) => value.amountMinor !== null && value.currency === 'CNY');
     return { ...context, mobileBillingTransactions: transactions, mobileBillingTotalMinor: transactions.reduce((total, item) => total + (item.amountMinor ?? 0), 0) };
+  }
+
+  async get(userId: string, id: string) {
+    const record = (await this.db.select().from(truthRecords)
+      .where(and(eq(truthRecords.id, id), eq(truthRecords.userId, userId), eq(truthRecords.status, 'verified')))
+      .limit(1))[0];
+    if (!record) throw new NotFoundException('Truth record not found');
+    const versions = await this.db.select({
+      id: truthRecordVersions.id,
+      versionNumber: truthRecordVersions.versionNumber,
+      valueHash: truthRecordVersions.valueHash,
+      verificationMethod: truthRecordVersions.verificationMethod,
+      evidenceHash: truthRecordVersions.evidenceHash,
+      createdAt: truthRecordVersions.createdAt,
+    }).from(truthRecordVersions)
+      .where(eq(truthRecordVersions.truthRecordId, record.id))
+      .orderBy(desc(truthRecordVersions.versionNumber));
+    const provenance = versions.length === 0 ? [] : await this.db.select({
+      truthRecordVersionId: truthProvenance.truthRecordVersionId,
+      providerKey: truthProvenance.providerKey,
+      sourceMode: truthProvenance.sourceMode,
+      evidenceHash: truthProvenance.evidenceHash,
+      observedAt: truthProvenance.observedAt,
+      createdAt: truthProvenance.createdAt,
+    }).from(truthProvenance)
+      .innerJoin(truthRecordVersions, eq(truthProvenance.truthRecordVersionId, truthRecordVersions.id))
+      .innerJoin(truthRecords, eq(truthRecordVersions.truthRecordId, truthRecords.id))
+      .where(and(eq(truthRecords.id, record.id), eq(truthRecords.userId, userId)))
+      .orderBy(desc(truthProvenance.createdAt));
+    return {
+      ...this.toResponse(record),
+      subjectKey: record.subjectKey,
+      versions: versions.map((version) => ({ ...version, createdAt: version.createdAt.toISOString() })),
+      provenance: provenance.map((item) => ({ ...item, observedAt: item.observedAt.toISOString(), createdAt: item.createdAt.toISOString() })),
+    };
   }
 
   async list(userId: string, resourceKey?: string) {

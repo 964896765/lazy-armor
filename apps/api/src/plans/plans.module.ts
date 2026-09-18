@@ -4,6 +4,7 @@ import { PlanDefinitionAssembler } from './plan-definition.assembler';
 import { PlanStateService } from './plan-state.service';
 import { PlansController } from './plans.controller';
 import { PlansService } from './plans.service';
+import { LifecycleReadService } from './lifecycle-read.service';
 import { MembershipModule } from '../membership/membership.module';
 
 export const PLAN_SERVICE = 'PLAN_SERVICE';
@@ -15,8 +16,9 @@ export const PLAN_SERVICE = 'PLAN_SERVICE';
     PlanDefinitionAssembler,
     PlanStateService,
     PlansService,
+    LifecycleReadService,
     { provide: PLAN_SERVICE, useExisting: PlansService },
   ],
-  exports: [PlansService, PLAN_SERVICE, PlanDefinitionAssembler, PlanStateService],
+  exports: [PlansService, LifecycleReadService, PLAN_SERVICE, PlanDefinitionAssembler, PlanStateService],
 })
 export class PlansModule {}

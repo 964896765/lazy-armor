@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { canonicalStringify } from './index';
 import { PLAN_EXECUTION_LIFECYCLE } from './product-model';
+import { STRATEGY_RUNTIME_KEY, type StrategyRuntimeKey } from './strategy-runtime-identity';
 import { STRATEGY_PROFILES, type ScenarioDefinition, type StrategyKey } from './runtime-catalog';
 
 export const CONDITION_AST_SCHEMA_VERSION = '1' as const;
@@ -78,6 +79,7 @@ export interface StrategyTriggerProfile {
 
 export interface CompiledStrategyRuntime {
   schemaVersion: '1';
+  runtimeKey: StrategyRuntimeKey;
   scenarioKey: string;
   scenarioRevision: number;
   strategy: StrategyKey;
@@ -188,6 +190,7 @@ export function buildStrategyRuntime(scenario: ScenarioDefinition, strategy: Str
   if (triggerProfile.defaultMode === 'SCHEDULE') dependencies.push({ factKey, resourceType, field: factKey.split('.').at(-1) ?? 'value', scope: 'SCHEDULED', subjectKey: null });
   const base = {
     schemaVersion: '1' as const,
+    runtimeKey: STRATEGY_RUNTIME_KEY,
     scenarioKey: scenario.key,
     scenarioRevision: scenario.revision,
     strategy,

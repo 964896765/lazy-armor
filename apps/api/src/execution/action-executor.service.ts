@@ -40,7 +40,9 @@ export class ActionExecutor {
       const execution = (await this.db.select().from(executions).where(eq(executions.id, executionId)).limit(1))[0];
       const proof = execution?.resolvedRiskSnapshotJson?.terminalHandoffProof as TerminalHandoffProof | undefined;
       if (proof) {
-        if (execution.userId !== userId || !['notify', 'record'].includes(action.actionType) || action.connectionId) throw new ExecutionRuntimeError('TERMINAL_HANDOFF_NOT_AUTHORIZED', 'Terminal action boundary is invalid');
+        const localTerminalAction = ['notify', 'record'].includes(action.actionType) && !action.connectionId;
+        const crossProviderAction = action.actionType === 'publish' && Boolean(action.connectionId) && Boolean(action.requiredCapability);
+        if (execution.userId !== userId || (!localTerminalAction && !crossProviderAction)) throw new ExecutionRuntimeError('TERMINAL_HANDOFF_NOT_AUTHORIZED', 'Terminal action boundary is invalid');
         return this.db.transaction(async (tx) => {
           const handoff = await this.terminalGuard.lock(userId, execution.planId, proof.wakeupId, tx, proof);
           const output = await this.execute(userId, executionId, action, context, effectiveRisk, tx);
@@ -542,7 +544,7 @@ export class ActionExecutor {
     let connector;
     try { connector = this.registry.get(checked.connectorKey); } catch { throw new ExecutionRuntimeError('CONNECTOR_NOT_FOUND', 'Connector runtime is unavailable'); }
     try {
-      const request = { capability: action.requiredCapability!, input: { context, config: action.config }, requestId: `${executionId}:${action.stepOrder}` };
+      const request = { capability: action.requiredCapability!, input: { context: { ...context, ...handoffTargetContext(action) }, config: action.config }, requestId: `${executionId}:${action.stepOrder}` };
       const result = checked.operation === 'read' && connector.read ? await connector.read(request)
         : checked.operation === 'execute' && connector.execute ? await connector.execute(request)
           : checked.operation === 'subscribe' && connector.subscribe ? await connector.subscribe(request)
@@ -611,4 +613,13 @@ export class ActionExecutor {
     if (actionPriority && contextPriority) return score[actionPriority] <= score[contextPriority] ? actionPriority : contextPriority;
     return contextPriority ?? actionPriority ?? 'P2';
   }
+}
+
+function handoffTargetContext(action: NormalizedAction): Record<string, unknown> {
+  const handoff = action.config.handoffTarget;
+  if (!handoff || typeof handoff !== 'object' || Array.isArray(handoff)) return {};
+  const target = handoff as Record<string, unknown>;
+  if (!target.action || typeof target.action !== 'object' || Array.isArray(target.action)) return {};
+  return target.kind === 'NOTION_UPDATE' ? { notionAction: target.action }
+    : target.kind === 'CALENDAR_EVENT' ? { calendarEvent: target.action } : {};
 }

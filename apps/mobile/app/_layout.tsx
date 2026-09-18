@@ -34,6 +34,8 @@ export default function RootLayout() {
           <Stack.Screen name="connections/notification-sources" options={{ title: '通知来源' }} />
           <Stack.Screen name="truth-store" options={{ title: '已验证事实' }} />
           <Stack.Screen name="domains/[domain]" options={{ headerShown: false }} />
+          <Stack.Screen name="domains/[domain]/[scenario]" options={{ headerShown: false }} />
+          <Stack.Screen name="connections/[id]/capabilities/[key]" options={{ headerShown: false }} />
           <Stack.Screen name="devices" options={{ headerShown: false }} />
           <Stack.Screen name="vehicles" options={{ headerShown: false }} />
           <Stack.Screen name="notification-settings" options={{ title: '通知' }} />
@@ -43,8 +45,16 @@ export default function RootLayout() {
           <Stack.Screen name="oauth/callback" options={{ title: '连接服务' }} />
           <Stack.Screen name="file-import" options={{ title: '导入账单文件' }} />
           <Stack.Screen name="executions/[id]" options={{ headerShown: false }} />
+          <Stack.Screen name="executions/[id]/lifecycle" options={{ headerShown: false }} />
+          <Stack.Screen name="reconciliation/index" options={{ headerShown: false }} />
+          <Stack.Screen name="reconciliation/[id]" options={{ headerShown: false }} />
+          <Stack.Screen name="templates/index" options={{ headerShown: false }} />
           <Stack.Screen name="templates/[key]" options={{ title: '模板详情' }} />
           <Stack.Screen name="plans/[id]" options={{ headerShown: false }} />
+          <Stack.Screen name="plans/[id]/lifecycle" options={{ headerShown: false }} />
+          <Stack.Screen name="strategies/index" options={{ headerShown: false }} />
+          <Stack.Screen name="strategies/[strategy]" options={{ headerShown: false }} />
+          <Stack.Screen name="truth/[id]" options={{ headerShown: false }} />
           <Stack.Screen name="plans/[id]/edit" options={{ title: '编辑计划' }} />
           <Stack.Screen name="connections/app-read-session" options={{ headerShown: false }} />
         </Stack>

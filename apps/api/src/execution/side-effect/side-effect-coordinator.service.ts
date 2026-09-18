@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { ConnectorRegistry, resolveSideEffectContract, type SideEffectContract } from '@lazy-armor/connector-sdk';
-import { ACTION_DEFINITIONS, type NormalizedAction, type RiskLevel } from '@lazy-armor/plan-schema';
+import { ACTION_DEFINITIONS, requiresTerminalHandoffProof, type NormalizedAction, type RiskLevel } from '@lazy-armor/plan-schema';
 import { DATABASE, type InjectedDatabase } from '../../common/database.module';
 import { AuditService } from '../../audit/audit.service';
 import { SnapshotSanitizer } from '../../common/snapshot-sanitizer.service';
@@ -10,9 +10,10 @@ import { ExecutionStepStateService } from '../execution-step-state.service';
 import { RuntimeConnectionGuard } from '../runtime-connection-guard.service';
 import { OutboxService } from './outbox.service';
 import { SideEffectOperationsService } from './side-effect-operations.service';
+import { TerminalHandoffGuard, type TerminalHandoffProof } from '../../strategy-runtime/terminal-handoff-guard.service';
 
 export interface SideEffectPrepareInput {
-  execution: { id: string; userId: string; planId: string; planVersionId: string; requestId: string; triggerPayloadJson: Record<string, unknown> };
+  execution: { id: string; userId: string; planId: string; planVersionId: string; requestId: string; triggerPayloadJson: Record<string, unknown>; resolvedRiskSnapshotJson: Record<string, unknown> | null };
   step: { id: string; planActionId: string; stepOrder: number; actionType: string; connectionId: string | null; requiredCapability: string | null; inputFingerprint: string };
   action: NormalizedAction;
   effectiveRisk: RiskLevel;
@@ -30,6 +31,7 @@ export class SideEffectCoordinator {
     private readonly events: ExecutionEventService,
     private readonly audit: AuditService,
     private readonly sanitizer: SnapshotSanitizer,
+    private readonly terminalGuard: TerminalHandoffGuard,
   ) {}
 
   // §15/§43：R3/R4 外部副作用、或 ActionDefinition 声明 externalEffect、或 Capability 声明 sideEffect 都进入 Side Effect Pipeline。
@@ -47,11 +49,22 @@ export class SideEffectCoordinator {
   // §16/§19：业务写入 + Operation + Outbox + Audit 同一 MySQL 事务；第三方调用绝不在此事务内。
   async prepare(input: SideEffectPrepareInput): Promise<{ prepared: true; operationId: string }> {
     const { execution, step, action, effectiveRisk } = input;
+    const terminalProof = execution.resolvedRiskSnapshotJson?.terminalHandoffProof as TerminalHandoffProof | undefined;
+    if (requiresTerminalHandoffProof(action.config) && !terminalProof) {
+      throw new ExecutionRuntimeError('TERMINAL_HANDOFF_NOT_AUTHORIZED', 'Cross-provider action requires a server-owned Truth handoff');
+    }
+    if (terminalProof) await this.terminalGuard.assertExecutionCurrent(execution.userId, execution.planId, terminalProof);
     // §17 Runtime Security Recheck：批准后仍然重新过 Permission Guard，Approval 永远不能覆盖 Permission Guard。
     let connectorKey: string | null = null;
+    let targetAuthorizationFence: { connectorKey: string; credentialRef: string | null; credentialVersion: number | null } | null = null;
     if (step.connectionId && step.requiredCapability) {
       const checked = await this.guard.assertUsable(execution.userId, step.connectionId, step.requiredCapability);
       connectorKey = checked.connectorKey;
+      targetAuthorizationFence = {
+        connectorKey: checked.connectorKey,
+        credentialRef: checked.credentialRef ?? null,
+        credentialVersion: checked.credentialVersion ?? null,
+      };
     } else if (effectiveRisk === 'R3' || effectiveRisk === 'R4') {
       // 有审批、但无法安全定位 Connector：不派发。
       throw new ExecutionRuntimeError('SAFETY_GATE_REQUIRES_IDEMPOTENCY', 'Side effect requires a bound Connection and Capability before dispatch');
@@ -74,7 +87,8 @@ export class SideEffectCoordinator {
           planId: execution.planId, planVersionId: execution.planVersionId, planActionId: step.planActionId,
           actionType: step.actionType, connectorId: null, connectionId: step.connectionId, capabilityKey: step.requiredCapability,
           inputFingerprint: step.inputFingerprint,
-          requestSnapshot: { actionType: step.actionType, stepOrder: step.stepOrder, config: action.config, effectiveRisk },
+          requestSnapshot: { actionType: step.actionType, stepOrder: step.stepOrder, config: action.config, effectiveRisk,
+            ...(targetAuthorizationFence ? { targetAuthorizationFence } : {}) },
           correlationId, causationId: step.id, providerIdempotencyKey, requestId: `${execution.id}:${step.stepOrder}`,
         }, tx);
         operationId = prepared.id;

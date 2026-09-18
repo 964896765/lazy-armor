@@ -1,6 +1,20 @@
 import { createHash } from 'node:crypto';
-import { canonicalStringify, type RiskLevel } from './index';
+import type { RiskLevel } from './index';
 import { CANONICAL_SCENARIOS, PLAN_STRATEGIES, PRODUCT_DOMAINS, type ProductDomainKey } from './product-model';
+
+// Keep catalog hashing independent from the package barrel. Importing the barrel here
+// creates a CommonJS initialization cycle once the coverage ledger eagerly projects
+// the catalog for API consumers.
+function canonicalStringify(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalStringify).join(',')}]`;
+  if (value && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .filter(([, item]) => item !== undefined)
+      .sort(([left], [right]) => left.localeCompare(right));
+    return `{${entries.map(([key, item]) => `${JSON.stringify(key)}:${canonicalStringify(item)}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
 
 export const SCENARIO_READINESS_STATES = ['CATALOG_ONLY', 'MANUAL_READY', 'OBSERVE_READY', 'ASSISTED_READY', 'AUTOMATED_READY', 'BLOCKED_PROVIDER', 'BLOCKED_IMPLEMENTATION', 'DISABLED'] as const;
 export type ScenarioReadinessState = typeof SCENARIO_READINESS_STATES[number];

@@ -58,7 +58,7 @@ describe.sequential('runtime productization batch 2 scenario foundation', () => 
 
   it('reports explicit readiness instead of pretending catalog coverage is automation', async () => {
     const response = await request(app.getHttpServer()).get('/api/scenarios/finance.bill/readiness').set(auth(user.token)).expect(200);
-    expect(response.body).toMatchObject({ scenarioKey: 'finance.bill', state: 'MANUAL_READY', evaluatedAgainstRevision: 1 });
+    expect(response.body).toMatchObject({ scenarioKey: 'finance.bill', state: 'BLOCKED_PROVIDER', evaluatedAgainstRevision: 1 });
     expect(response.body.missingFacts).toContain('bill.bill.state');
     expect(response.body.missingCapabilities).toEqual(expect.arrayContaining(['READ_BILL', 'SEND_NOTIFICATION']));
   });

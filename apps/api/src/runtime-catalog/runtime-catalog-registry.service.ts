@@ -2,7 +2,7 @@ import { BadRequestException, Inject, Injectable, NotFoundException, OnModuleIni
 import {
   FACT_SCHEMA_CATALOG, RESOURCE_CATALOG, SCENARIO_DEFINITIONS, STRATEGY_PROFILES, catalogHash,
   compileScenarioPlan, evaluateScenarioReadiness, scenarioByKey, PRODUCT_DOMAINS,
-  type StrategyKey,
+  type StrategyKey, type TerminalHandoffTarget,
   TERMINAL_FOLLOW_UP_RULES, terminalFollowUpScenario,
 } from '@lazy-armor/plan-schema';
 import {
@@ -31,28 +31,41 @@ export class RuntimeCatalogRegistryService implements OnModuleInit {
     return FACT_SCHEMA_CATALOG.filter((item) => item.resourceType === resourceType);
   }
   listStrategies() { return STRATEGY_PROFILES; }
+  getStrategy(key: string) {
+    const strategy = STRATEGY_PROFILES.find((item) => item.key === key);
+    if (!strategy) throw new NotFoundException('Strategy not found');
+    return strategy;
+  }
 
   async readiness(userId: string, key: string) {
     const scenario = this.getScenario(key);
     const rows = await this.db.select({ id: connections.id }).from(connections).where(eq(connections.userId, userId));
     const resolved = await Promise.all(rows.map((row) => this.capabilityUsability.resolveConnection(userId, row.id)));
     const usableCapabilities = resolved.flatMap((connection) => connection.capabilities.filter((item) => item.usable).map((item) => item.key));
+    const requiredCapabilities = [...scenario.sourceRequirements, ...scenario.actionRequirements]
+      .filter((requirement) => !requirement.optional)
+      .map((requirement) => requirement.capabilityKey);
+    const providerBlocked = requiredCapabilities.some((capability) => !usableCapabilities.includes(capability));
     return evaluateScenarioReadiness(scenario, {
       usableCapabilities,
       availableFacts: [],
-      manualInputAvailable: true,
+      // Until this read model is joined to current TruthVersions and an
+      // explicit manual-input requirement, missing facts are not called ready.
+      manualInputAvailable: scenario.sourceRequirements.some((item) => item.capabilityKey === 'MANUAL_INPUT'),
       observationPipelineAvailable: false,
-      executionPipelineAvailable: true,
-      providerBlocked: resolved.length > 0 && usableCapabilities.length === 0,
+      executionPipelineAvailable: false,
+      providerBlocked,
     });
   }
 
-  async compile(userId: string, key: string, input: { scenarioRevision?: number; strategy?: StrategyKey; name?: string; subjectKey?: string }) {
+  async compile(userId: string, key: string, input: { scenarioRevision?: number; strategy?: StrategyKey; name?: string; subjectKey?: string; target?: TerminalHandoffTarget }) {
     const readiness = await this.readiness(userId, key);
-    try { return compileScenarioPlan({ scenarioKey: key, scenarioRevision: input.scenarioRevision, strategy: input.strategy, name: input.name, subjectKey: input.subjectKey, mode: 'DRAFT', readiness: {
+    try { return compileScenarioPlan({ scenarioKey: key, scenarioRevision: input.scenarioRevision, strategy: input.strategy, name: input.name, subjectKey: input.subjectKey, target: input.target, mode: 'DRAFT', readiness: {
       manualInputAvailable: readiness.state === 'MANUAL_READY',
       observationPipelineAvailable: false,
-      executionPipelineAvailable: true,
+      executionPipelineAvailable: false,
+      providerBlocked: readiness.state === 'BLOCKED_PROVIDER',
+      implementationBlocked: readiness.state === 'BLOCKED_IMPLEMENTATION',
     } }); } catch (error) { throw new BadRequestException(error instanceof Error ? error.message : 'Scenario compilation failed'); }
   }
 

@@ -72,7 +72,7 @@ function DomainHero({ domain, label, description }: { domain: string; label: str
         <View style={styles.heroIcon}><Ionicons name={domainIcon(domain)} size={28} color="#FFFFFF" /></View>
         <View style={styles.heroCopy}><View style={styles.heroTitleRow}><Text style={styles.heroTitle}>{label}</Text><Text style={styles.enabledBadge}>已启用</Text></View><Text style={styles.heroDescription}>{description}</Text></View>
       </View>
-      <View style={styles.heroScenarioGrid}>{scenarios.map((scenario) => <Pressable key={scenario.key} accessibilityRole="button" onPress={() => router.push('/create' as never)} style={({ pressed }) => [styles.heroScenario, pressed && styles.pressed]}><Ionicons name={scenarioIcon(scenario.key)} size={17} color={colors.primary} /><Text numberOfLines={1} style={styles.heroScenarioLabel}>{scenario.label}</Text></Pressable>)}</View>
+      <View style={styles.heroScenarioGrid}>{scenarios.map((scenario) => <Pressable key={scenario.key} accessibilityRole="button" onPress={() => router.push(`/domains/${domain}/${scenario.key}` as never)} style={({ pressed }) => [styles.heroScenario, pressed && styles.pressed]}><Ionicons name={scenarioIcon(scenario.key)} size={17} color={colors.primary} /><Text numberOfLines={1} style={styles.heroScenarioLabel}>{scenario.label}</Text></Pressable>)}</View>
     </View>
   );
 }
@@ -91,7 +91,7 @@ function Overview({ domain, plans, activePlans, latest, connections }: { domain:
       <View style={styles.listCard}>{latest ? <View style={styles.eventRow}><View style={styles.eventIcon}><Ionicons name="checkmark" size={16} color="#FFFFFF" /></View><View style={styles.rowCopy}><Text style={styles.rowTitle}>{latest.resultSummary ?? planStatusLabel(latest.status)}</Text><Text style={styles.rowDetail}>最近一次运行结果已收进记录</Text></View><Ionicons name="chevron-forward" size={16} color={colors.textMuted} /></View> : <Text style={styles.cardEmpty}>该领域还没有运行记录。</Text>}</View>
 
       <SectionHeading title="AI 建议" />
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.suggestionRow}>{scenarios.slice(0, 3).map((scenario) => <Pressable key={scenario.key} onPress={() => router.push('/create' as never)} style={({ pressed }) => [styles.suggestionCard, pressed && styles.pressed]}><Ionicons name={scenarioIcon(scenario.key)} size={20} color={colors.primary} /><Text style={styles.suggestionTitle}>{scenario.label}计划</Text><Text style={styles.suggestionCopy}>设置条件与提醒，变化时再告诉你</Text><Text style={styles.suggestionAction}>使用建议</Text></Pressable>)}</ScrollView>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.suggestionRow}>{scenarios.slice(0, 3).map((scenario) => <Pressable key={scenario.key} onPress={() => router.push(`/domains/${domain}/${scenario.key}` as never)} style={({ pressed }) => [styles.suggestionCard, pressed && styles.pressed]}><Ionicons name={scenarioIcon(scenario.key)} size={20} color={colors.primary} /><Text style={styles.suggestionTitle}>{scenario.label}计划</Text><Text style={styles.suggestionCopy}>设置条件与提醒，变化时再告诉你</Text><Text style={styles.suggestionAction}>使用建议</Text></Pressable>)}</ScrollView>
       <Pressable accessibilityRole="button" onPress={() => router.push('/create' as never)} style={({ pressed }) => [styles.primaryCta, pressed && styles.pressed]}><Ionicons name="add" size={20} color="#FFFFFF" /><Text style={styles.primaryCtaText}>创建这个领域的计划</Text></Pressable>
     </>
   );
