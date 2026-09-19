@@ -3,14 +3,14 @@ import { createHash } from 'node:crypto';
 import { deviceAppConnections, deviceHeartbeats, deviceTasks } from '@lazy-armor/database';
 import { realityValueHash, type JsonValue, type ParserKey, type SourceMode, type SourceObservationInput } from '@lazy-armor/plan-schema';
 import { newId } from '@lazy-armor/shared';
-import { and, desc, eq, inArray, lt } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, lt } from 'drizzle-orm';
 import { AuditService } from '../audit/audit.service';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
 import { RealityPipelineService } from '../reality-pipeline/reality-pipeline.service';
 import { StructuredReadService } from '../structured-read/structured-read.service';
 import { TrustedDevicesService } from '../trusted-devices/trusted-devices.service';
 
-const LEASE_TTL_MS = process.env.NODE_ENV === 'test' ? 1_000 : 30_000;
+const LEASE_TTL_MS = process.env.NODE_ENV === 'test' ? 10_000 : 30_000;
 const ONLINE_WINDOW_MS = process.env.NODE_ENV === 'test' ? 5_000 : 30_000;
 
 interface DeviceTaskRealitySpec { parserKey: ParserKey; resourceHint: string; factKey: string; sourceMode: SourceMode; }
@@ -23,6 +23,14 @@ const DEVICE_TASK_REALITY_SPEC: Record<string, DeviceTaskRealitySpec> = {
 
 const AWAITING_DEVICE_EVIDENCE_TASK_TYPES = new Set(['APP_READ_SESSION']);
 const STRUCTURED_READ_TASK_TYPES = new Set(['APP_STRUCTURED_READ', 'SCREEN_CAPTURE_FOR_READ']);
+
+// 服务器允许的 DeviceTask 类型注册表：enqueue 与 complete 都必须校验。
+// 未注册类型在入队时拒绝，在 complete 时不得置 SUCCEEDED。
+const ALLOWED_DEVICE_TASK_TYPES = new Set<string>([
+  ...Object.keys(DEVICE_TASK_REALITY_SPEC),
+  ...STRUCTURED_READ_TASK_TYPES,
+  ...AWAITING_DEVICE_EVIDENCE_TASK_TYPES,
+]);
 
 type DeviceTaskReality =
   | { observationId: string; candidateId: string | null; truth: Awaited<ReturnType<RealityPipelineService['confirmCandidate']>> | null }
@@ -39,6 +47,7 @@ export class DeviceTasksService {
   ) {}
 
   async enqueue(userId: string, trustedDeviceId: string, taskType: string, factKey: string, resourceType: string, payload: Record<string, unknown>) {
+    if (!ALLOWED_DEVICE_TASK_TYPES.has(taskType)) throw new BadRequestException(`Unsupported device task type: ${taskType}`);
     const device = await this.trustedDevices.assertActive(userId, trustedDeviceId);
     const status = AWAITING_DEVICE_EVIDENCE_TASK_TYPES.has(taskType) ? 'AWAITING_DEVICE_EVIDENCE' : 'PENDING';
     const now = new Date();
@@ -52,13 +61,13 @@ export class DeviceTasksService {
       actorType: 'system', actorUserId: null, action: 'DEVICE_TASK_ENQUEUED', resourceType: 'device_task', resourceId: id,
       userId, correlationId: id, changeSummary: `Enqueued ${taskType} edge device task`, source: 'api', result: 'success',
     });
-    return this.get(userId, id);
+    return this.toResponse(await this.getRowForDevice(userId, device.id, device.deviceId, id));
   }
 
-  async claim(userId: string, deviceId: string, taskId: string) {
+  async claim(userId: string, trustedDeviceId: string, deviceId: string, taskId: string) {
     return this.db.transaction(async (tx) => {
       const row = (await tx.select().from(deviceTasks)
-        .where(and(eq(deviceTasks.id, taskId), eq(deviceTasks.userId, userId), eq(deviceTasks.deviceId, deviceId)))
+        .where(and(eq(deviceTasks.id, taskId), eq(deviceTasks.userId, userId), eq(deviceTasks.trustedDeviceId, trustedDeviceId), eq(deviceTasks.deviceId, deviceId)))
         .limit(1).for('update'))[0];
       if (!row) throw new NotFoundException('Device task not found');
       const now = new Date();
@@ -67,81 +76,97 @@ export class DeviceTasksService {
       if (row.status !== 'PENDING' && row.status !== 'CLAIMED' && row.status !== 'RUNNING') throw new ConflictException('Device task is not claimable');
       const claimToken = sha256(newId());
       const leaseExpiresAt = new Date(now.getTime() + LEASE_TTL_MS);
-      await tx.update(deviceTasks).set({ status: 'CLAIMED', claimToken, claimedAt: now, leaseExpiresAt, updatedAt: now }).where(eq(deviceTasks.id, taskId));
+      await tx.update(deviceTasks).set({ status: 'CLAIMED', claimToken, claimedAt: now, leaseExpiresAt, updatedAt: now }).where(and(eq(deviceTasks.id, taskId), eq(deviceTasks.status, row.status)));
       await this.audit.append({
         actorType: 'user', actorUserId: userId, action: 'DEVICE_TASK_CLAIMED', resourceType: 'device_task', resourceId: taskId,
         userId, correlationId: taskId, changeSummary: 'Edge device claimed a pending task', source: 'api', result: 'success',
       }, tx);
-      return this.toResponse((await tx.select().from(deviceTasks).where(eq(deviceTasks.id, taskId)).limit(1))[0]!);
+      return this.toResponse((await tx.select().from(deviceTasks).where(eq(deviceTasks.id, taskId)).limit(1))[0]!, { revealClaimToken: true });
     });
   }
 
-  async heartbeat(userId: string, taskId: string, claimToken: string) {
-    const task = await this.getRow(userId, taskId);
+  async heartbeat(userId: string, trustedDeviceId: string, deviceId: string, taskId: string, claimToken: string) {
+    const task = await this.getRowForDevice(userId, trustedDeviceId, deviceId, taskId);
     this.assertClaim(task, claimToken);
     if (task.status !== 'CLAIMED' && task.status !== 'RUNNING') throw new ConflictException('Device task is not running');
     const now = new Date();
     const leaseExpiresAt = new Date(now.getTime() + LEASE_TTL_MS);
-    await this.db.update(deviceTasks).set({ leaseExpiresAt, updatedAt: now }).where(and(eq(deviceTasks.id, taskId), eq(deviceTasks.userId, userId)));
+    const [updated] = await this.db.update(deviceTasks).set({ leaseExpiresAt, updatedAt: now }).where(and(
+      eq(deviceTasks.id, taskId), eq(deviceTasks.userId, userId), eq(deviceTasks.trustedDeviceId, trustedDeviceId), eq(deviceTasks.deviceId, deviceId),
+      eq(deviceTasks.claimToken, claimToken), inArray(deviceTasks.status, ['CLAIMED', 'RUNNING']), gte(deviceTasks.leaseExpiresAt, now),
+    ));
+    if (updated.affectedRows !== 1) throw new ConflictException('Device task lease is no longer active');
     return { id: taskId, claimToken, leaseExpiresAt: leaseExpiresAt.toISOString() };
   }
 
-  async complete(userId: string, taskId: string, claimToken: string, result: Record<string, unknown>) {
-    const task = await this.getRow(userId, taskId);
+  async complete(userId: string, trustedDeviceId: string, deviceId: string, taskId: string, claimToken: string, result: Record<string, unknown>) {
+    const task = await this.getRowForDevice(userId, trustedDeviceId, deviceId, taskId);
     this.assertClaim(task, claimToken);
     if (task.status !== 'CLAIMED' && task.status !== 'RUNNING') throw new ConflictException('Device task is not running');
     const resultHash = realityValueHash(result);
+    if (!ALLOWED_DEVICE_TASK_TYPES.has(task.taskType)) {
+      await this.markVerificationFailed(task, result, resultHash, 'UNSUPPORTED_TASK_TYPE');
+      throw new BadRequestException('Unsupported device task type');
+    }
     const spec = DEVICE_TASK_REALITY_SPEC[task.taskType];
     let reality: DeviceTaskReality | null = null;
     if (STRUCTURED_READ_TASK_TYPES.has(task.taskType)) {
       try {
         reality = await this.structuredRead.ingestDeviceResult(userId, task, result);
-      } catch (error) {
-        await this.markVerificationFailed(userId, taskId, result, resultHash);
+      } catch {
+        await this.markVerificationFailed(task, result, resultHash);
         throw new BadRequestException('Device task result failed structured read verification');
       }
     } else if (spec) {
       try {
         reality = await this.recordEvidence(userId, task, spec, result, resultHash);
-      } catch (error) {
-        await this.markVerificationFailed(userId, taskId, result, resultHash);
+      } catch {
+        await this.markVerificationFailed(task, result, resultHash);
         throw new BadRequestException('Device task result failed verification');
       }
     }
+    if (!hasVerifiedReality(reality)) {
+      await this.markVerificationFailed(task, result, resultHash);
+      throw new BadRequestException('Device task result produced no verified reality');
+    }
     const now = new Date();
-    await this.db.update(deviceTasks).set({ status: 'SUCCEEDED', resultJson: result, resultHash, errorCode: null, completedAt: now, updatedAt: now })
-      .where(and(eq(deviceTasks.id, taskId), eq(deviceTasks.userId, userId)));
+    const [updated] = await this.db.update(deviceTasks).set({ status: 'SUCCEEDED', resultJson: result, resultHash, errorCode: null, completedAt: now, updatedAt: now })
+      .where(and(
+        eq(deviceTasks.id, taskId), eq(deviceTasks.userId, userId), eq(deviceTasks.trustedDeviceId, trustedDeviceId), eq(deviceTasks.deviceId, deviceId),
+        eq(deviceTasks.claimToken, claimToken), inArray(deviceTasks.status, ['CLAIMED', 'RUNNING']), gte(deviceTasks.leaseExpiresAt, now),
+      ));
+    if (updated.affectedRows !== 1) throw new ConflictException('Device task claim is no longer active');
     await this.audit.append({
       actorType: 'user', actorUserId: userId, action: 'DEVICE_TASK_SUCCEEDED', resourceType: 'device_task', resourceId: taskId,
       userId, correlationId: taskId, changeSummary: 'Edge device task completed with verified evidence', source: 'api', result: 'success',
     });
-    const updated = await this.getRow(userId, taskId);
-    return { ...this.toResponse(updated), reality };
+    const updatedRow = await this.getRowForDevice(userId, trustedDeviceId, deviceId, taskId);
+    return { ...this.toResponse(updatedRow, { revealClaimToken: true }), reality };
   }
 
-  async fail(userId: string, taskId: string, claimToken: string, errorCode: string) {
-    const task = await this.getRow(userId, taskId);
+  async fail(userId: string, trustedDeviceId: string, deviceId: string, taskId: string, claimToken: string, errorCode: string) {
+    const task = await this.getRowForDevice(userId, trustedDeviceId, deviceId, taskId);
     this.assertClaim(task, claimToken);
     if (task.status !== 'CLAIMED' && task.status !== 'RUNNING') throw new ConflictException('Device task is not running');
     const now = new Date();
-    await this.db.update(deviceTasks).set({ status: 'FAILED', errorCode, completedAt: now, updatedAt: now })
-      .where(and(eq(deviceTasks.id, taskId), eq(deviceTasks.userId, userId)));
+    const [updated] = await this.db.update(deviceTasks).set({ status: 'FAILED', errorCode, completedAt: now, updatedAt: now })
+      .where(and(
+        eq(deviceTasks.id, taskId), eq(deviceTasks.userId, userId), eq(deviceTasks.trustedDeviceId, trustedDeviceId), eq(deviceTasks.deviceId, deviceId),
+        eq(deviceTasks.claimToken, claimToken), inArray(deviceTasks.status, ['CLAIMED', 'RUNNING']), gte(deviceTasks.leaseExpiresAt, now),
+      ));
+    if (updated.affectedRows !== 1) throw new ConflictException('Device task claim is no longer active');
     await this.audit.append({
       actorType: 'user', actorUserId: userId, action: 'DEVICE_TASK_FAILED', resourceType: 'device_task', resourceId: taskId,
       userId, correlationId: taskId, reasonCode: errorCode, changeSummary: 'Edge device reported task failure', source: 'api', result: 'failure',
     });
-    return this.toResponse(await this.getRow(userId, taskId));
+    return this.toResponse(await this.getRowForDevice(userId, trustedDeviceId, deviceId, taskId), { revealClaimToken: true });
   }
 
   async recoverExpired() {
     const now = new Date();
-    const expired = await this.db.select({ id: deviceTasks.id }).from(deviceTasks)
+    const [result] = await this.db.update(deviceTasks).set({ status: 'PENDING', claimToken: null, claimedAt: null, leaseExpiresAt: null, updatedAt: now })
       .where(and(inArray(deviceTasks.status, ['CLAIMED', 'RUNNING']), lt(deviceTasks.leaseExpiresAt, now)));
-    for (const row of expired) {
-      await this.db.update(deviceTasks).set({ status: 'PENDING', claimToken: null, claimedAt: null, leaseExpiresAt: null, updatedAt: now })
-        .where(eq(deviceTasks.id, row.id));
-    }
-    return { recovered: expired.length };
+    return { recovered: result.affectedRows };
   }
 
   async heartbeatDevice(userId: string, trustedDeviceId: string, deviceId: string, onlineState: 'online' | 'offline' | 'unknown') {
@@ -171,22 +196,29 @@ export class DeviceTasksService {
     return { onlineState: online ? ('online' as const) : ('offline' as const), lastHeartbeatAt: row.lastHeartbeatAt.toISOString(), online };
   }
 
-  async list(userId: string) {
-    const rows = await this.db.select().from(deviceTasks).where(eq(deviceTasks.userId, userId)).orderBy(desc(deviceTasks.createdAt));
-    return rows.map((row) => this.toResponse(row));
+  async list(userId: string, trustedDeviceId: string, deviceId: string) {
+    const rows = await this.db.select().from(deviceTasks)
+      .where(and(eq(deviceTasks.userId, userId), eq(deviceTasks.trustedDeviceId, trustedDeviceId), eq(deviceTasks.deviceId, deviceId)))
+      .orderBy(desc(deviceTasks.createdAt));
+    return rows.map((row) => this.toResponse(row, { revealClaimToken: true }));
   }
 
-  async get(userId: string, taskId: string) {
-    return this.toResponse(await this.getRow(userId, taskId));
+  async get(userId: string, trustedDeviceId: string, deviceId: string, taskId: string) {
+    return this.toResponse(await this.getRowForDevice(userId, trustedDeviceId, deviceId, taskId), { revealClaimToken: true });
   }
 
-  private async markVerificationFailed(userId: string, taskId: string, result: Record<string, unknown>, resultHash: string) {
+  private async markVerificationFailed(task: typeof deviceTasks.$inferSelect, result: Record<string, unknown>, resultHash: string, errorCode = 'RESULT_VERIFICATION_FAILED') {
+    if (!task.claimToken) return;
     const now = new Date();
-    await this.db.update(deviceTasks).set({ status: 'FAILED', resultJson: result, resultHash, errorCode: 'RESULT_VERIFICATION_FAILED', completedAt: now, updatedAt: now })
-      .where(and(eq(deviceTasks.id, taskId), eq(deviceTasks.userId, userId)));
+    const [updated] = await this.db.update(deviceTasks).set({ status: 'FAILED', resultJson: result, resultHash, errorCode, completedAt: now, updatedAt: now })
+      .where(and(
+        eq(deviceTasks.id, task.id), eq(deviceTasks.userId, task.userId), eq(deviceTasks.trustedDeviceId, task.trustedDeviceId), eq(deviceTasks.deviceId, task.deviceId),
+        eq(deviceTasks.claimToken, task.claimToken), inArray(deviceTasks.status, ['CLAIMED', 'RUNNING']), gte(deviceTasks.leaseExpiresAt, now),
+      ));
+    if (updated.affectedRows !== 1) return;
     await this.audit.append({
-      actorType: 'system', actorUserId: null, action: 'DEVICE_TASK_FAILED', resourceType: 'device_task', resourceId: taskId,
-      userId, correlationId: taskId, reasonCode: 'RESULT_VERIFICATION_FAILED', changeSummary: 'Device task result failed reality pipeline verification', source: 'api', result: 'failure',
+      actorType: 'system', actorUserId: null, action: 'DEVICE_TASK_FAILED', resourceType: 'device_task', resourceId: task.id,
+      userId: task.userId, correlationId: task.id, reasonCode: errorCode, changeSummary: 'Device task result failed reality pipeline verification', source: 'api', result: 'failure',
     });
   }
 
@@ -214,13 +246,15 @@ export class DeviceTasksService {
     if (!task.leaseExpiresAt || task.leaseExpiresAt.getTime() <= Date.now()) throw new ConflictException('Device task lease has expired');
   }
 
-  private async getRow(userId: string, taskId: string) {
-    const rows = await this.db.select().from(deviceTasks).where(and(eq(deviceTasks.id, taskId), eq(deviceTasks.userId, userId))).limit(1);
+  private async getRowForDevice(userId: string, trustedDeviceId: string, deviceId: string, taskId: string) {
+    const rows = await this.db.select().from(deviceTasks)
+      .where(and(eq(deviceTasks.id, taskId), eq(deviceTasks.userId, userId), eq(deviceTasks.trustedDeviceId, trustedDeviceId), eq(deviceTasks.deviceId, deviceId)))
+      .limit(1);
     if (!rows[0]) throw new NotFoundException('Device task not found');
     return rows[0];
   }
 
-  private toResponse(row: typeof deviceTasks.$inferSelect) {
+  private toResponse(row: typeof deviceTasks.$inferSelect, options: { revealClaimToken?: boolean } = {}) {
     return {
       id: row.id,
       userId: row.userId,
@@ -231,7 +265,8 @@ export class DeviceTasksService {
       resourceType: row.resourceType,
       payload: row.payloadJson,
       status: row.status,
-      claimToken: row.claimToken,
+      // claimToken 只对本设备签名的响应暴露，避免跨设备泄露。
+      claimToken: options.revealClaimToken ? row.claimToken : null,
       claimedAt: row.claimedAt?.toISOString() ?? null,
       leaseExpiresAt: row.leaseExpiresAt?.toISOString() ?? null,
       result: row.resultJson,
@@ -245,3 +280,9 @@ export class DeviceTasksService {
 }
 
 function sha256(value: string) { return createHash('sha256').update(value).digest('hex'); }
+
+function hasVerifiedReality(reality: DeviceTaskReality | null): boolean {
+  if (!reality) return false;
+  if ('candidateId' in reality) return reality.candidateId !== null;
+  return reality.candidateIds.length > 0 || reality.truthRecordIds.length > 0;
+}

@@ -1,4 +1,4 @@
-import { createHash, generateKeyPairSync, randomBytes, sign } from 'node:crypto';
+import { createHash, generateKeyPairSync, randomBytes, sign, type KeyObject } from 'node:crypto';
 import type { INestApplication } from '@nestjs/common';
 import { deviceTasks as deviceTasksTable } from '@lazy-armor/database';
 import { eq } from 'drizzle-orm';
@@ -44,14 +44,31 @@ describe.sequential('R4 edge device task transport', { timeout: 60_000 }, () => 
   afterAll(async () => { await pool?.end(); await app?.close(); });
 
   function signedHeaders(body: unknown, method: string, path: string) {
+    return deviceHeaders(deviceSessionId, keyPair.privateKey, body, method, path);
+  }
+
+  function deviceHeaders(sessionId: string, privateKey: KeyObject, body: unknown, method: string, path: string) {
     const requestId = randomBytes(32).toString('hex');
     const signedAt = new Date().toISOString();
     const payloadHash = createHash('sha256').update(JSON.stringify(body)).digest('hex');
-    const message = `lazy-armor-device-request-v1|${deviceSessionId}|${requestId}|${method}|${path}|${payloadHash}|${signedAt}`;
+    const message = `lazy-armor-device-request-v1|${sessionId}|${requestId}|${method}|${path}|${payloadHash}|${signedAt}`;
     return {
-      'x-device-session': deviceSessionId, 'x-device-request-id': requestId, 'x-device-signed-at': signedAt,
-      'x-device-payload-hash': payloadHash, 'x-device-signature': sign('sha256', Buffer.from(message, 'utf8'), keyPair.privateKey).toString('base64'),
+      'x-device-session': sessionId, 'x-device-request-id': requestId, 'x-device-signed-at': signedAt,
+      'x-device-payload-hash': payloadHash, 'x-device-signature': sign('sha256', Buffer.from(message, 'utf8'), privateKey).toString('base64'),
     };
+  }
+
+  async function enrollSecondDevice() {
+    const secondDeviceId = `edge-b-${unique}`;
+    const secondKeyPair = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+    const secondSpki = secondKeyPair.publicKey.export({ format: 'der', type: 'spki' }).toString('base64');
+    const challenge = await request(app.getHttpServer()).post('/api/trusted-devices/challenges').set(auth(owner.token)).send({
+      deviceId: secondDeviceId, keyId: `key-b-${unique}`, publicKeySpki: secondSpki,
+      publicKeyFingerprint: createHash('sha256').update(Buffer.from(secondSpki, 'base64')).digest('hex'),
+    }).expect(201);
+    const proof = sign('sha256', Buffer.from(challenge.body.payload as string, 'utf8'), secondKeyPair.privateKey).toString('base64');
+    const verified = await request(app.getHttpServer()).post(`/api/trusted-devices/challenges/${challenge.body.challengeId}/verify`).set(auth(owner.token)).send({ signature: proof }).expect(201);
+    return { trustedDeviceId: verified.body.id as string, deviceId: secondDeviceId, deviceSessionId: verified.body.deviceSession.id as string, privateKey: secondKeyPair.privateKey };
   }
 
   it('records device heartbeats and resolves online state for the trusted device', async () => {
@@ -88,7 +105,7 @@ describe.sequential('R4 edge device task transport', { timeout: 60_000 }, () => 
     await request(app.getHttpServer()).post(`/api/device-tasks/${task.id}/complete`).set(auth(owner.token))
       .set(signedHeaders(completeBody, 'POST', `/device-tasks/${task.id}/complete`)).send(completeBody).expect(409);
 
-    const stored = await deviceTasks.get(owner.userId, task.id);
+    const stored = await deviceTasks.get(owner.userId, trustedDeviceId, deviceId, task.id);
     expect(stored.status).toBe('SUCCEEDED');
     const truths = await reality.listTruth(owner.userId);
     expect(truths.some((item) => item.currentVersion.value.factKey === 'device.consumable.remaining_days' && item.currentVersion.value.value.remainingDays === 25)).toBe(true);
@@ -126,8 +143,132 @@ describe.sequential('R4 edge device task transport', { timeout: 60_000 }, () => 
   it('marks real-Android-only task types as AWAITING_DEVICE_EVIDENCE', async () => {
     const task = await deviceTasks.enqueue(owner.userId, trustedDeviceId, 'APP_READ_SESSION', 'device.app.read.session', 'AppReadSession', {});
     expect(task.status).toBe('AWAITING_DEVICE_EVIDENCE');
-    expect((await deviceTasks.get(owner.userId, task.id)).status).toBe('AWAITING_DEVICE_EVIDENCE');
+    expect((await deviceTasks.get(owner.userId, trustedDeviceId, deviceId, task.id)).status).toBe('AWAITING_DEVICE_EVIDENCE');
     await request(app.getHttpServer()).post(`/api/device-tasks/${task.id}/claim`).set(auth(owner.token))
       .set(signedHeaders({}, 'POST', `/device-tasks/${task.id}/claim`)).send({}).expect(409);
+  });
+
+  it('fails closed across devices: device B cannot see, claim, or complete device A tasks', async () => {
+    const task = await deviceTasks.enqueue(owner.userId, trustedDeviceId, 'READ_CONSUMABLE', 'device.consumable.remaining_days', 'device.consumable', {});
+    const claimed = await request(app.getHttpServer()).post(`/api/device-tasks/${task.id}/claim`).set(auth(owner.token))
+      .set(signedHeaders({}, 'POST', `/device-tasks/${task.id}/claim`)).send({}).expect(201);
+    const second = await enrollSecondDevice();
+
+    const listB = await request(app.getHttpServer()).get('/api/device-tasks').set(auth(owner.token))
+      .set(deviceHeaders(second.deviceSessionId, second.privateKey, {}, 'GET', '/device-tasks')).expect(200);
+    expect((listB.body as Array<{ id: string }>).some((item) => item.id === task.id)).toBe(false);
+
+    const getB = await request(app.getHttpServer()).get(`/api/device-tasks/${task.id}`).set(auth(owner.token))
+      .set(deviceHeaders(second.deviceSessionId, second.privateKey, {}, 'GET', `/device-tasks/${task.id}`));
+    expect(getB.status).toBe(404);
+
+    const claimB = await request(app.getHttpServer()).post(`/api/device-tasks/${task.id}/claim`).set(auth(owner.token))
+      .set(deviceHeaders(second.deviceSessionId, second.privateKey, {}, 'POST', `/device-tasks/${task.id}/claim`)).send({});
+    expect(claimB.status).toBe(404);
+
+    const completeBody = { claimToken: claimed.body.claimToken as string, result: { remainingDays: 25 } };
+    const completeB = await request(app.getHttpServer()).post(`/api/device-tasks/${task.id}/complete`).set(auth(owner.token))
+      .set(deviceHeaders(second.deviceSessionId, second.privateKey, completeBody, 'POST', `/device-tasks/${task.id}/complete`)).send(completeBody);
+    expect(completeB.status).toBe(404);
+
+    expect((await deviceTasks.get(owner.userId, trustedDeviceId, deviceId, task.id)).status).toBe('CLAIMED');
+  });
+
+  it('atomic CAS: recover cannot steal an active lease and heartbeat cannot outlive recovery', async () => {
+    const task = await deviceTasks.enqueue(owner.userId, trustedDeviceId, 'READ_CONSUMABLE', 'device.consumable.remaining_days', 'device.consumable', {});
+    const path = `/device-tasks/${task.id}/claim`;
+    const claimed = await request(app.getHttpServer()).post(`/api${path}`).set(auth(owner.token))
+      .set(signedHeaders({}, 'POST', path)).send({}).expect(201);
+    const token = claimed.body.claimToken as string;
+
+    const heartbeatBody = { claimToken: token };
+    const [activeRecover, activeHeartbeat] = await Promise.all([
+      deviceTasks.recoverExpired(),
+      request(app.getHttpServer()).post(`/api/device-tasks/${task.id}/heartbeat`).set(auth(owner.token))
+        .set(signedHeaders(heartbeatBody, 'POST', `/device-tasks/${task.id}/heartbeat`)).send(heartbeatBody),
+    ]);
+    expect(activeHeartbeat.status).toBe(201);
+    expect(activeRecover.recovered).toBe(0);
+    const afterActive = await deviceTasks.get(owner.userId, trustedDeviceId, deviceId, task.id);
+    expect(afterActive.status).toBe('CLAIMED');
+    expect(afterActive.claimToken).toBe(token);
+
+    await app.get(DATABASE).update(deviceTasksTable).set({ leaseExpiresAt: new Date(Date.now() - 5_000) }).where(eq(deviceTasksTable.id, task.id));
+    const [expiredRecover, expiredHeartbeat] = await Promise.all([
+      deviceTasks.recoverExpired(),
+      request(app.getHttpServer()).post(`/api/device-tasks/${task.id}/heartbeat`).set(auth(owner.token))
+        .set(signedHeaders(heartbeatBody, 'POST', `/device-tasks/${task.id}/heartbeat`)).send(heartbeatBody),
+    ]);
+    expect([403, 409]).toContain(expiredHeartbeat.status);
+    expect(expiredRecover.recovered).toBe(1);
+    const afterExpired = await deviceTasks.get(owner.userId, trustedDeviceId, deviceId, task.id);
+    expect(afterExpired.status).toBe('PENDING');
+    expect(afterExpired.claimToken).toBeNull();
+  });
+
+  it('atomic CAS: a stale completion cannot succeed after reclaim', async () => {
+    const task = await deviceTasks.enqueue(owner.userId, trustedDeviceId, 'READ_CONSUMABLE', 'device.consumable.remaining_days', 'device.consumable', {});
+    const path = `/device-tasks/${task.id}/claim`;
+    const claimed = await request(app.getHttpServer()).post(`/api${path}`).set(auth(owner.token))
+      .set(signedHeaders({}, 'POST', path)).send({}).expect(201);
+    const staleToken = claimed.body.claimToken as string;
+
+    await app.get(DATABASE).update(deviceTasksTable).set({ leaseExpiresAt: new Date(Date.now() - 5_000) }).where(eq(deviceTasksTable.id, task.id));
+
+    const staleBody = { claimToken: staleToken, result: { remainingDays: 25 } };
+    const [reclaimedResponse, staleComplete] = await Promise.all([
+      (async () => {
+        const recovered = await deviceTasks.recoverExpired();
+        expect(recovered.recovered).toBe(1);
+        return request(app.getHttpServer()).post(`/api${path}`).set(auth(owner.token))
+          .set(signedHeaders({}, 'POST', path)).send({});
+      })(),
+      request(app.getHttpServer()).post(`/api/device-tasks/${task.id}/complete`).set(auth(owner.token))
+        .set(signedHeaders(staleBody, 'POST', `/device-tasks/${task.id}/complete`)).send(staleBody),
+    ]);
+    expect(staleComplete.status).toBeGreaterThanOrEqual(400);
+    expect(reclaimedResponse.status).toBe(201);
+    expect(reclaimedResponse.body.status).toBe('CLAIMED');
+
+    const row = await deviceTasks.get(owner.userId, trustedDeviceId, deviceId, task.id);
+    expect(row.status).toBe('CLAIMED');
+    expect(row.claimToken).toBe(reclaimedResponse.body.claimToken);
+    expect(row.claimToken).not.toBe(staleToken);
+    expect(row.result).toBeNull();
+  });
+
+  it('rejects enqueue of an unregistered task type', async () => {
+    await expect(deviceTasks.enqueue(owner.userId, trustedDeviceId, 'NOT_A_REAL_TASK', 'f', 'r', {})).rejects.toThrow();
+  });
+
+  it('never marks SUCCEEDED for an unregistered task type at completion', async () => {
+    const task = await deviceTasks.enqueue(owner.userId, trustedDeviceId, 'READ_CONSUMABLE', 'device.consumable.remaining_days', 'device.consumable', {});
+    const path = `/device-tasks/${task.id}/claim`;
+    const claimed = await request(app.getHttpServer()).post(`/api${path}`).set(auth(owner.token))
+      .set(signedHeaders({}, 'POST', path)).send({}).expect(201);
+    await app.get(DATABASE).update(deviceTasksTable).set({ taskType: 'NOT_A_REAL_TASK' }).where(eq(deviceTasksTable.id, task.id));
+    const completeBody = { claimToken: claimed.body.claimToken as string, result: { remainingDays: 25 } };
+    await request(app.getHttpServer()).post(`/api/device-tasks/${task.id}/complete`).set(auth(owner.token))
+      .set(signedHeaders(completeBody, 'POST', `/device-tasks/${task.id}/complete`)).send(completeBody).expect(400);
+    const row = await deviceTasks.get(owner.userId, trustedDeviceId, deviceId, task.id);
+    expect(row.status).toBe('FAILED');
+    expect(row.errorCode).toBe('UNSUPPORTED_TASK_TYPE');
+    expect(row.resultHash).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it('fails closed: structured read without UI nodes never reports SUCCEEDED', async () => {
+    const task = await deviceTasks.enqueue(owner.userId, trustedDeviceId, 'APP_STRUCTURED_READ', 'structured_read.field', 'FixtureWallet', {
+      packageName: 'com.lazyarmor.fixture.wallet', resourceType: 'FixtureWallet', resourceId: 'fixture-1',
+      requestedFields: ['wallet.balance'], fieldExpectations: {},
+    });
+    const path = `/device-tasks/${task.id}/claim`;
+    const claimed = await request(app.getHttpServer()).post(`/api${path}`).set(auth(owner.token))
+      .set(signedHeaders({}, 'POST', path)).send({}).expect(201);
+    const completeBody = { claimToken: claimed.body.claimToken as string, result: { packageName: 'com.lazyarmor.fixture.wallet', resourceId: 'fixture-1', nodes: [] } };
+    await request(app.getHttpServer()).post(`/api/device-tasks/${task.id}/complete`).set(auth(owner.token))
+      .set(signedHeaders(completeBody, 'POST', `/device-tasks/${task.id}/complete`)).send(completeBody).expect(400);
+    const row = await deviceTasks.get(owner.userId, trustedDeviceId, deviceId, task.id);
+    expect(row.status).toBe('FAILED');
+    expect(row.errorCode).toBe('RESULT_VERIFICATION_FAILED');
   });
 });

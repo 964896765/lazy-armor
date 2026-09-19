@@ -11,15 +11,15 @@ export class DeviceTasksController {
 
   @Get()
   async list(@CurrentUser() user: AuthenticatedUser, @Headers() headers: IncomingHttpHeaders) {
-    await this.trustedDevices.assertSignedRequest(user.id, deviceEnvelope(headers), 'GET', '/device-tasks', {});
-    return this.deviceTasks.list(user.id);
+    const signed = await this.trustedDevices.assertSignedRequest(user.id, deviceEnvelope(headers), 'GET', '/device-tasks', {});
+    return this.deviceTasks.list(user.id, signed.trustedDeviceId, signed.deviceId);
   }
 
   @Get(':id')
   async get(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Headers() headers: IncomingHttpHeaders) {
     const requestPath = `/device-tasks/${id}`;
-    await this.trustedDevices.assertSignedRequest(user.id, deviceEnvelope(headers), 'GET', requestPath, {});
-    return this.deviceTasks.get(user.id, id);
+    const signed = await this.trustedDevices.assertSignedRequest(user.id, deviceEnvelope(headers), 'GET', requestPath, {});
+    return this.deviceTasks.get(user.id, signed.trustedDeviceId, signed.deviceId, id);
   }
 
   @Post('heartbeat')
@@ -32,28 +32,28 @@ export class DeviceTasksController {
   async claim(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Headers() headers: IncomingHttpHeaders) {
     const requestPath = `/device-tasks/${id}/claim`;
     const signed = await this.trustedDevices.assertSignedRequest(user.id, deviceEnvelope(headers), 'POST', requestPath, {});
-    return this.deviceTasks.claim(user.id, signed.deviceId, id);
+    return this.deviceTasks.claim(user.id, signed.trustedDeviceId, signed.deviceId, id);
   }
 
   @Post(':id/heartbeat')
   async heartbeat(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() input: HeartbeatTaskDto, @Headers() headers: IncomingHttpHeaders) {
     const requestPath = `/device-tasks/${id}/heartbeat`;
-    await this.trustedDevices.assertSignedRequest(user.id, deviceEnvelope(headers), 'POST', requestPath, input);
-    return this.deviceTasks.heartbeat(user.id, id, input.claimToken);
+    const signed = await this.trustedDevices.assertSignedRequest(user.id, deviceEnvelope(headers), 'POST', requestPath, input);
+    return this.deviceTasks.heartbeat(user.id, signed.trustedDeviceId, signed.deviceId, id, input.claimToken);
   }
 
   @Post(':id/complete')
   async complete(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() input: CompleteDeviceTaskDto, @Headers() headers: IncomingHttpHeaders) {
     const requestPath = `/device-tasks/${id}/complete`;
-    await this.trustedDevices.assertSignedRequest(user.id, deviceEnvelope(headers), 'POST', requestPath, input);
-    return this.deviceTasks.complete(user.id, id, input.claimToken, input.result);
+    const signed = await this.trustedDevices.assertSignedRequest(user.id, deviceEnvelope(headers), 'POST', requestPath, input);
+    return this.deviceTasks.complete(user.id, signed.trustedDeviceId, signed.deviceId, id, input.claimToken, input.result);
   }
 
   @Post(':id/fail')
   async fail(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() input: FailDeviceTaskDto, @Headers() headers: IncomingHttpHeaders) {
     const requestPath = `/device-tasks/${id}/fail`;
-    await this.trustedDevices.assertSignedRequest(user.id, deviceEnvelope(headers), 'POST', requestPath, input);
-    return this.deviceTasks.fail(user.id, id, input.claimToken, input.errorCode);
+    const signed = await this.trustedDevices.assertSignedRequest(user.id, deviceEnvelope(headers), 'POST', requestPath, input);
+    return this.deviceTasks.fail(user.id, signed.trustedDeviceId, signed.deviceId, id, input.claimToken, input.errorCode);
   }
 }
 
