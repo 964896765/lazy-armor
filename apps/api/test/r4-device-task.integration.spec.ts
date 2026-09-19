@@ -271,4 +271,88 @@ describe.sequential('R4 edge device task transport', { timeout: 60_000 }, () => 
     expect(row.status).toBe('FAILED');
     expect(row.errorCode).toBe('RESULT_VERIFICATION_FAILED');
   });
+
+  it('completes APP_STRUCTURED_READ with real nodes into verified truth, requiring truthRecordIds for SUCCEEDED', async () => {
+    const task = await deviceTasks.enqueue(owner.userId, trustedDeviceId, 'APP_STRUCTURED_READ', 'structured_read.field', 'FixtureWallet', {
+      packageName: 'com.lazyarmor.fixture.wallet', resourceType: 'FixtureWallet', resourceId: 'fixture-1',
+      requestedFields: ['wallet.balance'], fieldExpectations: {},
+    });
+    const path = `/device-tasks/${task.id}/claim`;
+    const claimed = await request(app.getHttpServer()).post(`/api${path}`).set(auth(owner.token))
+      .set(signedHeaders({}, 'POST', path)).send({}).expect(201);
+    const completeBody = {
+      claimToken: claimed.body.claimToken as string,
+      result: { packageName: 'com.lazyarmor.fixture.wallet', resourceId: 'fixture-1', nodes: [{ resourceId: 'wallet.balance', text: '25' }] },
+    };
+    const completed = await request(app.getHttpServer()).post(`/api/device-tasks/${task.id}/complete`).set(auth(owner.token))
+      .set(signedHeaders(completeBody, 'POST', `/device-tasks/${task.id}/complete`)).send(completeBody).expect(201);
+    expect(completed.body).toMatchObject({ id: task.id, status: 'SUCCEEDED' });
+    expect(completed.body.reality.candidateIds.length).toBeGreaterThan(0);
+    expect(completed.body.reality.truthRecordIds.length).toBeGreaterThan(0);
+
+    const truths = await reality.listTruth(owner.userId);
+    expect(truths.some((item) => item.currentVersion.value.factKey === 'structured_read.field')).toBe(true);
+  });
+
+  it('stale-claim Truth race: old complete cannot write VERIFIED truth or SUCCEEDED after reclaim', async () => {
+    const task = await deviceTasks.enqueue(owner.userId, trustedDeviceId, 'READ_CONSUMABLE', 'device.consumable.remaining_days', 'device.consumable', {});
+    const path = `/device-tasks/${task.id}/claim`;
+    const claimed = await request(app.getHttpServer()).post(`/api${path}`).set(auth(owner.token))
+      .set(signedHeaders({}, 'POST', path)).send({}).expect(201);
+    const staleToken = claimed.body.claimToken as string;
+
+    // Short lease so it expires while the old claimant is parked before the Truth write.
+    await app.get(DATABASE).update(deviceTasksTable).set({ leaseExpiresAt: new Date(Date.now() + 500) }).where(eq(deviceTasksTable.id, task.id));
+
+    // Deterministic barrier: hang the RealityPipeline ingest so complete() keeps
+    // the task row locked inside its transaction after ownership validation but
+    // before any VERIFIED Truth is materialized.
+    const originalIngest = reality.ingest.bind(reality);
+    let releaseIngest!: () => void;
+    const ingestReleased = new Promise<void>((resolve) => { releaseIngest = resolve; });
+    let signalIngest!: () => void;
+    const ingestReached = new Promise<void>((resolve) => { signalIngest = resolve; });
+    (reality as unknown as { ingest: typeof reality.ingest }).ingest = (async (...args: Parameters<RealityPipelineService['ingest']>) => {
+      signalIngest();
+      await ingestReleased;
+      return originalIngest(...args);
+    }) as typeof reality.ingest;
+
+    try {
+      const completeBody = { claimToken: staleToken, result: { remainingDays: 999 } };
+      const staleCompletePromise = request(app.getHttpServer()).post(`/api/device-tasks/${task.id}/complete`).set(auth(owner.token))
+        .set(signedHeaders(completeBody, 'POST', `/device-tasks/${task.id}/complete`)).send(completeBody)
+        .then((response) => response);
+
+      // Old claimant is now parked inside the transaction holding the row lock.
+      await ingestReached;
+      // Let the lease expire deterministically before releasing the barrier.
+      await new Promise((resolve) => setTimeout(resolve, 800));
+
+      // recover + reclaim block on the row lock until the stale claimant rolls back.
+      releaseIngest();
+      const recovered = await deviceTasks.recoverExpired();
+      expect(recovered.recovered).toBeGreaterThanOrEqual(1);
+
+      const reclaimed = await request(app.getHttpServer()).post(`/api${path}`).set(auth(owner.token))
+        .set(signedHeaders({}, 'POST', path)).send({});
+      expect(reclaimed.status).toBe(201);
+      expect(reclaimed.body).toMatchObject({ id: task.id, status: 'CLAIMED' });
+
+      const staleResponse = await staleCompletePromise;
+      expect(staleResponse.status).toBe(409);
+
+      const row = await deviceTasks.get(owner.userId, trustedDeviceId, deviceId, task.id);
+      expect(row.status).toBe('CLAIMED');
+      expect(row.claimToken).toBe(reclaimed.body.claimToken);
+      expect(row.claimToken).not.toBe(staleToken);
+      expect(row.result).toBeNull();
+
+      // The stale claimant must not have materialized VERIFIED Truth for this fact.
+      const truths = await reality.listTruth(owner.userId);
+      expect(truths.some((item) => item.currentVersion.value.factKey === 'device.consumable.remaining_days' && item.currentVersion.value.value?.remainingDays === 999)).toBe(false);
+    } finally {
+      (reality as unknown as { ingest: typeof reality.ingest }).ingest = originalIngest as typeof reality.ingest;
+    }
+  });
 });

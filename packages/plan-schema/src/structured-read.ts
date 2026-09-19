@@ -193,6 +193,27 @@ export interface StructuredReadResult {
   warnings: string[];
 }
 
+/**
+ * Canonical Structured Read outcome. Every layer (DeviceTask, ReadEvidence,
+ * Audit, Mobile presenter) derives its terminal semantics from these three
+ * states only; candidateIds alone never means VERIFIED.
+ */
+export type StructuredReadOutcome = 'VERIFIED' | 'NEEDS_CONFIRMATION' | 'BLOCKED';
+
+export function resolveStructuredReadOutcome(input: { candidateIds: readonly string[]; truthRecordIds: readonly string[] }): StructuredReadOutcome {
+  if (input.truthRecordIds.length > 0) return 'VERIFIED';
+  if (input.candidateIds.length > 0) return 'NEEDS_CONFIRMATION';
+  return 'BLOCKED';
+}
+
+export function readEvidenceStatusForOutcome(outcome: StructuredReadOutcome): ReadEvidenceStatus {
+  switch (outcome) {
+    case 'VERIFIED': return 'TRUTH_VERIFIED';
+    case 'NEEDS_CONFIRMATION': return 'NEEDS_CONFIRMATION';
+    case 'BLOCKED': return 'BLOCKED';
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Deterministic validation. Vision/structured extractions are only accepted
 // into Truth after passing schema/type/range/enum validation. Low confidence

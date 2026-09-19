@@ -330,6 +330,16 @@ class DeviceAppBridgeModule(reactContext: ReactApplicationContext) : ReactContex
     }
   }
 
+  @ReactMethod
+  fun captureAppReadUiNodes(targetPackage: String, allowedSelectors: ReadableArray, promise: Promise) {
+    try {
+      val selectors = (0 until allowedSelectors.size()).mapNotNull { allowedSelectors.getString(it) }.toSet()
+      promise.resolve(AppReadSessionStore.captureUiNodes(reactApplicationContext, targetPackage, selectors).toString())
+    } catch (error: Exception) {
+      promise.reject("E_APP_READ_UI_NODES_UNAVAILABLE", "无法读取目标应用的可控节点。", error)
+    }
+  }
+
   private fun trustedDeviceKeyPair(): KeyPair {
     val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
     val existingPrivate = keyStore.getKey(trustedDeviceKeyAlias, null) as? java.security.PrivateKey

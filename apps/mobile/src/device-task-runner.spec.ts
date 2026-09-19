@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from './api';
 import { DeviceTaskRunner } from './device-task-runner';
-import type { RunnerState, RunnerStateStore } from './device-task-runner';
+import type { RunnerState, RunnerStateStore, StructuredReadResult } from './device-task-runner';
 import type { DeviceTask } from './device-task-client';
 
 const mocks = vi.hoisted(() => ({
@@ -41,6 +41,8 @@ function store(initial: RunnerState | null) {
   const save = vi.fn(async (next: RunnerState | null) => { value = next; });
   return { load, save } as RunnerStateStore & { load: typeof load; save: typeof save };
 }
+
+const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe('mobile DeviceTask runner', () => {
   beforeEach(() => vi.resetAllMocks());
@@ -138,5 +140,108 @@ describe('mobile DeviceTask runner', () => {
 
     expect(mocks.heartbeatClaim).toHaveBeenCalledWith('token', claimed);
     expect(mocks.completeDeviceTask).toHaveBeenCalled();
+  });
+
+  it('keeps the lease alive across the execution window, persists the renewed lease, and completes', async () => {
+    const stateStore = store(null);
+    const claimed = claimedTask({ leaseExpiresAt: new Date(Date.now() + 30_000).toISOString() });
+    mocks.listDeviceTasks.mockResolvedValue([makeTask()]);
+    mocks.claimDeviceTask.mockResolvedValue(claimed);
+
+    const renewedLease = new Date(Date.now() + 120_000).toISOString();
+    let signalHeartbeat: () => void = () => {};
+    const heartbeatSignal = new Promise<void>((resolve) => { signalHeartbeat = resolve; });
+    mocks.heartbeatClaim.mockImplementation(async () => { signalHeartbeat(); return { leaseExpiresAt: renewedLease }; });
+
+    let release: (value: StructuredReadResult) => void = () => {};
+    const execute = vi.fn(() => new Promise<StructuredReadResult>((resolve) => { release = resolve; }));
+    mocks.completeDeviceTask.mockImplementation(async (_token: string, task: DeviceTask) => ({ ...task, status: 'SUCCEEDED' }));
+
+    const runner = new DeviceTaskRunner({ token, state: stateStore, executeStructuredRead: execute, keepaliveIntervalMs: 5 });
+    const tickPromise = runner.tick();
+    await heartbeatSignal;
+    await flush();
+
+    expect(mocks.heartbeatClaim).toHaveBeenCalled();
+    expect(stateStore.save).toHaveBeenCalledWith(expect.objectContaining({ taskId: 'task-1', leaseExpiresAt: renewedLease }));
+
+    release({ nodes: [] });
+    await tickPromise;
+
+    expect(mocks.completeDeviceTask).toHaveBeenCalledWith('token', expect.objectContaining({ leaseExpiresAt: renewedLease }), expect.anything());
+    expect(await stateStore.load()).toBeNull();
+  });
+
+  it('fails, stops, and cleans up when a keepalive heartbeat fails', async () => {
+    const stateStore = store(null);
+    const claimed = claimedTask({ leaseExpiresAt: new Date(Date.now() + 30_000).toISOString() });
+    mocks.listDeviceTasks.mockResolvedValue([makeTask()]);
+    mocks.claimDeviceTask.mockResolvedValue(claimed);
+    let signalHeartbeat: () => void = () => {};
+    const heartbeatSignal = new Promise<void>((resolve) => { signalHeartbeat = resolve; });
+    mocks.heartbeatClaim.mockImplementation(async () => { signalHeartbeat(); throw new Error('network down'); });
+    mocks.failDeviceTask.mockResolvedValue({ status: 'FAILED' });
+    let release: (value: StructuredReadResult) => void = () => {};
+    const execute = vi.fn(() => new Promise<StructuredReadResult>((resolve) => { release = resolve; }));
+
+    const runner = new DeviceTaskRunner({ token, state: stateStore, executeStructuredRead: execute, keepaliveIntervalMs: 5 });
+    const tickPromise = runner.tick();
+    await heartbeatSignal;
+    await flush();
+
+    expect(mocks.failDeviceTask).toHaveBeenCalledWith('token', expect.objectContaining({ id: 'task-1' }), 'DEVICE_RUNNER_HEARTBEAT_FAILED');
+    expect(await stateStore.load()).toBeNull();
+
+    release({ nodes: [] });
+    await tickPromise;
+    expect(mocks.completeDeviceTask).not.toHaveBeenCalled();
+  });
+
+  it('stops and cleans up without double-failing when the claim is lost during keepalive', async () => {
+    const stateStore = store(null);
+    const claimed = claimedTask({ leaseExpiresAt: new Date(Date.now() + 30_000).toISOString() });
+    mocks.listDeviceTasks.mockResolvedValue([makeTask()]);
+    mocks.claimDeviceTask.mockResolvedValue(claimed);
+    let signalHeartbeat: () => void = () => {};
+    const heartbeatSignal = new Promise<void>((resolve) => { signalHeartbeat = resolve; });
+    mocks.heartbeatClaim.mockImplementation(async () => { signalHeartbeat(); throw new ApiError(409, 'CONFLICT', 'claim lost'); });
+    mocks.failDeviceTask.mockRejectedValue(new ApiError(409, 'CONFLICT', 'claim lost'));
+    let release: (value: StructuredReadResult) => void = () => {};
+    const execute = vi.fn(() => new Promise<StructuredReadResult>((resolve) => { release = resolve; }));
+
+    const runner = new DeviceTaskRunner({ token, state: stateStore, executeStructuredRead: execute, keepaliveIntervalMs: 5 });
+    const tickPromise = runner.tick();
+    await heartbeatSignal;
+    await flush();
+
+    expect(mocks.failDeviceTask).toHaveBeenCalledWith('token', expect.objectContaining({ id: 'task-1' }), 'DEVICE_RUNNER_HEARTBEAT_FAILED');
+    expect(await stateStore.load()).toBeNull();
+
+    release({ nodes: [] });
+    await tickPromise;
+    expect(mocks.completeDeviceTask).not.toHaveBeenCalled();
+  });
+
+  it('clears the keepalive timer when the runner is stopped', async () => {
+    const stateStore = store(null);
+    const claimed = claimedTask({ leaseExpiresAt: new Date(Date.now() + 30_000).toISOString() });
+    mocks.listDeviceTasks.mockResolvedValue([makeTask()]);
+    mocks.claimDeviceTask.mockResolvedValue(claimed);
+    let started: () => void = () => {};
+    const startedSignal = new Promise<void>((resolve) => { started = resolve; });
+    let release: (value: StructuredReadResult) => void = () => {};
+    const execute = vi.fn(() => { started(); return new Promise<StructuredReadResult>((resolve) => { release = resolve; }); });
+
+    const runner = new DeviceTaskRunner({ token, state: stateStore, executeStructuredRead: execute, keepaliveIntervalMs: 5 });
+    const tickPromise = runner.tick();
+    await startedSignal;
+    runner.stop();
+    await new Promise((resolve) => setTimeout(resolve, 25));
+
+    expect(mocks.heartbeatClaim).not.toHaveBeenCalled();
+
+    release({ nodes: [] });
+    await tickPromise;
+    expect(mocks.completeDeviceTask).not.toHaveBeenCalled();
   });
 });

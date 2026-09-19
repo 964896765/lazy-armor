@@ -14,6 +14,8 @@ import { DATABASE, type InjectedDatabase } from '../common/database.module';
 import { StrategyRuntimeService } from '../strategy-runtime/strategy-runtime.service';
 import { VersionedResourceTruthService, type ResourceReadProof } from './versioned-resource-truth.service';
 
+export type RealityExecutor = Pick<InjectedDatabase, 'select' | 'insert' | 'update' | 'delete'>;
+
 @Injectable()
 export class RealityPipelineService implements OnModuleInit {
   constructor(
@@ -24,19 +26,21 @@ export class RealityPipelineService implements OnModuleInit {
   ) {}
   async onModuleInit() { await this.syncRegistry(); }
 
-  async ingest(userId: string, input: SourceObservationInput, retryCount = 0): Promise<Awaited<ReturnType<RealityPipelineService['ingestOnce']>>> {
-    try { return await this.ingestOnce(userId, input); }
+  async ingest(userId: string, input: SourceObservationInput, retryCount = 0, executor?: RealityExecutor): Promise<Awaited<ReturnType<RealityPipelineService['ingestOnce']>>> {
+    const db = executor ?? this.db;
+    try { return await this.ingestOnce(userId, input, db); }
     catch (error) {
       // Publication now locks the authorization fence. An ingest INSERT may be
       // selected as a deadlock victim while acquiring its parent FK/unique locks.
       // Retry only that local idempotent materialization, never the Provider GET
       // or any external write. Partial autocommit inserts retain their identities.
-      if (isDeadlock(error) && retryCount < 3) return this.ingest(userId, input, retryCount + 1);
+      // Inside a caller-provided transaction there is no partial autocommit to retry.
+      if (!executor && isDeadlock(error) && retryCount < 3) return this.ingest(userId, input, retryCount + 1);
       throw error;
     }
   }
 
-  private async ingestOnce(userId: string, input: SourceObservationInput) {
+  private async ingestOnce(userId: string, input: SourceObservationInput, db: RealityExecutor) {
     const observedAt = validDate(input.observedAt, 'observedAt');
     const occurredAt = input.occurredAt ? validDate(input.occurredAt, 'occurredAt') : null;
     if (!/^[a-f0-9]{64}$/.test(input.evidenceHash)) throw new BadRequestException('evidenceHash must be SHA-256');
@@ -44,18 +48,18 @@ export class RealityPipelineService implements OnModuleInit {
     try { drafts = parseAndNormalizeObservation(input); } catch (error) { throw new BadRequestException(error instanceof Error ? error.message : 'Observation parser failed'); }
     const identity = observationIdentity(input.providerKey, input.externalEventKey);
     const payloadHash = realityValueHash(input.payload);
-    let observation = (await this.db.select().from(sourceObservations).where(and(eq(sourceObservations.userId, userId), eq(sourceObservations.sourceIdentity, identity))).limit(1))[0];
+    let observation = (await db.select().from(sourceObservations).where(and(eq(sourceObservations.userId, userId), eq(sourceObservations.sourceIdentity, identity))).limit(1))[0];
     let duplicate = Boolean(observation);
     if (observation && observation.payloadHash !== payloadHash) throw new ConflictException('Observation identity cannot be reused with different evidence');
     if (!observation) {
       const id = newId();
       try {
-        await this.db.insert(sourceObservations).values({ id, userId, connectionId: input.connectionId ?? null, sourceMode: input.sourceMode, providerKey: input.providerKey, externalEventKey: input.externalEventKey, sourceIdentity: identity, parserKey: input.parserKey, resourceHint: input.resourceHint, payloadHash, evidenceHash: input.evidenceHash, payloadJson: input.payload as Record<string, unknown>, status: 'NORMALIZED', observedAt, occurredAt, receivedAt: new Date() });
-        observation = (await this.db.select().from(sourceObservations).where(eq(sourceObservations.id, id)).limit(1))[0];
+        await db.insert(sourceObservations).values({ id, userId, connectionId: input.connectionId ?? null, sourceMode: input.sourceMode, providerKey: input.providerKey, externalEventKey: input.externalEventKey, sourceIdentity: identity, parserKey: input.parserKey, resourceHint: input.resourceHint, payloadHash, evidenceHash: input.evidenceHash, payloadJson: input.payload as Record<string, unknown>, status: 'NORMALIZED', observedAt, occurredAt, receivedAt: new Date() });
+        observation = (await db.select().from(sourceObservations).where(eq(sourceObservations.id, id)).limit(1))[0];
       } catch (error) {
         if (!isDuplicate(error)) throw error;
         duplicate = true;
-        observation = (await this.db.select().from(sourceObservations).where(and(eq(sourceObservations.userId, userId), eq(sourceObservations.sourceIdentity, identity))).limit(1))[0];
+        observation = (await db.select().from(sourceObservations).where(and(eq(sourceObservations.userId, userId), eq(sourceObservations.sourceIdentity, identity))).limit(1))[0];
         if (!observation || observation.payloadHash !== payloadHash) throw new ConflictException('Observation identity cannot be reused with different evidence');
       }
     }
@@ -63,15 +67,15 @@ export class RealityPipelineService implements OnModuleInit {
     const candidates = [];
     for (const draft of drafts) {
       const dedupeKey = candidateDedupeKey(userId, draft);
-      let candidate = (await this.db.select().from(candidateFacts).where(and(eq(candidateFacts.userId, userId), eq(candidateFacts.dedupeKey, dedupeKey))).limit(1))[0];
+      let candidate = (await db.select().from(candidateFacts).where(and(eq(candidateFacts.userId, userId), eq(candidateFacts.dedupeKey, dedupeKey))).limit(1))[0];
       if (!candidate) {
         const id = newId();
         try {
-          await this.db.insert(candidateFacts).values({ id, userId, observationId: observation.id, resourceType: draft.resourceType, resourceKey: draft.resourceKey, subjectKey: draft.subjectKey, factKey: draft.factKey, valueJson: draft.value as Record<string, unknown>, valueHash: realityValueHash(draft.value), dedupeKey, confidence: Math.round(draft.confidence * 100), normalizerKey: draft.normalizerKey, freshnessPolicyKey: draft.freshnessPolicyKey, conflictPolicyKey: draft.conflictPolicyKey, compatibilityResourceKey: draft.compatibilityResourceKey ?? null, status: 'PENDING', truthRecordId: null, decidedAt: null, createdAt: new Date() });
-          candidate = (await this.db.select().from(candidateFacts).where(eq(candidateFacts.id, id)).limit(1))[0];
+          await db.insert(candidateFacts).values({ id, userId, observationId: observation.id, resourceType: draft.resourceType, resourceKey: draft.resourceKey, subjectKey: draft.subjectKey, factKey: draft.factKey, valueJson: draft.value as Record<string, unknown>, valueHash: realityValueHash(draft.value), dedupeKey, confidence: Math.round(draft.confidence * 100), normalizerKey: draft.normalizerKey, freshnessPolicyKey: draft.freshnessPolicyKey, conflictPolicyKey: draft.conflictPolicyKey, compatibilityResourceKey: draft.compatibilityResourceKey ?? null, status: 'PENDING', truthRecordId: null, decidedAt: null, createdAt: new Date() });
+          candidate = (await db.select().from(candidateFacts).where(eq(candidateFacts.id, id)).limit(1))[0];
         } catch (error) {
           if (!isDuplicate(error)) throw error;
-          candidate = (await this.db.select().from(candidateFacts).where(and(eq(candidateFacts.userId, userId), eq(candidateFacts.dedupeKey, dedupeKey))).limit(1))[0];
+          candidate = (await db.select().from(candidateFacts).where(and(eq(candidateFacts.userId, userId), eq(candidateFacts.dedupeKey, dedupeKey))).limit(1))[0];
         }
       }
       if (!candidate) throw new ConflictException('Candidate could not be materialized');
@@ -90,33 +94,41 @@ export class RealityPipelineService implements OnModuleInit {
     return Promise.all(rows.map((row) => this.truthResponse(userId, row.id)));
   }
 
-  async confirmCandidate(userId: string, candidateId: string, options: { sourceReceiptId?: string | null; verifiedBy?: string; verificationMethod?: string; readProof?: ResourceReadProof } = {}, retryCount = 0): Promise<Awaited<ReturnType<RealityPipelineService['truthResponse']>>> {
-    const existing = await this.getCandidate(userId, candidateId);
+  async confirmCandidate(userId: string, candidateId: string, options: { sourceReceiptId?: string | null; verifiedBy?: string; verificationMethod?: string; readProof?: ResourceReadProof } = {}, retryCount = 0, executor?: RealityExecutor): Promise<Awaited<ReturnType<RealityPipelineService['truthResponse']>>> {
+    const db = executor ?? this.db;
+    const existing = await this.getCandidate(userId, candidateId, db);
     if (existing.normalizerKey === 'repository-resource.v2' || existing.normalizerKey === 'document-resource.v1') {
+      if (executor) throw new ConflictException('Versioned resource truth must be confirmed in its own transaction');
       return this.truthResponse(userId, await this.versioned.confirm(userId, candidateId, options.readProof!));
     }
-    if (existing.status === 'VERIFIED' && existing.truthRecordId) return this.truthResponse(userId, existing.truthRecordId);
+    if (existing.status === 'VERIFIED' && existing.truthRecordId) return this.truthResponse(userId, existing.truthRecordId, db);
     if (existing.status !== 'PENDING') throw new ConflictException('Candidate has already been decided');
-    const observation = (await this.db.select().from(sourceObservations).where(eq(sourceObservations.id, existing.observationId)).limit(1))[0];
+    const observation = (await db.select().from(sourceObservations).where(eq(sourceObservations.id, existing.observationId)).limit(1))[0];
     if (!observation) throw new ConflictException('Candidate provenance is incomplete');
     const now = new Date(); const truthId = newId(); const versionId = newId();
     const value = existing.compatibilityResourceKey
       ? { resource: existing.compatibilityResourceKey, ...existing.valueJson, occurredAt: observation.occurredAt?.toISOString() ?? observation.observedAt.toISOString() }
       : { resourceType: existing.resourceType, resourceKey: existing.resourceKey, subjectKey: existing.subjectKey, factKey: existing.factKey, value: existing.valueJson, observedAt: observation.observedAt.toISOString(), occurredAt: observation.occurredAt?.toISOString() ?? null, confidence: existing.confidence / 100, realityLevel: 'VERIFIED' };
+    const confirmOnce = async (tx: RealityExecutor) => {
+      await tx.insert(truthRecords).values({ id: truthId, userId, resourceKey: existing.compatibilityResourceKey ?? existing.resourceType, subjectKey: existing.subjectKey, status: 'verified', currentVersionId: null, sourceReceiptId: options.sourceReceiptId ?? null, verifiedBy: options.verifiedBy ?? 'user_confirmation', verifiedAt: now, revokedAt: null, createdAt: now, updatedAt: now });
+      await tx.insert(truthRecordVersions).values({ id: versionId, truthRecordId: truthId, versionNumber: 1, valueJson: value, valueHash: realityValueHash(value), verificationMethod: options.verificationMethod ?? options.verifiedBy ?? 'user_confirmation', evidenceHash: observation.evidenceHash, createdAt: now });
+      await tx.insert(truthProvenance).values({ id: newId(), truthRecordVersionId: versionId, candidateFactId: candidateId, observationId: observation.id, providerKey: observation.providerKey, sourceMode: observation.sourceMode, evidenceHash: observation.evidenceHash, observedAt: observation.observedAt, createdAt: now });
+      await tx.update(truthRecords).set({ currentVersionId: versionId, updatedAt: now }).where(eq(truthRecords.id, truthId));
+      await tx.update(candidateFacts).set({ status: 'VERIFIED', truthRecordId: truthId, decidedAt: now }).where(and(eq(candidateFacts.id, candidateId), eq(candidateFacts.status, 'PENDING')));
+      await this.strategyRuntime.enqueueTruthChange(userId, {
+        truthRecordVersionId: versionId,
+        factKey: existing.factKey,
+        resourceType: existing.resourceType,
+        subjectKey: existing.subjectKey,
+      }, tx);
+    };
+    if (executor) {
+      await confirmOnce(executor);
+      await this.audit.append({ actorType: 'user', actorUserId: userId, action: 'GENERIC_TRUTH_VERIFIED', resourceType: 'truth_record', resourceId: truthId, userId, correlationId: observation.id, changeSummary: `Verified ${existing.factKey} through the generic reality pipeline`, source: 'api', result: 'success' }, executor);
+      return this.truthResponse(userId, truthId, executor);
+    }
     try {
-      await this.db.transaction(async (tx) => {
-        await tx.insert(truthRecords).values({ id: truthId, userId, resourceKey: existing.compatibilityResourceKey ?? existing.resourceType, subjectKey: existing.subjectKey, status: 'verified', currentVersionId: null, sourceReceiptId: options.sourceReceiptId ?? null, verifiedBy: options.verifiedBy ?? 'user_confirmation', verifiedAt: now, revokedAt: null, createdAt: now, updatedAt: now });
-        await tx.insert(truthRecordVersions).values({ id: versionId, truthRecordId: truthId, versionNumber: 1, valueJson: value, valueHash: realityValueHash(value), verificationMethod: options.verificationMethod ?? options.verifiedBy ?? 'user_confirmation', evidenceHash: observation.evidenceHash, createdAt: now });
-        await tx.insert(truthProvenance).values({ id: newId(), truthRecordVersionId: versionId, candidateFactId: candidateId, observationId: observation.id, providerKey: observation.providerKey, sourceMode: observation.sourceMode, evidenceHash: observation.evidenceHash, observedAt: observation.observedAt, createdAt: now });
-        await tx.update(truthRecords).set({ currentVersionId: versionId, updatedAt: now }).where(eq(truthRecords.id, truthId));
-        await tx.update(candidateFacts).set({ status: 'VERIFIED', truthRecordId: truthId, decidedAt: now }).where(and(eq(candidateFacts.id, candidateId), eq(candidateFacts.status, 'PENDING')));
-        await this.strategyRuntime.enqueueTruthChange(userId, {
-          truthRecordVersionId: versionId,
-          factKey: existing.factKey,
-          resourceType: existing.resourceType,
-          subjectKey: existing.subjectKey,
-        }, tx);
-      });
+      await this.db.transaction(async (tx) => { await confirmOnce(tx); });
     } catch (error) {
       if (!isDuplicate(error) && !isDeadlock(error)) throw error;
       const raced = await this.getCandidate(userId, candidateId);
@@ -130,23 +142,24 @@ export class RealityPipelineService implements OnModuleInit {
     return this.truthResponse(userId, truthId);
   }
 
-  async rejectCandidate(userId: string, candidateId: string) {
-    const candidate = await this.getCandidate(userId, candidateId);
+  async rejectCandidate(userId: string, candidateId: string, executor?: RealityExecutor) {
+    const db = executor ?? this.db;
+    const candidate = await this.getCandidate(userId, candidateId, db);
     if (candidate.status !== 'PENDING') throw new ConflictException('Candidate has already been decided');
     const now = new Date();
-    await this.db.update(candidateFacts).set({ status: 'REJECTED', decidedAt: now }).where(and(eq(candidateFacts.id, candidateId), eq(candidateFacts.userId, userId), eq(candidateFacts.status, 'PENDING')));
+    await db.update(candidateFacts).set({ status: 'REJECTED', decidedAt: now }).where(and(eq(candidateFacts.id, candidateId), eq(candidateFacts.userId, userId), eq(candidateFacts.status, 'PENDING')));
     return { id: candidateId, status: 'REJECTED', decidedAt: now.toISOString() };
   }
 
-  async truthResponse(userId: string, truthId: string) {
-    const row = (await this.db.select({ record: truthRecords, version: truthRecordVersions }).from(truthRecords).innerJoin(truthRecordVersions, eq(truthRecords.currentVersionId, truthRecordVersions.id)).where(and(eq(truthRecords.id, truthId), eq(truthRecords.userId, userId))).limit(1))[0];
+  async truthResponse(userId: string, truthId: string, executor: RealityExecutor = this.db) {
+    const row = (await executor.select({ record: truthRecords, version: truthRecordVersions }).from(truthRecords).innerJoin(truthRecordVersions, eq(truthRecords.currentVersionId, truthRecordVersions.id)).where(and(eq(truthRecords.id, truthId), eq(truthRecords.userId, userId))).limit(1))[0];
     if (!row) throw new NotFoundException('Truth record not found');
-    const provenance = await this.db.select().from(truthProvenance).where(eq(truthProvenance.truthRecordVersionId, row.version.id));
+    const provenance = await executor.select().from(truthProvenance).where(eq(truthProvenance.truthRecordVersionId, row.version.id));
     return { id: row.record.id, resourceKey: row.record.resourceKey, status: row.record.status, sourceReceiptId: row.record.sourceReceiptId, verifiedBy: row.record.verifiedBy, verifiedAt: row.record.verifiedAt.toISOString(), currentVersionId: row.record.currentVersionId, currentVersion: { versionNumber: row.version.versionNumber, value: row.version.valueJson, valueHash: row.version.valueHash, evidenceHash: row.version.evidenceHash }, provenance: provenance.map((item) => ({ providerKey: item.providerKey, sourceMode: item.sourceMode, evidenceHash: item.evidenceHash, observedAt: item.observedAt.toISOString() })) };
   }
 
-  private async getCandidate(userId: string, id: string) {
-    const row = (await this.db.select().from(candidateFacts).where(and(eq(candidateFacts.id, id), eq(candidateFacts.userId, userId))).limit(1))[0];
+  private async getCandidate(userId: string, id: string, executor: RealityExecutor = this.db) {
+    const row = (await executor.select().from(candidateFacts).where(and(eq(candidateFacts.id, id), eq(candidateFacts.userId, userId))).limit(1))[0];
     if (!row) throw new NotFoundException('Candidate fact not found'); return row;
   }
   private candidateResponse(row: typeof candidateFacts.$inferSelect) { return { id: row.id, observationId: row.observationId, resourceType: row.resourceType, resourceKey: row.resourceKey, subjectKey: row.subjectKey, factKey: row.factKey, value: row.valueJson, confidence: row.confidence / 100, status: row.status, truthRecordId: row.truthRecordId, freshnessPolicyKey: row.freshnessPolicyKey, conflictPolicyKey: row.conflictPolicyKey }; }

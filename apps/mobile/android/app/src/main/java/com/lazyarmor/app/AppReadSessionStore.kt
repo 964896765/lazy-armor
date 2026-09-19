@@ -122,6 +122,25 @@ object AppReadSessionStore {
     preferences(context).edit().putString(EVENTS_KEY, retained.toString()).apply()
   }
 
+  /**
+   * Controlled UI-node capture for APP_STRUCTURED_READ. It validates the active
+   * session, usage access and foreground package, then returns nodes. Real
+   * node capture requires an accessibility node provider which this app does
+   * not enable; the boundary fails closed with an empty node set rather than
+   * fabricating evidence.
+   */
+  fun captureUiNodes(context: Context, targetPackage: String, selectors: Set<String>): JSONObject {
+    val result = JSONObject().put("nodes", JSONArray()).put("evidenceHash", JSONObject.NULL)
+    if (targetPackage.isBlank() || selectors.isEmpty() || selectors.any { it.isBlank() || it == "*" }) return result
+    val session = active(context) ?: return result
+    if (!ForegroundPackageGuard.hasUsageAccess(context)) return result
+    if (session.optString("targetPackage") != targetPackage) return result
+    if (session.optString("status") != "READING") return result
+    if (ForegroundPackageGuard.currentPackage(context) != targetPackage) return result
+    // No accessibility node provider is enabled by design; capture remains unavailable.
+    return result
+  }
+
   private fun append(context: Context, event: JSONObject) {
     val queue = readEvents(context)
     val retained = JSONArray()

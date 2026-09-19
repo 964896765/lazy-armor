@@ -6,7 +6,7 @@ import { newId } from '@lazy-armor/shared';
 import { and, desc, eq, gte, inArray, lt } from 'drizzle-orm';
 import { AuditService } from '../audit/audit.service';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
-import { RealityPipelineService } from '../reality-pipeline/reality-pipeline.service';
+import { RealityPipelineService, type RealityExecutor } from '../reality-pipeline/reality-pipeline.service';
 import { StructuredReadService } from '../structured-read/structured-read.service';
 import { TrustedDevicesService } from '../trusted-devices/trusted-devices.service';
 
@@ -35,6 +35,11 @@ const ALLOWED_DEVICE_TASK_TYPES = new Set<string>([
 type DeviceTaskReality =
   | { observationId: string; candidateId: string | null; truth: Awaited<ReturnType<RealityPipelineService['confirmCandidate']>> | null }
   | { observationId: string; candidateIds: string[]; truthRecordIds: string[] };
+
+/** Ownership was lost (recovered / reclaimed / lease expired) before the terminal transition. */
+export class StaleClaimError extends ConflictException {
+  constructor() { super('Device task claim is no longer active'); }
+}
 
 @Injectable()
 export class DeviceTasksService {
@@ -100,48 +105,61 @@ export class DeviceTasksService {
   }
 
   async complete(userId: string, trustedDeviceId: string, deviceId: string, taskId: string, claimToken: string, result: Record<string, unknown>) {
-    const task = await this.getRowForDevice(userId, trustedDeviceId, deviceId, taskId);
-    this.assertClaim(task, claimToken);
-    if (task.status !== 'CLAIMED' && task.status !== 'RUNNING') throw new ConflictException('Device task is not running');
     const resultHash = realityValueHash(result);
-    if (!ALLOWED_DEVICE_TASK_TYPES.has(task.taskType)) {
-      await this.markVerificationFailed(task, result, resultHash, 'UNSUPPORTED_TASK_TYPE');
-      throw new BadRequestException('Unsupported device task type');
-    }
-    const spec = DEVICE_TASK_REALITY_SPEC[task.taskType];
-    let reality: DeviceTaskReality | null = null;
-    if (STRUCTURED_READ_TASK_TYPES.has(task.taskType)) {
-      try {
-        reality = await this.structuredRead.ingestDeviceResult(userId, task, result);
-      } catch {
-        await this.markVerificationFailed(task, result, resultHash);
-        throw new BadRequestException('Device task result failed structured read verification');
+    const outcome = await this.db.transaction(async (tx) => {
+      // Atomic ownership boundary: lock the task row so recoverExpired/claim
+      // cannot mutate it until this whole Reality-confirm + CAS block commits.
+      const task = (await tx.select().from(deviceTasks)
+        .where(and(eq(deviceTasks.id, taskId), eq(deviceTasks.userId, userId), eq(deviceTasks.trustedDeviceId, trustedDeviceId), eq(deviceTasks.deviceId, deviceId)))
+        .limit(1).for('update'))[0];
+      if (!task) throw new NotFoundException('Device task not found');
+      this.assertClaim(task, claimToken);
+      if (task.status !== 'CLAIMED' && task.status !== 'RUNNING') throw new ConflictException('Device task is not running');
+      if (!ALLOWED_DEVICE_TASK_TYPES.has(task.taskType)) {
+        await this.markVerificationFailed(tx, task, result, resultHash, 'UNSUPPORTED_TASK_TYPE');
+        return { failure: new BadRequestException('Unsupported device task type') } as const;
       }
-    } else if (spec) {
-      try {
-        reality = await this.recordEvidence(userId, task, spec, result, resultHash);
-      } catch {
-        await this.markVerificationFailed(task, result, resultHash);
-        throw new BadRequestException('Device task result failed verification');
+      const spec = DEVICE_TASK_REALITY_SPEC[task.taskType];
+      let reality: DeviceTaskReality | null = null;
+      if (STRUCTURED_READ_TASK_TYPES.has(task.taskType)) {
+        try {
+          reality = await this.structuredRead.ingestDeviceResult(userId, task, result, tx, claimToken);
+        } catch (error) {
+          if (error instanceof StaleClaimError) throw error;
+          await this.markVerificationFailed(tx, task, result, resultHash);
+          return { failure: new BadRequestException('Device task result failed structured read verification') } as const;
+        }
+      } else if (spec) {
+        try {
+          reality = await this.recordEvidence(userId, task, spec, result, resultHash, tx, claimToken);
+        } catch (error) {
+          if (error instanceof StaleClaimError) throw error;
+          await this.markVerificationFailed(tx, task, result, resultHash);
+          return { failure: new BadRequestException('Device task result failed verification') } as const;
+        }
       }
-    }
-    if (!hasVerifiedReality(reality)) {
-      await this.markVerificationFailed(task, result, resultHash);
-      throw new BadRequestException('Device task result produced no verified reality');
-    }
-    const now = new Date();
-    const [updated] = await this.db.update(deviceTasks).set({ status: 'SUCCEEDED', resultJson: result, resultHash, errorCode: null, completedAt: now, updatedAt: now })
-      .where(and(
-        eq(deviceTasks.id, taskId), eq(deviceTasks.userId, userId), eq(deviceTasks.trustedDeviceId, trustedDeviceId), eq(deviceTasks.deviceId, deviceId),
-        eq(deviceTasks.claimToken, claimToken), inArray(deviceTasks.status, ['CLAIMED', 'RUNNING']), gte(deviceTasks.leaseExpiresAt, now),
-      ));
-    if (updated.affectedRows !== 1) throw new ConflictException('Device task claim is no longer active');
-    await this.audit.append({
-      actorType: 'user', actorUserId: userId, action: 'DEVICE_TASK_SUCCEEDED', resourceType: 'device_task', resourceId: taskId,
-      userId, correlationId: taskId, changeSummary: 'Edge device task completed with verified evidence', source: 'api', result: 'success',
+      if (!hasVerifiedReality(reality)) {
+        await this.markVerificationFailed(tx, task, result, resultHash, deviceTaskVerificationError(reality));
+        return { failure: new BadRequestException('Device task result produced no verified reality') } as const;
+      }
+      // Re-validate ownership on the still-locked row right before the terminal CAS.
+      await this.assertOwnershipCurrent(tx, task, claimToken);
+      const now = new Date();
+      const [updated] = await tx.update(deviceTasks).set({ status: 'SUCCEEDED', resultJson: result, resultHash, errorCode: null, completedAt: now, updatedAt: now })
+        .where(and(
+          eq(deviceTasks.id, taskId), eq(deviceTasks.userId, userId), eq(deviceTasks.trustedDeviceId, trustedDeviceId), eq(deviceTasks.deviceId, deviceId),
+          eq(deviceTasks.claimToken, claimToken), inArray(deviceTasks.status, ['CLAIMED', 'RUNNING']), gte(deviceTasks.leaseExpiresAt, now),
+        ));
+      if (updated.affectedRows !== 1) throw new ConflictException('Device task claim is no longer active');
+      await this.audit.append({
+        actorType: 'user', actorUserId: userId, action: 'DEVICE_TASK_SUCCEEDED', resourceType: 'device_task', resourceId: taskId,
+        userId, correlationId: taskId, changeSummary: 'Edge device task completed with verified evidence', source: 'api', result: 'success',
+      }, tx);
+      const updatedRow = (await tx.select().from(deviceTasks).where(eq(deviceTasks.id, taskId)).limit(1))[0]!;
+      return { success: { ...this.toResponse(updatedRow, { revealClaimToken: true }), reality } } as const;
     });
-    const updatedRow = await this.getRowForDevice(userId, trustedDeviceId, deviceId, taskId);
-    return { ...this.toResponse(updatedRow, { revealClaimToken: true }), reality };
+    if ('failure' in outcome) throw outcome.failure;
+    return outcome.success;
   }
 
   async fail(userId: string, trustedDeviceId: string, deviceId: string, taskId: string, claimToken: string, errorCode: string) {
@@ -207,10 +225,10 @@ export class DeviceTasksService {
     return this.toResponse(await this.getRowForDevice(userId, trustedDeviceId, deviceId, taskId), { revealClaimToken: true });
   }
 
-  private async markVerificationFailed(task: typeof deviceTasks.$inferSelect, result: Record<string, unknown>, resultHash: string, errorCode = 'RESULT_VERIFICATION_FAILED') {
+  private async markVerificationFailed(tx: RealityExecutor, task: typeof deviceTasks.$inferSelect, result: Record<string, unknown>, resultHash: string, errorCode = 'RESULT_VERIFICATION_FAILED') {
     if (!task.claimToken) return;
     const now = new Date();
-    const [updated] = await this.db.update(deviceTasks).set({ status: 'FAILED', resultJson: result, resultHash, errorCode, completedAt: now, updatedAt: now })
+    const [updated] = await tx.update(deviceTasks).set({ status: 'FAILED', resultJson: result, resultHash, errorCode, completedAt: now, updatedAt: now })
       .where(and(
         eq(deviceTasks.id, task.id), eq(deviceTasks.userId, task.userId), eq(deviceTasks.trustedDeviceId, task.trustedDeviceId), eq(deviceTasks.deviceId, task.deviceId),
         eq(deviceTasks.claimToken, task.claimToken), inArray(deviceTasks.status, ['CLAIMED', 'RUNNING']), gte(deviceTasks.leaseExpiresAt, now),
@@ -219,10 +237,10 @@ export class DeviceTasksService {
     await this.audit.append({
       actorType: 'system', actorUserId: null, action: 'DEVICE_TASK_FAILED', resourceType: 'device_task', resourceId: task.id,
       userId: task.userId, correlationId: task.id, reasonCode: errorCode, changeSummary: 'Device task result failed reality pipeline verification', source: 'api', result: 'failure',
-    });
+    }, tx);
   }
 
-  private async recordEvidence(userId: string, task: typeof deviceTasks.$inferSelect, spec: DeviceTaskRealitySpec, result: Record<string, unknown>, resultHash: string) {
+  private async recordEvidence(userId: string, task: typeof deviceTasks.$inferSelect, spec: DeviceTaskRealitySpec, result: Record<string, unknown>, resultHash: string, tx: RealityExecutor, claimToken: string) {
     const input: SourceObservationInput = {
       sourceMode: spec.sourceMode,
       providerKey: 'edge-device',
@@ -234,11 +252,20 @@ export class DeviceTasksService {
       evidenceHash: resultHash,
       observedAt: new Date().toISOString(),
     };
-    const observed = await this.pipeline.ingest(userId, input);
+    const observed = await this.pipeline.ingest(userId, input, 0, tx);
     const candidate = observed.candidates[0];
     if (!candidate) return { observationId: observed.observationId, candidateId: null, truth: null };
-    const truth = await this.pipeline.confirmCandidate(userId, candidate.id, { verifiedBy: 'device_evidence', verificationMethod: 'DEVICE_READ_BACK' });
+    // Ownership must still be valid immediately before VERIFIED Truth lands.
+    await this.assertOwnershipCurrent(tx, task, claimToken);
+    const truth = await this.pipeline.confirmCandidate(userId, candidate.id, { verifiedBy: 'device_evidence', verificationMethod: 'DEVICE_READ_BACK' }, 0, tx);
     return { observationId: observed.observationId, candidateId: candidate.id, truth };
+  }
+
+  private async assertOwnershipCurrent(tx: RealityExecutor, task: typeof deviceTasks.$inferSelect, claimToken: string) {
+    const current = (await tx.select().from(deviceTasks).where(eq(deviceTasks.id, task.id)).limit(1).for('update'))[0];
+    if (!current || !current.claimToken || current.claimToken !== claimToken) throw new StaleClaimError();
+    if (!current.leaseExpiresAt || current.leaseExpiresAt.getTime() <= Date.now()) throw new StaleClaimError();
+    if (current.status !== 'CLAIMED' && current.status !== 'RUNNING') throw new StaleClaimError();
   }
 
   private assertClaim(task: typeof deviceTasks.$inferSelect, claimToken: string) {
@@ -283,6 +310,17 @@ function sha256(value: string) { return createHash('sha256').update(value).diges
 
 function hasVerifiedReality(reality: DeviceTaskReality | null): boolean {
   if (!reality) return false;
+  // recordEvidence path confirms a single candidate into Truth; a non-null
+  // candidateId is only returned once `confirmCandidate` has materialized Truth.
   if ('candidateId' in reality) return reality.candidateId !== null;
-  return reality.candidateIds.length > 0 || reality.truthRecordIds.length > 0;
+  // Structured Read path: SUCCEEDED is only valid when verified Truth landed.
+  // candidateIds alone means NEEDS_CONFIRMATION, never verified.
+  return reality.truthRecordIds.length > 0;
+}
+
+function deviceTaskVerificationError(reality: DeviceTaskReality | null): string {
+  if (reality && 'candidateIds' in reality && reality.candidateIds.length > 0 && reality.truthRecordIds.length === 0) {
+    return 'NEEDS_CONFIRMATION';
+  }
+  return 'RESULT_VERIFICATION_FAILED';
 }

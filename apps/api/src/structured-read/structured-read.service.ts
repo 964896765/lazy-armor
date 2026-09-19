@@ -2,8 +2,8 @@ import { BadRequestException, ForbiddenException, Inject, Injectable, forwardRef
 import { createHash } from 'node:crypto';
 import { appReadSessions, deviceTasks, trustedDevices, truthRecordVersions, truthRecords } from '@lazy-armor/database';
 import {
-  canonicalRecords, canonicalTable, redactSensitiveFields, realityValueHash, SECURITY_BLOCKED_FIELD,
-  validateStructuredField,
+  canonicalRecords, canonicalTable, readEvidenceStatusForOutcome, redactSensitiveFields, realityValueHash,
+  resolveStructuredReadOutcome, SECURITY_BLOCKED_FIELD, validateStructuredField,
   type AppReadProfile, type FieldExpectation, type JsonValue,
   type StructuredReadBlock, type StructuredReadEnvelope, type StructuredReadField,
   type StructuredReadRequest, type StructuredReadResult,
@@ -12,8 +12,8 @@ import { and, eq } from 'drizzle-orm';
 import { AuditService } from '../audit/audit.service';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
 import { ConnectionsService } from '../connections/connections.service';
-import { DeviceTasksService } from '../device-tasks/device-tasks.service';
-import { RealityPipelineService } from '../reality-pipeline/reality-pipeline.service';
+import { DeviceTasksService, StaleClaimError } from '../device-tasks/device-tasks.service';
+import { RealityPipelineService, type RealityExecutor } from '../reality-pipeline/reality-pipeline.service';
 import { resolveAppReadProfile } from './app-read-profiles';
 import { LocalFileStructuredReadService, missingField, normalizeField, parseKeyValueLines } from './file-structured-reader';
 import { ReadEvidenceService } from './read-evidence.service';
@@ -93,7 +93,7 @@ export class StructuredReadService {
   }
 
   /** Called by DeviceTasksService.complete for APP_STRUCTURED_READ / SCREEN_CAPTURE_FOR_READ results. */
-  async ingestDeviceResult(userId: string, task: typeof deviceTasks.$inferSelect, result: Record<string, unknown>): Promise<{ observationId: string; candidateIds: string[]; truthRecordIds: string[] }> {
+  async ingestDeviceResult(userId: string, task: typeof deviceTasks.$inferSelect, result: Record<string, unknown>, executor?: RealityExecutor, claimToken?: string): Promise<{ observationId: string; candidateIds: string[]; truthRecordIds: string[] }> {
     const payload = task.payloadJson as Record<string, unknown>;
     const profile = this.requireProfile(typeof payload.packageName === 'string' ? payload.packageName : null);
     const observedPackage = typeof result.packageName === 'string' ? result.packageName : null;
@@ -112,8 +112,13 @@ export class StructuredReadService {
       requestedFields: Array.isArray(payload.requestedFields) ? payload.requestedFields as string[] : [],
       fieldExpectations: (payload.fieldExpectations as Record<string, FieldExpectation> | undefined) ?? {},
     };
+    const beforeConfirm = executor && claimToken ? async () => {
+      const current = (await executor.select().from(deviceTasks).where(eq(deviceTasks.id, task.id)).limit(1).for('update'))[0];
+      if (!current || current.claimToken !== claimToken || !current.leaseExpiresAt || current.leaseExpiresAt.getTime() <= Date.now()
+        || (current.status !== 'CLAIMED' && current.status !== 'RUNNING')) throw new StaleClaimError();
+    } : undefined;
     const envelope = this.envelopeFromUiNodes(request, profile, nodes, result);
-    const finalized = await this.finalize(userId, request, envelope, { android: AWAITING_ANDROID_STRUCTURED_READ_EVIDENCE });
+    const finalized = await this.finalize(userId, request, envelope, { android: AWAITING_ANDROID_STRUCTURED_READ_EVIDENCE }, executor, beforeConfirm);
     return { observationId: finalized.observationId ?? '', candidateIds: finalized.candidateIds, truthRecordIds: finalized.truthRecordIds };
   }
 
@@ -166,17 +171,17 @@ export class StructuredReadService {
   }
 
   /** Shared tail: validate/redact, persist evidence, ingest -> Candidate -> Truth. */
-  private async finalize(userId: string, request: StructuredReadRequest, envelope: StructuredReadEnvelope, acceptance: Record<string, string>): Promise<StructuredReadResult> {
+  private async finalize(userId: string, request: StructuredReadRequest, envelope: StructuredReadEnvelope, acceptance: Record<string, string>, executor?: RealityExecutor, beforeConfirm?: () => Promise<void>): Promise<StructuredReadResult> {
     const fields = redactSensitiveFields(envelope.fields.map((field) => validateStructuredField(field)));
     const evidenceRecord = await this.evidence.create(userId, {
       requestId: envelope.requestId, sourceType: envelope.sourceType, resourceType: envelope.resourceType, resourceId: envelope.resourceId,
       readMethod: envelope.readMethod, parserId: envelope.parserId, contentHash: envelope.contentHash, evidenceHash: envelope.evidenceHash,
       sourceIdentity: envelope.sourceIdentity, resourceIdentity: envelope.resourceIdentity, observedAt: envelope.observedAt,
       confidence: envelope.confidence, warnings: envelope.warnings, status: 'CAPTURED',
-    }, envelope.readMethod);
+    }, envelope.readMethod, executor);
     const blockedFields = fields.filter((field) => field.redacted || field.validation.errors.includes(SECURITY_BLOCKED_FIELD));
     if (blockedFields.length) {
-      await this.evidence.advance(userId, evidenceRecord.id, 'BLOCKED', { blockedReason: SECURITY_BLOCKED_FIELD });
+      await this.evidence.advance(userId, evidenceRecord.id, 'BLOCKED', { blockedReason: SECURITY_BLOCKED_FIELD }, executor);
       return {
         requestId: request.requestId, status: 'BLOCKED', readMethod: envelope.readMethod, fields,
         candidateIds: [], truthRecordIds: [], evidenceId: evidenceRecord.id, acceptance, warnings: envelope.warnings,
@@ -184,14 +189,14 @@ export class StructuredReadService {
     }
     const ingestible = fields.filter((field) => field.validation.status !== 'EXTRACTION_INVALID');
     if (!ingestible.length) {
-      await this.evidence.advance(userId, evidenceRecord.id, 'BLOCKED', { blockedReason: 'EXTRACTION_INVALID' });
+      await this.evidence.advance(userId, evidenceRecord.id, 'BLOCKED', { blockedReason: 'EXTRACTION_INVALID' }, executor);
       return {
         requestId: request.requestId, status: 'BLOCKED', readMethod: envelope.readMethod, fields,
         candidateIds: [], truthRecordIds: [], evidenceId: evidenceRecord.id, acceptance, warnings: envelope.warnings,
       };
     }
-    await this.evidence.advance(userId, evidenceRecord.id, envelope.readMethod === 'VISION_FALLBACK' ? 'VISION_FALLBACK' : 'STRUCTURED_READ');
-    await this.evidence.advance(userId, evidenceRecord.id, 'NORMALIZED');
+    await this.evidence.advance(userId, evidenceRecord.id, envelope.readMethod === 'VISION_FALLBACK' ? 'VISION_FALLBACK' : 'STRUCTURED_READ', {}, executor);
+    await this.evidence.advance(userId, evidenceRecord.id, 'NORMALIZED', {}, executor);
 
     const payload: Record<string, JsonValue> = {
       resourceType: request.resourceType, resourceId: request.resourceId,
@@ -206,42 +211,43 @@ export class StructuredReadService {
       externalEventKey: `structured-read:${request.requestId}`,
       parserKey: 'generic.structured-read.v1', resourceHint: request.resourceType,
       payload, evidenceHash: envelope.evidenceHash, observedAt: envelope.observedAt,
-    });
+    }, 0, executor);
     const candidateIds = observed.candidates.map((candidate) => candidate.id);
-    await this.evidence.advance(userId, evidenceRecord.id, 'CANDIDATE_CREATED', { observationId: observed.observationId, candidateIds });
+    await this.evidence.advance(userId, evidenceRecord.id, 'CANDIDATE_CREATED', { observationId: observed.observationId, candidateIds }, executor);
 
     const truthRecordIds: string[] = [];
     const validCandidates = observed.candidates.filter((candidate) => candidate.value && typeof candidate.value === 'object' && (candidate.value as Record<string, unknown>).confidence !== undefined && Number((candidate.value as Record<string, unknown>).confidence) >= 0.8);
     for (const candidate of validCandidates) {
-      if (await this.isStaleVersion(userId, candidate.subjectKey, envelope.resourceVersion)) {
-        await this.pipeline.rejectCandidate(userId, candidate.id).catch(() => undefined);
+      if (await this.isStaleVersion(userId, candidate.subjectKey, envelope.resourceVersion, executor)) {
+        await this.pipeline.rejectCandidate(userId, candidate.id, executor).catch(() => undefined);
         continue;
       }
-      const truth = await this.pipeline.confirmCandidate(userId, candidate.id, { verifiedBy: 'structured_read_validation', verificationMethod: 'DETERMINISTIC_VALIDATION' });
+      await beforeConfirm?.();
+      const truth = await this.pipeline.confirmCandidate(userId, candidate.id, { verifiedBy: 'structured_read_validation', verificationMethod: 'DETERMINISTIC_VALIDATION' }, 0, executor);
       truthRecordIds.push(truth.id);
     }
-    const needsConfirmation = observed.candidates.some((candidate) => candidate.value && typeof candidate.value === 'object' && Number((candidate.value as Record<string, unknown>).confidence) < 0.8);
-    const finalStatus = needsConfirmation && !truthRecordIds.length ? 'NEEDS_CONFIRMATION' : truthRecordIds.length ? 'VERIFIED' : 'NEEDS_CONFIRMATION';
-    await this.evidence.advance(userId, evidenceRecord.id, finalStatus === 'VERIFIED' ? 'TRUTH_VERIFIED' : 'NEEDS_CONFIRMATION', { truthRecordIds });
+    const finalStatus = resolveStructuredReadOutcome({ candidateIds, truthRecordIds });
+    await this.evidence.advance(userId, evidenceRecord.id, readEvidenceStatusForOutcome(finalStatus), { truthRecordIds }, executor);
     await this.audit.append({
       actorType: 'user', actorUserId: userId, action: 'STRUCTURED_READ_COMPLETED', resourceType: 'read_evidence', resourceId: evidenceRecord.id,
       userId, correlationId: request.requestId, changeSummary: `Structured read ${request.resourceType}/${request.resourceId} via ${envelope.readMethod} -> ${finalStatus}`,
-      source: 'api', result: finalStatus === 'VERIFIED' ? 'success' : 'blocked',
-    });
+      source: 'api', result: finalStatus === 'VERIFIED' ? 'success' : finalStatus === 'NEEDS_CONFIRMATION' ? 'pending' : 'blocked',
+    }, executor);
     return {
       requestId: request.requestId, status: finalStatus, readMethod: envelope.readMethod, fields,
       observationId: observed.observationId, candidateIds, truthRecordIds, evidenceId: evidenceRecord.id, acceptance, warnings: envelope.warnings,
     };
   }
 
-  private async isStaleVersion(userId: string, subjectKey: string, resourceVersion?: string | null): Promise<boolean> {
+  private async isStaleVersion(userId: string, subjectKey: string, resourceVersion?: string | null, executor?: RealityExecutor): Promise<boolean> {
+    const db = executor ?? this.db;
     if (!resourceVersion) return false;
     const incoming = Date.parse(resourceVersion);
     if (!Number.isFinite(incoming)) return false;
-    const existing = (await this.db.select({ currentVersionId: truthRecords.currentVersionId }).from(truthRecords)
+    const existing = (await db.select({ currentVersionId: truthRecords.currentVersionId }).from(truthRecords)
       .where(and(eq(truthRecords.userId, userId), eq(truthRecords.subjectKey, subjectKey), eq(truthRecords.status, 'verified'))).limit(1))[0];
     if (!existing?.currentVersionId) return false;
-    const version = (await this.db.select({ valueJson: truthRecordVersions.valueJson }).from(truthRecordVersions).where(eq(truthRecordVersions.id, existing.currentVersionId)).limit(1))[0];
+    const version = (await db.select({ valueJson: truthRecordVersions.valueJson }).from(truthRecordVersions).where(eq(truthRecordVersions.id, existing.currentVersionId)).limit(1))[0];
     const value = version?.valueJson as Record<string, unknown> | undefined;
     const current = value?.value && typeof value.value === 'object' ? (value.value as Record<string, unknown>).resourceVersion : undefined;
     if (typeof current !== 'string') return false;
