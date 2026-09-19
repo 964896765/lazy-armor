@@ -28,7 +28,19 @@ const envSchema = z.object({
   NOTION_OAUTH_CLIENT_ID: z.string().trim().optional(),
   NOTION_OAUTH_CLIENT_SECRET: z.string().trim().optional(),
   NOTION_OAUTH_REDIRECT_URI: z.string().trim().optional(),
+  FEISHU_APP_ID: z.string().trim().optional(),
+  FEISHU_APP_SECRET: z.string().trim().optional(),
+  FEISHU_OAUTH_REDIRECT_URI: z.string().trim().optional(),
+  DINGTALK_APP_KEY: z.string().trim().optional(),
+  DINGTALK_APP_SECRET: z.string().trim().optional(),
+  DINGTALK_OAUTH_REDIRECT_URI: z.string().trim().optional(),
+  WECOM_CORP_ID: z.string().trim().optional(),
+  WECOM_AGENT_ID: z.string().trim().optional(),
+  WECOM_APP_SECRET: z.string().trim().optional(),
+  WECOM_OAUTH_REDIRECT_URI: z.string().trim().optional(),
+  WECOM_CALLBACK_TOKEN: z.string().trim().optional(),
   GITHUB_WEBHOOK_SECRET: z.string().trim().optional().refine((v) => !v || (v.length >= 32 && !/replace-with|inject-|placeholder/i.test(v)), 'GITHUB_WEBHOOK_SECRET must contain a non-placeholder secret of at least 32 characters'),
+  FEISHU_EVENT_ENCRYPT_KEY: z.string().trim().optional().refine((v) => !v || (v.length >= 16 && !/replace-with|inject-|placeholder/i.test(v)), 'FEISHU_EVENT_ENCRYPT_KEY must contain a non-placeholder secret of at least 16 characters'),
   TRUSTED_PROXY_CIDRS: z.string().optional().refine((value) => !value || value.split(',').every((entry) => {
     const [ip, mask, extra] = entry.trim().split('/'); const family = isIP(ip);
     return !extra && family > 0 && (mask === undefined || (/^\d+$/.test(mask) && Number(mask) > 0 && Number(mask) <= (family === 4 ? 32 : 128)));
@@ -64,6 +76,9 @@ export const parseEnv = (input: NodeJS.ProcessEnv): AppEnv => {
   resolveGoogleCalendarOAuthConfig(parsed);
   resolveGitHubOAuthConfig(parsed);
   resolveNotionOAuthConfig(parsed);
+  resolveFeishuAppConfig(parsed);
+  resolveDingTalkAppConfig(parsed);
+  resolveWeComAppConfig(parsed);
   return {
     ...parsed,
     APP_ENV: parsed.APP_ENV ?? (parsed.NODE_ENV === 'production' ? 'production' : 'development'),
@@ -77,6 +92,12 @@ export const GITHUB_CALLBACK_PATH = '/api/providers/github/oauth/callback';
 export interface GitHubOAuthConfig { clientId: string; clientSecret: string; redirectUri: string }
 export const NOTION_CALLBACK_PATH = '/api/providers/notion/oauth/callback';
 export interface NotionOAuthConfig { clientId: string; clientSecret: string; redirectUri: string }
+export const FEISHU_CALLBACK_PATH = '/api/providers/feishu/oauth/callback';
+export interface FeishuAppConfig { appId: string; appSecret: string; redirectUri: string }
+export const DINGTALK_CALLBACK_PATH = '/api/providers/dingtalk/oauth/callback';
+export interface DingTalkAppConfig { appKey: string; appSecret: string; redirectUri: string }
+export const WECOM_CALLBACK_PATH = '/api/providers/wecom/oauth/callback';
+export interface WeComAppConfig { corpId: string; agentId: string; appSecret: string; redirectUri: string; callbackToken: string }
 
 export function resolveNotionOAuthConfig(input: Pick<AppEnv, 'NOTION_OAUTH_CLIENT_ID' | 'NOTION_OAUTH_CLIENT_SECRET' | 'NOTION_OAUTH_REDIRECT_URI'>): NotionOAuthConfig | null {
   const values = [input.NOTION_OAUTH_CLIENT_ID?.trim(), input.NOTION_OAUTH_CLIENT_SECRET?.trim(), input.NOTION_OAUTH_REDIRECT_URI?.trim()];
@@ -89,6 +110,46 @@ export function resolveNotionOAuthConfig(input: Pick<AppEnv, 'NOTION_OAUTH_CLIEN
   if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash || url.pathname !== NOTION_CALLBACK_PATH
     || ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)) throw new Error('NOTION_OAUTH_REDIRECT_URI must use HTTPS and the registered backend callback path');
   return { clientId, clientSecret, redirectUri };
+}
+
+export function resolveFeishuAppConfig(input: Pick<AppEnv, 'FEISHU_APP_ID' | 'FEISHU_APP_SECRET' | 'FEISHU_OAUTH_REDIRECT_URI'>): FeishuAppConfig | null {
+  const values = [input.FEISHU_APP_ID?.trim(), input.FEISHU_APP_SECRET?.trim(), input.FEISHU_OAUTH_REDIRECT_URI?.trim()];
+  if (values.every((value) => !value)) return null;
+  if (values.some((value) => !value || /replace-with|inject-|placeholder/i.test(value))) throw new Error('FEISHU_APP_ID / FEISHU_APP_SECRET / FEISHU_OAUTH_REDIRECT_URI must be completely configured');
+  const [appId, appSecret, redirectUri] = values as [string, string, string];
+  if (!/^cli_[a-zA-Z0-9]{8,64}$/.test(appId) || appSecret.length < 8 || /[\x00-\x20\x7f]/.test(appSecret)) throw new Error('Invalid FEISHU_APP_ID / FEISHU_APP_SECRET');
+  let url: URL;
+  try { url = new URL(redirectUri); } catch { throw new Error('Invalid FEISHU_OAUTH_REDIRECT_URI'); }
+  if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash || url.pathname !== FEISHU_CALLBACK_PATH
+    || ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)) throw new Error('FEISHU_OAUTH_REDIRECT_URI must use HTTPS and the registered backend callback path');
+  return { appId, appSecret, redirectUri };
+}
+
+export function resolveDingTalkAppConfig(input: Pick<AppEnv, 'DINGTALK_APP_KEY' | 'DINGTALK_APP_SECRET' | 'DINGTALK_OAUTH_REDIRECT_URI'>): DingTalkAppConfig | null {
+  const values = [input.DINGTALK_APP_KEY?.trim(), input.DINGTALK_APP_SECRET?.trim(), input.DINGTALK_OAUTH_REDIRECT_URI?.trim()];
+  if (values.every((value) => !value)) return null;
+  if (values.some((value) => !value || /replace-with|inject-|placeholder/i.test(value))) throw new Error('DINGTALK_APP_KEY / DINGTALK_APP_SECRET / DINGTALK_OAUTH_REDIRECT_URI must be completely configured');
+  const [appKey, appSecret, redirectUri] = values as [string, string, string];
+  if (!/^[a-zA-Z0-9_-]{1,64}$/.test(appKey) || appSecret.length < 8 || /[\x00-\x20\x7f]/.test(appSecret)) throw new Error('Invalid DINGTALK_APP_KEY / DINGTALK_APP_SECRET');
+  let url: URL;
+  try { url = new URL(redirectUri); } catch { throw new Error('Invalid DINGTALK_OAUTH_REDIRECT_URI'); }
+  if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash || url.pathname !== DINGTALK_CALLBACK_PATH
+    || ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)) throw new Error('DINGTALK_OAUTH_REDIRECT_URI must use HTTPS and the registered backend callback path');
+  return { appKey, appSecret, redirectUri };
+}
+
+export function resolveWeComAppConfig(input: Pick<AppEnv, 'WECOM_CORP_ID' | 'WECOM_AGENT_ID' | 'WECOM_APP_SECRET' | 'WECOM_OAUTH_REDIRECT_URI' | 'WECOM_CALLBACK_TOKEN'>): WeComAppConfig | null {
+  const values = [input.WECOM_CORP_ID?.trim(), input.WECOM_AGENT_ID?.trim(), input.WECOM_APP_SECRET?.trim(), input.WECOM_OAUTH_REDIRECT_URI?.trim(), input.WECOM_CALLBACK_TOKEN?.trim()];
+  if (values.every((value) => !value)) return null;
+  if (values.some((value) => !value || /replace-with|inject-|placeholder/i.test(value))) throw new Error('WECOM_CORP_ID / WECOM_AGENT_ID / WECOM_APP_SECRET / WECOM_OAUTH_REDIRECT_URI / WECOM_CALLBACK_TOKEN must be completely configured');
+  const [corpId, agentId, appSecret, redirectUri, callbackToken] = values as [string, string, string, string, string];
+  if (!/^[a-zA-Z0-9]{1,64}$/.test(corpId) || !/^\d{1,20}$/.test(agentId) || appSecret.length < 8 || callbackToken.length < 8
+    || /[\x00-\x20\x7f]/.test(appSecret) || /[\x00-\x20\x7f]/.test(callbackToken)) throw new Error('Invalid WECOM_CORP_ID / WECOM_AGENT_ID / WECOM_APP_SECRET / WECOM_CALLBACK_TOKEN');
+  let url: URL;
+  try { url = new URL(redirectUri); } catch { throw new Error('Invalid WECOM_OAUTH_REDIRECT_URI'); }
+  if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash || url.pathname !== WECOM_CALLBACK_PATH
+    || ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)) throw new Error('WECOM_OAUTH_REDIRECT_URI must use HTTPS and the registered backend callback path');
+  return { corpId, agentId, appSecret, redirectUri, callbackToken };
 }
 
 export function resolveGitHubOAuthConfig(input: Pick<AppEnv, 'GITHUB_OAUTH_CLIENT_ID' | 'GITHUB_OAUTH_CLIENT_SECRET' | 'GITHUB_OAUTH_REDIRECT_URI'>): GitHubOAuthConfig | null {

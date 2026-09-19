@@ -1,7 +1,7 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { actionIntents, actionAdapterBindings, executionSteps, executions, planActions, plans, strategyRuntimeWakeups } from '@lazy-armor/database';
+import { actionIntents, actionAdapterBindings, executionSteps, executions, planActions, plans, strategyRuntimeBindings, strategyRuntimeWakeups } from '@lazy-armor/database';
 import { ACTION_ADAPTER_REVISION, TERMINAL_FOLLOW_UP_RULES, buildActionIntent, catalogHash, definitionHash,
-  requiresTerminalHandoffProof, riskMaximum, type ContextRiskSignal, type RiskLevel } from '@lazy-armor/plan-schema';
+  requiresTerminalHandoffProof, riskMaximum, terminalFollowUpRule, type ContextRiskSignal, type RiskLevel } from '@lazy-armor/plan-schema';
 import { newId } from '@lazy-armor/shared';
 import { and, asc, eq } from 'drizzle-orm';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
@@ -17,6 +17,7 @@ import { SafetyPolicyService } from '../risk/safety-policy.service';
 import { RISK_SCORE } from '../risk/risk.types';
 import { CapabilityResolverService } from '../capability-resolver/capability-resolver.service';
 import { TerminalHandoffGuard, type TerminalHandoffProof } from '../strategy-runtime/terminal-handoff-guard.service';
+import { TruthHandoffGuard, type HandoffTransaction, type TruthHandoffProof } from '../strategy-runtime/truth-handoff-guard.service';
 
 export function requiresServerOwnedTerminalHandoff(actions: readonly { config: Record<string, unknown> }[]): boolean {
   return actions.some((action) => requiresTerminalHandoffProof(action.config)
@@ -38,6 +39,7 @@ export class ExecutionDispatchService {
     private readonly audit: AuditService,
     private readonly resolver: CapabilityResolverService,
     private readonly terminalGuard: TerminalHandoffGuard,
+    private readonly truthGuard: TruthHandoffGuard,
   ) {}
 
   async dispatchManual(userId: string, planId: string, requestId: string, triggerPayload: Record<string, unknown>, resolutionDecisionIds?: string[]) {
@@ -62,6 +64,7 @@ export class ExecutionDispatchService {
     const now = new Date();
     let triggerSnapshot = this.sanitizer.sanitize(triggerPayload);
     let terminalHandoffProof: TerminalHandoffProof | undefined;
+    let truthHandoffProof: TruthHandoffProof | undefined;
     let pinnedVersionId = '';
     try {
       await this.db.transaction(async (tx) => {
@@ -71,10 +74,14 @@ export class ExecutionDispatchService {
         if (plan.status !== 'active') throw new ConflictException('Only active plans can create Executions');
         if (!plan.activeVersionId) throw new ConflictException('Plan has no active version');
         pinnedVersionId = plan.activeVersionId;
-        const handoff = wakeupId ? await this.terminalGuard.lock(userId, planId, wakeupId, tx) : undefined;
+        const handoff = wakeupId ? await this.resolveHandoff(userId, planId, wakeupId, tx) : undefined;
         if (handoff) {
-          terminalHandoffProof = handoff.proof;
-          triggerSnapshot = this.sanitizer.sanitize(handoff.triggerPayload);
+          if ('triggerPayload' in handoff) {
+            terminalHandoffProof = handoff.proof as TerminalHandoffProof;
+            triggerSnapshot = this.sanitizer.sanitize((handoff as { triggerPayload: Record<string, unknown> }).triggerPayload);
+          } else {
+            truthHandoffProof = handoff.proof as TruthHandoffProof;
+          }
         }
         if (resolutions.some((resolution) => resolution.row.planVersionId !== pinnedVersionId || resolution.requirement.operation !== 'execute')) throw new ConflictException('Resolution must authorize an execute capability on the active PlanVersion');
         const assembled = await this.assembler.assembleById(userId, planId, pinnedVersionId, tx);
@@ -101,7 +108,7 @@ export class ExecutionDispatchService {
           declaredRiskLevel: risk, approvalStatus: 'not_requested', executionPolicyVersion: this.policy.current.version,
           resolvedRetryPolicyJson: this.policy.retry as unknown as Record<string, unknown>, resolvedFallbackPolicyJson: this.policy.fallback as unknown as Record<string, unknown>,
           riskPolicyVersion: riskSnapshots[0]?.policyVersion ?? 'p0-6-risk-v1',
-          resolvedRiskSnapshotJson: this.sanitizer.sanitize({ steps: riskSnapshots, actionIntentSchemaVersion: '1', ...(resolvedDispatchInputHash ? { resolvedDispatchInputHash } : {}), ...(terminalHandoffProof ? { terminalHandoffProof } : {}) }) as Record<string, unknown>,
+          resolvedRiskSnapshotJson: this.sanitizer.sanitize({ steps: riskSnapshots, actionIntentSchemaVersion: '1', ...(resolvedDispatchInputHash ? { resolvedDispatchInputHash } : {}), ...(terminalHandoffProof ? { terminalHandoffProof } : {}), ...(truthHandoffProof ? { truthHandoffProof } : {}) }) as Record<string, unknown>,
           resolvedApprovalPolicyJson: approvalPolicy as unknown as Record<string, unknown>,
           resultCode: null, resultSummary: null, errorCode: null, errorMessage: null, cancellationRequestedAt: null,
           queuedAt: null, startedAt: null, finishedAt: null, workerToken: null, heartbeatAt: null, leaseExpiresAt: null, createdAt: now, updatedAt: now,
@@ -164,6 +171,16 @@ export class ExecutionDispatchService {
       await this.events.append(id, 'queue_enqueue_failed', { message: this.sanitizer.sanitizeText(error) });
     }
     return this.getRow(userId, id);
+  }
+
+  private async resolveHandoff(userId: string, planId: string, wakeupId: string, tx: HandoffTransaction) {
+    const row = (await tx.select({ binding: strategyRuntimeBindings }).from(strategyRuntimeWakeups)
+      .innerJoin(strategyRuntimeBindings, eq(strategyRuntimeBindings.id, strategyRuntimeWakeups.bindingId))
+      .where(and(eq(strategyRuntimeWakeups.id, wakeupId), eq(strategyRuntimeWakeups.userId, userId))).limit(1))[0];
+    const isTerminal = row ? Boolean(terminalFollowUpRule(row.binding.scenarioKey, row.binding.scenarioRevision)) : false;
+    return isTerminal
+      ? this.terminalGuard.lock(userId, planId, wakeupId, tx)
+      : this.truthGuard.lockTruth(userId, planId, wakeupId, tx);
   }
 
   async enqueue(executionId: string) {

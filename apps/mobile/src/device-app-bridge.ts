@@ -138,8 +138,8 @@ export async function signTrustedDeviceRequest(payload: string): Promise<string 
   }
 }
 
-export async function createTrustedDeviceRequestEnvelope(sessionId: string, method: 'POST', requestPath: string, payloadJson: string): Promise<TrustedDeviceRequestEnvelope | null> {
-  if (!sessionId || requestPath.length === 0 || requestPath.length > 255 || payloadJson.length > 65_536) return null;
+export async function createTrustedDeviceRequestEnvelope(sessionId: string, method: 'GET' | 'POST', requestPath: string, payloadJson: string): Promise<TrustedDeviceRequestEnvelope | null> {
+  if (!sessionId || requestPath.length === 0 || requestPath.length > 255 || payloadJson.length > 65_536 || (method === 'GET' && payloadJson !== '{}')) return null;
   const native = bridge();
   if (!native || typeof native.createTrustedDeviceRequestEnvelope !== 'function') return null;
   try {

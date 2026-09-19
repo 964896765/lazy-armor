@@ -1,7 +1,7 @@
 import { BadRequestException, Inject, Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
 import {
   FACT_SCHEMA_CATALOG, RESOURCE_CATALOG, SCENARIO_DEFINITIONS, STRATEGY_PROFILES, catalogHash,
-  compileScenarioPlan, evaluateScenarioReadiness, scenarioByKey, PRODUCT_DOMAINS,
+  compileScenarioPlan, evaluateScenarioReadiness, scenarioByKey, scenarioByRevision, PRODUCT_DOMAINS,
   type StrategyKey, type TerminalHandoffTarget,
   TERMINAL_FOLLOW_UP_RULES, terminalFollowUpScenario,
 } from '@lazy-armor/plan-schema';
@@ -12,12 +12,14 @@ import { newId } from '@lazy-armor/shared';
 import { and, eq } from 'drizzle-orm';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
 import { CapabilityUsabilityService } from '../provider-capabilities/capability-usability.service';
+import { ReadinessEvidenceService } from './readiness-evidence.service';
 
 @Injectable()
 export class RuntimeCatalogRegistryService implements OnModuleInit {
   constructor(
     @Inject(DATABASE) private readonly db: InjectedDatabase,
     private readonly capabilityUsability: CapabilityUsabilityService,
+    private readonly evidence: ReadinessEvidenceService,
   ) {}
 
   async onModuleInit() { await this.sync(); }
@@ -39,34 +41,24 @@ export class RuntimeCatalogRegistryService implements OnModuleInit {
 
   async readiness(userId: string, key: string) {
     const scenario = this.getScenario(key);
-    const rows = await this.db.select({ id: connections.id }).from(connections).where(eq(connections.userId, userId));
-    const resolved = await Promise.all(rows.map((row) => this.capabilityUsability.resolveConnection(userId, row.id)));
-    const usableCapabilities = resolved.flatMap((connection) => connection.capabilities.filter((item) => item.usable).map((item) => item.key));
-    const requiredCapabilities = [...scenario.sourceRequirements, ...scenario.actionRequirements]
-      .filter((requirement) => !requirement.optional)
-      .map((requirement) => requirement.capabilityKey);
-    const providerBlocked = requiredCapabilities.some((capability) => !usableCapabilities.includes(capability));
-    return evaluateScenarioReadiness(scenario, {
-      usableCapabilities,
-      availableFacts: [],
-      // Until this read model is joined to current TruthVersions and an
-      // explicit manual-input requirement, missing facts are not called ready.
-      manualInputAvailable: scenario.sourceRequirements.some((item) => item.capabilityKey === 'MANUAL_INPUT'),
-      observationPipelineAvailable: false,
-      executionPipelineAvailable: false,
-      providerBlocked,
-    });
+    const projected = await this.evidence.project(userId, scenario, await this.resolveUsableCapabilities(userId));
+    return evaluateScenarioReadiness(scenario, projected.input);
   }
 
   async compile(userId: string, key: string, input: { scenarioRevision?: number; strategy?: StrategyKey; name?: string; subjectKey?: string; target?: TerminalHandoffTarget }) {
-    const readiness = await this.readiness(userId, key);
-    try { return compileScenarioPlan({ scenarioKey: key, scenarioRevision: input.scenarioRevision, strategy: input.strategy, name: input.name, subjectKey: input.subjectKey, target: input.target, mode: 'DRAFT', readiness: {
-      manualInputAvailable: readiness.state === 'MANUAL_READY',
-      observationPipelineAvailable: false,
-      executionPipelineAvailable: false,
-      providerBlocked: readiness.state === 'BLOCKED_PROVIDER',
-      implementationBlocked: readiness.state === 'BLOCKED_IMPLEMENTATION',
-    } }); } catch (error) { throw new BadRequestException(error instanceof Error ? error.message : 'Scenario compilation failed'); }
+    try {
+      const scenario = scenarioByRevision(key, input.scenarioRevision ?? 1);
+      const readiness = scenario
+        ? (await this.evidence.project(userId, scenario, await this.resolveUsableCapabilities(userId))).input
+        : undefined;
+      return compileScenarioPlan({ scenarioKey: key, scenarioRevision: input.scenarioRevision, strategy: input.strategy, name: input.name, subjectKey: input.subjectKey, target: input.target, mode: 'DRAFT', readiness });
+    } catch (error) { throw new BadRequestException(error instanceof Error ? error.message : 'Scenario compilation failed'); }
+  }
+
+  private async resolveUsableCapabilities(userId: string) {
+    const rows = await this.db.select({ id: connections.id }).from(connections).where(eq(connections.userId, userId));
+    const resolved = await Promise.all(rows.map((row) => this.capabilityUsability.resolveConnection(userId, row.id)));
+    return resolved.flatMap((connection) => connection.capabilities.filter((item) => item.usable).map((item) => item.key));
   }
 
   async sync() {

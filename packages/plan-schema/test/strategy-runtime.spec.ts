@@ -7,7 +7,7 @@ import {
 const golden: Array<{ strategy: StrategyKey; scenarioKey: string; value: unknown; previousValue?: unknown }> = [
   { strategy: 'STATE_GUARD', scenarioKey: 'device.status', value: 'OFFLINE', previousValue: 'ONLINE' },
   { strategy: 'EXPIRY_GUARD', scenarioKey: 'vehicle.insurance', value: '2026-09-20T00:00:00.000Z' },
-  { strategy: 'ANOMALY_DETECTION', scenarioKey: 'finance.abnormal_transaction', value: 1200, previousValue: 100 },
+  { strategy: 'ANOMALY_DETECTION', scenarioKey: 'finance.abnormal_transaction', value: { amountMinor: 120000, currency: 'CNY' } },
   { strategy: 'SILENT_FOLLOW_UP', scenarioKey: 'finance.refund', value: 'COMPLETED', previousValue: 'PROCESSING' },
   { strategy: 'PERIODIC_SUMMARY', scenarioKey: 'work.email', value: ['mail-1', 'mail-2'] },
   { strategy: 'PREDICTIVE_PREPARE', scenarioKey: 'vehicle.maintenance', value: 20 },

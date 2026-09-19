@@ -1,6 +1,6 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { deviceAppConnections } from '@lazy-armor/database';
-import { deviceAppCapabilities, deviceAppIntegration, isGenericDeviceAppMode, newId, type DeviceAppConnectionMode } from '@lazy-armor/shared';
+import { deviceAppCapabilities, deviceAppCatalogMetadata, deviceAppIntegration, isGenericDeviceAppMode, newId, type DeviceAppConnectionMode } from '@lazy-armor/shared';
 import { and, desc, eq } from 'drizzle-orm';
 import { AuditService } from '../audit/audit.service';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
@@ -130,6 +130,10 @@ export class DeviceAppsService {
   }
 
   private toResponse(row: typeof deviceAppConnections.$inferSelect) {
+    const catalog = deviceAppCatalogMetadata(row.packageName);
+    const installed = row.launchable === 1;
+    const authorized = row.enabled === 1 && row.modesJson.length > 0;
+    const healthy = Boolean(row.trustLevel);
     return {
       id: row.id,
       deviceId: row.deviceId,
@@ -146,6 +150,22 @@ export class DeviceAppsService {
       trustLevel: row.trustLevel,
       lastSeenAt: row.lastSeenAt?.toISOString() ?? null,
       updatedAt: row.updatedAt.toISOString(),
+      capability: {
+        installed,
+        supported: catalog.supported,
+        authorized,
+        healthy,
+        available: installed && catalog.supported && authorized && healthy,
+        sourceCapabilities: catalog.sourceCapabilities,
+        actionCapabilities: catalog.actionCapabilities,
+        riskClass: catalog.riskClass,
+        verificationMethod: catalog.verificationMethod,
+        notificationReadable: catalog.notificationReadable,
+        shareReadable: catalog.shareReadable,
+        appReadSessionSupported: catalog.appReadSessionSupported,
+        structuredReadSupported: catalog.structuredReadSupported,
+        visionFallbackAllowed: catalog.visionFallbackAllowed,
+      },
     };
   }
 }

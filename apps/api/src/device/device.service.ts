@@ -185,6 +185,20 @@ export class DeviceService {
   }
 
   enrichContext(context: DeviceContext) {
+    const fact = this.normalizeConsumableFact(context.hydratedFactValue);
+    if (fact) {
+      return {
+        ...context,
+        consumableName: fact.consumableType ?? '设备耗材',
+        deviceType: fact.consumableType ?? 'consumable',
+        deviceBrand: '',
+        deviceModel: '',
+        remainingDays: fact.remainingDays,
+        nearReplacement: fact.remainingDays <= 30,
+        expectedReplaceAt: fact.estimatedReplacementAt ?? null,
+        preparationMode: typeof context.preparationMode === 'string' ? context.preparationMode : 'shopping_list',
+      };
+    }
     const profile = this.normalizeProfile(context.deviceProfile);
     const consumable = this.normalizeConsumable(context.deviceConsumable);
     if (!profile || !consumable) return context;
@@ -326,6 +340,18 @@ export class DeviceService {
       remindBeforeDays: row.remindBeforeDays,
       expectedReplaceAt: typeof row.expectedReplaceAt === 'string' ? row.expectedReplaceAt : null,
       status: typeof row.status === 'string' ? row.status : 'active',
+    };
+  }
+
+  private normalizeConsumableFact(value: unknown): { remainingDays: number; levelPercent?: number; estimatedReplacementAt?: string; consumableType?: string } | null {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    const row = value as Record<string, unknown>;
+    if (typeof row.remainingDays !== 'number' || !Number.isFinite(row.remainingDays) || row.remainingDays < 0) return null;
+    return {
+      remainingDays: row.remainingDays,
+      levelPercent: typeof row.levelPercent === 'number' ? row.levelPercent : undefined,
+      estimatedReplacementAt: typeof row.estimatedReplacementAt === 'string' ? row.estimatedReplacementAt : undefined,
+      consumableType: typeof row.consumableType === 'string' ? row.consumableType : undefined,
     };
   }
 

@@ -15,6 +15,7 @@ import {
   formatTime,
   notificationPreferenceLabel,
   planCenterStatusLabel,
+  planEvidenceLine,
   planStatusLabel,
   sourceTypeLabel,
   templateGroupLabel,
@@ -103,6 +104,7 @@ export default function PlanDetailPage() {
   const client = useQueryClient();
   const [replacementDate, setReplacementDate] = useState('');
   const [settingsExpanded, setSettingsExpanded] = useState(false);
+  const [evidenceExpanded, setEvidenceExpanded] = useState(false);
   const summary = useQuery({
     queryKey: ['plan', id, token],
     queryFn: () => api<PlanSummary>(`/plans/${id}`, token),
@@ -236,6 +238,19 @@ export default function PlanDetailPage() {
               </View>
             ) : null}
 
+            <Pressable accessibilityRole="button" accessibilityState={{ expanded: evidenceExpanded }} onPress={() => setEvidenceExpanded((current) => !current)} style={local.settingsHeader}>
+              <View><Text style={local.sectionTitleNoMargin}>查看依据</Text><Text style={local.settingsHint}>这条计划凭什么做判断</Text></View>
+              <Ionicons name={evidenceExpanded ? 'chevron-up' : 'chevron-down'} size={20} color={colors.primary} />
+            </Pressable>
+            {evidenceExpanded ? (
+              <View style={local.settingsContent}>
+                <View style={local.settingsBlock}>
+                  {planEvidenceLines(summary.data, version.data).map((line, index) => <Text style={local.text} key={index}>{line}</Text>)}
+                  <Text style={local.text}>来源与验证状态请见「15 步生命周期」。</Text>
+                </View>
+              </View>
+            ) : null}
+
             <Pressable accessibilityRole="button" accessibilityState={{ expanded: settingsExpanded }} onPress={() => setSettingsExpanded((current) => !current)} style={local.settingsHeader}>
               <View><Text style={local.sectionTitleNoMargin}>设置</Text><Text style={local.settingsHint}>通知、运行条件与计划管理</Text></View>
               <Ionicons name={settingsExpanded ? 'chevron-up' : 'chevron-down'} size={20} color={colors.primary} />
@@ -284,6 +299,26 @@ export default function PlanDetailPage() {
 
 function HelpStep({ icon, text }: { icon: ComponentProps<typeof Ionicons>['name']; text: string }) {
   return <View style={local.helpStep}><View style={local.helpIcon}><Ionicons name={icon} size={16} color={colors.success} /></View><Text style={local.helpText}>{text}</Text></View>;
+}
+
+function planEvidenceLines(summary: PlanSummary, version: PlanVersionDetail): string[] {
+  const condition = version.definition.conditions[0];
+  const rule = condition ? conditionSummary(condition.fieldPath, condition.operator, condition.comparisonValue) : '到点就按计划处理';
+  const center = summary.planCenterSummary;
+  if (center?.kind === 'device' && typeof center.remainingDays === 'number') {
+    return [planEvidenceLine({
+      factLabel: `${center.consumableName ?? '滤芯'}预计剩余`,
+      value: `${center.remainingDays} 天`,
+      sourceLabel: '设备信息',
+      observedAt: center.latestCheckAt ? formatTime(center.latestCheckAt) : '本次检查',
+      realityLabel: '已记录',
+      ruleLabel: rule,
+    })];
+  }
+  if (center?.latestEventSummary) {
+    return [`检测到：${center.latestEventSummary}`, `计划规则：${rule}`];
+  }
+  return [`计划规则：${rule}`, `最近状态：${center ? planCenterStatusLabel(center.kind, center.currentStatus) : '等待第一次运行'}`];
 }
 
 function planDetailIcon(kind?: string | null): ComponentProps<typeof Ionicons>['name'] {

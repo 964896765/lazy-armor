@@ -16,7 +16,7 @@ vi.mock('./device-app-bridge', () => ({
   createTrustedDeviceRequestEnvelope: mocks.createTrustedDeviceRequestEnvelope,
 }));
 
-import { clearTrustedDeviceSession, ensureTrustedDevice } from './trusted-device-api';
+import { clearTrustedDeviceSession, deviceBoundApi, ensureTrustedDevice } from './trusted-device-api';
 
 describe('trusted device session cache isolation', () => {
   beforeEach(() => {
@@ -44,5 +44,13 @@ describe('trusted device session cache isolation', () => {
     await ensureTrustedDevice('token-a', { force: true });
     expect(mocks.api).toHaveBeenCalledTimes(4);
     expect(mocks.signTrustedDeviceChallenge).toHaveBeenCalledTimes(2);
+  });
+
+  it('signs a bodyless GET with an empty-object payload and no request body', async () => {
+    mocks.createTrustedDeviceRequestEnvelope.mockResolvedValue({ requestId: 'b'.repeat(64), signedAt: new Date().toISOString(), payloadHash: 'c'.repeat(64), signature: 'c2lnbmF0dXJl' });
+    await deviceBoundApi('/device-tasks', 'token-a', { method: 'GET' });
+    expect(mocks.createTrustedDeviceRequestEnvelope).toHaveBeenCalledWith('session-1', 'GET', '/device-tasks', '{}');
+    expect(mocks.api).toHaveBeenLastCalledWith('/device-tasks', 'token-a', expect.objectContaining({ method: 'GET' }));
+    expect(mocks.api.mock.lastCall?.[2]).not.toHaveProperty('body');
   });
 });

@@ -8,6 +8,7 @@ import { api } from '../../src/api';
 import { useAuthStore } from '../../src/auth-store';
 import { ActionButton, AnimatedEntry, EmptyState, MessageRow, Surface, WorkspaceHeader, WorkspaceSection, colors, radius, spacing, typography } from '../../src/design';
 import { planVisualIcon } from '../../src/plan-presenter';
+import { clarificationQuestion, presentAgentPlanProposal } from '../../src/privacy-presenter';
 
 interface PlanTemplateSummary {
   key: string;
@@ -31,6 +32,20 @@ interface NaturalLanguageSuggestion {
   matchedKeywords: string[];
 }
 
+interface AgentPlannerResult {
+  result: 'ANSWER' | 'PLAN_DRAFT' | 'CLARIFICATION_REQUIRED' | 'PLANNER_OUTPUT_INVALID';
+  proposal?: {
+    intentSummary?: string | null;
+    explanation?: string | null;
+    requiredFacts?: string[];
+    requiredCapabilities?: string[];
+    toolRequirements?: Array<{ toolName: string; requiresApproval: boolean }>;
+    warnings?: string[];
+  };
+  answer?: { explanation: string };
+  clarification?: { missingRequirements: string[] };
+}
+
 const popularTemplateKeys = ['quiet-delivery-guard', 'monthly-bill-summary', 'family-supply-reminder', 'daily-important-summary', 'video-multi-platform'];
 const creationSteps = ['来源', '触发', '判断', '执行', '确认'];
 const quickIntents = ['帮我盯住快递变化', '每月整理账单', '车辆保养前提醒'];
@@ -40,8 +55,12 @@ export default function Create() {
   const client = useQueryClient();
   const [intent, setIntent] = useState('');
   const templates = useQuery({ queryKey: ['templates', token], queryFn: () => api<PlanTemplateSummary[]>('/templates', token), enabled: Boolean(token) });
+  const agentPlan = useMutation({
+    mutationFn: () => api<AgentPlannerResult>('/templates/natural-language/agent', token, { method: 'POST', body: JSON.stringify({ query: intent.trim() }) }),
+  });
   const parseIntent = useMutation({
     mutationFn: () => api<NaturalLanguageSuggestion>('/templates/natural-language/parse', token, { method: 'POST', body: JSON.stringify({ query: intent.trim() }) }),
+    onError: () => { if (intent.trim()) agentPlan.mutate(); },
   });
   const installIntent = useMutation({
     mutationFn: () => api<{ id: string }>('/templates/natural-language/install', token, { method: 'POST', body: JSON.stringify({ query: intent.trim() }) }),
@@ -88,6 +107,14 @@ export default function Create() {
               {parseIntent.isError ? <Text style={styles.error}>我还没完全听懂。试着加上时间、条件或想得到的结果。</Text> : null}
             </View>
 
+            {agentPlan.data?.result === 'CLARIFICATION_REQUIRED' ? (
+              <AnimatedEntry><Surface style={styles.suggestion}><Text style={styles.suggestionLabel}>还想再确认一下</Text><Text style={styles.agentCopy}>{clarificationQuestion(agentPlan.data.clarification?.missingRequirements ?? [])}</Text></Surface></AnimatedEntry>
+            ) : null}
+            {agentPlan.data?.result === 'ANSWER' && agentPlan.data.answer ? (
+              <AnimatedEntry><Surface style={styles.suggestion}><Text style={styles.suggestionLabel}>我的理解</Text><Text style={styles.agentCopy}>{agentPlan.data.answer.explanation}</Text></Surface></AnimatedEntry>
+            ) : null}
+            {agentPlan.data?.result === 'PLAN_DRAFT' && agentPlan.data.proposal ? <AgentProposalCard proposal={agentPlan.data.proposal} /> : null}
+
             {parseIntent.data ? (
               <AnimatedEntry>
                 <Surface style={styles.suggestion}>
@@ -123,6 +150,23 @@ export default function Create() {
         )}
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+function AgentProposalCard({ proposal }: { proposal: NonNullable<AgentPlannerResult['proposal']> }) {
+  const presentation = presentAgentPlanProposal(proposal);
+  return (
+    <AnimatedEntry>
+      <Surface style={styles.suggestion}>
+        <Text style={styles.suggestionLabel}>{presentation.title}</Text>
+        <Text style={styles.agentCopy}>{presentation.intent}</Text>
+        <Text style={styles.agentMeta}>{presentation.dataUsed} · {presentation.connectionsNeeded}</Text>
+        {presentation.needsConfirmation ? <Text style={styles.missing}>部分动作执行前会先请你确认，不会自动执行。</Text> : null}
+        <View style={styles.suggestionActions}>
+          <ActionButton label="查看计划 / 修改" tone="quiet" onPress={() => router.push('/templates' as never)} />
+        </View>
+      </Surface>
+    </AnimatedEntry>
   );
 }
 
@@ -166,6 +210,8 @@ const styles = StyleSheet.create({
   suggestionCopy: { flex: 1 },
   templateName: { ...typography.bodyStrong, color: colors.text },
   templateDescription: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
+  agentCopy: { ...typography.body, color: colors.textSecondary, marginTop: spacing.sm },
+  agentMeta: { ...typography.caption, color: colors.textMuted, marginTop: spacing.xs },
   missing: { ...typography.caption, color: '#B54708', backgroundColor: '#FFF4E5', borderRadius: radius.md, padding: spacing.sm, marginTop: spacing.md },
   draftRows: { marginTop: spacing.md, borderTopWidth: 1, borderTopColor: colors.border },
   draftRow: { minHeight: 46, flexDirection: 'row', alignItems: 'center', gap: spacing.sm },

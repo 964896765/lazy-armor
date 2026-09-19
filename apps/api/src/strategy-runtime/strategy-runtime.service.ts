@@ -4,14 +4,13 @@ import {
   CONDITION_AST_SCHEMA_VERSION, OPERATOR_REGISTRY, OPERATOR_REGISTRY_REVISION, PLAN_EXECUTION_LIFECYCLE,
   canonicalStringify, compileScenarioPlan, definitionHash, evaluateConditionAst,
   type CompiledStrategyRuntime, type RuntimeFactInput, type StrategyKey,
-  terminalFollowUpRule,
 } from '@lazy-armor/plan-schema';
 import {
   plans, planVersions, strategyRuntimeBindings, strategyRuntimeDecisions, strategyRuntimeWakeups,
   truthFactDependencies, truthRecords, truthRecordVersions,
 } from '@lazy-armor/database';
 import { newId } from '@lazy-armor/shared';
-import { and, desc, eq, lt, or } from 'drizzle-orm';
+import { and, desc, eq, isNull, lt, or, sql } from 'drizzle-orm';
 import { AuditService } from '../audit/audit.service';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
 
@@ -161,7 +160,7 @@ export class StrategyRuntimeService {
           subjectKey: input.subjectKey,
           triggerMode: 'FACT_CHANGED',
           status: 'PENDING',
-          handoffStatus: terminalFollowUpRule(row.binding.scenarioKey, row.binding.scenarioRevision) ? 'PENDING' : null,
+          handoffStatus: 'PENDING',
           createdAt: new Date(),
           evaluatedAt: null,
         });
@@ -178,6 +177,68 @@ export class StrategyRuntimeService {
       }
     }
     return created;
+  }
+
+  async enqueueScheduleWakeup(userId: string, bindingId: string, executor: StrategyRuntimeExecutor = this.db) {
+    const binding = (await executor.select().from(strategyRuntimeBindings)
+      .where(and(eq(strategyRuntimeBindings.id, bindingId), eq(strategyRuntimeBindings.userId, userId)))
+      .limit(1))[0];
+    if (!binding) throw new NotFoundException('Strategy runtime binding not found');
+    const runtime = binding.runtimeJson as unknown as CompiledStrategyRuntime;
+    if (runtime.triggerProfile.defaultMode !== 'SCHEDULE' && !runtime.triggerProfile.acceptedModes.includes('SCHEDULE')) {
+      throw new BadRequestException('Strategy runtime binding does not accept schedule triggers');
+    }
+    const dependency = runtime.dependencies.find((item) => item.scope !== 'SCHEDULED') ?? runtime.dependencies[0];
+    if (!dependency) throw new ConflictException('Strategy runtime binding has no fact dependency');
+    const truth = (await executor.select({ record: truthRecords, version: truthRecordVersions })
+      .from(truthRecords)
+      .innerJoin(truthRecordVersions, eq(truthRecordVersions.id, truthRecords.currentVersionId))
+      .where(and(
+        eq(truthRecords.userId, userId),
+        eq(truthRecords.status, 'verified'),
+        isNull(truthRecords.revokedAt),
+        eq(truthRecords.resourceKey, dependency.resourceType),
+        sql`JSON_UNQUOTE(JSON_EXTRACT(${truthRecordVersions.valueJson}, '$.factKey')) = ${dependency.factKey}`,
+      ))
+      .orderBy(desc(truthRecords.verifiedAt))
+      .limit(1))[0];
+    // Schedule wakeups still require a current verified truth to satisfy the
+    // deterministic EXISTS condition. Without one there is nothing to evaluate.
+    if (!truth) return null;
+    const cronExpression = runtime.triggerProfile.schedule?.cronExpression ?? 'schedule';
+    const scheduleKey = `schedule:${cronExpression}:${new Date().toISOString().slice(0, 10)}`;
+    const wakeupKey = hash({ bindingId, scheduleKey });
+    const id = newId();
+    try {
+      await executor.insert(strategyRuntimeWakeups).values({
+        id,
+        bindingId,
+        userId,
+        planVersionId: binding.planVersionId,
+        truthRecordVersionId: truth.version.id,
+        wakeupKey,
+        factKey: dependency.factKey,
+        resourceType: dependency.resourceType,
+        subjectKey: truth.record.subjectKey,
+        triggerMode: 'SCHEDULE',
+        status: 'PENDING',
+        handoffStatus: 'PENDING',
+        createdAt: new Date(),
+        evaluatedAt: null,
+      });
+      await this.audit.append({
+        actorType: 'system', action: 'STRATEGY_RUNTIME_WAKEUP_ENQUEUED',
+        resourceType: 'strategy_runtime_wakeup', resourceId: id, userId,
+        correlationId: bindingId, causationId: truth.version.id,
+        changeSummary: 'Schedule trigger enqueued a deterministic wakeup',
+        source: 'system', result: 'pending',
+      }, executor);
+    } catch (error) {
+      if (!isDuplicate(error)) throw error;
+    }
+    return (await this.db.select().from(strategyRuntimeWakeups)
+      .where(and(eq(strategyRuntimeWakeups.wakeupKey, wakeupKey), eq(strategyRuntimeWakeups.userId, userId)))
+      .limit(1))[0] ?? null;
   }
 
   async listWakeups(userId: string) {

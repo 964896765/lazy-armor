@@ -28,6 +28,7 @@ import { AdminModule } from './admin/admin.module';
 import { StudyModule } from './study/study.module';
 import { DeviceModule } from './device/device.module';
 import { DeviceAppsModule } from './device-apps/device-apps.module';
+import { DeviceTasksModule } from './device-tasks/device-tasks.module';
 import { TrustedDevicesModule } from './trusted-devices/trusted-devices.module';
 import { TruthStoreModule } from './truth-store/truth-store.module';
 import { ProfilesModule } from './profiles/profiles.module';
@@ -48,7 +49,13 @@ import { GmailModule } from './providers/gmail/gmail.module';
 import { GoogleCalendarModule } from './providers/calendar/calendar.module';
 import { GitHubModule } from './providers/github/github.module';
 import { NotionModule } from './providers/notion/notion.module';
+import { FeishuModule } from './providers/feishu/feishu.module';
+import { DingTalkModule } from './providers/dingtalk/dingtalk.module';
+import { WeComModule } from './providers/wecom/wecom.module';
+import { StructuredReadModule } from './structured-read/structured-read.module';
 import { TerminalHandoffController, TerminalHandoffService } from './strategy-runtime/terminal-handoff.service';
+import { PortableSkillsModule } from './portable-skills/portable-skills.module';
+import { McpModule } from './mcp/mcp.module';
 
 @Module({
   imports: [
@@ -78,6 +85,7 @@ import { TerminalHandoffController, TerminalHandoffService } from './strategy-ru
     TrustedDevicesModule,
     TruthStoreModule,
     DeviceAppsModule,
+    DeviceTasksModule,
     ProfilesModule,
     OperationsModule,
     ObservabilityModule,
@@ -93,8 +101,12 @@ import { TerminalHandoffController, TerminalHandoffService } from './strategy-ru
     GoogleCalendarModule,
     GitHubModule,
     NotionModule,
+    FeishuModule,
+    DingTalkModule,
+    WeComModule,
     RuntimeCatalogModule,
     AppReadSessionsModule,
+    StructuredReadModule,
     ScenarioCoverageLedgerModule,
     PlansModule,
     TemplatesModule,
@@ -105,6 +117,8 @@ import { TerminalHandoffController, TerminalHandoffService } from './strategy-ru
     RiskModule,
     AiAdapterModule,
     AdminModule,
+    PortableSkillsModule,
+    McpModule,
   ],
   controllers: [TerminalHandoffController],
   providers: [

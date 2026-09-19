@@ -48,6 +48,47 @@ export function planStatusTone(status: string): 'success' | 'warning' | 'muted' 
   return 'warning';
 }
 
+export interface ConsumerPlanStatusInput {
+  status: string;
+  hasMissingConnection?: boolean;
+  hasMissingPermission?: boolean;
+  hasMissingData?: boolean;
+  needsConfirmation?: boolean;
+  blocked?: boolean;
+}
+
+export function consumerPlanStatusLabel(input: ConsumerPlanStatusInput): string {
+  if (input.status === 'paused' || input.status === 'archived') return '暂停';
+  if (input.status === 'blocked' || input.blocked) return '异常';
+  if (input.status === 'degraded') return '异常';
+  if (input.needsConfirmation) return '需要确认';
+  if (input.hasMissingPermission) return '等待授权';
+  if (input.hasMissingConnection) return '等待连接';
+  if (input.hasMissingData) return '等待数据';
+  if (input.status === 'draft') return '需要设置';
+  return '运行中';
+}
+
+export function consumerPlanStatusTone(input: ConsumerPlanStatusInput): 'success' | 'warning' | 'muted' {
+  const label = consumerPlanStatusLabel(input);
+  if (label === '运行中') return 'success';
+  if (label === '暂停' || label === '需要设置') return 'muted';
+  return 'warning';
+}
+
+export interface PlanEvidenceInput {
+  factLabel: string;
+  value: string;
+  sourceLabel: string;
+  observedAt: string;
+  realityLabel: string;
+  ruleLabel: string;
+}
+
+export function planEvidenceLine(evidence: PlanEvidenceInput): string {
+  return `检测到：${evidence.factLabel} ${evidence.value} / 来源：${evidence.sourceLabel} / 获取时间：${evidence.observedAt} / 状态：${evidence.realityLabel} / 计划规则：${evidence.ruleLabel}`;
+}
+
 export function planNextRunLabel(status: string, nextRunAt: string | null | undefined): string {
   if (status === 'paused' || status === 'archived') return '需要时可以重新开启';
   if (!nextRunAt) return '下一次时间正在安排';

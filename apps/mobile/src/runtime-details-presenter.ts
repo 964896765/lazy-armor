@@ -21,7 +21,7 @@ const LIFECYCLE_COPY: Record<RuntimeLifecycleState, { label: string; detail: str
   SKIPPED: { label: '已跳过', detail: '该步骤被跳过或执行已取消。', tone: 'muted' },
   BLOCKED: { label: '已阻断', detail: '当前安全条件不允许继续。', tone: 'warning' },
   FAILED: { label: '未完成', detail: '运行记录表明这一步失败。', tone: 'danger' },
-  OUTCOME_UNKNOWN: { label: 'OUTCOME_UNKNOWN', detail: '动作可能已经生效；必须先只读回查，不能重复原动作。', tone: 'warning' },
+  OUTCOME_UNKNOWN: { label: '结果待确认', detail: '动作可能已经生效；必须先只读回查，不能重复原动作。', tone: 'warning' },
 };
 
 export function lifecycleStateLabel(state: string): string {
@@ -64,14 +64,51 @@ export function capabilityGapCopy(reasons: string[]): string {
   if (reasons.length === 0) return '当前没有已声明的能力缺口。';
   const labels: Record<string, string> = {
     PROVIDER_OFFICIAL_STATUS_UNVERIFIED: '服务方公开能力仍待核实。',
+    PROVIDER_CAPABILITY_LIMITED: '服务方只开放了有限能力。',
+    PROVIDER_CAPABILITY_UNAVAILABLE: '服务方没有开放这项能力。',
     CAPABILITY_NOT_IMPLEMENTED: '产品尚未实现这项能力。',
+    CAPABILITY_IMPLEMENTATION_PARTIAL: '这项能力只实现了一部分。',
+    CAPABILITY_DISABLED: '这项能力当前已停用。',
     CAPABILITY_NOT_GRANTED: '尚未获得你的授权。',
+    CAPABILITY_SCOPE_PARTIAL: '只获得了部分授权。',
+    CAPABILITY_GRANT_REVOKED: '授权已被撤销。',
+    CAPABILITY_GRANT_EXPIRED: '授权已过期，需要重新连接。',
     CAPABILITY_GRANT_UNKNOWN: '授权状态无法确认。',
-    CAPABILITY_HEALTH_UNKNOWN: '当前运行健康状态无法确认。',
-    CAPABILITY_HEALTH_DEGRADED: '当前能力运行健康度不足。',
     CAPABILITY_EXPLICITLY_DENIED: '该能力被明确禁止。',
+    CAPABILITY_HEALTH_DEGRADED: '当前能力运行健康度不足。',
+    CAPABILITY_HEALTH_REAUTHORIZATION_REQUIRED: '需要重新连接授权。',
+    CAPABILITY_HEALTH_PERMISSION_REVOKED: '系统权限已被撤销。',
+    CAPABILITY_HEALTH_RATE_LIMITED: '服务方暂时限流，请稍后再试。',
+    CAPABILITY_HEALTH_PROVIDER_UNAVAILABLE: '服务方暂时不可用。',
+    CAPABILITY_HEALTH_DEVICE_OFFLINE: '设备离线，先打开设备或恢复网络。',
+    CAPABILITY_HEALTH_UNHEALTHY: '服务方运行异常。',
+    CAPABILITY_HEALTH_UNKNOWN: '当前运行健康状态无法确认。',
   };
   return reasons.map((reason) => labels[reason] ?? reason).join(' ');
+}
+
+export function readinessReasonCopy(reason: string): string {
+  const labels: Record<string, string> = {
+    REQUIRED_FACTS_UNAVAILABLE: '缺数据：还没有拿到需要的真实数据。',
+    REQUIRED_CAPABILITIES_UNUSABLE: '缺授权或能力：需要先连接并授权对应来源。',
+    OBSERVATION_PIPELINE_UNAVAILABLE: '还没有可用的数据来源。',
+    EXECUTION_PIPELINE_UNAVAILABLE: '系统执行通道还没就绪。',
+  };
+  return labels[reason] ?? reason;
+}
+
+export function stateActionCopy(state: string): string {
+  const actions: Record<string, string> = {
+    CATALOG_ONLY: '先去「连接」里连接并授权对应 App，或手动录入关键信息。',
+    MANUAL_READY: '你可以先手动录入关键信息，系统会在此基础上继续跟进。',
+    BLOCKED_PROVIDER: '去「连接」里连接并授权对应 App，或检查服务方是否正常。',
+    BLOCKED_IMPLEMENTATION: '这项能力产品还在准备中，暂时无法使用。',
+    DISABLED: '这个场景已被停用。',
+    OBSERVE_READY: '可以开始创建计划，系统会持续观察并跟进。',
+    ASSISTED_READY: '可以开始创建计划，执行前会先请你确认。',
+    AUTOMATED_READY: '可以开始创建计划，系统会在安全边界内自动运行。',
+  };
+  return actions[state] ?? '先去「连接」里连接并授权对应 App，系统才知道你能做什么。';
 }
 
 export function provenanceMethodLabel(value: string): string {
@@ -92,7 +129,7 @@ export function reconciliationSafetyCopy(): string {
 }
 
 export function runtimeResultCopy(value: string): string {
-  return ({ SUCCEEDED: '已确认成功', PARTIALLY_SUCCEEDED: '部分成功', FAILED: '已确认失败', OUTCOME_UNKNOWN: 'OUTCOME_UNKNOWN' } as Record<string, string>)[value] ?? '结果未知';
+  return ({ SUCCEEDED: '已确认成功', PARTIALLY_SUCCEEDED: '部分成功', FAILED: '已确认失败', OUTCOME_UNKNOWN: '结果待确认' } as Record<string, string>)[value] ?? '结果未知';
 }
 
 export function shortHash(value: string | null | undefined): string {

@@ -103,4 +103,16 @@ describe.sequential('P1 natural language plan creation', { timeout: 60000 }, () 
     });
     expect(response.body.missingFields.map((field: { label: string }) => field.label)).toEqual(expect.arrayContaining(['设备编号', '耗材编号']));
   });
+
+  it('returns a controlled agent plan or clarification without auto-execution', async () => {
+    const response = await request(app.getHttpServer())
+      .post('/api/templates/natural-language/agent')
+      .set(auth(user.token))
+      .send({ query: '根据我现在的耗材情况建立提醒' })
+      .expect(201);
+
+    expect(['ANSWER', 'PLAN_DRAFT', 'CLARIFICATION_REQUIRED']).toContain(response.body.result);
+    expect(JSON.stringify(response.body)).not.toContain('EXECUTE');
+    expect(JSON.stringify(response.body)).not.toContain('approve_execution');
+  });
 });

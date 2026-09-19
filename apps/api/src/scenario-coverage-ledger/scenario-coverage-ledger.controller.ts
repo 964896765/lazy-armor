@@ -15,6 +15,9 @@ export class ScenarioCoverageLedgerController {
   @Get('batch-10/wave-1')
   batch10Wave1(@CurrentUser() _user: AuthenticatedUser) { return this.ledger.batch10Wave1(); }
 
+  @Get(':scenarioKey/runtime-evidence')
+  runtimeEvidence(@CurrentUser() user: AuthenticatedUser, @Param('scenarioKey') scenarioKey: string) { return this.ledger.runtimeEvidence(user.id, scenarioKey); }
+
   @Get(':scenarioKey')
   get(@CurrentUser() _user: AuthenticatedUser, @Param('scenarioKey') scenarioKey: string) { return this.ledger.get(scenarioKey); }
 }

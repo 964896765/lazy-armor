@@ -117,4 +117,17 @@ describe.sequential('runtime productization batch 4 foreground acquisition', { t
     const [rows] = await pool.query<RowDataPacket[]>('SELECT active_device_key FROM app_read_sessions WHERE id=UUID_TO_BIN(?)', [sessionId]);
     expect(rows[0]!.active_device_key).toBeNull();
   });
+
+  it('rejects capture after the session has been terminated', async () => {
+    const event = {
+      eventKey: hash(`capture-after-termination-${unique}`), eventType: 'NOTIFICATION_CAPTURED', packageName: targetPackage,
+      observedAt: new Date().toISOString(), payload: { titleHash: hash('x'), bodyHash: hash('y') },
+      evidenceHash: hash(`evidence-after-${unique}`), candidateKind: 'billing_transaction_candidate', amountMinor: 100, currency: 'CNY',
+    };
+    const path = `/app-read-sessions/${sessionId}/events`;
+    const response = await request(app.getHttpServer()).post(`/api${path}`).set(auth(owner.token)).set(signedHeaders(event, path)).send(event);
+    expect(response.status).toBe(409);
+    const [rows] = await pool.query<RowDataPacket[]>('SELECT COUNT(*) total FROM app_read_session_events WHERE session_id=UUID_TO_BIN(?) AND event_key=?', [sessionId, event.eventKey]);
+    expect(rows[0].total).toBe(0);
+  });
 });

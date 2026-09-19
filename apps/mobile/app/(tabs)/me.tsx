@@ -56,6 +56,8 @@ export default function Me() {
 
         <Text style={styles.sectionLabel}>数据</Text>
         <View style={styles.menu}>
+          <MenuRow icon="shield-half-outline" title="隐私中心" detail="数据、授权、设备权限与 AI 边界" onPress={() => router.push('/privacy-center' as Href)} />
+          <Divider />
           <MenuRow icon="server-outline" title="数据管理" detail="查看与管理你的数据" onPress={() => router.push('/data-management' as Href)} />
         </View>
       </ScrollView>

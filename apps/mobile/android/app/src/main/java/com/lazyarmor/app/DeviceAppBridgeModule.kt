@@ -91,7 +91,7 @@ class DeviceAppBridgeModule(reactContext: ReactApplicationContext) : ReactContex
 
   @ReactMethod
   fun createTrustedDeviceRequestEnvelope(sessionId: String, method: String, requestPath: String, payloadJson: String, promise: Promise) {
-    if (sessionId.isBlank() || sessionId.length > 128 || method !in setOf("POST") || !requestPath.startsWith("/") || requestPath.length > 255 || payloadJson.length > 65_536) {
+    if (sessionId.isBlank() || sessionId.length > 128 || method !in setOf("GET", "POST") || !requestPath.startsWith("/") || requestPath.length > 255 || payloadJson.length > 65_536 || (method == "GET" && payloadJson != "{}")) {
       promise.reject("E_TRUSTED_DEVICE_REQUEST_ENVELOPE_INVALID", "设备请求内容无效。")
       return
     }

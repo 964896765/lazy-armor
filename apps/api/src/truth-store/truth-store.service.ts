@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { createHash } from 'node:crypto';
-import { mobileNotificationReceipts, truthProvenance, truthRecords, truthRecordVersions } from '@lazy-armor/database';
-import { and, desc, eq } from 'drizzle-orm';
+import { mobileNotificationReceipts, planVersions, truthFactDependencies, truthProvenance, truthRecords, truthRecordVersions } from '@lazy-armor/database';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import { newId } from '@lazy-armor/shared';
 import { AuditService } from '../audit/audit.service';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
@@ -132,10 +132,63 @@ export class TruthStoreService {
   }
 
   async list(userId: string, resourceKey?: string) {
-    const rows = await this.db.select().from(truthRecords)
-      .where(resourceKey ? and(eq(truthRecords.userId, userId), eq(truthRecords.resourceKey, resourceKey), eq(truthRecords.status, 'verified')) : and(eq(truthRecords.userId, userId), eq(truthRecords.status, 'verified')))
+    const baseWhere = resourceKey
+      ? and(eq(truthRecords.userId, userId), eq(truthRecords.resourceKey, resourceKey), eq(truthRecords.status, 'verified'))
+      : and(eq(truthRecords.userId, userId), eq(truthRecords.status, 'verified'));
+    const rows = await this.db.select({ record: truthRecords, version: truthRecordVersions })
+      .from(truthRecords)
+      .innerJoin(truthRecordVersions, eq(truthRecords.currentVersionId, truthRecordVersions.id))
+      .where(baseWhere)
       .orderBy(desc(truthRecords.verifiedAt));
-    return rows.map((row) => this.completedResponse(row));
+    const versionIds = rows.map((row) => row.version.id);
+    const provenance = versionIds.length === 0 ? [] : await this.db.select().from(truthProvenance).where(inArray(truthProvenance.truthRecordVersionId, versionIds));
+    const provenanceByVersion = new Map(provenance.map((item) => [item.truthRecordVersionId, item]));
+    const planNamesByDependency = await this.planNamesByDependency(userId);
+    return rows.map(({ record, version }) => this.toPresentationRow(record, version, provenanceByVersion.get(version.id), planNamesByDependency));
+  }
+
+  /**
+   * 反向 plan-usage：读取哪些计划依赖某一 factKey/resourceType。仅做只读投影，
+   * 不改变 Truth 的验证语义。依赖键按 userId + factKey + resourceType 匹配。
+   */
+  private async planNamesByDependency(userId: string) {
+    const deps = await this.db.select({
+      factKey: truthFactDependencies.factKey,
+      resourceType: truthFactDependencies.resourceType,
+      planName: planVersions.name,
+    }).from(truthFactDependencies)
+      .innerJoin(planVersions, eq(truthFactDependencies.planVersionId, planVersions.id))
+      .where(eq(truthFactDependencies.userId, userId));
+    const byKey = new Map<string, Set<string>>();
+    for (const dep of deps) {
+      const key = `${dep.factKey}\u0000${dep.resourceType}`;
+      const names = byKey.get(key) ?? new Set<string>();
+      names.add(dep.planName);
+      byKey.set(key, names);
+    }
+    return byKey;
+  }
+
+  private toPresentationRow(
+    record: typeof truthRecords.$inferSelect,
+    version: typeof truthRecordVersions.$inferSelect,
+    provenance?: typeof truthProvenance.$inferSelect,
+    planNamesByDependency = new Map<string, Set<string>>(),
+  ) {
+    const value = (version.valueJson ?? {}) as Record<string, unknown>;
+    const factKey = typeof value.factKey === 'string' ? value.factKey : record.resourceKey;
+    const resourceType = typeof value.resourceType === 'string' ? value.resourceType : record.resourceKey;
+    const planNames = planNamesByDependency.get(`${factKey}\u0000${resourceType}`);
+    return {
+      ...this.toResponse(record),
+      factKey,
+      resourceType,
+      valueSummary: truthValueSummary(value),
+      sourceLabel: provenance?.providerKey ?? (typeof value.sourceMode === 'string' ? value.sourceMode : 'user_confirmation'),
+      observedAt: provenance?.observedAt.toISOString() ?? (typeof value.observedAt === 'string' ? value.observedAt : record.verifiedAt.toISOString()),
+      realityLevel: typeof value.realityLevel === 'string' ? value.realityLevel : 'VERIFIED',
+      usedByPlanNames: planNames ? [...planNames] : [],
+    };
   }
 
   private async findByReceipt(db: Pick<InjectedDatabase, 'select'>, userId: string, receiptId: string) {
@@ -160,6 +213,28 @@ export class TruthStoreService {
   private toResponse(row: typeof truthRecords.$inferSelect) {
     return { id: row.id, resourceKey: row.resourceKey, status: row.status, sourceReceiptId: row.sourceReceiptId, verifiedBy: row.verifiedBy, verifiedAt: row.verifiedAt.toISOString(), revokedAt: row.revokedAt?.toISOString() ?? null, currentVersionId: row.currentVersionId };
   }
+}
+
+function truthValueSummary(valueJson: Record<string, unknown>): string {
+  const inner = valueJson.value;
+  if (inner === undefined || inner === null) {
+    const amountMinor = valueJson.amountMinor;
+    const currency = valueJson.currency;
+    if (typeof amountMinor === 'number') return currency === 'CNY' ? `¥${(amountMinor / 100).toFixed(2)}` : String(amountMinor);
+    return '—';
+  }
+  if (typeof inner === 'string' || typeof inner === 'number' || typeof inner === 'boolean') return String(inner);
+  if (typeof inner === 'object') {
+    const record = inner as Record<string, unknown>;
+    const amountMinor = record.amountMinor;
+    const currency = record.currency;
+    if (typeof amountMinor === 'number') return currency === 'CNY' ? `¥${(amountMinor / 100).toFixed(2)}` : String(amountMinor);
+    for (const [key, entry] of Object.entries(record)) {
+      if (typeof entry === 'string' || typeof entry === 'number') return `${key}: ${entry}`;
+    }
+    return JSON.stringify(record);
+  }
+  return '—';
 }
 
 function hash(value: unknown) { return createHash('sha256').update(JSON.stringify(value)).digest('hex'); }

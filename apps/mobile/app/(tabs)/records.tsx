@@ -36,14 +36,14 @@ export default function Records() {
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <ScrollView style={styles.page} contentContainerStyle={styles.content} refreshControl={token ? <RefreshControl tintColor={colors.primary} refreshing={executions.isFetching} onRefresh={() => executions.refetch()} /> : undefined}>
-        <WorkspaceHeader title="执行记录" subtitle="查看装甲为你完成的任务与结果" action={<Pressable accessibilityRole="button" onPress={() => router.push('/reconciliation' as never)} style={styles.reconciliationLink}><Text style={styles.reconciliationLinkText}>Reconciliation</Text></Pressable>} />
+        <WorkspaceHeader title="最近做了什么" subtitle="计划触发、判断、审批、执行与结果，统一记录在这里" action={<Pressable accessibilityRole="button" onPress={() => router.push('/reconciliation' as never)} style={styles.reconciliationLink}><Text style={styles.reconciliationLinkText}>结果待确认</Text></Pressable>} />
         <View style={styles.filters}>{FILTERS.map((item) => <Pressable key={item.key} onPress={() => setFilter(item.key)} style={[styles.filter, filter === item.key && styles.filterSelected]}><Ionicons name={item.icon} size={15} color={filter === item.key ? colors.primary : item.key === 'failed' ? colors.danger : item.key === 'exception' ? colors.warning : colors.textSecondary} /><Text style={[styles.filterText, filter === item.key && styles.filterTextSelected]}>{item.label}</Text></Pressable>)}</View>
 
         {!token ? <Surface style={styles.stateSurface}><EmptyState icon="time-outline" title="登录后查看完成记录" action={{ label: '去登录', onPress: () => router.push('/connections') }} /></Surface> : null}
         {state === 'loading' ? <View style={styles.loading}><ActivityIndicator color={colors.primary} /><Text style={styles.loadingText}>正在同步记录…</Text></View> : null}
         {state === 'error' ? <Surface style={styles.stateSurface}><EmptyState icon="cloud-offline-outline" title="记录暂时没有加载出来" description="请稍后再试。" action={{ label: '重新加载', onPress: () => executions.refetch() }} /></Surface> : null}
         {state === 'empty' ? (
-          <View style={styles.emptyState}><View style={styles.emptyIcon}><Ionicons name="checkmark" size={17} color={colors.success} /></View><View style={styles.emptyCopy}><Text style={styles.emptyTitle}>还没有完成记录</Text><Text style={styles.emptyDescription}>真实结果会出现在这里</Text></View><Pressable accessibilityRole="button" onPress={() => router.push('/create')} style={({ pressed }) => [styles.emptyAction, pressed && styles.pressed]}><Text style={styles.emptyActionText}>去安排</Text></Pressable></View>
+          <View style={styles.emptyState}><View style={styles.emptyIcon}><Ionicons name="checkmark" size={17} color={colors.success} /></View><View style={styles.emptyCopy}><Text style={styles.emptyTitle}>还没有替你做过什么</Text><Text style={styles.emptyDescription}>计划运行后的真实结果会出现在这里</Text></View><Pressable accessibilityRole="button" onPress={() => router.push('/create')} style={({ pressed }) => [styles.emptyAction, pressed && styles.pressed]}><Text style={styles.emptyActionText}>去安排</Text></Pressable></View>
         ) : null}
 
         {state === 'ready' ? groups.map(([label, records]) => (

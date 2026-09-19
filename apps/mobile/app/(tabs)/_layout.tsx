@@ -11,7 +11,7 @@ export default function TabsLayout() {
         sceneStyle: { marginLeft: shellLayout.railWidth },
       }}
     >
-      <Tabs.Screen name="index" options={{ title: '消息' }} />
+      <Tabs.Screen name="index" options={{ title: '今天' }} />
       <Tabs.Screen name="plans" options={{ title: '懒人装甲' }} />
       <Tabs.Screen name="create" options={{ href: null }} />
       <Tabs.Screen name="records" options={{ href: null }} />

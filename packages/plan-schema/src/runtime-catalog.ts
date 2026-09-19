@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { RiskLevel } from './index';
 import { CANONICAL_SCENARIOS, PLAN_STRATEGIES, PRODUCT_DOMAINS, type ProductDomainKey } from './product-model';
+import { MOBILE_CANDIDATE_REGISTRY } from './mobile-observation';
 
 // Keep catalog hashing independent from the package barrel. Importing the barrel here
 // creates a CommonJS initialization cycle once the coverage ledger eagerly projects
@@ -86,9 +87,9 @@ const resourceSeeds: readonly [string, string, ProductDomainKey][] = [
   ['Repository', '代码仓库', 'work'], ['Issue', '议题', 'work'], ['PullRequest', '合并请求', 'work'], ['Workflow', '工作流运行', 'work'],
   ['Transaction', '交易', 'finance'], ['AccountBalance', '账户余额', 'finance'], ['Bill', '账单', 'finance'], ['Budget', '预算', 'finance'], ['Subscription', '订阅', 'finance'], ['Refund', '退款', 'finance'], ['Invoice', '发票', 'finance'],
   ['Order', '订单', 'operations'], ['Shipment', '物流', 'daily_life'], ['Product', '商品', 'daily_life'], ['InventoryItem', '库存项', 'operations'], ['AfterSalesCase', '售后事项', 'operations'],
-  ['Household', '家庭', 'family'], ['HouseholdMember', '家庭成员', 'family'], ['HouseholdTask', '家庭任务', 'family'], ['SupplyItem', '家庭补给', 'family'], ['UtilityAccount', '生活缴费账户', 'housing'],
+  ['Household', '家庭', 'family'], ['HouseholdMember', '家庭成员', 'family'], ['HouseholdTask', '家庭任务', 'family'], ['SupplyItem', '家庭补给', 'family'], ['household.supply', '家庭补给', 'family'], ['UtilityAccount', '生活缴费账户', 'housing'],
   ['Vehicle', '车辆', 'vehicle'], ['VehicleServiceRecord', '车辆保养记录', 'vehicle'], ['VehicleInsurance', '车辆保险', 'vehicle'], ['VehicleInspection', '车辆年检', 'vehicle'], ['VehicleDiagnostic', '车辆诊断', 'vehicle'],
-  ['Device', '设备', 'device'], ['DeviceStatus', '设备状态', 'device'], ['Consumable', '耗材', 'device'], ['Warranty', '保修', 'device'], ['DeviceSubscription', '设备订阅', 'device'],
+  ['Device', '设备', 'device'], ['DeviceStatus', '设备状态', 'device'], ['Consumable', '耗材', 'device'], ['device.consumable', '设备耗材', 'device'], ['Warranty', '保修', 'device'], ['DeviceSubscription', '设备订阅', 'device'],
   ['IdentityDocument', '证件', 'identity_docs'], ['DigitalAccount', '数字账户', 'digital_account'], ['OAuthGrant', 'OAuth 授权', 'digital_account'], ['Membership', '会员', 'digital_account'], ['StorageQuota', '存储容量', 'digital_account'],
   ['ContentItem', '内容', 'content'], ['ContentAsset', '内容素材', 'content'], ['ContentDraft', '内容草稿', 'content'], ['Publication', '发布记录', 'content'], ['PublicationTarget', '发布目标', 'content'], ['ContentMetric', '内容指标', 'content'],
   ['Trip', '行程', 'travel'], ['TripSegment', '行程段', 'travel'], ['Ticket', '票务', 'travel'], ['Booking', '预订', 'travel'], ['Place', '地点', 'travel'],
@@ -117,7 +118,30 @@ const scenarioResource = (domain: ProductDomainKey, scenarioKey: string) => {
   return overrides[`${domain}.${scenarioKey}`] ?? defaultResourceByDomain[domain];
 };
 
+/**
+ * R3 explicit runtime facts. Reality Pipeline is the canonical fact-naming source;
+ * a scenario that has entered real Runtime declares its real fact/resource here
+ * instead of the auto-generated `{prefix}.{scenarioKey}.state` catalog fallback.
+ */
+const RUNTIME_SCENARIO_FACTS: Readonly<Record<string, { primaryResourceTypes: readonly string[]; requiredFacts: readonly string[] }>> = Object.freeze({
+  'finance.abnormal_transaction': Object.freeze({ primaryResourceTypes: ['finance.transaction'], requiredFacts: ['finance.transaction.amount'] }),
+  'daily_life.delivery': Object.freeze({ primaryResourceTypes: ['shipment'], requiredFacts: ['shipment.status'] }),
+  'device.consumables': Object.freeze({ primaryResourceTypes: ['device.consumable'], requiredFacts: ['device.consumable.remaining_days'] }),
+  'family.family_supply': Object.freeze({ primaryResourceTypes: ['household.supply'], requiredFacts: ['household.supply.remaining_days'] }),
+  'daily_life.errands': Object.freeze({ primaryResourceTypes: ['digital_account.connection'], requiredFacts: ['digital_account.connection.health'] }),
+});
+
+for (const [scenarioKey, runtime] of Object.entries(RUNTIME_SCENARIO_FACTS)) {
+  const factKey = runtime.requiredFacts[0];
+  const resourceType = runtime.primaryResourceTypes[0];
+  const candidate = MOBILE_CANDIDATE_REGISTRY.find((item) => item.factKey === factKey);
+  if (!candidate) throw new Error(`Runtime scenario ${scenarioKey} fact is not registered in the parser registry: ${factKey}`);
+  if (candidate.resourceHint !== resourceType) throw new Error(`Runtime scenario ${scenarioKey} resource type mismatch: ${resourceType} != ${candidate.resourceHint}`);
+}
+
 const strategyFor = (key: string): StrategyKey => {
+  if (key === 'delivery') return 'SILENT_FOLLOW_UP';
+  if (key === 'errands') return 'PERIODIC_SUMMARY';
   if (/(validity|renewal|insurance|inspection|warranty|anniversary|exam|vaccination|rent|lease|subscription)/.test(key)) return 'EXPIRY_GUARD';
   if (/(abnormal|risk|diagnostic|security|health|status)/.test(key)) return 'ANOMALY_DETECTION';
   if (/(summary|retrospective|metrics|budget|bill)/.test(key)) return 'PERIODIC_SUMMARY';
@@ -126,12 +150,16 @@ const strategyFor = (key: string): StrategyKey => {
 };
 
 export const SCENARIO_DEFINITIONS: readonly ScenarioDefinition[] = Object.freeze(CANONICAL_SCENARIOS.map((scenario) => {
+  const fullKey = `${scenario.domain}.${scenario.key}`;
+  const runtimeFacts = RUNTIME_SCENARIO_FACTS[fullKey];
   const resourceType = scenarioResource(scenario.domain, scenario.key);
-  const prefix = camelToFact(resourceType);
-  const factKey = `${prefix}.${scenario.key}.state`;
+  const primaryResourceTypes = runtimeFacts ? runtimeFacts.primaryResourceTypes : [resourceType];
+  const requiredFacts = runtimeFacts ? runtimeFacts.requiredFacts : [`${camelToFact(resourceType)}.${scenario.key}.state`];
+  const factKey = requiredFacts[0];
+  const prefix = camelToFact(primaryResourceTypes[0]);
   return Object.freeze({
-    schemaVersion: '1' as const, key: `${scenario.domain}.${scenario.key}`, domain: scenario.domain, label: scenario.label,
-    primaryResourceTypes: Object.freeze([resourceType]), requiredFacts: Object.freeze([factKey]), optionalFacts: Object.freeze([`${prefix}.updated_at`]),
+    schemaVersion: '1' as const, key: fullKey, domain: scenario.domain, label: scenario.label,
+    primaryResourceTypes: Object.freeze(primaryResourceTypes), requiredFacts: Object.freeze(requiredFacts), optionalFacts: Object.freeze([`${prefix}.updated_at`]),
     supportedStrategies: Object.freeze(PLAN_STRATEGIES.map((strategy) => strategy.key)), defaultStrategy: strategyFor(scenario.key),
     sourceRequirements: Object.freeze([{ operation: 'READ' as const, resourceType, capabilityKey: `READ_${camelToFact(resourceType).toUpperCase()}`, optional: false }]),
     actionRequirements: Object.freeze([{ operation: 'EXECUTE' as const, resourceType: 'Notification', capabilityKey: 'SEND_NOTIFICATION', optional: false }]),
@@ -219,7 +247,11 @@ export function evaluateScenarioReadiness(definition: ScenarioDefinition, input:
   return { scenarioKey: definition.key, state, missingFacts, missingCapabilities: [...new Set(missingCapabilities)], reasons, evaluatedAgainstRevision: definition.revision };
 }
 
+const knownResourceTypes = new Set<string>([
+  ...RESOURCE_CATALOG.map((resource) => resource.key),
+  ...FACT_SCHEMA_CATALOG.map((schema) => schema.resourceType),
+]);
 for (const scenario of SCENARIO_DEFINITIONS) {
-  if (!RESOURCE_CATALOG.some((resource) => scenario.primaryResourceTypes.includes(resource.key))) throw new Error(`Unknown resource in ${scenario.key}`);
+  if (!scenario.primaryResourceTypes.every((resourceType) => knownResourceTypes.has(resourceType))) throw new Error(`Unknown resource in ${scenario.key}`);
   if (!scenario.requiredFacts.every((fact) => FACT_SCHEMA_CATALOG.some((schema) => schema.key === fact))) throw new Error(`Unknown fact in ${scenario.key}`);
 }

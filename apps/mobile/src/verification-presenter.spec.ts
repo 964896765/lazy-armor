@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { canRequestReconciliation, reconciliationStatusLabel, runtimeResultLabel, verificationSafetyCopy } from './verification-presenter';
 describe('verification consumer state', () => {
   it('distinguishes unknown and partial outcomes from ordinary failure', () => {
-    expect(runtimeResultLabel('OUTCOME_UNKNOWN')).toContain('结果未知');
+    expect(runtimeResultLabel('OUTCOME_UNKNOWN')).toBe('结果待确认');
     expect(runtimeResultLabel('PARTIALLY_SUCCEEDED')).toBe('部分成功');
     expect(runtimeResultLabel('SUCCEEDED')).toBe('已确认成功');
     expect(runtimeResultLabel(null)).toBeNull();

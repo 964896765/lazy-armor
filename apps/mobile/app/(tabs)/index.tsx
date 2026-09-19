@@ -18,17 +18,18 @@ import {
   typography,
 } from '../../src/design';
 import { connectionRecoveryAction, connectionStatusExplanation, connectionStatusLabel, connectionStatusNextStep, consumerErrorMessage, consumerErrorNextStep } from '../../src/connection-presenter';
+import { notificationDeepLink } from '../../src/consumer-error-presenter';
 import { executionStatusLabel } from '../../src/execution-presenter';
-import { approvalRiskText, todayState } from '../../src/today-presenter';
+import { approvalRiskText, todayEmptyDescription, todayEmptyTitle, todayState } from '../../src/today-presenter';
 
 interface ApprovalCard { id: string; executionId: string; riskLevel: string; summary: string; expiresAt: string; planName: string }
-interface AlertCard { id: string; priority: string; title: string; body: string; executionId?: string; createdAt: string; category?: 'attention' | 'exception' | 'summary' }
+interface AlertCard { id: string; priority: string; title: string; body: string; executionId?: string; approvalRequestId?: string | null; connectionId?: string | null; reconciliationCaseId?: string | null; eventType?: string | null; createdAt: string; category?: 'attention' | 'exception' | 'summary' }
 interface ProcessedCard { id: string; status: string; resultSummary: string | null; finishedAt: string | null; planName: string; planVersionNumber: number }
 interface ConnectionIssue { connectionId: string; connectionStatus: string; providerKey: string; providerName: string; planId: string; planName: string }
 interface TodayData { pendingApprovals: ApprovalCard[]; connectionIssues: ConnectionIssue[]; alerts: AlertCard[]; processed: ProcessedCard[] }
 interface PendingNotificationCandidate { id: string; candidateResource: string | null; candidateConfidence: number; amountMinor: number | null; currency: string | null; postedAt: string }
 interface PresentableAlert extends AlertCard { section: 'attention' | 'exception' | 'summary' }
-interface AttentionMessage { id: string; icon: string; title: string; description: string; meta?: string; tone: 'warning' | 'danger' | 'brand'; onPress: () => void }
+interface AttentionMessage { id: string; icon: string; title: string; description: string; meta?: string; tone: 'warning' | 'danger' | 'brand'; onPress?: () => void }
 type MessageFilter = 'all' | 'attention' | 'approval' | 'completed';
 
 export default function Today() {
@@ -84,7 +85,7 @@ export default function Today() {
       title: `${item.providerName}${connectionStatusLabel(item.connectionStatus)}`,
       description: `${connectionStatusExplanation(item.connectionStatus)}“${item.planName}”会保留当前设置。${connectionStatusNextStep(item.connectionStatus)}`,
       tone: 'warning' as const,
-      onPress: () => router.push('/connections'),
+      onPress: () => router.push(`/connections/${item.connectionId}` as never),
     })),
     ...(pendingNotificationCandidates.data ?? []).map((item) => ({
       id: `notification:${item.id}`,
@@ -102,7 +103,7 @@ export default function Today() {
       description: `${consumerErrorMessage(item.body)} ${consumerErrorNextStep(item.body)}`.trim(),
       meta: formatMessageTime(item.createdAt),
       tone: item.section === 'exception' ? 'danger' as const : 'warning' as const,
-      onPress: item.executionId ? () => router.push(`/executions/${item.executionId}` as never) : () => undefined,
+      onPress: alertOnPress(item),
     })),
   ];
   const resultMessages = [
@@ -120,7 +121,7 @@ export default function Today() {
       title: item.title,
       description: consumerErrorMessage(item.body),
       meta: formatMessageTime(item.createdAt),
-      onPress: item.executionId ? () => router.push(`/executions/${item.executionId}` as never) : undefined,
+      onPress: alertOnPress(item),
     })),
   ];
   const needle = search.trim().toLowerCase();
@@ -136,7 +137,7 @@ export default function Today() {
         contentContainerStyle={styles.content}
         refreshControl={token ? <RefreshControl tintColor={colors.primary} refreshing={today.isFetching} onRefresh={() => today.refetch()} /> : undefined}
       >
-        <WorkspaceHeader title="消息" subtitle={`今天 · ${formatToday()}`} />
+        <WorkspaceHeader title="今天" subtitle={formatToday()} />
 
         {token ? <><View style={styles.search}><Ionicons name="search-outline" size={19} color={colors.textMuted} /><TextInput value={search} onChangeText={setSearch} placeholder="搜索消息、计划或内容" placeholderTextColor={colors.textMuted} style={styles.searchInput} />{search ? <Pressable accessibilityLabel="清空搜索" onPress={() => setSearch('')}><Ionicons name="close-circle" size={18} color={colors.textMuted} /></Pressable> : null}</View><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters}>{([
           { key: 'all', label: '全部', count: totalCount },
@@ -158,7 +159,7 @@ export default function Today() {
         ) : null}
 
         {state === 'empty' ? (
-          <View style={styles.quietState}><View style={styles.quietIcon}><Ionicons name="checkmark" size={18} color="#23A559" /></View><View style={styles.quietCopy}><Text style={styles.quietTitle}>今天一切顺利</Text><Text style={styles.quietDescription}>没有需要你处理的事情</Text></View></View>
+          <View style={styles.quietState}><View style={styles.quietIcon}><Ionicons name="checkmark" size={18} color="#23A559" /></View><View style={styles.quietCopy}><Text style={styles.quietTitle}>{todayEmptyTitle()}</Text><Text style={styles.quietDescription}>{todayEmptyDescription()}</Text></View></View>
         ) : null}
 
         {state === 'ready' ? (
@@ -203,6 +204,11 @@ export default function Today() {
       </ScrollView>
     </SafeAreaView>
   );
+}
+
+function alertOnPress(item: AlertCard): (() => void) | undefined {
+  const route = notificationDeepLink({ eventType: item.eventType, executionId: item.executionId, approvalRequestId: item.approvalRequestId, connectionId: item.connectionId, reconciliationCaseId: item.reconciliationCaseId });
+  return route ? () => router.push(route as never) : undefined;
 }
 
 function CompactState({ icon, title, description, actionLabel, onPress }: { icon: ComponentProps<typeof Ionicons>['name']; title: string; description: string; actionLabel: string; onPress: () => void }) {

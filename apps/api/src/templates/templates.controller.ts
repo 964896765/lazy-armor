@@ -6,6 +6,7 @@ import { TemplatesService } from './templates.service';
 import { UsageService } from '../usage/usage.service';
 import { createHash } from 'node:crypto';
 import { TemplateLifecycleService } from './template-lifecycle.service';
+import { AgentPlannerService } from '../ai-adapter/agent-planner.service';
 
 @Controller('templates')
 export class TemplatesController {
@@ -13,6 +14,7 @@ export class TemplatesController {
     private readonly templates: TemplatesService,
     private readonly usage: UsageService,
     private readonly lifecycle: TemplateLifecycleService,
+    private readonly planner: AgentPlannerService,
   ) {}
 
   @Get()
@@ -60,6 +62,11 @@ export class TemplatesController {
     const result = this.templates.parseNaturalLanguage(input.query);
     await this.meterAi(user.id, input, result, 'parse');
     return result;
+  }
+
+  @Post('natural-language/agent')
+  agentPlan(@CurrentUser() user: AuthenticatedUser, @Body() input: NaturalLanguageTemplateDto) {
+    return this.planner.plan(user.id, input.query);
   }
 
   @Post('natural-language/install')

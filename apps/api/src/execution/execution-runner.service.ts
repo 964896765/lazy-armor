@@ -18,6 +18,7 @@ import { asRuntimeError, EXECUTION_TERMINAL_STATES, type ExecutionStatus, type R
 import { FallbackExecutor } from './fallback-executor.service';
 import { SnapshotSanitizer } from '../common/snapshot-sanitizer.service';
 import { SourceResolver } from './source-resolver.service';
+import { TruthHandoffGuard, extractFactValue, type TruthHandoffProof } from '../strategy-runtime/truth-handoff-guard.service';
 import { ExecutionApprovalGate } from './execution-approval-gate.service';
 import { SideEffectCoordinator } from './side-effect/side-effect-coordinator.service';
 import { NotificationService } from '../notifications/notification.service';
@@ -53,6 +54,7 @@ export class ExecutionRunner {
     private readonly coordinator: SideEffectCoordinator,
     private readonly telemetry: ObservabilityService,
     private readonly actionAdapter: ActionAdapter,
+    private readonly truthGuard: TruthHandoffGuard,
   ) {}
 
   async run(executionId: string, workerToken: string, runContext?: ExecutionRunContext): Promise<RunnerOutcome> {
@@ -91,7 +93,8 @@ export class ExecutionRunner {
       const initialRun = existing.every((step) => step.attemptCount === 0);
       let context: Record<string, unknown>;
       try {
-        context = await this.sources.resolve(execution.userId, assembled.definition.sources, { ...execution.triggerPayloadJson, planId: execution.planId }, execution.requestId);
+        const truthContext = await this.hydrateTruthContext(execution);
+        context = await this.sources.resolve(execution.userId, assembled.definition.sources, { ...execution.triggerPayloadJson, ...truthContext, planId: execution.planId }, execution.requestId);
         context = { ...context, planId: execution.planId };
         if (initialRun) {
           const conditionsMet = this.conditions.evaluate(assembled.definition.conditions, context);
@@ -214,6 +217,24 @@ export class ExecutionRunner {
     }).from(executions).innerJoin(plans, and(eq(executions.planId, plans.id), eq(executions.userId, plans.userId))).where(eq(executions.id, id)).limit(1);
     if (!rows[0]) throw new Error('Execution ownership or Plan relation is invalid');
     return rows[0];
+  }
+
+  private async hydrateTruthContext(execution: { userId: string; resolvedRiskSnapshotJson: Record<string, unknown> | null }): Promise<Record<string, unknown>> {
+    const proof = execution.resolvedRiskSnapshotJson?.truthHandoffProof as TruthHandoffProof | undefined;
+    if (!proof) return {};
+    const value = await this.truthGuard.revalidateTruth(execution.userId, proof);
+    const hydratedFactValue = extractFactValue(value);
+    // Compiled scenario plans gate on `EXISTS <dotted factKey>`; the plan-level
+    // ConditionEvaluator reads that dotted path from the execution context, so the
+    // truth value must be materialized at the factKey path in addition to
+    // hydratedFactValue (which domain enrichContext reads for billing).
+    return {
+      ...nestFactPath(proof.factKey, hydratedFactValue),
+      factKey: proof.factKey,
+      resourceType: proof.resourceType,
+      subjectKey: proof.subjectKey,
+      hydratedFactValue,
+    };
   }
 
   private async successCount(id: string) {
@@ -386,6 +407,12 @@ export class ExecutionRunner {
     if (normalized.startsWith('content_platform:') || normalized.startsWith('content:')) return 'content';
     return null;
   }
+}
+
+function nestFactPath(factKey: string, value: Record<string, unknown>): Record<string, unknown> {
+  const segments = factKey.split('.');
+  const leaf = segments[segments.length - 1];
+  return segments.slice(0, -1).reduceRight<Record<string, unknown>>((nested, segment) => ({ [segment]: nested }), { [leaf]: value });
 }
 
 function sourceLabelFor(source: string | null) {

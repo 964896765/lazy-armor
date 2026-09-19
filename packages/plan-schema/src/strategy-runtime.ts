@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { canonicalStringify } from './index';
 import { PLAN_EXECUTION_LIFECYCLE } from './product-model';
 import { STRATEGY_RUNTIME_KEY, type StrategyRuntimeKey } from './strategy-runtime-identity';
-import { STRATEGY_PROFILES, type ScenarioDefinition, type StrategyKey } from './runtime-catalog';
+import { FACT_SCHEMA_CATALOG, STRATEGY_PROFILES, type ScenarioDefinition, type StrategyKey } from './runtime-catalog';
 
 export const CONDITION_AST_SCHEMA_VERSION = '1' as const;
 export const OPERATOR_REGISTRY_REVISION = 1 as const;
@@ -176,6 +176,12 @@ function comparable(left: unknown, right: unknown, compare: (left: number | stri
 
 function deepEqual(left: unknown, right: unknown) { return canonicalStringify(left) === canonicalStringify(right); }
 
+/** Maps a dotted factKey's last segment (snake_case) to the canonical JSON value field (camelCase). */
+function factField(factKey: string): string {
+  const segment = factKey.split('.').at(-1) ?? 'value';
+  return segment.replace(/_([a-z0-9])/g, (_, c: string) => c.toUpperCase());
+}
+
 export function buildStrategyRuntime(scenario: ScenarioDefinition, strategy: StrategyKey, subjectKey: string | null = null): CompiledStrategyRuntime {
   const profile = STRATEGY_PROFILES.find((item) => item.key === strategy);
   if (!profile) throw new Error(`Unknown strategy: ${strategy}`);
@@ -183,11 +189,16 @@ export function buildStrategyRuntime(scenario: ScenarioDefinition, strategy: Str
   if (!factKey) throw new Error(`Scenario ${scenario.key} has no required fact`);
   const resourceType = scenario.primaryResourceTypes[0];
   if (!resourceType) throw new Error(`Scenario ${scenario.key} has no primary resource`);
+  const factSchema = FACT_SCHEMA_CATALOG.find((item) => item.key === factKey);
+  if (factSchema && factSchema.resourceType !== resourceType) {
+    throw new Error(`Scenario ${scenario.key} requiredFacts[0] (${factKey}) does not belong to primaryResourceTypes[0] (${resourceType}); it belongs to ${factSchema.resourceType}`);
+  }
   const triggerProfile = triggerProfileFor(strategy, profile.triggerModes);
   const conditionAst = conditionFor(strategy, factKey);
   const scope: FactDependencyScope = strategy === 'PERIODIC_SUMMARY' ? 'USER_AGGREGATE' : subjectKey ? 'EXACT_SUBJECT' : 'RESOURCE_WIDE';
-  const dependencies: FactDependencyDefinition[] = [{ factKey, resourceType, field: factKey.split('.').at(-1) ?? 'value', scope, subjectKey: scope === 'EXACT_SUBJECT' ? subjectKey : null }];
-  if (triggerProfile.defaultMode === 'SCHEDULE') dependencies.push({ factKey, resourceType, field: factKey.split('.').at(-1) ?? 'value', scope: 'SCHEDULED', subjectKey: null });
+  const field = factField(factKey);
+  const dependencies: FactDependencyDefinition[] = [{ factKey, resourceType, field, scope, subjectKey: scope === 'EXACT_SUBJECT' ? subjectKey : null }];
+  if (triggerProfile.defaultMode === 'SCHEDULE') dependencies.push({ factKey, resourceType, field, scope: 'SCHEDULED', subjectKey: null });
   const base = {
     schemaVersion: '1' as const,
     runtimeKey: STRATEGY_RUNTIME_KEY,
@@ -223,8 +234,8 @@ function conditionFor(strategy: StrategyKey, factKey: string): ConditionAst {
   switch (strategy) {
     case 'STATE_GUARD': return { kind: 'PREDICATE', operator: 'CHANGED', factKey };
     case 'EXPIRY_GUARD': return { kind: 'PREDICATE', operator: 'WITHIN_WINDOW', factKey, comparisonValue: 30 * 86_400 };
-    case 'ANOMALY_DETECTION': return { kind: 'PREDICATE', operator: 'CHANGED_BY', factKey, comparisonValue: 1 };
-    case 'SILENT_FOLLOW_UP': return { kind: 'PREDICATE', operator: 'CHANGED', factKey };
+    case 'ANOMALY_DETECTION': return { kind: 'PREDICATE', operator: 'EXISTS', factKey };
+    case 'SILENT_FOLLOW_UP': return { kind: 'PREDICATE', operator: 'EXISTS', factKey };
     case 'PERIODIC_SUMMARY': return { kind: 'PREDICATE', operator: 'EXISTS', factKey };
     case 'PREDICTIVE_PREPARE': return { kind: 'PREDICATE', operator: 'LTE', factKey, comparisonValue: 30 };
     case 'ASSISTED_ACTION': return { kind: 'PREDICATE', operator: 'EXISTS', factKey };

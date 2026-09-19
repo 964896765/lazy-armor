@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { approvalRequests, connections, connectors, executions, notifications, planActions, planSources, planVersions, plans } from '@lazy-armor/database';
+import { approvalRequests, connections, connectors, executions, notifications, planActions, planSources, planVersions, plans, reconciliationCases } from '@lazy-armor/database';
 import { newId } from '@lazy-armor/shared';
 import { and, desc, eq, gte, inArray, ne, or } from 'drizzle-orm';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
@@ -14,6 +14,7 @@ export interface NotificationEmitInput {
   executionId?: string | null;
   executionStepId?: string | null;
   approvalRequestId?: string | null;
+  connectionId?: string | null;
   priority: NotificationPriority;
   eventType: string;
   actionType?: string | null;
@@ -36,7 +37,7 @@ export class NotificationService {
     if (priority === 'P3') return null;
     const now = new Date();
     await executor.insert(notifications).values({
-      id: newId(), userId: input.userId, executionId: input.executionId ?? null, executionStepId: input.executionStepId ?? null, approvalRequestId: input.approvalRequestId ?? null,
+      id: newId(), userId: input.userId, executionId: input.executionId ?? null, executionStepId: input.executionStepId ?? null, approvalRequestId: input.approvalRequestId ?? null, connectionId: input.connectionId ?? null,
       priority, eventType: input.eventType, titleKey: input.titleKey ?? `notification.${input.eventType}.title`, messageKey: input.messageKey ?? `notification.${input.eventType}.message`,
       messageParamsJson: input.messageParams ?? null, actionType: input.actionType ?? null,
       dedupeKey: input.dedupeKey, title: input.title.slice(0, 160), body: input.body.slice(0, 1000),
@@ -104,6 +105,8 @@ export class NotificationService {
         title: notifications.title,
         body: notifications.body,
         executionId: notifications.executionId,
+        approvalRequestId: notifications.approvalRequestId,
+        connectionId: notifications.connectionId,
         createdAt: notifications.createdAt,
         eventType: notifications.eventType,
         actionRequired: notifications.actionRequired,
@@ -140,6 +143,11 @@ export class NotificationService {
     ]);
     const uniqueIssues = new Map<string, typeof sourceIssues[number]>();
     for (const issue of [...sourceIssues, ...actionIssues]) uniqueIssues.set(`${issue.planId}:${issue.connectionId}`, issue);
+    const alertExecutionIds = [...new Set(alerts.map((item) => item.executionId).filter((id): id is NonNullable<typeof id> => Boolean(id)))];
+    const reconciliation = alertExecutionIds.length === 0 ? [] : await this.db.select({ executionId: reconciliationCases.executionId, id: reconciliationCases.id })
+      .from(reconciliationCases)
+      .where(and(eq(reconciliationCases.userId, userId), inArray(reconciliationCases.executionId, alertExecutionIds)));
+    const reconciliationByExecution = new Map(reconciliation.map((item) => [item.executionId, item.id]));
     return {
       pendingApprovals,
       connectionIssues: [...uniqueIssues.values()],
@@ -149,6 +157,10 @@ export class NotificationService {
         title: item.title,
         body: item.body,
         executionId: item.executionId,
+        approvalRequestId: item.approvalRequestId,
+        connectionId: item.connectionId,
+        eventType: item.eventType,
+        reconciliationCaseId: item.executionId ? (reconciliationByExecution.get(item.executionId) ?? null) : null,
         createdAt: item.createdAt,
         actionRequired: Boolean(item.actionRequired),
         category: this.classifyTodayCategory(item.eventType, item.priority as NotificationPriority, Boolean(item.actionRequired)),

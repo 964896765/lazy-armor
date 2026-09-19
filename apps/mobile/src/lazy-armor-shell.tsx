@@ -99,7 +99,7 @@ export function ConnectionRail({ state, navigation }: BottomTabBarProps) {
     <View style={[styles.frame, { top: Math.max(insets.top, 5), bottom: Math.max(insets.bottom, 5) }]}>
       <View style={styles.fixedTop}>
         <RailItem label="懒人装甲" imageSource={require('../assets/icon.png')} selected={activeRoute === 'plans'} showLabel={false} onPress={() => selectTab('plans')} />
-        <RailItem label="消息" icon="chatbubble-ellipses-outline" badgeCount={pendingNotifications.data?.length ?? 0} selected={activeRoute === 'index'} tone="brand" showLabel={false} onPress={() => selectTab('index')} />
+        <RailItem label="今天" icon="chatbubble-ellipses-outline" badgeCount={pendingNotifications.data?.length ?? 0} selected={activeRoute === 'index'} tone="brand" showLabel={false} onPress={() => selectTab('index')} />
         <RailItem label="领域" icon="cube-outline" selected={activeRoute === 'domains'} showLabel={false} onPress={() => selectTab('domains')} />
         <RailItem label="安全" icon="lock-closed-outline" selected={activeRoute === 'permissions'} showLabel={false} onPress={() => selectTab('permissions')} />
         <RailItem label="懒人商城" icon="bag-handle-outline" selected={activeRoute === 'commerce'} tone="commerce" showLabel={false} onPress={() => selectTab('commerce')} />
