@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { consumerPlanGroup, consumerPlanGroupSubtitle, planDomainLabel, planNextRunLabel, planStatusLabel, planStatusTone, planVisualIcon, templateGroupLabel } from './plan-presenter';
+import { consumerPlanGroup, consumerPlanGroupSubtitle, consumerPlanStatusLabel, consumerPlanStatusTone, planDomainLabel, planEvidenceLine, planNextRunLabel, planStatusLabel, planStatusTone, planVisualIcon, templateGroupLabel } from './plan-presenter';
 
 describe('Plan presenter', () => {
   it('maps known templates into the four consumer groups', () => {
@@ -43,5 +43,36 @@ describe('Plan presenter', () => {
     expect(planStatusTone('paused')).toBe('muted');
     expect(planNextRunLabel('paused', null)).toBe('需要时可以重新开启');
     expect(planNextRunLabel('active', null)).toBe('下一次时间正在安排');
+  });
+
+  it('projects a consumer plan status without leaking internal codes', () => {
+    expect(consumerPlanStatusLabel({ status: 'active' })).toBe('运行中');
+    expect(consumerPlanStatusLabel({ status: 'active', hasMissingConnection: true })).toBe('等待连接');
+    expect(consumerPlanStatusLabel({ status: 'active', hasMissingPermission: true })).toBe('等待授权');
+    expect(consumerPlanStatusLabel({ status: 'active', hasMissingData: true })).toBe('等待数据');
+    expect(consumerPlanStatusLabel({ status: 'active', needsConfirmation: true })).toBe('需要确认');
+    expect(consumerPlanStatusLabel({ status: 'paused' })).toBe('暂停');
+    expect(consumerPlanStatusLabel({ status: 'degraded' })).toBe('异常');
+    expect(consumerPlanStatusTone({ status: 'active' })).toBe('success');
+    expect(consumerPlanStatusTone({ status: 'active', hasMissingConnection: true })).toBe('warning');
+    expect(consumerPlanStatusTone({ status: 'degraded' })).toBe('warning');
+  });
+
+  it('builds a consumer "查看依据" line for device consumable evidence', () => {
+    const line = planEvidenceLine({
+      factLabel: '滤芯预计剩余天数',
+      value: '8 天',
+      sourceLabel: '设备 App',
+      observedAt: '今天 10:21',
+      realityLabel: '已验证',
+      ruleLabel: '剩余 ≤ 30 天时提醒',
+    });
+    expect(line).toContain('检测到：滤芯预计剩余天数 8 天');
+    expect(line).toContain('来源：设备 App');
+    expect(line).toContain('获取时间：今天 10:21');
+    expect(line).toContain('状态：已验证');
+    expect(line).toContain('计划规则：剩余 ≤ 30 天时提醒');
+    expect(line).not.toContain('device.consumable.remaining_days');
+    expect(line).not.toContain('PREDICTIVE_PREPARE');
   });
 });

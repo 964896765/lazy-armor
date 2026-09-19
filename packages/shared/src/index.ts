@@ -4,10 +4,13 @@ export {
   APP_INTEGRATION_CATALOG,
   GENERIC_APP_CAPABILITIES,
   deviceAppCapabilities,
+  deviceAppCatalogMetadata,
   deviceAppIntegration,
   isGenericDeviceAppMode,
   type AppIntegrationCapability,
   type AppIntegrationCatalogEntry,
+  type DeviceAppCaptureMode,
+  type DeviceAppCatalogMetadata,
   type DeviceAppConnectionMode,
 } from './supported-device-apps';
 

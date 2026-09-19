@@ -1,5 +1,5 @@
 import { ArrayNotEmpty, IsArray, IsBoolean, IsIn, IsInt, IsISO8601, IsObject, IsOptional, IsString, IsUUID, Matches, Max, Min, ValidateIf } from 'class-validator';
-import { APP_READ_SESSION_EVENT_TYPES, APP_READ_SESSION_MAX_SECONDS, APP_READ_SESSION_MODES, type AppReadSessionEventType, type AppReadSessionMode } from '@lazy-armor/plan-schema';
+import { APP_READ_SESSION_EVENT_TYPES, APP_READ_SESSION_MAX_SECONDS, APP_READ_SESSION_MODES, MOBILE_CANDIDATE_KIND_VALUES, type AppReadSessionEventType, type AppReadSessionMode } from '@lazy-armor/plan-schema';
 
 const SHA256 = /^[a-f0-9]{64}$/;
 const ANDROID_PACKAGE = /^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)+$/;
@@ -27,7 +27,7 @@ export class CreateAppReadSessionEventDto {
   @IsObject() payload!: Record<string, unknown>;
   @IsOptional() @IsString() @Matches(SHA256) evidenceHash?: string;
   @ValidateIf((input: CreateAppReadSessionEventDto) => input.eventType === 'NOTIFICATION_CAPTURED' || input.eventType === 'SHARE_CAPTURED')
-  @IsIn(['billing_transaction_candidate', 'unknown']) candidateKind?: 'billing_transaction_candidate' | 'unknown';
+  @IsIn(MOBILE_CANDIDATE_KIND_VALUES) candidateKind?: string;
   @IsOptional() @IsInt() @Min(0) @Max(2_147_483_647) amountMinor?: number;
   @IsOptional() @IsIn(['CNY']) currency?: 'CNY';
 }

@@ -1,7 +1,8 @@
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import {
   APP_READ_SESSION_HEARTBEAT_GRACE_SECONDS, APP_READ_SESSION_TERMINAL_STATUSES, appReadSessionStatusForEvent,
-  canTransitionAppReadSession, isExactAndroidPackage, realityValueHash, type AppReadSessionEventType, type AppReadSessionStatus,
+  canTransitionAppReadSession, isExactAndroidPackage, realityValueHash, resolveMobileCandidateSpec,
+  type AppReadSessionEventType, type AppReadSessionStatus, type MobileObservationEnvelope,
 } from '@lazy-armor/plan-schema';
 import { appReadSessionEvents, appReadSessions, deviceAppConnections } from '@lazy-armor/database';
 import { newId } from '@lazy-armor/shared';
@@ -9,7 +10,7 @@ import { and, desc, eq, isNotNull } from 'drizzle-orm';
 import { createHash } from 'node:crypto';
 import { AuditService } from '../audit/audit.service';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
-import { RealityPipelineService } from '../reality-pipeline/reality-pipeline.service';
+import { MobileObservationService } from '../reality-pipeline/mobile-observation.service';
 import { TrustedDevicesService } from '../trusted-devices/trusted-devices.service';
 import type { AppReadHeartbeatDto, CreateAppReadSessionDto, CreateAppReadSessionEventDto } from './dto';
 
@@ -40,7 +41,7 @@ export class AppReadSessionsService {
   constructor(
     @Inject(DATABASE) private readonly db: InjectedDatabase,
     private readonly audit: AuditService,
-    private readonly pipeline: RealityPipelineService,
+    private readonly mobileObservation: MobileObservationService,
     private readonly trustedDevices: TrustedDevicesService,
   ) {}
 
@@ -178,21 +179,9 @@ export class AppReadSessionsService {
     }
     let observationId: string | null = null;
     let candidateFactId: string | null = null;
-    if (input.candidateKind === 'billing_transaction_candidate' && Number.isSafeInteger(input.amountMinor) && input.currency === 'CNY') {
-      const reality = await this.pipeline.ingest(session.userId, {
-        sourceMode: input.eventType === 'NOTIFICATION_CAPTURED' ? 'NOTIFICATION' : 'SHARE',
-        providerKey: 'android-foreground-acquisition',
-        externalEventKey: session.id + ':' + input.eventKey,
-        parserKey: 'mobile-notification-billing.v1',
-        resourceHint: 'mobile.billing.transaction',
-        payload: {
-          subjectKey: session.targetPackage + ':' + input.eventKey,
-          amountMinor: input.amountMinor!,
-          currency: 'CNY',
-        },
-        evidenceHash: input.evidenceHash,
-        observedAt: input.observedAt,
-      });
+    const spec = resolveMobileCandidateSpec(input.candidateKind ?? 'unknown');
+    if (spec) {
+      const reality = await this.mobileObservation.ingest(session.userId, this.toEnvelope(session, input, spec), 'android-foreground-acquisition', null);
       observationId = reality.observationId;
       candidateFactId = reality.candidates[0]?.id ?? null;
     }
@@ -209,6 +198,28 @@ export class AppReadSessionsService {
       source: 'api', result: 'success',
     });
     return { ...(await this.get(session.userId, session.id)), duplicate: stored.duplicate, observationId, candidateFactId };
+  }
+  private toEnvelope(session: typeof appReadSessions.$inferSelect, input: CreateAppReadSessionEventDto, spec: NonNullable<ReturnType<typeof resolveMobileCandidateSpec>>): MobileObservationEnvelope {
+    const payload: Record<string, unknown> = { subjectKey: session.targetPackage + ':' + input.eventKey };
+    if (spec.candidateKind === 'transaction') {
+      payload.amountMinor = input.amountMinor;
+      payload.currency = input.currency;
+    } else {
+      const status = input.payload && typeof input.payload === 'object' ? (input.payload as Record<string, unknown>).status : undefined;
+      if (typeof status === 'string') payload.status = status;
+    }
+    return {
+      sourceType: input.eventType === 'NOTIFICATION_CAPTURED' ? 'NOTIFICATION' : 'SHARE',
+      packageName: session.targetPackage,
+      candidateKind: input.candidateKind ?? 'unknown',
+      parserId: spec.parserId,
+      resourceHint: spec.resourceHint,
+      observedAt: input.observedAt,
+      evidenceHash: input.evidenceHash!,
+      sourceRef: session.id + ':' + input.eventKey,
+      sessionId: session.id,
+      payload: payload as MobileObservationEnvelope['payload'],
+    };
   }
   private async storeEvent(
     session: typeof appReadSessions.$inferSelect,

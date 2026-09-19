@@ -11,5 +11,6 @@ export class StrategyRuntimeController {
   @Post('bindings') bind(@CurrentUser() user: AuthenticatedUser, @Body() input: BindStrategyRuntimeDto) { return this.runtime.bind(user.id, input); }
   @Get('dependencies') dependencies(@CurrentUser() user: AuthenticatedUser, @Query() query: DependencyQueryDto) { return this.runtime.listDependencies(user.id, query); }
   @Get('wakeups') wakeups(@CurrentUser() user: AuthenticatedUser) { return this.runtime.listWakeups(user.id); }
+  @Post('bindings/:id/schedule') schedule(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) { return this.runtime.enqueueScheduleWakeup(user.id, id); }
   @Post('wakeups/:id/evaluate') evaluate(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) { return this.runtime.evaluateWakeup(user.id, id); }
 }

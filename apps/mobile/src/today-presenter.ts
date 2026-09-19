@@ -41,3 +41,57 @@ export function stepApprovalLabel(step: { approvalGateStatus?: string | null; st
   if (status === 'cancelled') return '确认已取消';
   return '';
 }
+
+export type TodayItemType =
+  | 'NEEDS_APPROVAL'
+  | 'NEEDS_INPUT'
+  | 'NEEDS_CONNECTION'
+  | 'NEEDS_PERMISSION'
+  | 'NEEDS_CONFIRMATION'
+  | 'PLAN_RESULT'
+  | 'PLAN_WARNING'
+  | 'PLAN_FAILURE'
+  | 'DAILY_SUMMARY'
+  | 'REMINDER'
+  | 'RECONCILIATION_REQUIRED';
+
+export interface TodayItem {
+  id: string;
+  type: TodayItemType;
+  title: string;
+  summary: string;
+  planId?: string | null;
+  executionId?: string | null;
+  truthId?: string | null;
+  connectionId?: string | null;
+  priority: 'P0' | 'P1' | 'P2' | 'P3';
+  status: string;
+  createdAt: string;
+  resolvedAt?: string | null;
+  primaryAction?: { label: string; route: string } | null;
+  secondaryAction?: { label: string; route: string } | null;
+}
+
+export function todayItemLabel(type: TodayItemType): string {
+  switch (type) {
+    case 'NEEDS_APPROVAL': return '待你确认';
+    case 'NEEDS_INPUT': return '需要你补充';
+    case 'NEEDS_CONNECTION': return '需要连接';
+    case 'NEEDS_PERMISSION': return '需要重新授权';
+    case 'NEEDS_CONFIRMATION': return '需要确认';
+    case 'PLAN_RESULT': return '已完成';
+    case 'PLAN_WARNING': return '需要留意';
+    case 'PLAN_FAILURE': return '没有完成';
+    case 'DAILY_SUMMARY': return '每日摘要';
+    case 'REMINDER': return '提醒';
+    case 'RECONCILIATION_REQUIRED': return '结果待确认';
+  }
+}
+
+export function todayEmptyTitle(): string {
+  return '今天没有需要你处理的事';
+}
+
+export function todayEmptyDescription(): string {
+  return '懒人装甲正在后台照看你的计划';
+}

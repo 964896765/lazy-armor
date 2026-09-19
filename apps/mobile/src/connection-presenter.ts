@@ -271,3 +271,53 @@ export function connectionActionLabel(granted: boolean) {
 export function isConsumerConnector(providerKey: string) {
   return !['internal', 'manual', 'webhook'].includes(providerKey);
 }
+
+export type ConnectionBucket = 'PHONE_APPS' | 'ONLINE_SERVICES' | 'DEVICES' | 'DEVELOPER';
+
+export function connectionBucketLabel(bucket: ConnectionBucket): string {
+  switch (bucket) {
+    case 'PHONE_APPS': return '手机 App';
+    case 'ONLINE_SERVICES': return '在线服务';
+    case 'DEVICES': return '设备';
+    case 'DEVELOPER': return '开发者连接';
+  }
+}
+
+export function isDeveloperConnector(providerKey: string, authenticationType?: string | null): boolean {
+  return providerKey === 'mcp' || providerKey.includes('mcp') || authenticationType === 'mcp';
+}
+
+export function connectionBucket(providerKey: string, kind?: 'provider' | 'device_app' | 'trusted_device' | null, authenticationType?: string | null): ConnectionBucket {
+  if (kind === 'device_app') return 'PHONE_APPS';
+  if (kind === 'trusted_device') return 'DEVICES';
+  if (isDeveloperConnector(providerKey, authenticationType)) return 'DEVELOPER';
+  return 'ONLINE_SERVICES';
+}
+
+export function mobileAppStateLabel(state: string): string {
+  switch (state) {
+    case 'INSTALLED': return '已安装';
+    case 'SUPPORTED': return '支持连接';
+    case 'AUTHORIZED': return '已授权';
+    case 'HEALTHY': return '运行正常';
+    case 'ONLINE': return '手机在线';
+    case 'AVAILABLE': return '当前可用';
+    default: return '暂不可用';
+  }
+}
+
+export interface CapabilityByOperationInput {
+  key: string;
+  operation?: string | null;
+  name?: string | null;
+}
+
+export function splitCapabilitiesByOperation(capabilities: CapabilityByOperationInput[]): { reads: string[]; executes: string[] } {
+  const reads: string[] = [];
+  const executes: string[] = [];
+  for (const capability of capabilities) {
+    if (capability.operation === 'EXECUTE') executes.push(capability.key);
+    else reads.push(capability.key);
+  }
+  return { reads, executes };
+}

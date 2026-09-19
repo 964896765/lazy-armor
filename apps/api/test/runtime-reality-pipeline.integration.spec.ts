@@ -65,6 +65,10 @@ describe.sequential('runtime productization batch 3 reality pipeline', { timeout
     await request(app.getHttpServer()).get(`/api/truth/${confirmed.body.id}`).set(auth(stranger.token)).expect(404);
     const truth = await request(app.getHttpServer()).get('/api/truth').set(auth(owner.token)).expect(200);
     expect(truth.body.some((item: { id: string }) => item.id === confirmed.body.id)).toBe(true);
+    const records = await request(app.getHttpServer()).get('/api/truth-records').set(auth(owner.token)).expect(200);
+    const row = (records.body as Array<{ id: string; factKey: string; valueSummary: string; sourceLabel: string; realityLevel: string; usedByPlanNames: string[] }>).find((item) => item.id === confirmed.body.id);
+    expect(row).toMatchObject({ factKey: 'finance.transaction.amount', valueSummary: '¥258.00', sourceLabel: 'manual', realityLevel: 'VERIFIED' });
+    expect(row?.usedByPlanNames).toEqual([]);
   });
 
   it('normalizes transaction, shipment and connection resources through one pipeline', async () => {

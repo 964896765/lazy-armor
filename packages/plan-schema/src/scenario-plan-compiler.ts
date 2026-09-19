@@ -1,4 +1,4 @@
-import { normalizePlanDefinition, type PlanDefinition, type PlanDefinitionInput } from './index';
+import { compileActionRecipe, normalizePlanDefinition, resolveActionRecipe, type PlanDefinition, type PlanDefinitionInput } from './index';
 import { evaluateScenarioReadiness, scenarioByKey, type ScenarioReadinessInput, type StrategyKey } from './runtime-catalog';
 import { productDomainFromStorageKey } from './product-model';
 import { buildStrategyRuntime, type CompiledStrategyRuntime } from './strategy-runtime';
@@ -64,13 +64,24 @@ export function compileScenarioPlan(input: ScenarioCompileInput): CompiledScenar
       { actionType: 'record', config: { recordType: terminalRule.key }, stepOrder: 1 },
     ];
   }
+  // R3 declarative Action Recipe overrides the generic single action for
+  // non-terminal scenarios. The generic actionMode mapping stays the fallback.
+  const recipe = terminalRule ? null : resolveActionRecipe(input.scenarioKey, revision, strategy);
+  if (recipe) {
+    definitionInput.actions = compileActionRecipe(recipe);
+    if (recipe.steps.some((step) => step.actionType === 'summarize' && step.config.domain === 'daily_summary')) {
+      definitionInput.sources = [...definitionInput.sources, { sourceType: 'internal', config: { resource: 'important_item_candidates' }, sortOrder: definitionInput.sources.length }];
+    }
+  }
   const definition = normalizePlanDefinition(definitionInput);
   return { scenarioKey: scenario.key, scenarioRevision: scenario.revision, strategy, mode, readiness, runtime, definitionInput, definition };
 }
 
 function approvalFor(policy: CompiledStrategyRuntime['approvalPolicy'], riskLevel: string): PlanDefinitionInput['approvalPolicy'] {
   if (policy === 'NEVER_EXTERNAL') return { type: 'never', config: {} };
-  if (policy === 'ALWAYS_FOR_EXTERNAL') return { type: 'always', config: {} };
+  // External-effect actions are R2+; local observe/prepare actions are R1.
+  // "Always for external" must therefore approve above R1, not every local step.
+  if (policy === 'ALWAYS_FOR_EXTERNAL') return { type: 'above_risk_level', config: { riskLevel: 'R1' } };
   return { type: 'above_risk_level', config: { riskLevel } };
 }
 function triggerFor(runtime: CompiledStrategyRuntime, factKey: string): PlanDefinitionInput['triggers'][number] {

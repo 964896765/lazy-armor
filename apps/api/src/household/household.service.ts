@@ -94,6 +94,20 @@ export class HouseholdService {
   }
 
   enrichContext(context: HouseholdContext) {
+    const fact = this.normalizeSupplyFact(context.hydratedFactValue);
+    if (fact) {
+      return {
+        ...context,
+        itemName: fact.itemName ?? '家庭补给',
+        category: fact.category ?? 'household',
+        purchaseQuantity: 1,
+        daysUntilRunOut: fact.remainingDays,
+        nearRunOut: fact.remainingDays <= 30,
+        estimatedRunOutAt: fact.estimatedRunOutAt ?? null,
+        preparationMode: typeof context.preparationMode === 'string' ? context.preparationMode : 'shopping_list',
+        sourceType: 'reality',
+      };
+    }
     const profile = this.normalizeProfile(context.householdSupplyProfile ?? context);
     if (!profile) return context;
     const runOutAt = profile.estimatedRunOutAt ? new Date(profile.estimatedRunOutAt) : this.runOutAt(profile.lastPurchasedAt, profile.estimatedUsageDays);
@@ -191,6 +205,18 @@ export class HouseholdService {
       estimatedUsageDays: row.estimatedUsageDays,
       estimatedRunOutAt: typeof row.estimatedRunOutAt === 'string' ? row.estimatedRunOutAt : null,
       sourceType: typeof row.sourceType === 'string' ? row.sourceType : 'internal',
+    };
+  }
+
+  private normalizeSupplyFact(value: unknown): { remainingDays: number; itemName?: string; category?: string; estimatedRunOutAt?: string } | null {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    const row = value as Record<string, unknown>;
+    if (typeof row.remainingDays !== 'number' || !Number.isFinite(row.remainingDays) || row.remainingDays < 0) return null;
+    return {
+      remainingDays: row.remainingDays,
+      itemName: typeof row.itemName === 'string' ? row.itemName : undefined,
+      category: typeof row.category === 'string' ? row.category : undefined,
+      estimatedRunOutAt: typeof row.estimatedRunOutAt === 'string' ? row.estimatedRunOutAt : undefined,
     };
   }
 

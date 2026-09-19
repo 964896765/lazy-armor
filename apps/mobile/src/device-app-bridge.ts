@@ -57,6 +57,21 @@ export interface NativeAppReadSessionStatus {
   pendingEventCount: number;
 }
 
+export interface CapturedUiNode {
+  text?: string;
+  contentDescription?: string;
+  role?: string;
+  bounds?: { left: number; top: number; right: number; bottom: number };
+  enabled?: boolean;
+  selected?: boolean;
+  resourceId?: string;
+}
+
+export interface CapturedAppReadUiNodes {
+  nodes: CapturedUiNode[];
+  evidenceHash: string | null;
+}
+
 export interface NativeAppReadSessionEvent {
   sessionId: string;
   eventKey: string;
@@ -89,6 +104,7 @@ interface NativeDeviceBridge {
   stopAppReadSession(): Promise<boolean>;
   drainAppReadSessionEventsJson(): Promise<string>;
   acknowledgeAppReadSessionEvents(eventKeys: string[]): Promise<boolean>;
+  captureAppReadUiNodes(targetPackage: string, allowedSelectors: string[]): Promise<string>;
 }
 
 export type DeviceDiscoveryStatus = 'available' | 'unavailable';
@@ -138,8 +154,8 @@ export async function signTrustedDeviceRequest(payload: string): Promise<string 
   }
 }
 
-export async function createTrustedDeviceRequestEnvelope(sessionId: string, method: 'POST', requestPath: string, payloadJson: string): Promise<TrustedDeviceRequestEnvelope | null> {
-  if (!sessionId || requestPath.length === 0 || requestPath.length > 255 || payloadJson.length > 65_536) return null;
+export async function createTrustedDeviceRequestEnvelope(sessionId: string, method: 'GET' | 'POST', requestPath: string, payloadJson: string): Promise<TrustedDeviceRequestEnvelope | null> {
+  if (!sessionId || requestPath.length === 0 || requestPath.length > 255 || payloadJson.length > 65_536 || (method === 'GET' && payloadJson !== '{}')) return null;
   const native = bridge();
   if (!native || typeof native.createTrustedDeviceRequestEnvelope !== 'function') return null;
   try {
@@ -279,4 +295,42 @@ export async function acknowledgeAppReadSessionEvents(eventKeys: string[]): Prom
   const native = bridge();
   if (!native || typeof native.acknowledgeAppReadSessionEvents !== 'function') return false;
   try { return await native.acknowledgeAppReadSessionEvents(accepted); } catch { return false; }
+}
+
+export async function captureAppReadUiNodes(packageName: string, allowedSelectors: string[]): Promise<CapturedAppReadUiNodes | null> {
+  if (!packageName.trim()) return null;
+  const selectors = [...new Set(allowedSelectors.filter((item) => typeof item === 'string' && item.trim() && item !== '*'))].slice(0, 200);
+  if (selectors.length === 0) return null;
+  const native = bridge();
+  if (!native || typeof native.captureAppReadUiNodes !== 'function') return null;
+  try {
+    const parsed = JSON.parse(await native.captureAppReadUiNodes(packageName, selectors)) as unknown;
+    if (!parsed || typeof parsed !== 'object' || !Array.isArray((parsed as { nodes?: unknown }).nodes)) return null;
+    const nodes = (parsed as { nodes: unknown[]; evidenceHash?: unknown }).nodes.filter(isSafeCapturedUiNode).slice(0, 200);
+    if (nodes.length === 0) return null;
+    const evidenceHash = /^[a-f0-9]{64}$/.test(String((parsed as { evidenceHash?: unknown }).evidenceHash)) ? (parsed as { evidenceHash: string }).evidenceHash : null;
+    return { nodes, evidenceHash };
+  } catch {
+    return null;
+  }
+}
+
+function isSafeCapturedUiNode(value: unknown): value is CapturedUiNode {
+  if (!value || typeof value !== 'object') return false;
+  const node = value as Partial<CapturedUiNode>;
+  const resourceId = typeof node.resourceId === 'string' ? node.resourceId : '';
+  const contentDescription = typeof node.contentDescription === 'string' ? node.contentDescription : '';
+  if (!resourceId && !contentDescription) return false;
+  if (node.text !== undefined && typeof node.text !== 'string') return false;
+  if (node.role !== undefined && typeof node.role !== 'string') return false;
+  if (node.enabled !== undefined && typeof node.enabled !== 'boolean') return false;
+  if (node.selected !== undefined && typeof node.selected !== 'boolean') return false;
+  if (node.bounds !== undefined && !isSafeBounds(node.bounds)) return false;
+  return true;
+}
+
+function isSafeBounds(value: unknown): boolean {
+  if (!value || typeof value !== 'object') return false;
+  const bounds = value as Record<string, unknown>;
+  return ['left', 'top', 'right', 'bottom'].every((key) => typeof bounds[key] === 'number' && Number.isFinite(bounds[key]));
 }

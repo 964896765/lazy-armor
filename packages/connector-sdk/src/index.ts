@@ -365,3 +365,4 @@ export * from './capability-manifest';
 export * from './provider-registry';
 export * from './capability-resolver';
 export * from './provider-runtime';
+export * from './mcp';

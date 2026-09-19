@@ -11,18 +11,22 @@ import { api } from '../../src/api';
 import { useAuthStore } from '../../src/auth-store';
 import { connectionStartRequest, disconnectRequest, reconnectRequest, validateConnectionRequest } from '../../src/connection-api-contract';
 import { discoverLaunchableApps, openDeviceApp, setNotificationSourceEnabled } from '../../src/device-app-bridge';
+import type { DiscoveredDeviceApp } from '../../src/device-app-bridge';
 import { ensureTrustedDevice } from '../../src/trusted-device-api';
 import {
   capabilityDescription,
   capabilityLabel,
   capabilityRiskHint,
   connectionActionLabel,
+  connectionBucket,
+  connectionBucketLabel,
   connectionRecoveryAction,
   connectionStatusLabel,
   isConsumerConnector,
+  mobileAppStateLabel,
   providerReadinessLabel,
 } from '../../src/connection-presenter';
-import { ActionButton, EmptyState, Surface, WorkspaceHeader, WorkspaceSection, colors, radius, spacing, typography } from '../../src/design';
+import { ActionButton, CollapsedAppFolder, EmptyState, Surface, WorkspaceHeader, WorkspaceSection, colors, radius, spacing, typography } from '../../src/design';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -232,22 +236,31 @@ export default function ConnectionsPage() {
   const router = useRouter();
   const token = useAuthStore((store) => store.token);
   const [search, setSearch] = useState('');
+  const [expandedAppFolder, setExpandedAppFolder] = useState(false);
   const connectors = useQuery({ queryKey: ['connectors'], queryFn: () => api<Connector[]>('/connectors') });
   const connections = useQuery({ queryKey: ['connections', token], queryFn: () => api<Connection[]>('/connections', token), enabled: Boolean(token) });
   const deviceApps = useQuery({ queryKey: ['device-app-connections', token], queryFn: () => api<DeviceAppConnection[]>('/device-app-connections', token), enabled: Boolean(token) });
   const trustedDevices = useQuery({ queryKey: ['trusted-devices', token], queryFn: () => api<TrustedDeviceSummary[]>('/trusted-devices', token), enabled: Boolean(token) });
   const discoveredApps = useQuery({ queryKey: ['connection-page-discovered-apps'], queryFn: discoverLaunchableApps, enabled: Boolean(token && (deviceApps.data?.length ?? 0) > 0), staleTime: 5 * 60_000 });
   const consumerConnectors = useMemo(() => connectors.data?.filter((connector) => isConsumerConnector(connector.key)) ?? [], [connectors.data]);
-  const activeProviderKeys = new Set((connections.data ?? []).filter((connection) => connection.status !== 'revoked').map((connection) => connection.connectorId));
-  const available = consumerConnectors.filter((connector) => connectionStartRequest(connector, 'placeholder') !== null && !activeProviderKeys.has(connector.key));
   const connectorByKey = new Map(consumerConnectors.map((connector) => [connector.key, connector]));
+  const activeProviderKeys = new Set((connections.data ?? []).filter((connection) => connection.status !== 'revoked').map((connection) => connection.connectorId));
+  const isDeveloper = (connection: Connection) => connectionBucket(connection.connectorId, 'provider', connectorByKey.get(connection.connectorId)?.authentication.type) === 'DEVELOPER';
+  const onlineConnections = (connections.data ?? []).filter((item) => !isDeveloper(item));
+  const developerConnections = (connections.data ?? []).filter((item) => isDeveloper(item));
+  const available = consumerConnectors.filter((connector) => connectionBucket(connector.key, 'provider', connector.authentication.type) !== 'DEVELOPER' && connectionStartRequest(connector, 'placeholder') !== null && !activeProviderKeys.has(connector.key));
   const iconByPackage = new Map((discoveredApps.data ?? []).map((app) => [app.packageName, app.iconDataUri]));
+  const connectedPackages = new Set((deviceApps.data ?? []).map((item) => item.packageName));
+  const unconnectedApps = (discoveredApps.data ?? []).filter((app) => !connectedPackages.has(app.packageName));
   const needle = search.trim().toLocaleLowerCase('zh-CN');
-  const visibleConnections = (connections.data ?? []).filter((item) => !needle || `${item.connectorName} ${item.externalAccountName}`.toLocaleLowerCase('zh-CN').includes(needle));
+  const visibleOnlineConnections = onlineConnections.filter((item) => !needle || `${item.connectorName} ${item.externalAccountName}`.toLocaleLowerCase('zh-CN').includes(needle));
+  const visibleDeveloperConnections = developerConnections.filter((item) => !needle || `${item.connectorName} ${item.externalAccountName}`.toLocaleLowerCase('zh-CN').includes(needle));
   const visibleApps = (deviceApps.data ?? []).filter((item) => !needle || `${item.displayName} ${item.packageName}`.toLocaleLowerCase('zh-CN').includes(needle));
+  const visibleUnconnectedApps = unconnectedApps.filter((item) => !needle || `${item.displayName} ${item.packageName}`.toLocaleLowerCase('zh-CN').includes(needle));
   const visibleAvailable = available.filter((item) => !needle || `${item.name} ${item.description}`.toLocaleLowerCase('zh-CN').includes(needle));
   const connectedCount = (connections.data?.filter((item) => item.status !== 'revoked').length ?? 0) + (deviceApps.data?.filter((item) => item.enabled).length ?? 0);
   const attentionCount = (connections.data?.filter((item) => Boolean(connectionRecoveryAction(item.status))).length ?? 0) + (deviceApps.data?.filter((item) => !item.enabled).length ?? 0);
+  const hasAny = (connections.data?.length ?? 0) + (deviceApps.data?.length ?? 0) + (trustedDevices.data?.length ?? 0) > 0;
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -260,16 +273,70 @@ export default function ConnectionsPage() {
             <View style={styles.searchBox}><Ionicons name="search-outline" size={19} color={colors.textMuted} /><TextInput value={search} onChangeText={setSearch} placeholder="搜索已连接服务或可用来源" placeholderTextColor={colors.textMuted} style={styles.searchInput} />{search ? <Pressable accessibilityLabel="清空搜索" onPress={() => setSearch('')}><Ionicons name="close-circle" size={18} color={colors.textMuted} /></Pressable> : null}</View>
             <View style={styles.summaryStrip}><ConnectionStat icon="link-outline" value={connectedCount} label="已连接" tone="success" /><View style={styles.statDivider} /><ConnectionStat icon="alert-circle-outline" value={attentionCount} label="需关注" tone={attentionCount > 0 ? 'warning' : 'muted'} /><View style={styles.statDivider} /><ConnectionStat icon="apps-outline" value={deviceApps.data?.length ?? 0} label="手机应用" tone="brand" /></View>
             {connections.isLoading ? <ActivityIndicator color={colors.primary} /> : null}
-            {(connections.data?.length ?? 0) + (deviceApps.data?.length ?? 0) === 0 ? <View style={styles.emptyConnection}><Text style={styles.emptyConnectionTitle}>还没有连接服务</Text><Text style={styles.emptyConnectionCopy}>添加在线服务或这台手机上的应用</Text><ActionButton label="添加连接" onPress={() => router.push('/connections/add' as Href)} /></View> : null}
-            {visibleConnections.length > 0 ? <WorkspaceSection title="在线服务" count={visibleConnections.length}><View style={styles.connectionList}>{visibleConnections.map((item) => <ConnectedService key={item.id} item={item} connector={connectorByKey.get(item.connectorId)} token={token} />)}</View></WorkspaceSection> : null}
-            {visibleApps.length > 0 ? <WorkspaceSection title="手机应用" count={visibleApps.length}><View style={styles.connectionList}>{visibleApps.map((item) => <DeviceAppService key={item.id} item={item} token={token} trustedDeviceStatus={trustedDevices.data?.find((device) => device.id === item.trustedDeviceId)?.status} iconUri={iconByPackage.get(item.packageName) ?? undefined} />)}</View></WorkspaceSection> : null}
+            {!hasAny ? <View style={styles.emptyConnection}><Text style={styles.emptyConnectionTitle}>还没有连接服务</Text><Text style={styles.emptyConnectionCopy}>添加在线服务或这台手机上的应用</Text><ActionButton label="添加连接" onPress={() => router.push('/connections/add' as Href)} /></View> : null}
 
-            {visibleAvailable.length > 0 ? <WorkspaceSection title="还可以连接" count={visibleAvailable.length}><View style={styles.availableList}>{visibleAvailable.map((connector) => <AvailableService key={connector.key} connector={connector} token={token} />)}</View></WorkspaceSection> : null}
-            {search && visibleConnections.length + visibleApps.length + visibleAvailable.length === 0 ? <View style={styles.noResults}><Ionicons name="search-outline" size={21} color={colors.textMuted} /><Text style={styles.emptyConnectionCopy}>没有匹配的连接或来源</Text></View> : null}
+            {(visibleApps.length > 0 || visibleUnconnectedApps.length > 0) ? (
+              <WorkspaceSection title={connectionBucketLabel('PHONE_APPS')} count={visibleApps.length + visibleUnconnectedApps.length}>
+                {visibleApps.length > 0 ? <View style={styles.connectionList}>{visibleApps.map((item) => <DeviceAppService key={item.id} item={item} token={token} trustedDeviceStatus={trustedDevices.data?.find((device) => device.id === item.trustedDeviceId)?.status} iconUri={iconByPackage.get(item.packageName) ?? undefined} />)}</View> : null}
+                {visibleUnconnectedApps.length > 0 ? (expandedAppFolder
+                  ? <View style={styles.unconnectedList}>{visibleUnconnectedApps.map((app) => <UnconnectedAppRow key={app.packageName} app={app} />)}</View>
+                  : <View style={styles.appFolderWrap}><CollapsedAppFolder count={visibleUnconnectedApps.length} iconUris={visibleUnconnectedApps.slice(0, 4).map((app) => app.iconDataUri ?? '').filter(Boolean)} onPress={() => setExpandedAppFolder(true)} /></View>) : null}
+              </WorkspaceSection>
+            ) : null}
+
+            {(visibleOnlineConnections.length > 0 || visibleAvailable.length > 0) ? (
+              <WorkspaceSection title={connectionBucketLabel('ONLINE_SERVICES')} count={visibleOnlineConnections.length + visibleAvailable.length}>
+                {visibleOnlineConnections.length > 0 ? <View style={styles.connectionList}>{visibleOnlineConnections.map((item) => <ConnectedService key={item.id} item={item} connector={connectorByKey.get(item.connectorId)} token={token} />)}</View> : null}
+                {visibleAvailable.length > 0 ? <View style={styles.availableList}>{visibleAvailable.map((connector) => <AvailableService key={connector.key} connector={connector} token={token} />)}</View> : null}
+              </WorkspaceSection>
+            ) : null}
+
+            {(trustedDevices.data?.length ?? 0) > 0 ? (
+              <WorkspaceSection title={connectionBucketLabel('DEVICES')} count={trustedDevices.data!.length}>
+                <View style={styles.deviceActions}><ActionButton label="查看手机任务与心跳" tone="quiet" onPress={() => router.push('/connections/device-tasks' as Href)} /></View>
+                <View style={styles.connectionList}>{trustedDevices.data!.map((device) => <TrustedDeviceRow key={device.id} device={device} />)}</View>
+              </WorkspaceSection>
+            ) : null}
+
+            {visibleDeveloperConnections.length > 0 ? (
+              <WorkspaceSection title={connectionBucketLabel('DEVELOPER')} count={visibleDeveloperConnections.length}>
+                <View style={styles.connectionList}>{visibleDeveloperConnections.map((item) => <ConnectedService key={item.id} item={item} connector={connectorByKey.get(item.connectorId)} token={token} />)}</View>
+              </WorkspaceSection>
+            ) : null}
+
+            {search && visibleOnlineConnections.length + visibleDeveloperConnections.length + visibleApps.length + visibleUnconnectedApps.length + visibleAvailable.length === 0 ? <View style={styles.noResults}><Ionicons name="search-outline" size={21} color={colors.textMuted} /><Text style={styles.emptyConnectionCopy}>没有匹配的连接或来源</Text></View> : null}
           </>
         )}
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+function UnconnectedAppRow({ app }: { app: DiscoveredDeviceApp }) {
+  const [feedback, setFeedback] = useState<string | null>(null);
+  async function open() {
+    setFeedback(null);
+    const opened = await openDeviceApp(app.packageName);
+    setFeedback(opened ? null : '无法打开该应用，请在 Android 真机确认它仍已安装。');
+  }
+  return (
+    <View style={styles.unconnectedRow}>
+      <View style={styles.compactIcon}>{app.iconDataUri ? <Image source={{ uri: app.iconDataUri }} style={styles.appIcon} /> : <Ionicons name="apps-outline" size={20} color={colors.primary} />}</View>
+      <View style={styles.compactCopy}><Text numberOfLines={1} style={styles.compactTitle}>{app.displayName}</Text><Text style={styles.compactDetail}>{mobileAppStateLabel('INSTALLED')}</Text></View>
+      <ActionButton label="打开" tone="quiet" onPress={() => void open()} />
+      {feedback ? <Text style={styles.feedback}>{feedback}</Text> : null}
+    </View>
+  );
+}
+
+function TrustedDeviceRow({ device }: { device: TrustedDeviceSummary }) {
+  const router = useRouter();
+  return (
+    <Pressable accessibilityRole="button" onPress={() => router.push('/connections/trusted-devices' as Href)} style={({ pressed }) => [styles.connectionRow, pressed && styles.rowPressed]}>
+      <View style={styles.compactIcon}><Ionicons name="phone-portrait-outline" size={20} color={colors.primary} /></View>
+      <View style={styles.compactCopy}><Text numberOfLines={1} style={styles.compactTitle}>可信设备</Text><Text style={styles.compactDetail}>{device.status === 'active' ? mobileAppStateLabel('ONLINE') : '已撤销'}</Text></View>
+      <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+    </Pressable>
   );
 }
 
@@ -336,6 +403,9 @@ const styles = StyleSheet.create({
   capabilityChip: { maxWidth: '46%', flexDirection: 'row', alignItems: 'center', gap: 2, paddingHorizontal: 6, paddingVertical: 3, borderRadius: radius.pill, backgroundColor: colors.accentSoft },
   capabilityChipText: { color: colors.primary, fontSize: 8, lineHeight: 11, flexShrink: 1 },
   noResults: { minHeight: 120, alignItems: 'center', justifyContent: 'center', gap: spacing.sm },
+  appFolderWrap: { paddingVertical: spacing.sm, paddingHorizontal: spacing.md },
+  unconnectedList: { borderTopWidth: 1, borderTopColor: '#EAECF0' },
+  unconnectedRow: { minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderBottomWidth: 1, borderBottomColor: '#EAECF0' },
   connectionBlock: { borderBottomWidth: 1, borderBottomColor: '#EAECF0' },
   connectionRow: { minHeight: 70, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
   rowPressed: { opacity: 0.68 },

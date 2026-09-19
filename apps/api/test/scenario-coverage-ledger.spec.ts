@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { SCENARIO_COVERAGE_LEDGER_REVISION } from '@lazy-armor/plan-schema';
 import { ScenarioCoverageLedgerService } from '../src/scenario-coverage-ledger/scenario-coverage-ledger.service';
+import { ReadinessEvidenceService } from '../src/runtime-catalog/readiness-evidence.service';
 
 describe('Scenario Coverage Ledger API projection', () => {
-  const service = new ScenarioCoverageLedgerService();
+  const service = new ScenarioCoverageLedgerService({} as ReadinessEvidenceService);
 
   it('returns the immutable 96-entry ledger and exact Wave 1 46/46 conclusion', () => {
     const list = service.list();

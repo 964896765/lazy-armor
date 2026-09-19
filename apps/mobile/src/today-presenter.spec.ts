@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { approvalRiskText, approvalStatusLabel, notificationPriorityLabel, riskLevelLabel, stepApprovalLabel, todayState } from './today-presenter';
+import { approvalRiskText, approvalStatusLabel, notificationPriorityLabel, riskLevelLabel, stepApprovalLabel, todayEmptyDescription, todayEmptyTitle, todayItemLabel, todayState } from './today-presenter';
 
 describe('Today presenter', () => {
   it('represents auth, loading, error, empty and ready states', () => {
@@ -35,5 +35,18 @@ describe('Today presenter', () => {
     expect(stepApprovalLabel({ approvalGateStatus: 'not_required' })).toBe('无需确认');
     expect(stepApprovalLabel({ approvalGateStatus: 'rejected' })).toBe('已拒绝');
     expect(stepApprovalLabel({})).toBe('');
+  });
+
+  it('labels today item types in consumer language', () => {
+    expect(todayItemLabel('NEEDS_APPROVAL')).toBe('待你确认');
+    expect(todayItemLabel('NEEDS_PERMISSION')).toBe('需要重新授权');
+    expect(todayItemLabel('RECONCILIATION_REQUIRED')).toBe('结果待确认');
+    expect(todayItemLabel('PLAN_RESULT')).toBe('已完成');
+    expect(todayItemLabel('PLAN_FAILURE')).toBe('没有完成');
+  });
+
+  it('uses a friendly empty state instead of a raw no-data message', () => {
+    expect(todayEmptyTitle()).toBe('今天没有需要你处理的事');
+    expect(todayEmptyDescription()).toBe('懒人装甲正在后台照看你的计划');
   });
 });

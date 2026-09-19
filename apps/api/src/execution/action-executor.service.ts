@@ -60,13 +60,18 @@ export class ActionExecutor {
     const local = this.enrichLocalContext(context);
     if (action.actionType === 'classify' && !action.connectionId) {
       const enriched = this.billing.enrichContext(local);
+      const totalAmount = enriched.amount ?? 0;
+      const categoryTotals = enriched.categoryTotals ?? {};
+      const providerTotals = enriched.providerTotals ?? {};
+      const billingPeriod = enriched.billingPeriod ?? null;
       return {
-        billingSummary: {
-          totalAmount: enriched.amount ?? 0,
-          categoryTotals: enriched.categoryTotals ?? {},
-          providerTotals: enriched.providerTotals ?? {},
-          billingPeriod: enriched.billingPeriod ?? null,
-        },
+        // Expose the raw total at top level so a later summarize step can bind it
+        // through the existing step-output → context mechanism.
+        amount: totalAmount,
+        categoryTotals,
+        providerTotals,
+        billingPeriod,
+        billingSummary: { totalAmount, categoryTotals, providerTotals, billingPeriod },
       };
     }
     if (action.actionType === 'record' && !action.connectionId) {
@@ -171,6 +176,22 @@ export class ActionExecutor {
       const logistics = this.logistics.enrichContext(local, action.config);
       const household = this.household.enrichContext(local);
       const study = this.study.enrichContext(local);
+      if (action.config.domain === 'billing' && action.config.summaryType === 'daily_account') {
+        const totalAmount = typeof billing.amount === 'number' ? billing.amount : 0;
+        const transactionCount = Array.isArray(billing.billingRecords) ? billing.billingRecords.length : 0;
+        const humanSummary = transactionCount === 0 && totalAmount === 0
+          ? '今天没有新的账目记录。'
+          : `今天账目已整理，共 ${transactionCount} 笔，合计 ${totalAmount.toFixed(2)} 元。`;
+        return {
+          billingSummary: { totalAmount, transactionCount, categoryTotals: billing.categoryTotals ?? {}, providerTotals: billing.providerTotals ?? {} },
+          humanSummary,
+          resultSummary: humanSummary,
+          shouldNotify: totalAmount !== 0,
+          notificationPriority: 'P2',
+          notificationEventType: 'daily_account_summary',
+          notificationDedupeKey: `daily-account:${executionId}`,
+        };
+      }
       if (action.config.domain === 'study') {
         const generatedTaskCount = typeof study.generatedTaskCount === 'number'
           ? study.generatedTaskCount

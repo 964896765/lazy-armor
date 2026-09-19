@@ -91,7 +91,7 @@ class DeviceAppBridgeModule(reactContext: ReactApplicationContext) : ReactContex
 
   @ReactMethod
   fun createTrustedDeviceRequestEnvelope(sessionId: String, method: String, requestPath: String, payloadJson: String, promise: Promise) {
-    if (sessionId.isBlank() || sessionId.length > 128 || method !in setOf("POST") || !requestPath.startsWith("/") || requestPath.length > 255 || payloadJson.length > 65_536) {
+    if (sessionId.isBlank() || sessionId.length > 128 || method !in setOf("GET", "POST") || !requestPath.startsWith("/") || requestPath.length > 255 || payloadJson.length > 65_536 || (method == "GET" && payloadJson != "{}")) {
       promise.reject("E_TRUSTED_DEVICE_REQUEST_ENVELOPE_INVALID", "设备请求内容无效。")
       return
     }
@@ -327,6 +327,16 @@ class DeviceAppBridgeModule(reactContext: ReactApplicationContext) : ReactContex
       promise.resolve(true)
     } catch (error: Exception) {
       promise.reject("E_APP_READ_ACK_FAILED", "无法确认前台会话事件。", error)
+    }
+  }
+
+  @ReactMethod
+  fun captureAppReadUiNodes(targetPackage: String, allowedSelectors: ReadableArray, promise: Promise) {
+    try {
+      val selectors = (0 until allowedSelectors.size()).mapNotNull { allowedSelectors.getString(it) }.toSet()
+      promise.resolve(AppReadSessionStore.captureUiNodes(reactApplicationContext, targetPackage, selectors).toString())
+    } catch (error: Exception) {
+      promise.reject("E_APP_READ_UI_NODES_UNAVAILABLE", "无法读取目标应用的可控节点。", error)
     }
   }
 

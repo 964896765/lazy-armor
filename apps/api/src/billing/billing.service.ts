@@ -84,6 +84,10 @@ export class BillingService {
   }
 
   enrichContext(context: BillingContext) {
+    const fact = context.hydratedFactValue as { amountMinor?: unknown; currency?: unknown } | undefined;
+    if (fact && typeof fact.amountMinor === 'number' && typeof fact.currency === 'string') {
+      context = { ...context, amount: Number((fact.amountMinor / 100).toFixed(2)), currency: fact.currency };
+    }
     if (!Array.isArray(context.billingRecords) && typeof context.amount !== 'number' && !this.hasChangePair(context.amountChange)) return context;
     return this.buildBillingContext(context);
   }

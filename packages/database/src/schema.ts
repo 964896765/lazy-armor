@@ -495,6 +495,43 @@ export const deviceAppConnections = mysqlTable('device_app_connections', {
   index('device_app_connections_user_updated_idx').on(table.userId, table.updatedAt),
 ]);
 
+export const deviceHeartbeats = mysqlTable('device_heartbeats', {
+  id: uuidBinary('id').primaryKey(),
+  userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  trustedDeviceId: uuidBinary('trusted_device_id').notNull().references(() => trustedDevices.id, { onDelete: 'restrict' }),
+  deviceId: varchar('device_id', { length: 128 }).notNull(),
+  onlineState: varchar('online_state', { length: 32 }).notNull(),
+  lastHeartbeatAt: datetime('last_heartbeat_at', { mode: 'date', fsp: 6 }).notNull(),
+  createdAt: datetime('created_at', { mode: 'date', fsp: 6 }).notNull(),
+}, (table) => [
+  uniqueIndex('device_heartbeats_user_device_uq').on(table.userId, table.trustedDeviceId),
+  index('device_heartbeats_user_heartbeat_idx').on(table.userId, table.lastHeartbeatAt),
+]);
+
+export const deviceTasks = mysqlTable('device_tasks', {
+  id: uuidBinary('id').primaryKey(),
+  userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  trustedDeviceId: uuidBinary('trusted_device_id').notNull().references(() => trustedDevices.id, { onDelete: 'restrict' }),
+  deviceId: varchar('device_id', { length: 128 }).notNull(),
+  taskType: varchar('task_type', { length: 64 }).notNull(),
+  factKey: varchar('fact_key', { length: 180 }).notNull(),
+  resourceType: varchar('resource_type', { length: 120 }).notNull(),
+  payloadJson: json('payload_json').$type<Record<string, unknown>>().notNull(),
+  status: varchar('status', { length: 32 }).notNull(),
+  claimToken: char('claim_token', { length: 64 }),
+  claimedAt: datetime('claimed_at', { mode: 'date', fsp: 6 }),
+  leaseExpiresAt: datetime('lease_expires_at', { mode: 'date', fsp: 6 }),
+  resultJson: json('result_json').$type<Record<string, unknown>>(),
+  resultHash: char('result_hash', { length: 64 }),
+  errorCode: varchar('error_code', { length: 120 }),
+  ...timestamps,
+  completedAt: datetime('completed_at', { mode: 'date', fsp: 6 }),
+}, (table) => [
+  uniqueIndex('device_tasks_claim_token_uq').on(table.claimToken),
+  index('device_tasks_user_status_idx').on(table.userId, table.status),
+  index('device_tasks_user_created_idx').on(table.userId, table.createdAt),
+]);
+
 export const mobileNotificationReceipts = mysqlTable('mobile_notification_receipts', {
   id: uuidBinary('id').primaryKey(),
   userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
@@ -607,6 +644,33 @@ export const appReadSessionEvents = mysqlTable('app_read_session_events', {
   uniqueIndex('app_read_session_events_session_key_uq').on(table.sessionId, table.eventKey),
   index('app_read_session_events_session_created_idx').on(table.sessionId, table.createdAt),
   index('app_read_session_events_observation_idx').on(table.observationId),
+]);
+
+export const readEvidence = mysqlTable('read_evidence', {
+  id: uuidBinary('id').primaryKey(),
+  userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  requestId: varchar('request_id', { length: 64 }).notNull(),
+  sourceType: varchar('source_type', { length: 32 }).notNull(),
+  resourceType: varchar('resource_type', { length: 120 }).notNull(),
+  resourceId: varchar('resource_id', { length: 255 }),
+  readMethod: varchar('read_method', { length: 32 }).notNull(),
+  parserId: varchar('parser_id', { length: 120 }).notNull(),
+  contentHash: char('content_hash', { length: 64 }).notNull(),
+  evidenceHash: char('evidence_hash', { length: 64 }).notNull(),
+  sourceIdentity: varchar('source_identity', { length: 255 }),
+  resourceIdentity: varchar('resource_identity', { length: 255 }),
+  status: varchar('status', { length: 32 }).notNull(),
+  confidence: int('confidence').notNull(),
+  observationId: uuidBinary('observation_id').references(() => sourceObservations.id, { onDelete: 'restrict' }),
+  candidateIdsJson: json('candidate_ids_json').$type<string[]>(),
+  truthRecordIdsJson: json('truth_record_ids_json').$type<string[]>(),
+  blockedReason: varchar('blocked_reason', { length: 255 }),
+  warningsJson: json('warnings_json').$type<string[]>(),
+  ...timestamps,
+}, (table) => [
+  uniqueIndex('read_evidence_user_request_uq').on(table.userId, table.requestId),
+  index('read_evidence_user_created_idx').on(table.userId, table.createdAt),
+  index('read_evidence_observation_idx').on(table.observationId),
 ]);
 
 export const billingRecords = mysqlTable('billing_records', {
@@ -1291,6 +1355,7 @@ export const notifications = mysqlTable('notifications', {
   executionId: uuidBinary('execution_id').references(() => executions.id, { onDelete: 'restrict' }),
   executionStepId: uuidBinary('execution_step_id').references(() => executionSteps.id, { onDelete: 'restrict' }),
   approvalRequestId: uuidBinary('approval_request_id').references(() => approvalRequests.id, { onDelete: 'restrict' }),
+  connectionId: uuidBinary('connection_id').references(() => connections.id, { onDelete: 'restrict' }),
   priority: varchar('priority', { length: 8 }).notNull(),
   eventType: varchar('event_type', { length: 100 }).notNull(),
   titleKey: varchar('title_key', { length: 120 }),

@@ -75,6 +75,21 @@ export class LogisticsService {
   }
 
   enrichContext(context: LogisticsContext, config: Record<string, unknown> = {}) {
+    const factStatus = this.normalizeStatusFact(context.hydratedFactValue);
+    if (factStatus) {
+      return {
+        ...context,
+        currentStatus: factStatus,
+        trackingNumberMasked: '这个快递',
+        latestEventSummary: this.statusEventSummary(factStatus),
+        delivered: factStatus === 'delivered',
+        explicitException: factStatus === 'exception',
+        isException: factStatus === 'exception',
+        stale: false,
+        staleHours: null,
+        hoursSinceUpdate: 0,
+      };
+    }
     const snapshot = this.normalizeSnapshot(context.logisticsTrackingSnapshot ?? context);
     if (!snapshot) return context;
     const staleHours = typeof config.staleHours === 'number'
@@ -140,7 +155,17 @@ export class LogisticsService {
 
   private eventSummary(snapshot: LogisticsSnapshotShape) {
     if (snapshot.latestEvent) return snapshot.latestEvent;
-    switch (snapshot.status) {
+    return this.statusEventSummary(snapshot.status);
+  }
+
+  private normalizeStatusFact(value: unknown): string | null {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    const row = value as Record<string, unknown>;
+    return typeof row.status === 'string' && row.status ? row.status : null;
+  }
+
+  private statusEventSummary(status: string) {
+    switch (status) {
       case 'created':
         return '快递信息已创建';
       case 'in_transit':

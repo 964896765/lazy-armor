@@ -10,11 +10,11 @@ import { AnimatedEntry, PlanRow, WorkspaceHeader, WorkspaceSection, colors, radi
 import {
   consumerPlanGroup,
   consumerPlanGroupSubtitle,
+  consumerPlanStatusLabel,
+  consumerPlanStatusTone,
   planCenterStatusLabel,
   planDomainLabel,
   planNextRunLabel,
-  planStatusLabel,
-  planStatusTone,
   planVisualIcon,
   type ConsumerPlanGroup,
 } from '../../src/plan-presenter';
@@ -106,8 +106,8 @@ export default function Plans() {
                         name={name}
                         description={planDescription(plan)}
                         detail={`${planDomainLabel(plan.domain)} · ${planNextRunLabel(plan.status, plan.nextExpectedRunAt)}`}
-                        status={plan.hasMissingConnection ? '还差一步' : planStatusLabel(plan.status)}
-                        statusTone={plan.hasMissingConnection ? 'warning' : planStatusTone(plan.status)}
+                        status={consumerPlanStatusLabel({ status: plan.status, hasMissingConnection: plan.hasMissingConnection })}
+                        statusTone={consumerPlanStatusTone({ status: plan.status, hasMissingConnection: plan.hasMissingConnection })}
                         onPress={() => router.push(`/plans/${plan.id}` as never)}
                         last={index === items.length - 1}
                       />

@@ -11,6 +11,8 @@ describe('generic reality parser and normalizer registry', () => {
     ['generic.transaction.v1', { subjectKey: 'tx-1', amountMinor: 12850, currency: 'CNY' }, 'finance.transaction.amount'],
     ['generic.shipment-status.v1', { subjectKey: 'shipment-1', status: 'IN_TRANSIT' }, 'shipment.status'],
     ['generic.connection-health.v1', { subjectKey: 'connection-1', status: 'HEALTHY' }, 'digital_account.connection.health'],
+    ['generic.device-status.v1', { subjectKey: 'device-1', status: 'ONLINE' }, 'device_status.status.state'],
+    ['generic.bill-reminder.v1', { subjectKey: 'bill-1', status: 'DUE' }, 'bill.bill.state'],
   ] as const)('normalizes %s through one contract', (parser, payload, factKey) => {
     expect(parseAndNormalizeObservation(base(parser, payload))).toEqual([expect.objectContaining({ factKey, confidence: 1 })]);
   });

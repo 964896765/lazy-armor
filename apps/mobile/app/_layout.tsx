@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { AuthGate } from '../src/auth-gate';
 import { useAuthStore } from '../src/auth-store';
 import { colors } from '../src/design';
+import { useDeviceTaskRunnerLifecycle } from '../src/device-task-lifecycle-hook';
 
 export default function RootLayout() {
   const [client] = useState(() => new QueryClient({
@@ -13,6 +14,7 @@ export default function RootLayout() {
     },
   }));
   const hydrate = useAuthStore((state) => state.hydrate);
+  useDeviceTaskRunnerLifecycle();
   useEffect(() => {
     void hydrate();
   }, [hydrate]);

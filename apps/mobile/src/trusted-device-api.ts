@@ -49,9 +49,12 @@ export async function ensureTrustedDevice(token: string | null, options?: { forc
 
 export async function deviceBoundApi<T>(path: string, token: string | null, init: RequestInit) {
   if (!token) throw new Error('AUTH_REQUIRED');
-  if (init.method !== 'POST' || typeof init.body !== 'string') throw new Error('DEVICE_REQUEST_BODY_REQUIRED');
+  const method = init.method;
+  if (method !== 'GET' && method !== 'POST') throw new Error('DEVICE_REQUEST_METHOD_INVALID');
+  if (method === 'POST' && typeof init.body !== 'string') throw new Error('DEVICE_REQUEST_BODY_REQUIRED');
+  if (method === 'GET' && init.body !== undefined) throw new Error('DEVICE_GET_BODY_FORBIDDEN');
   const device = await ensureTrustedDevice(token);
-  const envelope = await createTrustedDeviceRequestEnvelope(device.deviceSession.id, 'POST', path, init.body);
+  const envelope = await createTrustedDeviceRequestEnvelope(device.deviceSession.id, method, path, method === 'GET' ? '{}' : init.body as string);
   if (!envelope) throw new Error('DEVICE_REQUEST_PROOF_UNAVAILABLE');
   return api<T>(path, token, {
     ...init,

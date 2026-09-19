@@ -220,10 +220,17 @@ const resourcesByKey = new Map(RESOURCE_CATALOG.map((resource) => [resource.key,
 const factsByKey = new Map(FACT_SCHEMA_CATALOG.map((fact) => [fact.key, fact]));
 const strategiesByKey = new Map(STRATEGY_PROFILES.map((strategy) => [strategy.key, strategy]));
 
-function resourceFor(key: string): ResourceDefinition {
+function resourceFor(scenario: ScenarioDefinition, key: string): ResourceDefinition {
   const resource = resourcesByKey.get(key);
-  if (!resource) throw new Error(`Coverage ledger references unknown resource: ${key}`);
-  return resource;
+  if (resource) return resource;
+  // Runtime scenarios reference the Reality Pipeline resource type directly; the
+  // canonical fact schema is the single source of truth for those resource names.
+  const factSchema = FACT_SCHEMA_CATALOG.find((schema) => schema.resourceType === key);
+  if (!factSchema) throw new Error(`Coverage ledger references unknown resource: ${key}`);
+  return Object.freeze({
+    schemaVersion: '1' as const, key, label: key, domain: scenario.domain,
+    identityFields: Object.freeze(['subject_key', 'external_key']), revision: 1, status: 'ACTIVE' as const,
+  });
 }
 
 function factFor(key: string): FactSchemaDefinition {
@@ -258,7 +265,7 @@ function coverageEntry(scenario: ScenarioDefinition): ScenarioCoverageLedgerEntr
     definition: Object.freeze({ scenarioRevision: scenario.revision, definitionHash: catalogHash(scenario), label: scenario.label,
       domain: scenario.domain, status: scenario.status, immutableRevision: true as const }),
     resources: Object.freeze(scenario.primaryResourceTypes.map((key) => {
-      const resource = resourceFor(key);
+      const resource = resourceFor(scenario, key);
       return Object.freeze({ key: resource.key, label: resource.label, domain: resource.domain, revision: resource.revision, status: resource.status });
     })),
     facts: Object.freeze([...scenario.requiredFacts, ...scenario.optionalFacts].map((key) => {

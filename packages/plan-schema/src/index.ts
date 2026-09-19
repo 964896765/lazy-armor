@@ -166,6 +166,7 @@ const actionConfigSchemas: Record<ActionType, z.ZodTypeAny> = {
     showMonthOverMonth: z.boolean().optional(),
     guardType: shortText.optional(),
     domain: shortText.optional(),
+    summaryType: shortText.optional(),
     staleHours: z.number().int().min(1).max(24 * 365).optional(),
     notifyOnException: z.boolean().optional(),
     notifyOnDelivered: z.boolean().optional(),
@@ -496,15 +497,37 @@ export {
   type NormalizedFactDraft, type ParserKey, type RealityPolicyDefinition, type SourceMode, type SourceObservationInput,
 } from './reality-pipeline';
 export {
+  MOBILE_CANDIDATE_KIND_VALUES, MOBILE_CANDIDATE_LEGACY_ALIASES, MOBILE_CANDIDATE_REGISTRY, mobileCandidateKindForParser, resolveMobileCandidateSpec, toSourceObservationInput,
+  type MobileCandidateKind, type MobileCandidateKindSpec, type MobileObservationEnvelope, type MobileSourceType,
+} from './mobile-observation';
+export {
   APP_READ_SESSION_EVENT_TYPES, APP_READ_SESSION_HEARTBEAT_GRACE_SECONDS, APP_READ_SESSION_MAX_SECONDS,
   APP_READ_SESSION_MODES, APP_READ_SESSION_STATUSES, APP_READ_SESSION_TERMINAL_STATUSES,
   appReadSessionStatusForEvent, canTransitionAppReadSession, isExactAndroidPackage,
   type AppReadSessionEventType, type AppReadSessionMode, type AppReadSessionStatus,
 } from './app-read-session';
 export {
+  READ_EVIDENCE_STATUSES, REDACTED_VALUE, SECURITY_BLOCKED_FIELD, SENSITIVE_FIELD_PATTERN,
+  STRUCTURED_READ_BLOCK_TYPES, STRUCTURED_READ_METHODS, STRUCTURED_READ_PARSER, STRUCTURED_READ_SOURCES,
+  WILDCARD_SELECTOR, assertAppReadProfile, canonicalRecords, canonicalTable, fieldTypeOf, isSensitiveField,
+  mapEnum, parseIsoDate, parseNumeric, readEvidenceStatusForOutcome, redactSensitiveFields, resolveStructuredReadOutcome,
+  validateStructuredField,
+  type AppReadProfile, type FieldBlock, type FieldExpectation, type FieldValidationStatus, type HeadingBlock,
+  type KeyValueBlock, type LinkBlock, type ListBlock, type MetadataBlock, type ReadEvidenceStatus,
+  type StructuredReadBlock, type StructuredReadBlockType, type StructuredReadEnvelope, type StructuredReadEvidence,
+  type StructuredReadField, type StructuredReadFieldType, type StructuredReadMethod, type StructuredReadOutcome,
+  type StructuredReadProvenance, type StructuredReadRegion, type StructuredReadRequest, type StructuredReadResult,
+  type StructuredReadSource, type TableBlock, type TableCell, type TextBlock, type UiNode, type UiNodeBlock,
+  type VisionReadInput, type VisualExtractionResult,
+} from './structured-read';
+export {
   ACTION_ADAPTER_REVISION, ACTION_INTENT_SCHEMA_VERSION, approvalSnapshotHash, approvalSnapshotInvalidation,
   buildActionIntent, riskMaximum,
   type ActionIntent, type ActionIntentInput, type ApprovalSnapshot, type ContextRiskSignal,
 } from './action-runtime';
+export {
+  ACTION_RECIPES, compileActionRecipe, resolveActionRecipe,
+  type ActionRecipe, type ActionRecipeStep,
+} from './action-recipe';
 export * from './verification-runtime';
 export * from './terminal-follow-up';

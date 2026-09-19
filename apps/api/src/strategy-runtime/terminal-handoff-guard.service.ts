@@ -111,7 +111,7 @@ export class TerminalHandoffGuard {
     };
     assertCurrent();
     const [root, leaf] = rule.factKey.split('.'); const summary = terminalRuleSummary(rule, payload);
-    return { proof, assertCurrent, triggerPayload: { [root!]: { [leaf!]: payload }, ...terminalTargetContext(target), humanSummary: summary, resultSummary: summary, notificationEventType: 'terminal_follow_up', notificationDedupeKey: `strategy:${binding.id}:${truth.record.id}:terminal`, notificationPriority: 'P2' } };
+    return { proof, assertCurrent, triggerPayload: { [root!]: { [leaf!]: payload }, ...terminalTargetContext(target), humanSummary: summary, resultSummary: summary, notificationEventType: 'github_terminal_follow_up', notificationDedupeKey: `strategy:${binding.id}:${truth.record.id}:terminal`, notificationPriority: 'P2' } };
   }
 }
 

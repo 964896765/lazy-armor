@@ -2,13 +2,13 @@ import { createHash } from 'node:crypto';
 import { canonicalStringify, type JsonValue } from './index';
 
 export const SOURCE_MODES = ['OFFICIAL_API', 'WEBHOOK', 'NOTIFICATION', 'SHARE', 'FILE', 'MANUAL', 'INTERNAL'] as const;
-export const PARSER_KEYS = ['generic.transaction.v1', 'generic.shipment-status.v1', 'generic.connection-health.v1', 'mobile-notification-billing.v1', 'generic.email-message.v1', 'generic.calendar-event.v1', 'generic.repository-resource.v1', 'generic.repository-resource.v2', 'generic.document-resource.v1'] as const;
+export const PARSER_KEYS = ['generic.transaction.v1', 'generic.shipment-status.v1', 'generic.connection-health.v1', 'generic.device-status.v1', 'generic.bill-reminder.v1', 'mobile-notification-billing.v1', 'generic.email-message.v1', 'generic.calendar-event.v1', 'generic.repository-resource.v1', 'generic.repository-resource.v2', 'generic.document-resource.v1', 'generic.consumable-remaining.v1', 'generic.household-supply.v1', 'generic.feishu-resource.v1', 'generic.dingtalk-resource.v1', 'generic.wecom-resource.v1', 'generic.structured-read.v1'] as const;
 export type SourceMode = typeof SOURCE_MODES[number];
 export type ParserKey = typeof PARSER_KEYS[number];
 
 export const REALITY_ADAPTER_REGISTRY = Object.freeze([
   ...PARSER_KEYS.map((key) => Object.freeze({ key, kind: 'PARSER' as const, revision: 1 as const, status: 'ACTIVE' as const })),
-  ...['money.v1', 'shipment-status.v1', 'connection-health.v1', 'email-message.v1', 'calendar-event.v1', 'repository-resource.v1', 'repository-resource.v2', 'document-resource.v1'].map((key) => Object.freeze({ key, kind: 'NORMALIZER' as const, revision: 1 as const, status: 'ACTIVE' as const })),
+  ...['money.v1', 'shipment-status.v1', 'connection-health.v1', 'device-status.v1', 'bill-reminder.v1', 'email-message.v1', 'calendar-event.v1', 'repository-resource.v1', 'repository-resource.v2', 'document-resource.v1', 'consumable-remaining.v1', 'household-supply.v1', 'feishu-resource.v1', 'dingtalk-resource.v1', 'wecom-resource.v1', 'structured-read.v1'].map((key) => Object.freeze({ key, kind: 'NORMALIZER' as const, revision: 1 as const, status: 'ACTIVE' as const })),
 ]);
 
 export interface SourceObservationInput {
@@ -19,10 +19,10 @@ export interface SourceObservationInput {
 }
 
 export interface NormalizedFactDraft {
-  resourceType: 'finance.transaction' | 'shipment' | 'digital_account.connection' | 'EmailMessage' | 'CalendarEvent' | 'Repository' | 'Issue' | 'PullRequest' | 'Workflow' | 'Page' | 'DataSource';
-  resourceKey: string; subjectKey: string; factKey: 'finance.transaction.amount' | 'shipment.status' | 'digital_account.connection.health' | 'email_message.metadata' | 'email_message.body' | 'email_message.labels' | 'calendar_event.schedule' | 'repository.metadata' | 'issue.state' | 'pull_request.state' | 'workflow.run_status' | 'page.properties' | 'data_source.schema';
+  resourceType: 'finance.transaction' | 'shipment' | 'digital_account.connection' | 'DeviceStatus' | 'Bill' | 'EmailMessage' | 'CalendarEvent' | 'Repository' | 'Issue' | 'PullRequest' | 'Workflow' | 'Page' | 'DataSource' | 'FeishuResource' | 'DingTalkResource' | 'WeComResource' | 'StructuredRead' | 'device.consumable' | 'household.supply';
+  resourceKey: string; subjectKey: string; factKey: 'finance.transaction.amount' | 'shipment.status' | 'digital_account.connection.health' | 'device_status.status.state' | 'bill.bill.state' | 'email_message.metadata' | 'email_message.body' | 'email_message.labels' | 'calendar_event.schedule' | 'repository.metadata' | 'issue.state' | 'pull_request.state' | 'workflow.run_status' | 'page.properties' | 'data_source.schema' | 'feishu.resource.state' | 'dingtalk.resource.state' | 'wecom.resource.state' | 'structured_read.field' | 'device.consumable.remaining_days' | 'household.supply.remaining_days';
   value: Record<string, JsonValue>; confidence: number; normalizerKey: string;
-  freshnessPolicyKey: 'transaction.default' | 'shipment.status' | 'connection.health' | 'email.message' | 'calendar.event' | 'repository.resource' | 'repository.resource.v2' | 'document.resource.v1';
+  freshnessPolicyKey: 'transaction.default' | 'shipment.status' | 'connection.health' | 'device.status' | 'bill.reminder' | 'email.message' | 'calendar.event' | 'repository.resource' | 'repository.resource.v2' | 'document.resource.v1' | 'feishu.resource' | 'dingtalk.resource' | 'wecom.resource' | 'structured.read' | 'consumable.remaining' | 'household.supply';
   conflictPolicyKey: 'latest_verified_then_observed' | 'latest_verified_then_observed.v2';
   compatibilityResourceKey?: string;
 }
@@ -37,12 +37,20 @@ export const REALITY_POLICY_REGISTRY: readonly RealityPolicyDefinition[] = Objec
   policy('transaction.default', 'FRESHNESS', { ttlSeconds: 31536000, onStale: 'retain_historical' }),
   policy('shipment.status', 'FRESHNESS', { ttlSeconds: 86400, onStale: 'refresh' }),
   policy('connection.health', 'FRESHNESS', { ttlSeconds: 300, onStale: 'refresh' }),
+  policy('device.status', 'FRESHNESS', { ttlSeconds: 300, onStale: 'refresh' }),
+  policy('bill.reminder', 'FRESHNESS', { ttlSeconds: 86400, onStale: 'refresh' }),
+  policy('consumable.remaining', 'FRESHNESS', { ttlSeconds: 86400, onStale: 'refresh' }),
+  policy('household.supply', 'FRESHNESS', { ttlSeconds: 86400, onStale: 'refresh' }),
   policy('email.message', 'FRESHNESS', { ttlSeconds: 86400, onStale: 'refresh' }),
   policy('calendar.event', 'FRESHNESS', { ttlSeconds: 300, onStale: 'refresh' }),
   policy('repository.resource', 'FRESHNESS', { ttlSeconds: 300, onStale: 'refresh' }),
   policy('latest_verified_then_observed', 'CONFLICT', { order: ['verificationLevel', 'occurredAt', 'observedAt'], unresolved: 'block' }),
   policy('repository.resource.v2', 'FRESHNESS', { ttlSeconds: 300, onStale: 'refresh', revalidation: 'authenticated_read_audit_without_mutating_truth_version' }),
   policy('document.resource.v1', 'FRESHNESS', { ttlSeconds: 300, onStale: 'refresh', revalidation: 'authenticated_read_audit_without_mutating_truth_version' }),
+  policy('feishu.resource', 'FRESHNESS', { ttlSeconds: 300, onStale: 'refresh' }),
+  policy('dingtalk.resource', 'FRESHNESS', { ttlSeconds: 300, onStale: 'refresh' }),
+  policy('wecom.resource', 'FRESHNESS', { ttlSeconds: 300, onStale: 'refresh' }),
+  policy('structured.read', 'FRESHNESS', { ttlSeconds: 300, onStale: 'refresh' }),
   policy('latest_verified_then_observed.v2', 'CONFLICT', { order: ['verificationLevel', 'providerUpdatedAt', 'observedAt'], stale: 'supersede_candidate', equalTimeDifferentValue: 'block', unchanged: 'revalidate', history: 'append_only' }),
 ]);
 
@@ -51,6 +59,9 @@ const requireString = (payload: Record<string, JsonValue>, key: string) => {
 };
 const requireInteger = (payload: Record<string, JsonValue>, key: string) => {
   const value = payload[key]; if (!Number.isSafeInteger(value) || (value as number) < 0) throw new Error(`Parser requires non-negative integer ${key}`); return value as number;
+};
+const requireNumber = (payload: Record<string, JsonValue>, key: string) => {
+  const value = payload[key]; if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) throw new Error(`Parser requires non-negative number ${key}`); return value;
 };
 
 export function parseAndNormalizeObservation(input: SourceObservationInput): NormalizedFactDraft[] {
@@ -64,6 +75,71 @@ export function parseAndNormalizeObservation(input: SourceObservationInput): Nor
     return [{ resourceType: type as 'Page' | 'DataSource', resourceKey: subjectKey, subjectKey,
       factKey: type === 'Page' ? 'page.properties' : 'data_source.schema', value: input.payload, confidence: 1,
       normalizerKey: 'document-resource.v1', freshnessPolicyKey: 'document.resource.v1', conflictPolicyKey: 'latest_verified_then_observed.v2' }];
+  }
+  if (input.parserKey === 'generic.feishu-resource.v1') {
+    if (!input.connectionId) throw new Error('Feishu resource observation requires connectionId');
+    const type = requireString(input.payload, 'resourceType'); const id = requireString(input.payload, 'resourceId');
+    const tenantKey = requireString(input.payload, 'tenantKey');
+    if (!['FeishuMessage', 'FeishuDoc', 'FeishuSheet', 'FeishuBitable', 'FeishuApproval'].includes(type)
+      || input.resourceHint !== type || typeof input.payload.updatedAt !== 'string' || !Number.isFinite(Date.parse(input.payload.updatedAt)))
+      throw new Error('Invalid Feishu resource identity');
+    const subjectKey = `${input.connectionId}:${tenantKey}:${type}:${id}`;
+    return [{ resourceType: 'FeishuResource', resourceKey: subjectKey, subjectKey, factKey: 'feishu.resource.state',
+      value: input.payload, confidence: 1, normalizerKey: 'feishu-resource.v1', freshnessPolicyKey: 'feishu.resource',
+      conflictPolicyKey: 'latest_verified_then_observed' }];
+  }
+  if (input.parserKey === 'generic.dingtalk-resource.v1') {
+    if (!input.connectionId) throw new Error('DingTalk resource observation requires connectionId');
+    const type = requireString(input.payload, 'resourceType'); const id = requireString(input.payload, 'resourceId');
+    const corpId = requireString(input.payload, 'corpId');
+    if (!['DingTalkMessage', 'DingTalkApproval', 'DingTalkWorkNotification', 'DingTalkDing'].includes(type)
+      || input.resourceHint !== type || typeof input.payload.updatedAt !== 'string' || !Number.isFinite(Date.parse(input.payload.updatedAt)))
+      throw new Error('Invalid DingTalk resource identity');
+    const subjectKey = `${input.connectionId}:${corpId}:${type}:${id}`;
+    return [{ resourceType: 'DingTalkResource', resourceKey: subjectKey, subjectKey, factKey: 'dingtalk.resource.state',
+      value: input.payload, confidence: 1, normalizerKey: 'dingtalk-resource.v1', freshnessPolicyKey: 'dingtalk.resource',
+      conflictPolicyKey: 'latest_verified_then_observed' }];
+  }
+  if (input.parserKey === 'generic.wecom-resource.v1') {
+    if (!input.connectionId) throw new Error('WeCom resource observation requires connectionId');
+    const type = requireString(input.payload, 'resourceType'); const id = requireString(input.payload, 'resourceId');
+    const corpId = requireString(input.payload, 'corpId');
+    if (!['WeComMessage', 'WeComApproval'].includes(type)
+      || input.resourceHint !== type || typeof input.payload.updatedAt !== 'string' || !Number.isFinite(Date.parse(input.payload.updatedAt)))
+      throw new Error('Invalid WeCom resource identity');
+    const subjectKey = `${input.connectionId}:${corpId}:${type}:${id}`;
+    return [{ resourceType: 'WeComResource', resourceKey: subjectKey, subjectKey, factKey: 'wecom.resource.state',
+      value: input.payload, confidence: 1, normalizerKey: 'wecom-resource.v1', freshnessPolicyKey: 'wecom.resource',
+      conflictPolicyKey: 'latest_verified_then_observed' }];
+  }
+  if (input.parserKey === 'generic.structured-read.v1') {
+    const resourceType = requireString(input.payload, 'resourceType');
+    const resourceId = requireString(input.payload, 'resourceId');
+    const sourceIdentity = requireString(input.payload, 'sourceIdentity');
+    const readMethod = requireString(input.payload, 'readMethod');
+    const observedAt = requireString(input.payload, 'observedAt');
+    const fields = input.payload.fields;
+    if (!Array.isArray(fields) || fields.length === 0) throw new Error('Structured read requires extracted fields');
+    const resourceKey = `${sourceIdentity}:${resourceType}:${resourceId}`;
+    const resourceVersion = typeof input.payload.resourceVersion === 'string' && input.payload.resourceVersion ? input.payload.resourceVersion : null;
+    return fields.map((item) => {
+      const raw = (item && typeof item === 'object' && !Array.isArray(item) ? item : {}) as Record<string, JsonValue>;
+      const field = requireString(raw, 'field');
+      const validation = (raw.validation && typeof raw.validation === 'object' && !Array.isArray(raw.validation) ? raw.validation : {}) as Record<string, JsonValue>;
+      if (validation.status === 'EXTRACTION_INVALID') throw new Error(`Structured read field ${field} did not pass deterministic validation`);
+      if (!('normalizedValue' in raw)) throw new Error(`Structured read field ${field} requires normalizedValue`);
+      const confidence = typeof raw.confidence === 'number' && Number.isFinite(raw.confidence) ? (raw.confidence as number) : 0;
+      const value: Record<string, JsonValue> = {
+        field, value: raw.normalizedValue, type: typeof raw.type === 'string' ? raw.type : 'string',
+        confidence, readMethod, resourceType, resourceId, observedAt,
+        ...(resourceVersion ? { resourceVersion } : {}),
+      };
+      return {
+        resourceType: 'StructuredRead' as const, resourceKey, subjectKey: `${resourceKey}:${field}`,
+        factKey: 'structured_read.field' as const, value, confidence, normalizerKey: 'structured-read.v1',
+        freshnessPolicyKey: 'structured.read' as const, conflictPolicyKey: 'latest_verified_then_observed.v2' as const,
+      };
+    });
   }
   if (input.parserKey === 'generic.repository-resource.v1' || input.parserKey === 'generic.repository-resource.v2') {
     const versioned = input.parserKey === 'generic.repository-resource.v2';
@@ -121,6 +197,28 @@ export function parseAndNormalizeObservation(input: SourceObservationInput): Nor
   if (input.parserKey === 'generic.shipment-status.v1') {
     const status = requireString(input.payload, 'status');
     return [{ resourceType: 'shipment', resourceKey: subjectKey, subjectKey, factKey: 'shipment.status', value: { status }, confidence: 1, normalizerKey: 'shipment-status.v1', freshnessPolicyKey: 'shipment.status', conflictPolicyKey: 'latest_verified_then_observed' }];
+  }
+  if (input.parserKey === 'generic.device-status.v1') {
+    const status = requireString(input.payload, 'status');
+    return [{ resourceType: 'DeviceStatus', resourceKey: subjectKey, subjectKey, factKey: 'device_status.status.state', value: { status }, confidence: 1, normalizerKey: 'device-status.v1', freshnessPolicyKey: 'device.status', conflictPolicyKey: 'latest_verified_then_observed' }];
+  }
+  if (input.parserKey === 'generic.bill-reminder.v1') {
+    const status = requireString(input.payload, 'status');
+    return [{ resourceType: 'Bill', resourceKey: subjectKey, subjectKey, factKey: 'bill.bill.state', value: { status }, confidence: 1, normalizerKey: 'bill-reminder.v1', freshnessPolicyKey: 'bill.reminder', conflictPolicyKey: 'latest_verified_then_observed' }];
+  }
+  if (input.parserKey === 'generic.consumable-remaining.v1') {
+    const value: Record<string, JsonValue> = { remainingDays: requireNumber(input.payload, 'remainingDays') };
+    if (typeof input.payload.levelPercent === 'number') value.levelPercent = input.payload.levelPercent;
+    if (typeof input.payload.estimatedReplacementAt === 'string') value.estimatedReplacementAt = input.payload.estimatedReplacementAt;
+    if (typeof input.payload.consumableType === 'string') value.consumableType = input.payload.consumableType;
+    return [{ resourceType: 'device.consumable', resourceKey: subjectKey, subjectKey, factKey: 'device.consumable.remaining_days', value, confidence: 1, normalizerKey: 'consumable-remaining.v1', freshnessPolicyKey: 'consumable.remaining', conflictPolicyKey: 'latest_verified_then_observed' }];
+  }
+  if (input.parserKey === 'generic.household-supply.v1') {
+    const value: Record<string, JsonValue> = { remainingDays: requireNumber(input.payload, 'remainingDays') };
+    if (typeof input.payload.itemName === 'string') value.itemName = input.payload.itemName;
+    if (typeof input.payload.category === 'string') value.category = input.payload.category;
+    if (typeof input.payload.estimatedRunOutAt === 'string') value.estimatedRunOutAt = input.payload.estimatedRunOutAt;
+    return [{ resourceType: 'household.supply', resourceKey: subjectKey, subjectKey, factKey: 'household.supply.remaining_days', value, confidence: 1, normalizerKey: 'household-supply.v1', freshnessPolicyKey: 'household.supply', conflictPolicyKey: 'latest_verified_then_observed' }];
   }
   const status = requireString(input.payload, 'status');
   return [{ resourceType: 'digital_account.connection', resourceKey: subjectKey, subjectKey, factKey: 'digital_account.connection.health', value: { status }, confidence: 1, normalizerKey: 'connection-health.v1', freshnessPolicyKey: 'connection.health', conflictPolicyKey: 'latest_verified_then_observed' }];

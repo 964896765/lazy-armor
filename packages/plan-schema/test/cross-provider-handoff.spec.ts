@@ -46,7 +46,7 @@ describe('Batch 9F cross-provider golden handoff contracts', () => {
       ruleKey: 'github.pull-request.merged.notion-update', ruleRevision: 1, kind: 'NOTION_UPDATE', providerKey: 'notion', capabilityKey: 'UPDATE_PAGE', action: notionAction,
     });
     expect(first.definition.actions[1]).toMatchObject({ actionType: 'record', stepOrder: 1 });
-    expect(first.definition.approvalPolicy).toEqual({ type: 'always', config: {} });
+    expect(first.definition.approvalPolicy).toEqual({ type: 'above_risk_level', config: { riskLevel: 'R1' } });
   });
 
   it('compiles Gmail to Calendar with an EXISTS-only deterministic condition', () => {

@@ -14,7 +14,10 @@ describe('runtime scenario catalog', () => {
   });
 
   it('keeps all resource and fact references inside shared catalogs', () => {
-    const resources = new Set(RESOURCE_CATALOG.map((item) => item.key));
+    const resources = new Set([
+      ...RESOURCE_CATALOG.map((item) => item.key),
+      ...FACT_SCHEMA_CATALOG.map((item) => item.resourceType),
+    ]);
     const facts = new Set(FACT_SCHEMA_CATALOG.map((item) => item.key));
     for (const scenario of SCENARIO_DEFINITIONS) {
       expect(scenario.primaryResourceTypes.every((item) => resources.has(item))).toBe(true);

@@ -6,6 +6,7 @@ export interface PresentableExecutionStep {
 const STATUS_LABELS: Record<string, string> = {
   created: '准备中', queued: '等待处理', running: '正在处理', retry_wait: '正在重试', waiting_approval: '等待确认',
   succeeded: '已完成', partially_succeeded: '部分完成', failed: '执行失败', cancelled: '已取消',
+  outcome_unknown: '结果待确认', unknown: '结果待确认',
 };
 
 const STEP_MARKS: Record<string, string> = {
@@ -24,13 +25,14 @@ export function executionListState(loading: boolean, error: boolean, count: numb
 }
 
 export function executionNeedsAttention(status: string) {
-  return ['failed', 'partially_succeeded', 'waiting_approval', 'cancelled'].includes(status);
+  return ['failed', 'partially_succeeded', 'waiting_approval', 'cancelled', 'outcome_unknown', 'unknown'].includes(status);
 }
 
 export function executionAttentionLabel(status: string) {
   if (status === 'waiting_approval') return '需要你确认';
   if (status === 'failed' || status === 'partially_succeeded') return '需要你处理';
   if (status === 'cancelled') return '这次已取消';
+  if (status === 'outcome_unknown' || status === 'unknown') return '结果待确认';
   return '已自动处理';
 }
 
