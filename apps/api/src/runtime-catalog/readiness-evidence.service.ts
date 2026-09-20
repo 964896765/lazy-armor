@@ -1,8 +1,8 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { and, eq, gt, isNull } from 'drizzle-orm';
-import { connections, truthRecords, truthRecordVersions, sourceObservations, appReadSessions, deviceHeartbeats, executions, strategyRuntimeBindings } from '@lazy-armor/database';
+import { connections, truthRecords, truthRecordVersions, sourceObservations, appReadSessions, deviceHeartbeats, trustedDevices, executions, plans, strategyRuntimeBindings } from '@lazy-armor/database';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
-import { evaluateScenarioReadiness, type ScenarioDefinition, type ScenarioReadiness, type ScenarioReadinessInput } from '@lazy-armor/plan-schema';
+import { APP_READ_SESSION_HEARTBEAT_GRACE_SECONDS, evaluateScenarioReadiness, type ScenarioDefinition, type ScenarioReadiness, type ScenarioReadinessInput } from '@lazy-armor/plan-schema';
 import { CapabilityUsabilityService } from '../provider-capabilities/capability-usability.service';
 import { ProviderCapabilityRegistryService } from '../provider-capabilities/provider-capability-registry.service';
 import { projectConsumerReadiness, type ConsumerReadinessProjection } from './readiness-product-projection';
@@ -51,8 +51,8 @@ export interface ScenarioRuntimeEvidence {
  *    passed in by the caller; this service does NOT duplicate the connection walk.
  *  - Available facts come only from the current, non-revoked Truth version
  *    within the scenario freshness window.
- *  - Observation availability requires a recent observation or active AppRead session.
- *  - Execution evidence requires a successful run of this scenario, not merely a Truth.
+ *  - Observation availability requires a recent observation or live AppRead heartbeat.
+ *  - Execution evidence requires a successful run of the active scenario plan version, not merely a Truth.
  */
 @Injectable()
 export class ReadinessEvidenceService {
@@ -78,14 +78,19 @@ export class ReadinessEvidenceService {
       .from(sourceObservations).where(and(eq(sourceObservations.userId, userId), gt(sourceObservations.observedAt, freshAfter))).limit(1);
 
     // Live AppRead session bound to this user also implies an observation conduit is available.
+    const sessionHeartbeatAfter = new Date(now.getTime() - APP_READ_SESSION_HEARTBEAT_GRACE_SECONDS * 1000);
     const sessionRows = await this.db.select({ id: appReadSessions.id })
-      .from(appReadSessions).where(and(eq(appReadSessions.userId, userId), eq(appReadSessions.status, 'READING'), gt(appReadSessions.expiresAt, now))).limit(1);
+      .from(appReadSessions)
+      .innerJoin(trustedDevices, and(eq(appReadSessions.trustedDeviceId, trustedDevices.id), eq(trustedDevices.status, 'active'), isNull(trustedDevices.revokedAt)))
+      .where(and(eq(appReadSessions.userId, userId), eq(trustedDevices.userId, userId), eq(appReadSessions.status, 'READING'),
+        gt(appReadSessions.expiresAt, now), gt(appReadSessions.lastHeartbeatAt, sessionHeartbeatAfter))).limit(1);
 
     const executionRows = await this.db.select({ id: executions.id })
       .from(strategyRuntimeBindings)
       .innerJoin(executions, eq(executions.planVersionId, strategyRuntimeBindings.planVersionId))
+      .innerJoin(plans, and(eq(plans.activeVersionId, strategyRuntimeBindings.planVersionId), eq(plans.status, 'active')))
       .where(and(eq(strategyRuntimeBindings.userId, userId), eq(strategyRuntimeBindings.scenarioKey, scenario.key),
-        eq(executions.userId, userId), eq(executions.status, 'succeeded'))).limit(1);
+        eq(plans.userId, userId), eq(executions.userId, userId), eq(executions.status, 'succeeded'))).limit(1);
 
     const requiredCapabilities = [...scenario.sourceRequirements, ...scenario.actionRequirements]
       .filter((requirement) => !requirement.optional)
@@ -145,7 +150,9 @@ export class ReadinessEvidenceService {
       && (capability.implementationStatus === 'PRODUCTION' || capability.implementationStatus === 'BETA')));
     const now = new Date();
     const deviceRows = await this.db.select({ lastHeartbeatAt: deviceHeartbeats.lastHeartbeatAt, onlineState: deviceHeartbeats.onlineState })
-      .from(deviceHeartbeats).where(eq(deviceHeartbeats.userId, userId));
+      .from(deviceHeartbeats)
+      .innerJoin(trustedDevices, and(eq(deviceHeartbeats.trustedDeviceId, trustedDevices.id), eq(trustedDevices.status, 'active'), isNull(trustedDevices.revokedAt)))
+      .where(and(eq(deviceHeartbeats.userId, userId), eq(trustedDevices.userId, userId)));
     const deviceOnline = deviceRows.some((row) => row.onlineState === 'online' && now.getTime() - row.lastHeartbeatAt.getTime() <= 30_000);
     const product = projectConsumerReadiness({
       readiness, capabilities: capabilities.filter((item) => requiredCapabilityKeys.has(item.capabilityKey)),

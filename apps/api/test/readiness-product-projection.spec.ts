@@ -28,4 +28,16 @@ describe('consumer readiness projection', () => {
     expect(projectConsumerReadiness({ readiness: missing, capabilities: [capability()], platformSupported: true, deviceRequired: false, deviceOnline: false }).userReadiness).toBe('NEEDS_DATA');
     expect(projectConsumerReadiness({ readiness: missing, capabilities: [capability()], platformSupported: true, deviceRequired: true, deviceOnline: false }).userReadiness).toBe('DEVICE_OFFLINE');
   });
+
+  it('distinguishes an existing connection with missing scope from no connection', () => {
+    const missing = readiness({ state: 'BLOCKED_PROVIDER', missingCapabilities: ['READ_SHIPMENT'] });
+    expect(projectConsumerReadiness({ readiness: missing, capabilities: [capability({ grant: 'PARTIAL', usable: false })], platformSupported: true, deviceRequired: false, deviceOnline: true }).userReadiness).toBe('NEEDS_PERMISSION');
+    expect(projectConsumerReadiness({ readiness: missing, capabilities: [], platformSupported: true, deviceRequired: false, deviceOnline: true }).userReadiness).toBe('NEEDS_CONNECTION');
+  });
+
+  it('does not suggest connecting again when the provider or device is unhealthy', () => {
+    const missing = readiness({ state: 'BLOCKED_PROVIDER', missingCapabilities: ['READ_SHIPMENT'] });
+    expect(projectConsumerReadiness({ readiness: missing, capabilities: [capability({ health: 'RATE_LIMITED', usable: false })], platformSupported: true, deviceRequired: false, deviceOnline: true }).userReadiness).toBe('SERVICE_UNAVAILABLE');
+    expect(projectConsumerReadiness({ readiness: missing, capabilities: [capability({ health: 'DEVICE_OFFLINE', usable: false })], platformSupported: true, deviceRequired: false, deviceOnline: true }).userReadiness).toBe('DEVICE_OFFLINE');
+  });
 });

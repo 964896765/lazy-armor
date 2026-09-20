@@ -93,4 +93,38 @@ describe.sequential('R1 evidence-backed readiness runtime projection', { timeout
     }, []);
     expect(projected.input.availableFacts).not.toContain('bill.bill.state');
   });
+
+  it('requires a live heartbeat and active device before counting an AppRead session', async () => {
+    const deviceUser = await register(app, `r1-device-${unique}@example.com`, 'Readiness Device Owner');
+    const deviceId = randomUUID();
+    const appConnectionId = randomUUID();
+    const sessionId = randomUUID();
+    const scenario = scenarioByKey('finance.bill');
+    if (!scenario) throw new Error('missing scenario');
+    const sessionOnlyScenario = { ...scenario, freshnessPolicy: { ...scenario.freshnessPolicy, maximumAgeSeconds: 0 } };
+    await pool.query(
+      `INSERT INTO trusted_devices
+        (id,user_id,device_id,key_id,public_key_spki,public_key_fingerprint,trust_level,status,last_proved_at,created_at,updated_at)
+       VALUES (UUID_TO_BIN(?),UUID_TO_BIN(?),?,'r1-key','test-public-key',?,'trusted','active',NOW(6),NOW(6),NOW(6))`,
+      [deviceId, deviceUser.userId, `r1-device-${unique}`, digest(deviceId)],
+    );
+    await pool.query(
+      `INSERT INTO device_app_connections
+        (id,user_id,device_id,trusted_device_id,package_name,display_name,modes_json,trust_level,created_at,updated_at)
+       VALUES (UUID_TO_BIN(?),UUID_TO_BIN(?),?,UUID_TO_BIN(?),'example.bill','Bill',CAST(? AS JSON),'trusted',NOW(6),NOW(6))`,
+      [appConnectionId, deviceUser.userId, `r1-device-${unique}`, deviceId, JSON.stringify(['notification_read'])],
+    );
+    await pool.query(
+      `INSERT INTO app_read_sessions
+        (id,user_id,trusted_device_id,device_app_connection_id,target_package,modes_json,status,correlation_id,last_heartbeat_at,expires_at,created_at,updated_at)
+       VALUES (UUID_TO_BIN(?),UUID_TO_BIN(?),UUID_TO_BIN(?),UUID_TO_BIN(?),'example.bill',CAST(? AS JSON),'READING',?,?,?,NOW(6),NOW(6))`,
+      [sessionId, deviceUser.userId, deviceId, appConnectionId, JSON.stringify(['NOTIFICATION']), digest(sessionId), new Date(Date.now() - 90_000), new Date(Date.now() + 300_000)],
+    );
+    const projector = app.get(ReadinessEvidenceService);
+    expect((await projector.project(deviceUser.userId, sessionOnlyScenario, [])).input.observationPipelineAvailable).toBe(false);
+    await pool.query('UPDATE app_read_sessions SET last_heartbeat_at=? WHERE id=UUID_TO_BIN(?)', [new Date(), sessionId]);
+    expect((await projector.project(deviceUser.userId, sessionOnlyScenario, [])).input.observationPipelineAvailable).toBe(true);
+    await pool.query("UPDATE trusted_devices SET status='revoked',revoked_at=NOW(6) WHERE id=UUID_TO_BIN(?)", [deviceId]);
+    expect((await projector.project(deviceUser.userId, sessionOnlyScenario, [])).input.observationPipelineAvailable).toBe(false);
+  });
 });
