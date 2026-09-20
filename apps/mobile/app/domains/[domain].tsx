@@ -9,6 +9,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/api';
 import { useAuthStore } from '../../src/auth-store';
 import { EmptyState, PlanRow, Surface, WorkspaceHeader, colors, radius, spacing, typography } from '../../src/design';
+import { connectionStatusLabel, connectionStatusTone } from '../../src/connection-presenter';
 import { planNextRunLabel, planStatusLabel, planStatusTone, planVisualIcon } from '../../src/plan-presenter';
 
 interface PlanSummary {
@@ -70,7 +71,7 @@ function DomainHero({ domain, label, description }: { domain: string; label: str
     <View style={styles.domainHero}>
       <View style={styles.heroHeading}>
         <View style={styles.heroIcon}><Ionicons name={domainIcon(domain)} size={28} color="#FFFFFF" /></View>
-        <View style={styles.heroCopy}><View style={styles.heroTitleRow}><Text style={styles.heroTitle}>{label}</Text><Text style={styles.enabledBadge}>已启用</Text></View><Text style={styles.heroDescription}>{description}</Text></View>
+        <View style={styles.heroCopy}><View style={styles.heroTitleRow}><Text style={styles.heroTitle}>{label}</Text><Text style={styles.enabledBadge}>可创建计划</Text></View><Text style={styles.heroDescription}>{description}</Text></View>
       </View>
       <View style={styles.heroScenarioGrid}>{scenarios.map((scenario) => <Pressable key={scenario.key} accessibilityRole="button" onPress={() => router.push(`/domains/${domain}/${scenario.key}` as never)} style={({ pressed }) => [styles.heroScenario, pressed && styles.pressed]}><Ionicons name={scenarioIcon(scenario.key)} size={17} color={colors.primary} /><Text numberOfLines={1} style={styles.heroScenarioLabel}>{scenario.label}</Text></Pressable>)}</View>
     </View>
@@ -82,7 +83,7 @@ function Overview({ domain, plans, activePlans, latest, connections }: { domain:
   return (
     <>
       <SectionHeading title="连接的来源" action="添加连接" onPress={() => router.push('/connections/add' as never)} />
-      <View style={styles.listCard}>{connections.length > 0 ? connections.slice(0, 3).map((item, index) => <View key={item.id} style={[styles.sourceRow, index < Math.min(connections.length, 3) - 1 && styles.rowDivider]}><View style={styles.sourceIcon}><Ionicons name={connectionIcon(item.connectorId)} size={19} color={colors.primary} /></View><View style={styles.rowCopy}><Text style={styles.rowTitle}>{item.connectorName}</Text><Text numberOfLines={1} style={styles.rowDetail}>{item.externalAccountName}</Text></View><View style={styles.statusDot} /><Text style={styles.connectedText}>已连接</Text><Ionicons name="chevron-forward" size={16} color={colors.textMuted} /></View>) : <Pressable onPress={() => router.push('/connections/add' as never)} style={styles.emptySource}><Ionicons name="add-circle-outline" size={21} color={colors.primary} /><Text style={styles.emptySourceText}>添加真实来源后，计划才能持续获取信息</Text></Pressable>}</View>
+      <View style={styles.listCard}>{connections.length > 0 ? connections.slice(0, 3).map((item, index) => <SourceRow key={item.id} item={item} last={index === Math.min(connections.length, 3) - 1} />) : <Pressable onPress={() => router.push('/connections/add' as never)} style={styles.emptySource}><Ionicons name="add-circle-outline" size={21} color={colors.primary} /><Text style={styles.emptySourceText}>添加真实来源后，计划才能持续获取信息</Text></Pressable>}</View>
 
       <SectionHeading title="进行中的计划" count={activePlans} action="查看全部" onPress={() => router.push('/plan-center' as never)} />
       <View style={styles.listCard}>{plans.length > 0 ? plans.slice(0, 3).map((plan, index) => <PlanRow key={plan.id} icon={planVisualIcon(plan.name ?? '', undefined)} name={plan.name ?? plan.currentVersion?.name ?? '我的计划'} description={plan.description ?? '按你的设置持续运行'} detail={planNextRunLabel(plan.status, plan.nextExpectedRunAt)} status={planStatusLabel(plan.status)} statusTone={planStatusTone(plan.status)} onPress={() => router.push(`/plans/${plan.id}` as never)} last={index === Math.min(plans.length, 3) - 1} />) : <Text style={styles.cardEmpty}>还没有运行中的计划。</Text>}</View>
@@ -99,6 +100,19 @@ function Overview({ domain, plans, activePlans, latest, connections }: { domain:
 
 function SectionHeading({ title, count, action, onPress }: { title: string; count?: number; action?: string; onPress?: () => void }) {
   return <View style={styles.sectionHeading}><View style={styles.sectionHeadingTitle}><Text style={styles.sectionTitleInline}>{title}</Text>{typeof count === 'number' ? <Text style={styles.countBadge}>{count}</Text> : null}</View>{action && onPress ? <Pressable onPress={onPress} style={({ pressed }) => pressed && styles.pressed}><Text style={styles.sectionAction}>{action}  ›</Text></Pressable> : null}</View>;
+}
+
+function SourceRow({ item, last }: { item: ConnectionSummary; last: boolean }) {
+  const tone = connectionStatusTone(item.status);
+  return (
+    <View style={[styles.sourceRow, !last && styles.rowDivider]}>
+      <View style={styles.sourceIcon}><Ionicons name={connectionIcon(item.connectorId)} size={19} color={colors.primary} /></View>
+      <View style={styles.rowCopy}><Text style={styles.rowTitle}>{item.connectorName}</Text><Text numberOfLines={1} style={styles.rowDetail}>{item.externalAccountName}</Text></View>
+      <View style={[styles.statusDot, tone === 'warning' && styles.statusDotWarning, tone === 'muted' && styles.statusDotMuted]} />
+      <Text style={[styles.connectedText, tone === 'warning' && styles.connectedTextWarning, tone === 'muted' && styles.connectedTextMuted]}>{connectionStatusLabel(item.status)}</Text>
+      <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+    </View>
+  );
 }
 
 function PlansSection({ plans, label }: { plans: PlanSummary[]; label: string }) {
@@ -186,7 +200,11 @@ const styles = StyleSheet.create({
   rowTitle: { ...typography.bodyStrong, color: colors.text },
   rowDetail: { ...typography.caption, color: colors.textSecondary, marginTop: 1 },
   statusDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.success },
+  statusDotWarning: { backgroundColor: colors.warning },
+  statusDotMuted: { backgroundColor: colors.textMuted },
   connectedText: { ...typography.caption, color: colors.primary, fontWeight: '700' },
+  connectedTextWarning: { color: colors.warning },
+  connectedTextMuted: { color: colors.textMuted },
   rowDivider: { borderBottomWidth: 1, borderBottomColor: colors.border },
   emptySource: { minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.md },
   emptySourceText: { ...typography.caption, color: colors.textSecondary, flex: 1 },

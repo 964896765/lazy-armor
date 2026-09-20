@@ -6,6 +6,7 @@ import {
   connectionStatusNextStep,
   connectionRecoveryAction,
   connectionStatusLabel,
+  connectionStatusTone,
   consumerErrorMessage,
   consumerErrorNextStep,
   isConsumerConnector,
@@ -61,14 +62,23 @@ describe('P2 mobile connection presenter', () => {
     expect(label).not.toBe(capability);
   });
 
-  it('maps readiness and hides platform-only connectors', () => {
-    expect(providerReadinessLabel('PRODUCTION_READY')).toBe('可使用');
-    expect(providerReadinessLabel('BETA')).toBe('可试用');
+  it('maps platform readiness without claiming the user can already use it', () => {
+    expect(providerReadinessLabel('PRODUCTION_READY')).toBe('平台已支持');
+    expect(providerReadinessLabel('BETA')).toBe('平台试用中');
     expect(providerReadinessLabel('DRAFT_ONLY')).toBe('开发中');
     expect(providerReadinessLabel('DISABLED')).toBe('暂不可用');
     expect(isConsumerConnector('gmail')).toBe(true);
     expect(isConsumerConnector('manual')).toBe(false);
     expect(isConsumerConnector('internal')).toBe(false);
+  });
+
+  it('separates a healthy connection from one needing attention', () => {
+    expect(connectionStatusTone('connected')).toBe('success');
+    expect(connectionStatusTone('degraded')).toBe('warning');
+    expect(connectionStatusTone('expired')).toBe('warning');
+    expect(connectionStatusTone('permission_required')).toBe('warning');
+    expect(connectionStatusTone('pending_authorization')).toBe('muted');
+    expect(connectionStatusTone('revoked')).toBe('muted');
   });
 
   it('maps technical failures into consumer-safe language', () => {

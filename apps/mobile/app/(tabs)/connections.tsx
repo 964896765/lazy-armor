@@ -258,7 +258,7 @@ export default function ConnectionsPage() {
   const visibleApps = (deviceApps.data ?? []).filter((item) => !needle || `${item.displayName} ${item.packageName}`.toLocaleLowerCase('zh-CN').includes(needle));
   const visibleUnconnectedApps = unconnectedApps.filter((item) => !needle || `${item.displayName} ${item.packageName}`.toLocaleLowerCase('zh-CN').includes(needle));
   const visibleAvailable = available.filter((item) => !needle || `${item.name} ${item.description}`.toLocaleLowerCase('zh-CN').includes(needle));
-  const connectedCount = (connections.data?.filter((item) => item.status !== 'revoked').length ?? 0) + (deviceApps.data?.filter((item) => item.enabled).length ?? 0);
+  const configuredCount = (connections.data?.filter((item) => item.status !== 'revoked').length ?? 0) + (deviceApps.data?.filter((item) => item.enabled).length ?? 0);
   const attentionCount = (connections.data?.filter((item) => Boolean(connectionRecoveryAction(item.status))).length ?? 0) + (deviceApps.data?.filter((item) => !item.enabled).length ?? 0);
   const hasAny = (connections.data?.length ?? 0) + (deviceApps.data?.length ?? 0) + (trustedDevices.data?.length ?? 0) > 0;
 
@@ -271,7 +271,7 @@ export default function ConnectionsPage() {
         ) : (
           <>
             <View style={styles.searchBox}><Ionicons name="search-outline" size={19} color={colors.textMuted} /><TextInput value={search} onChangeText={setSearch} placeholder="搜索已连接服务或可用来源" placeholderTextColor={colors.textMuted} style={styles.searchInput} />{search ? <Pressable accessibilityLabel="清空搜索" onPress={() => setSearch('')}><Ionicons name="close-circle" size={18} color={colors.textMuted} /></Pressable> : null}</View>
-            <View style={styles.summaryStrip}><ConnectionStat icon="link-outline" value={connectedCount} label="已连接" tone="success" /><View style={styles.statDivider} /><ConnectionStat icon="alert-circle-outline" value={attentionCount} label="需关注" tone={attentionCount > 0 ? 'warning' : 'muted'} /><View style={styles.statDivider} /><ConnectionStat icon="apps-outline" value={deviceApps.data?.length ?? 0} label="手机应用" tone="brand" /></View>
+            <View style={styles.summaryStrip}><ConnectionStat icon="link-outline" value={configuredCount} label="已添加" tone="success" /><View style={styles.statDivider} /><ConnectionStat icon="alert-circle-outline" value={attentionCount} label="需关注" tone={attentionCount > 0 ? 'warning' : 'muted'} /><View style={styles.statDivider} /><ConnectionStat icon="apps-outline" value={deviceApps.data?.length ?? 0} label="手机应用" tone="brand" /></View>
             {connections.isLoading ? <ActivityIndicator color={colors.primary} /> : null}
             {!hasAny ? <View style={styles.emptyConnection}><Text style={styles.emptyConnectionTitle}>还没有连接服务</Text><Text style={styles.emptyConnectionCopy}>添加在线服务或这台手机上的应用</Text><ActionButton label="添加连接" onPress={() => router.push('/connections/add' as Href)} /></View> : null}
 
@@ -334,7 +334,7 @@ function TrustedDeviceRow({ device }: { device: TrustedDeviceSummary }) {
   return (
     <Pressable accessibilityRole="button" onPress={() => router.push('/connections/trusted-devices' as Href)} style={({ pressed }) => [styles.connectionRow, pressed && styles.rowPressed]}>
       <View style={styles.compactIcon}><Ionicons name="phone-portrait-outline" size={20} color={colors.primary} /></View>
-      <View style={styles.compactCopy}><Text numberOfLines={1} style={styles.compactTitle}>可信设备</Text><Text style={styles.compactDetail}>{device.status === 'active' ? mobileAppStateLabel('ONLINE') : '已撤销'}</Text></View>
+      <View style={styles.compactCopy}><Text numberOfLines={1} style={styles.compactTitle}>可信设备</Text><Text style={styles.compactDetail}>{device.status === 'active' ? '已信任，在线状态另行检测' : '已撤销'}</Text></View>
       <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
     </Pressable>
   );

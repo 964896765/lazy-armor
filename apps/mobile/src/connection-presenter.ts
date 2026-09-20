@@ -14,6 +14,14 @@ export function connectionStatusLabel(status: string) {
   }
 }
 
+export type ConnectionStatusTone = 'success' | 'warning' | 'muted';
+
+export function connectionStatusTone(status: string): ConnectionStatusTone {
+  if (status === 'connected') return 'success';
+  if (status === 'pending_authorization' || status === 'revoked') return 'muted';
+  return 'warning';
+}
+
 export function connectionRecoveryAction(status: string): string | null {
   switch (status) {
     case 'reauthorization_required':
@@ -28,7 +36,7 @@ export function connectionRecoveryAction(status: string): string | null {
 export function connectionStatusExplanation(status: string) {
   switch (status) {
     case 'pending_authorization': return '正在等待你完成授权，完成后计划就能继续读取所需数据。';
-    case 'connected': return '连接状态正常，计划可以继续读取当前授权范围内的数据。';
+    case 'connected': return '账号连接已建立；各项能力是否可用，还要看授权范围与当前运行状态。';
     case 'degraded': return '连接状态不稳定，下一次自动运行可能拿不到完整结果。';
     case 'expired': return '连接已经过期，计划暂时拿不到最新数据。';
     case 'permission_required': return '这条连接缺少当前计划需要的授权范围。';
@@ -59,8 +67,8 @@ export function connectionStatusNextStep(status: string) {
 
 export function providerReadinessLabel(status: string) {
   switch (status) {
-    case 'PRODUCTION_READY': return '可使用';
-    case 'BETA': return '可试用';
+    case 'PRODUCTION_READY': return '平台已支持';
+    case 'BETA': return '平台试用中';
     case 'DRAFT_ONLY': return '开发中';
     case 'DISABLED': return '暂不可用';
     default: return '暂不可用';
