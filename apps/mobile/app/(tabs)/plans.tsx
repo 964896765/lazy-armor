@@ -14,6 +14,7 @@ import {
   consumerPlanStatusTone,
   planCenterStatusLabel,
   planDomainLabel,
+  planExceptionReason,
   planNextRunLabel,
   planVisualIcon,
   type ConsumerPlanGroup,
@@ -36,6 +37,8 @@ interface PlanSummary {
   planCenterSummary: {
     kind: 'logistics' | 'household' | 'content' | 'daily_summary' | 'study' | 'device';
     currentStatus: string;
+    isException?: boolean;
+    latestEventSummary?: string | null;
   } | null;
 }
 
@@ -128,6 +131,8 @@ function InlineState({ icon, title, description, action, onPress }: { icon: Comp
 }
 
 function planDescription(plan: PlanSummary) {
+  const exception = planExceptionReason(plan);
+  if (exception) return exception;
   if (plan.planCenterSummary) return planCenterStatusLabel(plan.planCenterSummary.kind, plan.planCenterSummary.currentStatus);
   if (plan.description) return plan.description;
   if (plan.latestExecution?.resultSummary) return plan.latestExecution.resultSummary;

@@ -76,6 +76,20 @@ export function consumerPlanStatusTone(input: ConsumerPlanStatusInput): 'success
   return 'warning';
 }
 
+export interface PlanExceptionInput {
+  hasMissingConnection?: boolean;
+  latestExecution?: { status: string; resultSummary: string | null } | null;
+  planCenterSummary?: { isException?: boolean; latestEventSummary?: string | null } | null;
+}
+
+/** Explains why a plan needs attention, in consumer language; null when nothing is wrong. */
+export function planExceptionReason(plan: PlanExceptionInput): string | null {
+  if (plan.hasMissingConnection) return '还缺少连接或授权，补上后就能继续';
+  if (plan.latestExecution?.status === 'failed') return plan.latestExecution.resultSummary ?? '上一次运行没有成功完成';
+  if (plan.planCenterSummary?.isException) return plan.planCenterSummary.latestEventSummary ?? '这次检查发现了需要留意的情况';
+  return null;
+}
+
 export interface PlanEvidenceInput {
   factLabel: string;
   value: string;

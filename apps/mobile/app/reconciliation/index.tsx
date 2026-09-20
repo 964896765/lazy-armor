@@ -18,9 +18,9 @@ interface ReconciliationCase extends ReconciliationCaseSummary {
 export default function ReconciliationIndexPage() {
   const token = useAuthStore((store) => store.token);
   const cases = useQuery({ queryKey: ['reconciliation-cases', token], queryFn: () => api<ReconciliationCase[]>('/reconciliation-cases', token), enabled: Boolean(token) });
-  return <RuntimeDetailScreen title="Reconciliation" subtitle="对不确定外部结果进行只读回查，不重发原动作">
+  return <RuntimeDetailScreen title="结果回查" subtitle="对不确定的外部结果进行只读回查，不会重发原动作">
     {!token ? <LoginRequired /> : null}
-    {token ? <RuntimeLoadState loading={cases.isLoading} error={cases.isError} empty={!cases.isLoading && !cases.isError && (cases.data?.length ?? 0) === 0} onRetry={() => cases.refetch()} loadingText="正在读取回查记录…" emptyTitle="没有待收口结果" emptyDescription="只有真实运行产生不确定结果后，才会出现 Reconciliation 记录。" /> : null}
+    {token ? <RuntimeLoadState loading={cases.isLoading} error={cases.isError} empty={!cases.isLoading && !cases.isError && (cases.data?.length ?? 0) === 0} onRetry={() => cases.refetch()} loadingText="正在读取回查记录…" emptyTitle="没有待收口结果" emptyDescription="只有真实运行产生不确定结果后，才会出现结果回查记录。" /> : null}
     <View style={styles.list}>{cases.data?.map((item) => <Pressable accessibilityRole="button" key={item.id} onPress={() => router.push(`/reconciliation/${item.id}` as never)} style={styles.row}><View style={styles.copy}><Text style={styles.title}>{reconciliationStatusCopy(item.status)}</Text><Text style={styles.detail}>{runtimeResultCopy(item.resultState)} · 回查 {item.attemptCount} 次</Text><Text style={styles.detail}>{displayTime(item.updatedAt ?? item.createdAt)}</Text></View><Text style={styles.open}>查看</Text></Pressable>)}</View>
   </RuntimeDetailScreen>;
 }

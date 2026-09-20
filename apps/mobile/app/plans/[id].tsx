@@ -246,7 +246,7 @@ export default function PlanDetailPage() {
               <View style={local.settingsContent}>
                 <View style={local.settingsBlock}>
                   {planEvidenceLines(summary.data, version.data).map((line, index) => <Text style={local.text} key={index}>{line}</Text>)}
-                  <Text style={local.text}>来源与验证状态请见「15 步生命周期」。</Text>
+                  <Text style={local.text}>来源与验证状态请见「完整过程」。</Text>
                 </View>
               </View>
             ) : null}
@@ -281,7 +281,7 @@ export default function PlanDetailPage() {
                 <View style={local.settingsBlock}>
                   <Text style={local.cardTitle}>管理这条计划</Text>
                   <View style={local.actions}>
-                    <ActionButton label="查看 15 步生命周期" tone="quiet" onPress={() => router.push(`/plans/${id}/lifecycle` as never)} />
+                    <ActionButton label="查看完整过程" tone="quiet" onPress={() => router.push(`/plans/${id}/lifecycle` as never)} />
                     <ActionButton label="编辑计划" tone="quiet" onPress={() => router.push(`/plans/${id}/edit` as never)} />
                     <ActionButton label={apply.isPending ? '启用中…' : '启用修改'} onPress={() => apply.mutate()} disabled={apply.isPending || !currentVersionNumber || summary.data.hasMissingConnection} />
                     {summary.data.allowedTransitions.map((status) => <ActionButton key={status} label={statusActionLabel(status)} tone={status === 'archived' ? 'danger' : 'quiet'} onPress={() => changeStatus.mutate(status)} disabled={changeStatus.isPending} />)}
@@ -373,13 +373,6 @@ function notificationText(version: PlanVersionDetail) {
     return `按“${notificationPreferenceLabel(version.templateConfig.notificationPreference)}”处理。`;
   }
   return actionSummary('notify', notifyAction.config);
-}
-
-function latestExceptionText(summary: PlanSummary) {
-  if (!summary.latestExecution) return '最近没有发现异常。';
-  if (summary.latestExecution.status === 'failed') return summary.latestExecution.resultSummary ?? '上一次运行没有成功完成。';
-  if (summary.hasMissingConnection) return '当前缺少连接或授权，需要先补齐。';
-  return '最近没有发现异常。';
 }
 
 function statusActionLabel(status: string) {

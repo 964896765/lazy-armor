@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { consumerPlanGroup, consumerPlanGroupSubtitle, consumerPlanStatusLabel, consumerPlanStatusTone, planDomainLabel, planEvidenceLine, planNextRunLabel, planStatusLabel, planStatusTone, planVisualIcon, templateGroupLabel } from './plan-presenter';
+import { consumerPlanGroup, consumerPlanGroupSubtitle, consumerPlanStatusLabel, consumerPlanStatusTone, planDomainLabel, planEvidenceLine, planExceptionReason, planNextRunLabel, planStatusLabel, planStatusTone, planVisualIcon, templateGroupLabel } from './plan-presenter';
 
 describe('Plan presenter', () => {
   it('maps known templates into the four consumer groups', () => {
@@ -56,6 +56,15 @@ describe('Plan presenter', () => {
     expect(consumerPlanStatusTone({ status: 'active' })).toBe('success');
     expect(consumerPlanStatusTone({ status: 'active', hasMissingConnection: true })).toBe('warning');
     expect(consumerPlanStatusTone({ status: 'degraded' })).toBe('warning');
+  });
+
+  it('explains a plan exception in consumer language', () => {
+    expect(planExceptionReason({ hasMissingConnection: true })).toContain('连接或授权');
+    expect(planExceptionReason({ latestExecution: { status: 'failed', resultSummary: '服务暂时不可用' } })).toBe('服务暂时不可用');
+    expect(planExceptionReason({ latestExecution: { status: 'failed', resultSummary: null } })).toContain('没有成功');
+    expect(planExceptionReason({ planCenterSummary: { isException: true, latestEventSummary: '快递异常' } })).toBe('快递异常');
+    expect(planExceptionReason({})).toBeNull();
+    expect(planExceptionReason({ latestExecution: { status: 'succeeded', resultSummary: '正常' } })).toBeNull();
   });
 
   it('builds a consumer "查看依据" line for device consumable evidence', () => {

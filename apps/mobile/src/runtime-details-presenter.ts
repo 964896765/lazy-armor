@@ -125,7 +125,7 @@ export function reconciliationStatusCopy(status: string): string {
 }
 
 export function reconciliationSafetyCopy(): string {
-  return '操作可能已经生效。Reconciliation 只会进行只读回查，不会重发原动作；结果未核实前请勿重复执行。';
+  return '操作可能已经生效。系统只会进行只读回查，不会重发原动作；结果未核实前请勿重复执行。';
 }
 
 export function runtimeResultCopy(value: string): string {

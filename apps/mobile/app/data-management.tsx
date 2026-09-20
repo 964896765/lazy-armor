@@ -22,7 +22,7 @@ export default function DataManagementPage() {
 
   return (
     <ScrollView style={local.page} contentContainerStyle={local.content}>
-      <ShellPage title="数据管理" subtitle="先告诉你现在有哪些连接、资料、计划和记录；账户删除流程如果还没进入生产开启，会明确标记 Deferred Gate。">
+      <ShellPage title="数据管理" subtitle="先告诉你现在有哪些连接、资料、计划和记录；账户删除流程尚未正式开启。">
         {loading && <ActivityIndicator />}
         <View style={styles.card}>
           <Text style={styles.cardTitle}>你当前的数据</Text>
@@ -30,17 +30,17 @@ export default function DataManagementPage() {
           <Text style={styles.cardText}>设备资料：{(counts[1] ?? 0) + (counts[3] ?? 0) + (counts[4] ?? 0)}</Text>
           <Text style={styles.cardText}>车辆资料：{counts[2] ?? 0}</Text>
           <Text style={styles.cardText}>计划：{counts[5] ?? 0}</Text>
-          <Text style={styles.cardText}>Execution / Record：{counts[6] ?? 0}</Text>
+          <Text style={styles.cardText}>运行记录：{counts[6] ?? 0}</Text>
         </View>
         <View style={styles.card}>
           <Text style={styles.cardTitle}>删除规则说明</Text>
           <Text style={styles.cardText}>连接断开后会立即失去对应运行权限，但历史计划和记录仍保留事实轨迹。</Text>
-          <Text style={styles.cardText}>Execution 与 Audit 保持追加式记录，不会为了界面删除而改写历史事实。</Text>
+          <Text style={styles.cardText}>运行与安全记录保持追加式记录，不会为了界面删除而改写历史事实。</Text>
         </View>
         <View style={styles.card}>
           <Text style={styles.cardTitle}>账户删除入口状态</Text>
-          <Text style={styles.cardText}>当前状态：Deferred Gate</Text>
-          <Text style={styles.cardText}>原因：P4 先建立正式入口与规则说明，真正生产删除流程留待后续安全验收完成后开启。</Text>
+          <Text style={styles.cardText}>当前状态：尚未开启</Text>
+          <Text style={styles.cardText}>账户删除流程尚未完成安全验收，正式入口会后续开启。</Text>
         </View>
       </ShellPage>
     </ScrollView>
