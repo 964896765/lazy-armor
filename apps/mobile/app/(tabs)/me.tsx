@@ -8,7 +8,7 @@ import { api } from '../../src/api';
 import { useAuthStore } from '../../src/auth-store';
 import { WorkspaceHeader, colors, radius, spacing, typography } from '../../src/design';
 
-interface Connection { id: string }
+interface Connection { id: string; status: string }
 interface DeviceProfile { id: string }
 interface VehicleProfile { id: string }
 interface UnreadCount { count: number }
@@ -36,7 +36,7 @@ export default function Me() {
 
         <Text style={styles.sectionLabel}>我的生活</Text>
         <View style={styles.menu}>
-          <MenuRow icon="link-outline" title="我的连接" detail={token ? `已连接 ${connections.data?.length ?? 0} 个服务` : '登录与连接服务'} onPress={() => router.push('/connections')} />
+          <MenuRow icon="link-outline" title="我的连接" detail={token ? `已添加 ${(connections.data ?? []).filter((item) => item.status !== 'revoked').length} 个服务` : '登录与连接服务'} onPress={() => router.push('/connections')} />
           <Divider />
           <MenuRow icon="phone-portrait-outline" title="我的设备" detail={`已记录 ${devices.data?.length ?? 0} 台`} onPress={() => router.push('/devices' as Href)} />
           <Divider />

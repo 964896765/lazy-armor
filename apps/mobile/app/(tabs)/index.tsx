@@ -82,7 +82,7 @@ export default function Today() {
     ...(today.data?.connectionIssues ?? []).map((item) => ({
       id: `connection:${item.planId}:${item.connectionId}`,
       icon: 'refresh-outline',
-      title: `${item.providerName}${connectionStatusLabel(item.connectionStatus)}`,
+      title: `${item.providerName} · ${connectionStatusLabel(item.connectionStatus)}`,
       description: `${connectionStatusExplanation(item.connectionStatus)}“${item.planName}”会保留当前设置。${connectionStatusNextStep(item.connectionStatus)}`,
       tone: 'warning' as const,
       onPress: () => router.push(`/connections/${item.connectionId}` as never),
