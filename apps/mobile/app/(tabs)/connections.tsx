@@ -16,6 +16,7 @@ import { ensureTrustedDevice } from '../../src/trusted-device-api';
 import {
   capabilityDescription,
   capabilityLabel,
+  capabilityRealitySummary,
   capabilityRiskHint,
   connectionActionLabel,
   connectionBucket,
@@ -38,6 +39,8 @@ interface ConnectionPlanUsage { planId: string; planName: string; planStatus: st
 interface OAuthStartResult { providerKey: string; authorizationUrl: string; expiresAt: string }
 interface DeviceAppConnection { id: string; trustedDeviceId: string | null; packageName: string; displayName: string; enabled: boolean; modes: string[]; lastSeenAt: string | null }
 interface TrustedDeviceSummary { id: string; status: 'active' | 'revoked' }
+interface CapabilityReality { key: string; name: string; providerAvailability: string; implementation: string; grant: string; health: string; usable: boolean; reasons: string[] }
+interface CapabilityRealityResponse { manifestRevision: number | null; providerReview: string; capabilities: CapabilityReality[] }
 
 function stringParam(value: string | string[] | undefined) { return Array.isArray(value) ? value[0] : value; }
 
@@ -55,6 +58,7 @@ function ConnectedService({ item, connector, token }: { item: Connection; connec
   const [feedback, setFeedback] = useState<string | null>(null);
   const permissions = useQuery({ queryKey: ['connection-permissions', item.id], queryFn: () => api<Permission[]>(`/connections/${item.id}/permissions`, token) });
   const plans = useQuery({ queryKey: ['connection-plans', item.id], queryFn: () => api<ConnectionPlanUsage[]>(`/connections/${item.id}/plans`, token) });
+  const capabilities = useQuery({ queryKey: ['connection-capabilities', item.id], queryFn: () => api<CapabilityRealityResponse>(`/connections/${item.id}/capabilities`, token) });
   const updatePermission = useMutation({
     mutationFn: (permission: Permission) => api<Permission[]>(`/connections/${item.id}/permissions`, token, { method: 'PUT', body: JSON.stringify({ permissions: [{ capability: permission.capability, granted: !permission.granted }] }) }),
     onSuccess: () => client.invalidateQueries({ queryKey: ['connection-permissions', item.id] }),
@@ -122,6 +126,7 @@ function ConnectedService({ item, connector, token }: { item: Connection; connec
             <Ionicons name="chevron-forward" size={18} color={colors.primary} />
           </Pressable>
           <Text style={styles.account}>{item.externalAccountName}</Text>
+          <CapabilityRealityLine capabilities={capabilities.data?.capabilities ?? []} loading={capabilities.isLoading} />
           {recovery ? <View style={styles.inlineAction}><ActionButton label={recovery} onPress={() => void recover()} /></View> : null}
           {feedback ? <Text style={styles.feedback}>{feedback}</Text> : null}
           <Text style={styles.subheading}>允许使用</Text>
@@ -139,6 +144,20 @@ function ConnectedService({ item, connector, token }: { item: Connection; connec
           <View style={styles.disconnect}><ActionButton label="断开账号" tone="danger" onPress={confirmDisconnect} disabled={disconnect.isPending || item.status === 'revoked'} /></View>
         </Surface>
       ) : null}
+    </View>
+  );
+}
+
+function CapabilityRealityLine({ capabilities, loading }: { capabilities: CapabilityReality[]; loading: boolean }) {
+  const summary = capabilityRealitySummary(capabilities);
+  if (loading) return <Text style={styles.realityLineMuted}>正在核对能力状态…</Text>;
+  if (summary.total === 0) return null;
+  const complete = summary.officialConfirmed && summary.implemented === summary.total && summary.granted === summary.total && summary.healthy === summary.total;
+  return (
+    <View style={styles.realityLine}>
+      <Text style={[styles.realityLineText, !complete && styles.realityLineTextWarning]}>
+        官方能力 {summary.officialConfirmed ? '已核实' : '待核实'} · 已实现 {summary.implemented}/{summary.total} · 已授权 {summary.granted}/{summary.total} · 当前健康 {summary.healthy}/{summary.total}
+      </Text>
     </View>
   );
 }
@@ -423,6 +442,10 @@ const styles = StyleSheet.create({
   detailLinkTitle: { ...typography.bodyStrong, color: colors.primary },
   detailLinkDescription: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
   account: { ...typography.caption, color: colors.textMuted },
+  realityLine: { marginTop: spacing.sm },
+  realityLineText: { ...typography.caption, color: colors.textSecondary, lineHeight: 18 },
+  realityLineTextWarning: { color: colors.warning },
+  realityLineMuted: { ...typography.caption, color: colors.textMuted, marginTop: spacing.sm },
   inlineAction: { alignItems: 'flex-start', marginTop: spacing.md },
   feedback: { ...typography.caption, color: colors.warning, marginTop: spacing.md },
   subheading: { ...typography.bodyStrong, color: colors.text, marginTop: spacing.xl, marginBottom: spacing.sm },

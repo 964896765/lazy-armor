@@ -2,6 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   capabilityDescription,
   capabilityLabel,
+  capabilityOfficialLabel,
+  capabilityImplementationLabel,
+  capabilityGrantLabel,
+  capabilityHealthLabel,
+  capabilityRealitySummary,
   connectionStatusExplanation,
   connectionStatusNextStep,
   connectionRecoveryAction,
@@ -79,6 +84,31 @@ describe('P2 mobile connection presenter', () => {
     expect(connectionStatusTone('permission_required')).toBe('warning');
     expect(connectionStatusTone('pending_authorization')).toBe('muted');
     expect(connectionStatusTone('revoked')).toBe('muted');
+  });
+
+  it('keeps the four capability dimensions in consumer language', () => {
+    expect(capabilityOfficialLabel('AVAILABLE')).toBe('可用');
+    expect(capabilityOfficialLabel('LIMITED')).toBe('有限');
+    expect(capabilityOfficialLabel('TO_VERIFY_OFFICIAL')).toBe('待核实');
+    expect(capabilityImplementationLabel('PRODUCTION')).toBe('已上线');
+    expect(capabilityImplementationLabel('NOT_IMPLEMENTED')).toBe('未实现');
+    expect(capabilityGrantLabel('GRANTED')).toBe('已授权');
+    expect(capabilityGrantLabel('EXPIRED')).toBe('已过期');
+    expect(capabilityHealthLabel('HEALTHY')).toBe('正常');
+    expect(capabilityHealthLabel('DEVICE_OFFLINE')).toBe('设备离线');
+  });
+
+  it('collapses capabilities into the four-dimension reality summary', () => {
+    const summary = capabilityRealitySummary([
+      { providerAvailability: 'AVAILABLE', implementation: 'PRODUCTION', grant: 'GRANTED', health: 'HEALTHY' },
+      { providerAvailability: 'AVAILABLE', implementation: 'BETA', grant: 'GRANTED', health: 'DEGRADED' },
+    ]);
+    expect(summary.total).toBe(2);
+    expect(summary.officialConfirmed).toBe(true);
+    expect(summary.implemented).toBe(2);
+    expect(summary.granted).toBe(2);
+    expect(summary.healthy).toBe(1);
+    expect(capabilityRealitySummary([]).officialConfirmed).toBe(false);
   });
 
   it('maps technical failures into consumer-safe language', () => {

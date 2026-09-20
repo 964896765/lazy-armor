@@ -22,6 +22,65 @@ export function connectionStatusTone(status: string): ConnectionStatusTone {
   return 'warning';
 }
 
+export function capabilityOfficialLabel(value: string): string {
+  if (value === 'AVAILABLE') return '可用';
+  if (value === 'LIMITED') return '有限';
+  if (value === 'UNAVAILABLE') return '不开放';
+  return '待核实';
+}
+
+export function capabilityImplementationLabel(value: string): string {
+  if (value === 'PRODUCTION') return '已上线';
+  if (value === 'BETA') return '测试中';
+  if (value === 'PARTIAL') return '部分实现';
+  if (value === 'DISABLED') return '已停用';
+  return '未实现';
+}
+
+export function capabilityGrantLabel(value: string): string {
+  if (value === 'GRANTED') return '已授权';
+  if (value === 'PARTIAL') return '部分授权';
+  if (value === 'REVOKED') return '已撤销';
+  if (value === 'EXPIRED') return '已过期';
+  return value === 'UNKNOWN' ? '未知' : '未授权';
+}
+
+export function capabilityHealthLabel(value: string): string {
+  if (value === 'HEALTHY') return '正常';
+  if (value === 'DEGRADED') return '降级';
+  if (value === 'REAUTHORIZATION_REQUIRED') return '需重连';
+  if (value === 'RATE_LIMITED') return '限流';
+  if (value === 'DEVICE_OFFLINE') return '设备离线';
+  return value === 'UNKNOWN' ? '未知' : '异常';
+}
+
+export interface CapabilityRealityInput {
+  providerAvailability?: string | null;
+  implementation?: string | null;
+  grant?: string | null;
+  health?: string | null;
+}
+
+export interface CapabilityRealitySummary {
+  total: number;
+  officialConfirmed: boolean;
+  implemented: number;
+  granted: number;
+  healthy: number;
+}
+
+/** Collapses a connection's capabilities into the four consumer-facing dimensions. */
+export function capabilityRealitySummary(capabilities: ReadonlyArray<CapabilityRealityInput>): CapabilityRealitySummary {
+  const total = capabilities.length;
+  return {
+    total,
+    officialConfirmed: total > 0 && capabilities.every((capability) => capability.providerAvailability === 'AVAILABLE'),
+    implemented: capabilities.filter((capability) => capability.implementation === 'PRODUCTION' || capability.implementation === 'BETA').length,
+    granted: capabilities.filter((capability) => capability.grant === 'GRANTED').length,
+    healthy: capabilities.filter((capability) => capability.health === 'HEALTHY').length,
+  };
+}
+
 export function connectionRecoveryAction(status: string): string | null {
   switch (status) {
     case 'reauthorization_required':
