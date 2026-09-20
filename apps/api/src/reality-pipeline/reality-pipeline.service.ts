@@ -46,7 +46,7 @@ export class RealityPipelineService implements OnModuleInit {
     if (!/^[a-f0-9]{64}$/.test(input.evidenceHash)) throw new BadRequestException('evidenceHash must be SHA-256');
     let drafts;
     try { drafts = parseAndNormalizeObservation(input); } catch (error) { throw new BadRequestException(error instanceof Error ? error.message : 'Observation parser failed'); }
-    const identity = observationIdentity(input.providerKey, input.externalEventKey);
+    const identity = observationIdentity(input.providerKey, input.deviceId ? `${input.deviceId}:${input.externalEventKey}` : input.externalEventKey);
     const payloadHash = realityValueHash(input.payload);
     let observation = (await db.select().from(sourceObservations).where(and(eq(sourceObservations.userId, userId), eq(sourceObservations.sourceIdentity, identity))).limit(1))[0];
     let duplicate = Boolean(observation);

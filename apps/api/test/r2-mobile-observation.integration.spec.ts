@@ -82,6 +82,25 @@ describe.sequential('R2 unified mobile observation → candidate → truth', { t
     expect(rows[0].total).toBe(1);
   });
 
+  it('dedupes the same device and event into one observation', async () => {
+    const id = randomUUID();
+    const withDevice = { ...envelope('shipment', { status: 'IN_TRANSIT' }, id), deviceId: 'trusted-device-a' };
+    const first = await mobile.ingest(owner.userId, withDevice, 'com.example.courier', null);
+    const second = await mobile.ingest(owner.userId, withDevice, 'com.example.courier', null);
+    expect(first.duplicate).toBe(false);
+    expect(second.duplicate).toBe(true);
+    expect(first.observationId).toBe(second.observationId);
+  });
+
+  it('keeps two devices distinct even for the same event id', async () => {
+    const id = randomUUID();
+    const first = await mobile.ingest(owner.userId, { ...envelope('shipment', { status: 'IN_TRANSIT' }, id), deviceId: 'trusted-device-a' }, 'com.example.courier', null);
+    const second = await mobile.ingest(owner.userId, { ...envelope('shipment', { status: 'IN_TRANSIT' }, id), deviceId: 'trusted-device-b' }, 'com.example.courier', null);
+    expect(first.duplicate).toBe(false);
+    expect(second.duplicate).toBe(false);
+    expect(first.observationId).not.toBe(second.observationId);
+  });
+
   it('fails closed on an unsupported candidate kind', async () => {
     const unsupported: MobileObservationEnvelope = {
       sourceType: 'NOTIFICATION',

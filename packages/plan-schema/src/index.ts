@@ -498,7 +498,7 @@ export {
 } from './reality-pipeline';
 export {
   MOBILE_CANDIDATE_KIND_VALUES, MOBILE_CANDIDATE_LEGACY_ALIASES, MOBILE_CANDIDATE_REGISTRY, mobileCandidateKindForParser, resolveMobileCandidateSpec, toSourceObservationInput,
-  type MobileCandidateKind, type MobileCandidateKindSpec, type MobileObservationEnvelope, type MobileSourceType,
+  type MobileCandidateKind, type MobileCandidateKindSpec, type MobileObservationEnvelope, type MobileSourceMode, type MobileSourceType,
 } from './mobile-observation';
 export {
   APP_READ_SESSION_EVENT_TYPES, APP_READ_SESSION_HEARTBEAT_GRACE_SECONDS, APP_READ_SESSION_MAX_SECONDS,

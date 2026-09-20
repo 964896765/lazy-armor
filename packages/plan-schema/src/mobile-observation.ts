@@ -13,6 +13,14 @@ import type { ParserKey, SourceMode } from './reality-pipeline';
 
 export type MobileSourceType = 'NOTIFICATION' | 'SHARE';
 
+/**
+ * Unified mobile acquisition channel. NOTIFICATION / SHARE are content modes;
+ * APP_READ_SESSION is the bounded foreground channel that can capture either.
+ * Future channels (SCREENSHOT, ACCESSIBILITY) extend this enum without touching
+ * the generic reality pipeline.
+ */
+export type MobileSourceMode = MobileSourceType | 'APP_READ_SESSION';
+
 export type MobileCandidateKind = 'transaction' | 'shipment' | 'bill' | 'account' | 'device' | 'consumable' | 'household_supply';
 
 export interface MobileCandidateKindSpec {
@@ -64,7 +72,7 @@ export const MOBILE_CANDIDATE_KIND_VALUES: readonly string[] = Object.freeze([
  * authenticated caller and never trusts a client-supplied identity.
  */
 export interface MobileObservationEnvelope {
-  sourceType: MobileSourceType;
+  sourceType: MobileSourceMode;
   packageName: string;
   candidateKind: string;
   parserId: ParserKey;
@@ -73,6 +81,7 @@ export interface MobileObservationEnvelope {
   evidenceHash: string;
   sourceRef: string;
   sessionId?: string | null;
+  deviceId?: string | null;
   payload: Record<string, JsonValue>;
 }
 
@@ -87,6 +96,7 @@ export function toSourceObservationInput(envelope: MobileObservationEnvelope, pr
   payload: Record<string, JsonValue>;
   evidenceHash: string;
   observedAt: string;
+  deviceId: string | null;
 } {
   return {
     sourceMode: envelope.sourceType,
@@ -98,5 +108,6 @@ export function toSourceObservationInput(envelope: MobileObservationEnvelope, pr
     payload: { ...envelope.payload, packageName: envelope.packageName },
     evidenceHash: envelope.evidenceHash,
     observedAt: envelope.observedAt,
+    deviceId: envelope.deviceId ?? null,
   };
 }

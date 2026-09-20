@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { canonicalStringify, type JsonValue } from './index';
 
-export const SOURCE_MODES = ['OFFICIAL_API', 'WEBHOOK', 'NOTIFICATION', 'SHARE', 'FILE', 'MANUAL', 'INTERNAL'] as const;
+export const SOURCE_MODES = ['OFFICIAL_API', 'WEBHOOK', 'NOTIFICATION', 'SHARE', 'APP_READ_SESSION', 'FILE', 'MANUAL', 'INTERNAL'] as const;
 export const PARSER_KEYS = ['generic.transaction.v1', 'generic.shipment-status.v1', 'generic.connection-health.v1', 'generic.device-status.v1', 'generic.bill-reminder.v1', 'mobile-notification-billing.v1', 'generic.email-message.v1', 'generic.calendar-event.v1', 'generic.repository-resource.v1', 'generic.repository-resource.v2', 'generic.document-resource.v1', 'generic.consumable-remaining.v1', 'generic.household-supply.v1', 'generic.feishu-resource.v1', 'generic.dingtalk-resource.v1', 'generic.wecom-resource.v1', 'generic.structured-read.v1'] as const;
 export type SourceMode = typeof SOURCE_MODES[number];
 export type ParserKey = typeof PARSER_KEYS[number];
@@ -16,6 +16,7 @@ export interface SourceObservationInput {
   externalEventKey: string; parserKey: ParserKey; resourceHint: string;
   payload: Record<string, JsonValue>; evidenceHash: string;
   observedAt: string; occurredAt?: string | null;
+  deviceId?: string | null;
 }
 
 export interface NormalizedFactDraft {
