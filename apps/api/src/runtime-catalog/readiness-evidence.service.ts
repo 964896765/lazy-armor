@@ -1,9 +1,11 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, eq } from 'drizzle-orm';
-import { connections, truthRecords, sourceObservations, candidateFacts, appReadSessions } from '@lazy-armor/database';
+import { and, eq, gt, isNull } from 'drizzle-orm';
+import { connections, truthRecords, truthRecordVersions, sourceObservations, appReadSessions, deviceHeartbeats, executions, strategyRuntimeBindings } from '@lazy-armor/database';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
 import { evaluateScenarioReadiness, type ScenarioDefinition, type ScenarioReadiness, type ScenarioReadinessInput } from '@lazy-armor/plan-schema';
 import { CapabilityUsabilityService } from '../provider-capabilities/capability-usability.service';
+import { ProviderCapabilityRegistryService } from '../provider-capabilities/provider-capability-registry.service';
+import { projectConsumerReadiness, type ConsumerReadinessProjection } from './readiness-product-projection';
 
 export type CapabilityReadinessDimension = 'declared' | 'implemented' | 'authorized' | 'healthy' | 'executable' | 'verifiable';
 
@@ -34,6 +36,7 @@ export interface ScenarioRuntimeEvidence {
   manualInputAvailable: boolean;
   capabilities: CapabilityReadinessEvidence[];
   readiness: ScenarioReadiness;
+  product: ConsumerReadinessProjection;
 }
 
 /**
@@ -46,36 +49,43 @@ export interface ScenarioRuntimeEvidence {
  * Responsibility split:
  *  - Caps (usable capabilities) are computed by the CapabilityUsability path and
  *    passed in by the caller; this service does NOT duplicate the connection walk.
- *  - Observed facts come from candidate facts that reached a decided Truth record
- *    for the user (real fact keys, matching scenario.requiredFacts).
- *  - Observation pipeline availability is evidenced by at least one ingested
- *    source_observation (or live AppRead session) for the user.
- *  - Execution pipeline reflects whether the server execution chain is reachable.
+ *  - Available facts come only from the current, non-revoked Truth version
+ *    within the scenario freshness window.
+ *  - Observation availability requires a recent observation or active AppRead session.
+ *  - Execution evidence requires a successful run of this scenario, not merely a Truth.
  */
 @Injectable()
 export class ReadinessEvidenceService {
   constructor(
     @Inject(DATABASE) private readonly db: InjectedDatabase,
     private readonly capabilityUsability: CapabilityUsabilityService,
+    private readonly manifests: ProviderCapabilityRegistryService,
   ) {}
 
   async project(userId: string, scenario: ScenarioDefinition, usableCapabilities: string[]): Promise<{ input: ScenarioReadinessInput; evidence: Record<string, unknown> }> {
-    // Observed facts: fact keys that reached a decided Truth record for this user.
-    const observedFactRows = await this.db.selectDistinct({ factKey: candidateFacts.factKey })
-      .from(candidateFacts)
-      .where(and(eq(candidateFacts.userId, userId), eq(candidateFacts.status, 'VERIFIED')));
+    // Current, non-revoked Truth versions only. Historical verified candidates do not prove a usable fact.
+    const now = new Date();
+    const freshAfter = new Date(now.getTime() - scenario.freshnessPolicy.maximumAgeSeconds * 1000);
+    const currentTruth = await this.db.select({ value: truthRecordVersions.valueJson, createdAt: truthRecordVersions.createdAt })
+      .from(truthRecords)
+      .innerJoin(truthRecordVersions, eq(truthRecords.currentVersionId, truthRecordVersions.id))
+      .where(and(eq(truthRecords.userId, userId), eq(truthRecords.status, 'verified'), isNull(truthRecords.revokedAt)));
+    const availableFacts = [...new Set(currentTruth.filter((row) => row.createdAt >= freshAfter)
+      .map((row) => row.value.factKey).filter((key): key is string => typeof key === 'string'))];
 
-    // Observation pipeline: has the user's data ever reached a source observation sink?
+    // Observation pipeline: a recent source observation or an active read session.
     const observationRows = await this.db.select({ id: sourceObservations.id })
-      .from(sourceObservations).where(eq(sourceObservations.userId, userId)).limit(1);
+      .from(sourceObservations).where(and(eq(sourceObservations.userId, userId), gt(sourceObservations.observedAt, freshAfter))).limit(1);
 
     // Live AppRead session bound to this user also implies an observation conduit is available.
     const sessionRows = await this.db.select({ id: appReadSessions.id })
-      .from(appReadSessions).where(eq(appReadSessions.userId, userId)).limit(1);
+      .from(appReadSessions).where(and(eq(appReadSessions.userId, userId), eq(appReadSessions.status, 'READING'), gt(appReadSessions.expiresAt, now))).limit(1);
 
-    // Oracle about a decided truth version supports the observed-fact claim.
-    const truthRows = await this.db.select({ id: truthRecords.id })
-      .from(truthRecords).where(eq(truthRecords.userId, userId)).limit(1);
+    const executionRows = await this.db.select({ id: executions.id })
+      .from(strategyRuntimeBindings)
+      .innerJoin(executions, eq(executions.planVersionId, strategyRuntimeBindings.planVersionId))
+      .where(and(eq(strategyRuntimeBindings.userId, userId), eq(strategyRuntimeBindings.scenarioKey, scenario.key),
+        eq(executions.userId, userId), eq(executions.status, 'succeeded'))).limit(1);
 
     const requiredCapabilities = [...scenario.sourceRequirements, ...scenario.actionRequirements]
       .filter((requirement) => !requirement.optional)
@@ -84,10 +94,10 @@ export class ReadinessEvidenceService {
 
     const input: ScenarioReadinessInput = {
       usableCapabilities,
-      availableFacts: observedFactRows.map((row) => row.factKey),
+      availableFacts,
       manualInputAvailable: scenario.sourceRequirements.some((item) => item.capabilityKey === 'MANUAL_INPUT'),
       observationPipelineAvailable: observationRows.length > 0 || sessionRows.length > 0,
-      executionPipelineAvailable: truthRows.length > 0,
+      executionPipelineAvailable: executionRows.length > 0,
       providerBlocked,
     };
 
@@ -97,7 +107,9 @@ export class ReadinessEvidenceService {
         usableCapabilities,
         observedFactCount: input.availableFacts?.length ?? 0,
         hasObservationSource: observationRows.length > 0 || sessionRows.length > 0,
-        hasDecidedTruth: truthRows.length > 0,
+        hasDecidedTruth: currentTruth.length > 0,
+        hasSuccessfulScenarioExecution: executionRows.length > 0,
+        staleFactCount: currentTruth.length - availableFacts.length,
       },
     };
   }
@@ -126,6 +138,20 @@ export class ReadinessEvidenceService {
     const requiredCapabilityKeys = new Set([...scenario.sourceRequirements, ...scenario.actionRequirements]
       .filter((requirement) => !requirement.optional)
       .map((requirement) => requirement.capabilityKey));
+    const requiredKeys = [...requiredCapabilityKeys];
+    const declared = this.manifests.list().flatMap((manifest) => manifest.capabilities);
+    const platformSupported = requiredKeys.every((key) => key === 'SEND_NOTIFICATION' || declared.some((capability) => capability.key === key
+      && capability.officialAvailability === 'AVAILABLE'
+      && (capability.implementationStatus === 'PRODUCTION' || capability.implementationStatus === 'BETA')));
+    const now = new Date();
+    const deviceRows = await this.db.select({ lastHeartbeatAt: deviceHeartbeats.lastHeartbeatAt, onlineState: deviceHeartbeats.onlineState })
+      .from(deviceHeartbeats).where(eq(deviceHeartbeats.userId, userId));
+    const deviceOnline = deviceRows.some((row) => row.onlineState === 'online' && now.getTime() - row.lastHeartbeatAt.getTime() <= 30_000);
+    const product = projectConsumerReadiness({
+      readiness, capabilities: capabilities.filter((item) => requiredCapabilityKeys.has(item.capabilityKey)),
+      platformSupported, deviceRequired: scenario.sourceRequirements.some((item) => item.capabilityKey.startsWith('DEVICE_')),
+      deviceOnline,
+    });
     return {
       scenarioKey: scenario.key,
       scenarioRevision: scenario.revision,
@@ -138,6 +164,7 @@ export class ReadinessEvidenceService {
       manualInputAvailable: projected.input.manualInputAvailable ?? false,
       capabilities: capabilities.filter((item) => requiredCapabilityKeys.has(item.capabilityKey)),
       readiness,
+      product,
     };
   }
 

@@ -4,6 +4,8 @@ import type { Pool, RowDataPacket } from 'mysql2/promise';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { RealityPipelineService } from '../src/reality-pipeline/reality-pipeline.service';
+import { ReadinessEvidenceService } from '../src/runtime-catalog/readiness-evidence.service';
+import { scenarioByKey } from '@lazy-armor/plan-schema';
 import { auth, bootP2App, register, type Session } from './p2-test-helpers';
 
 const digest = (value: string) => createHash('sha256').update(value).digest('hex');
@@ -45,7 +47,7 @@ describe.sequential('R1 evidence-backed readiness runtime projection', { timeout
     expect(response.body.runtime.missingFacts).toContain('bill.bill.state');
   });
 
-  it('counts only VERIFIED facts and flips pipeline evidence once Truth is decided', async () => {
+  it('counts only current Truth facts without treating Truth as execution proof', async () => {
     const observationId = randomUUID();
     const verifiedCandidateId = randomUUID();
     const pendingCandidateId = randomUUID();
@@ -77,9 +79,18 @@ describe.sequential('R1 evidence-backed readiness runtime projection', { timeout
     expect(response.body.runtime.availableFacts).toContain('bill.bill.state');
     expect(response.body.runtime.availableFacts).not.toContain('bill.updated_at');
     expect(response.body.runtime.observationPipelineAvailable).toBe(true);
-    expect(response.body.runtime.executionPipelineAvailable).toBe(true);
+    expect(response.body.runtime.executionPipelineAvailable).toBe(false);
     expect(response.body.runtime.missingFacts).not.toContain('bill.bill.state');
     // Provider remains blocked for a fresh account with no connected capability.
     expect(response.body.runtime.providerBlocked).toBe(true);
+  });
+
+  it('does not count a Truth version outside the scenario freshness window', async () => {
+    const scenario = scenarioByKey('finance.bill');
+    if (!scenario) throw new Error('missing scenario');
+    const projected = await app.get(ReadinessEvidenceService).project(user.userId, {
+      ...scenario, freshnessPolicy: { ...scenario.freshnessPolicy, maximumAgeSeconds: 0 },
+    }, []);
+    expect(projected.input.availableFacts).not.toContain('bill.bill.state');
   });
 });
