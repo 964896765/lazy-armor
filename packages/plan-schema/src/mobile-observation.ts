@@ -47,6 +47,9 @@ export const MOBILE_CANDIDATE_REGISTRY: readonly MobileCandidateKindSpec[] = Obj
 export const MOBILE_CANDIDATE_LEGACY_ALIASES: Readonly<Record<string, MobileCandidateKind>> = Object.freeze({
   billing_transaction_candidate: 'transaction',
   account_notification_candidate: 'account',
+  shipment_candidate: 'shipment',
+  bill_candidate: 'bill',
+  device_candidate: 'device',
 });
 
 export function resolveMobileCandidateSpec(candidateKind: string): MobileCandidateKindSpec | null {

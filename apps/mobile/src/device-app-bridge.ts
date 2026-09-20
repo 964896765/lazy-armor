@@ -37,11 +37,12 @@ export interface MobileNotificationPreview {
   capturedAt: number;
   hasTitle: boolean;
   hasText: boolean;
-  candidateKind: 'unknown' | 'billing_transaction_candidate' | 'account_notification_candidate';
-  candidateResource: 'mobile.billing.transaction' | 'mobile.account.notification' | null;
+  candidateKind: 'unknown' | 'billing_transaction_candidate' | 'account_notification_candidate' | 'shipment_candidate' | 'bill_candidate' | 'device_candidate';
+  candidateResource: 'mobile.billing.transaction' | 'mobile.account.notification' | 'shipment' | 'Bill' | 'DeviceStatus' | null;
   candidateConfidence: number;
   amountMinor: number | null;
   currency: 'CNY' | null;
+  candidateStatus?: string | null;
   parserVersion: 'generic-notification-v1';
   status: 'received_unclassified';
 }
@@ -231,13 +232,16 @@ export async function drainNotificationPreviews(): Promise<MobileNotificationPre
 }
 
 function isSafeNotificationPreview(item: MobileNotificationPreview) {
-  const knownCandidate = item.candidateKind === 'unknown' || item.candidateKind === 'billing_transaction_candidate' || item.candidateKind === 'account_notification_candidate';
-  const knownResource = item.candidateResource === null || item.candidateResource === 'mobile.billing.transaction' || item.candidateResource === 'mobile.account.notification';
+  const knownCandidate = item.candidateKind === 'unknown' || item.candidateKind === 'billing_transaction_candidate' || item.candidateKind === 'account_notification_candidate' || item.candidateKind === 'shipment_candidate' || item.candidateKind === 'bill_candidate' || item.candidateKind === 'device_candidate';
+  const knownResource = item.candidateResource === null || item.candidateResource === 'mobile.billing.transaction' || item.candidateResource === 'mobile.account.notification' || item.candidateResource === 'shipment' || item.candidateResource === 'Bill' || item.candidateResource === 'DeviceStatus';
   const validMoney = item.amountMinor === null || (Number.isSafeInteger(item.amountMinor) && item.amountMinor >= 0 && item.amountMinor <= 2_147_483_647);
   const validCurrency = item.currency === null || item.currency === 'CNY';
+  const requiresStatus = item.candidateKind === 'shipment_candidate' || item.candidateKind === 'bill_candidate' || item.candidateKind === 'device_candidate';
+  const candidateStatus = item.candidateStatus ?? null;
+  const validStatus = requiresStatus ? typeof candidateStatus === 'string' && candidateStatus.length > 0 && candidateStatus.length <= 40 : candidateStatus === null;
   return /^[a-f0-9]{64}$/.test(item.eventId) && /^[a-f0-9]{64}$/.test(item.contentHash) && Boolean(item.sourcePackage)
     && knownCandidate && knownResource && Number.isInteger(item.candidateConfidence) && item.candidateConfidence >= 0 && item.candidateConfidence <= 100
-    && validMoney && validCurrency && item.parserVersion === 'generic-notification-v1' && item.status === 'received_unclassified';
+    && validMoney && validCurrency && validStatus && item.parserVersion === 'generic-notification-v1' && item.status === 'received_unclassified';
 }
 
 export async function acknowledgeNotificationPreviews(eventIds: string[]): Promise<boolean> {

@@ -1,4 +1,4 @@
-import { IsBoolean, IsIn, IsInt, IsISO8601, IsString, Matches, Max, Min, ValidateIf } from 'class-validator';
+import { IsBoolean, IsIn, IsInt, IsISO8601, IsString, Matches, Max, MaxLength, Min, ValidateIf } from 'class-validator';
 
 const ANDROID_PACKAGE_NAME = /^[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+$/;
 const SHA256_HEX = /^[a-f0-9]{64}$/;
@@ -26,12 +26,12 @@ export class CreateMobileNotificationReceiptDto {
   @IsBoolean()
   hasText!: boolean;
 
-  @IsIn(['unknown', 'billing_transaction_candidate', 'account_notification_candidate'])
-  candidateKind!: 'unknown' | 'billing_transaction_candidate' | 'account_notification_candidate';
+  @IsIn(['unknown', 'billing_transaction_candidate', 'account_notification_candidate', 'shipment_candidate', 'bill_candidate', 'device_candidate'])
+  candidateKind!: 'unknown' | 'billing_transaction_candidate' | 'account_notification_candidate' | 'shipment_candidate' | 'bill_candidate' | 'device_candidate';
 
   @ValidateIf((value: CreateMobileNotificationReceiptDto) => value.candidateKind !== 'unknown')
-  @IsIn(['mobile.billing.transaction', 'mobile.account.notification'])
-  candidateResource!: 'mobile.billing.transaction' | 'mobile.account.notification' | null;
+  @IsIn(['mobile.billing.transaction', 'mobile.account.notification', 'shipment', 'Bill', 'DeviceStatus'])
+  candidateResource!: 'mobile.billing.transaction' | 'mobile.account.notification' | 'shipment' | 'Bill' | 'DeviceStatus' | null;
 
   @IsInt() @Min(0) @Max(100)
   candidateConfidence!: number;
@@ -43,6 +43,10 @@ export class CreateMobileNotificationReceiptDto {
   @ValidateIf((value: CreateMobileNotificationReceiptDto) => value.currency !== null)
   @IsIn(['CNY'])
   currency!: 'CNY' | null;
+
+  @ValidateIf((value: CreateMobileNotificationReceiptDto) => value.candidateStatus !== null)
+  @IsString() @MaxLength(40)
+  candidateStatus!: string | null;
 
   @IsIn(['generic-notification-v1'])
   parserVersion!: 'generic-notification-v1';

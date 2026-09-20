@@ -14,6 +14,13 @@ describe('mobile observation envelope', () => {
     expect(resolveMobileCandidateSpec('garbage')).toBeNull();
   });
 
+  it('resolves on-device shipment/bill/device candidate kinds to their canonical kinds', () => {
+    expect(resolveMobileCandidateSpec('shipment_candidate')?.candidateKind).toBe('shipment');
+    expect(resolveMobileCandidateSpec('bill_candidate')?.candidateKind).toBe('bill');
+    expect(resolveMobileCandidateSpec('device_candidate')?.candidateKind).toBe('device');
+    expect(resolveMobileCandidateSpec('billing_transaction_candidate')?.candidateKind).toBe('transaction');
+  });
+
   it('threads deviceId and packageName into the source observation input', () => {
     const spec = resolveMobileCandidateSpec('shipment')!;
     const input = toSourceObservationInput({

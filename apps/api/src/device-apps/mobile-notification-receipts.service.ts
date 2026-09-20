@@ -100,7 +100,7 @@ export class MobileNotificationReceiptsService {
         postedAt,
         amountMinor: input.amountMinor,
         status: 'received_unclassified',
-        snapshotJson: { schema: 'mobile-notification-minimal-v2', hasTitle: input.hasTitle, hasText: input.hasText, candidateKind: input.candidateKind, candidateResource: input.candidateResource, candidateConfidence: input.candidateConfidence, currency: input.currency, parserVersion: input.parserVersion },
+        snapshotJson: { schema: 'mobile-notification-minimal-v2', hasTitle: input.hasTitle, hasText: input.hasText, candidateKind: input.candidateKind, candidateResource: input.candidateResource, candidateConfidence: input.candidateConfidence, currency: input.currency, candidateStatus: input.candidateStatus, parserVersion: input.parserVersion },
         receivedAt: now,
         verifiedAt: null,
       });
@@ -162,9 +162,13 @@ export class MobileNotificationReceiptsService {
   }
 
   private async assertNormalizedCandidate(input: CreateMobileNotificationReceiptDto, userId: string, connectionId: string) {
-    const valid = (input.candidateKind === 'unknown' && input.candidateResource === null && input.amountMinor === null && input.currency === null && input.candidateConfidence === 0)
-      || (input.candidateKind === 'billing_transaction_candidate' && input.candidateResource === 'mobile.billing.transaction' && Number.isSafeInteger(input.amountMinor) && (input.amountMinor as number) >= 0 && (input.amountMinor as number) <= 2_147_483_647 && input.currency === 'CNY' && input.candidateConfidence >= 1)
-      || (input.candidateKind === 'account_notification_candidate' && input.candidateResource === 'mobile.account.notification' && input.amountMinor === null && input.currency === null && input.candidateConfidence >= 1);
+    const hasStatus = typeof input.candidateStatus === 'string' && input.candidateStatus.length > 0 && input.candidateStatus.length <= 40;
+    const valid = (input.candidateKind === 'unknown' && input.candidateResource === null && input.amountMinor === null && input.currency === null && input.candidateStatus === null && input.candidateConfidence === 0)
+      || (input.candidateKind === 'billing_transaction_candidate' && input.candidateResource === 'mobile.billing.transaction' && Number.isSafeInteger(input.amountMinor) && (input.amountMinor as number) >= 0 && (input.amountMinor as number) <= 2_147_483_647 && input.currency === 'CNY' && input.candidateStatus === null && input.candidateConfidence >= 1)
+      || (input.candidateKind === 'account_notification_candidate' && input.candidateResource === 'mobile.account.notification' && input.amountMinor === null && input.currency === null && input.candidateStatus === null && input.candidateConfidence >= 1)
+      || (input.candidateKind === 'shipment_candidate' && input.candidateResource === 'shipment' && input.amountMinor === null && input.currency === null && hasStatus && input.candidateConfidence >= 1)
+      || (input.candidateKind === 'bill_candidate' && input.candidateResource === 'Bill' && input.amountMinor === null && input.currency === null && hasStatus && input.candidateConfidence >= 1)
+      || (input.candidateKind === 'device_candidate' && input.candidateResource === 'DeviceStatus' && input.amountMinor === null && input.currency === null && hasStatus && input.candidateConfidence >= 1);
     if (valid) return;
     await this.block(userId, connectionId, 'INVALID_NORMALIZED_CANDIDATE');
     this.telemetry.increment('mobile_notification.rejected', 1, { reason: 'INVALID_NORMALIZED_CANDIDATE' });

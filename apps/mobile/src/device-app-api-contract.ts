@@ -26,6 +26,7 @@ export interface CreateMobileNotificationReceiptRequest {
   candidateConfidence: number;
   amountMinor: number | null;
   currency: 'CNY' | null;
+  candidateStatus: string | null;
   parserVersion: 'generic-notification-v1';
 }
 
@@ -36,13 +37,18 @@ export function createMobileNotificationReceiptRequest(preview: MobileNotificati
   const postedAt = new Date(preview.postedAt);
   const capturedAt = new Date(preview.capturedAt);
   if (!Number.isFinite(postedAt.getTime()) || !Number.isFinite(capturedAt.getTime())) return null;
-  return { eventId: preview.eventId, contentHash: preview.contentHash, sourcePackage: preview.sourcePackage.trim(), postedAt: postedAt.toISOString(), capturedAt: capturedAt.toISOString(), hasTitle: Boolean(preview.hasTitle), hasText: Boolean(preview.hasText), candidateKind: preview.candidateKind, candidateResource: preview.candidateResource, candidateConfidence: preview.candidateConfidence, amountMinor: preview.amountMinor, currency: preview.currency, parserVersion: preview.parserVersion };
+  return { eventId: preview.eventId, contentHash: preview.contentHash, sourcePackage: preview.sourcePackage.trim(), postedAt: postedAt.toISOString(), capturedAt: capturedAt.toISOString(), hasTitle: Boolean(preview.hasTitle), hasText: Boolean(preview.hasText), candidateKind: preview.candidateKind, candidateResource: preview.candidateResource, candidateConfidence: preview.candidateConfidence, amountMinor: preview.amountMinor, currency: preview.currency, candidateStatus: preview.candidateStatus ?? null, parserVersion: preview.parserVersion };
 }
 
 function candidateIsCoherent(preview: MobileNotificationPreview) {
-  if (preview.candidateKind === 'unknown') return preview.candidateResource === null && preview.amountMinor === null && preview.currency === null && preview.candidateConfidence === 0;
-  if (preview.candidateKind === 'billing_transaction_candidate') return preview.candidateResource === 'mobile.billing.transaction' && Number.isSafeInteger(preview.amountMinor) && (preview.amountMinor as number) >= 0 && preview.currency === 'CNY';
-  return preview.candidateKind === 'account_notification_candidate' && preview.candidateResource === 'mobile.account.notification' && preview.amountMinor === null && preview.currency === null;
+  const status = preview.candidateStatus ?? null;
+  if (preview.candidateKind === 'unknown') return preview.candidateResource === null && preview.amountMinor === null && preview.currency === null && status === null && preview.candidateConfidence === 0;
+  if (preview.candidateKind === 'billing_transaction_candidate') return preview.candidateResource === 'mobile.billing.transaction' && Number.isSafeInteger(preview.amountMinor) && (preview.amountMinor as number) >= 0 && preview.currency === 'CNY' && status === null;
+  if (preview.candidateKind === 'account_notification_candidate') return preview.candidateResource === 'mobile.account.notification' && preview.amountMinor === null && preview.currency === null && status === null;
+  if (preview.candidateKind === 'shipment_candidate') return preview.candidateResource === 'shipment' && preview.amountMinor === null && preview.currency === null && typeof status === 'string' && status.length > 0;
+  if (preview.candidateKind === 'bill_candidate') return preview.candidateResource === 'Bill' && preview.amountMinor === null && preview.currency === null && typeof status === 'string' && status.length > 0;
+  if (preview.candidateKind === 'device_candidate') return preview.candidateResource === 'DeviceStatus' && preview.amountMinor === null && preview.currency === null && typeof status === 'string' && status.length > 0;
+  return false;
 }
 
 export function createDeviceAppConnectionRequest(deviceId: string, trustedDeviceId: string, discovered: DiscoveredDeviceApp): CreateDeviceAppConnectionRequest | null {

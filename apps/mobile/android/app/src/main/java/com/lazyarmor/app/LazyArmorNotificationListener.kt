@@ -115,6 +115,7 @@ class LazyArmorNotificationListener : NotificationListenerService() {
     preview.put("candidateConfidence", candidate.confidence)
     preview.put("amountMinor", candidate.amountMinor)
     preview.put("currency", candidate.currency)
+    preview.put("candidateStatus", candidate.status)
     preview.put("parserVersion", candidate.parserVersion)
     preview.put("status", "received_unclassified")
     appendPreview(applicationContext, preview)

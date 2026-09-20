@@ -1,8 +1,9 @@
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { mobileNotificationReceipts, planVersions, truthFactDependencies, truthProvenance, truthRecords, truthRecordVersions } from '@lazy-armor/database';
-import { and, desc, eq, inArray } from 'drizzle-orm';
 import { newId } from '@lazy-armor/shared';
+import { resolveMobileCandidateSpec, type JsonValue, type ParserKey } from '@lazy-armor/plan-schema';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import { AuditService } from '../audit/audit.service';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
 import { RealityPipelineService } from '../reality-pipeline/reality-pipeline.service';
@@ -13,6 +14,7 @@ interface CandidateSnapshot {
   candidateResource?: unknown;
   candidateConfidence?: unknown;
   currency?: unknown;
+  candidateStatus?: unknown;
   parserVersion?: unknown;
 }
 
@@ -21,24 +23,24 @@ export class TruthStoreService {
   constructor(@Inject(DATABASE) private readonly db: InjectedDatabase, private readonly audit: AuditService, private readonly realityPipeline: RealityPipelineService) {}
 
   async confirmMobileReceipt(userId: string, receipt: typeof mobileNotificationReceipts.$inferSelect) {
-    const candidate = this.candidateFrom(receipt);
+    const candidate = this.candidateSpecFrom(receipt);
     const existing = await this.findByReceipt(this.db, userId, receipt.id);
     if (existing) return this.completedResponse(existing);
 
     // A receipt is only an audit record; the fact must always flow through the
     // generic reality pipeline (Observation → Candidate → Truth). There is no
     // direct receipt-to-Truth path.
-    const evidenceHash = hash({ receiptId: receipt.id, payloadHash: receipt.payloadHash, candidateResource: candidate.resource, parserVersion: candidate.parserVersion });
+    const evidenceHash = hash({ receiptId: receipt.id, payloadHash: receipt.payloadHash, candidateResource: candidate.candidateResource, parserVersion: 'generic-notification-v1' });
     const normalized = await this.realityPipeline.ingest(userId, {
       sourceMode: 'NOTIFICATION', providerKey: receipt.sourcePackage, connectionId: null,
-      externalEventKey: receipt.id, parserKey: 'mobile-notification-billing.v1', resourceHint: 'finance.transaction',
-      payload: { subjectKey: receipt.id, amountMinor: receipt.amountMinor as number, currency: candidate.currency }, evidenceHash,
+      externalEventKey: receipt.id, parserKey: candidate.parserId, resourceHint: candidate.resourceHint,
+      payload: candidate.payload, evidenceHash,
       observedAt: receipt.receivedAt.toISOString(), occurredAt: receipt.postedAt.toISOString(),
     });
     const candidateId = normalized.candidates[0]?.id;
     if (!candidateId) throw new ConflictException('Notification observation produced no candidate fact');
     const result = await this.realityPipeline.confirmCandidate(userId, candidateId, { sourceReceiptId: receipt.id, verifiedBy: 'user_confirmation', verificationMethod: 'user_confirmation_after_device_key_proof' });
-    await this.audit.append({ actorType: 'user', actorUserId: userId, action: 'TRUTH_RECORD_VERIFIED', resourceType: 'truth_record', resourceId: result.id, userId, correlationId: receipt.id, changeSummary: 'Confirmed a mobile billing fact through the generic reality pipeline adapter', source: 'api', result: 'success' });
+    await this.audit.append({ actorType: 'user', actorUserId: userId, action: 'TRUTH_RECORD_VERIFIED', resourceType: 'truth_record', resourceId: result.id, userId, correlationId: receipt.id, changeSummary: 'Confirmed a mobile fact through the generic reality pipeline adapter', source: 'api', result: 'success' });
     return result;
   }
 
@@ -167,12 +169,26 @@ export class TruthStoreService {
     return this.toResponse(row);
   }
 
-  private candidateFrom(receipt: typeof mobileNotificationReceipts.$inferSelect) {
+  private candidateSpecFrom(receipt: typeof mobileNotificationReceipts.$inferSelect): { parserId: ParserKey; resourceHint: string; candidateResource: string; payload: Record<string, JsonValue> } {
     const snapshot = receipt.snapshotJson as CandidateSnapshot;
-    if (snapshot.schema !== 'mobile-notification-minimal-v2' || snapshot.candidateKind !== 'billing_transaction_candidate' || snapshot.candidateResource !== 'mobile.billing.transaction' || snapshot.currency !== 'CNY' || snapshot.parserVersion !== 'generic-notification-v1' || !Number.isSafeInteger(receipt.amountMinor) || (receipt.amountMinor as number) < 0) {
+    if (snapshot.schema !== 'mobile-notification-minimal-v2' || snapshot.parserVersion !== 'generic-notification-v1') {
       throw new BadRequestException('This notification candidate cannot become a verified fact');
     }
-    return { resource: 'mobile.billing.transaction', currency: 'CNY', parserVersion: 'generic-notification-v1' } as const;
+    const spec = resolveMobileCandidateSpec(typeof snapshot.candidateKind === 'string' ? snapshot.candidateKind : '');
+    if (!spec) throw new BadRequestException('This notification candidate cannot become a verified fact');
+
+    if (spec.candidateKind === 'transaction') {
+      if (!Number.isSafeInteger(receipt.amountMinor) || (receipt.amountMinor as number) < 0 || snapshot.currency !== 'CNY') {
+        throw new BadRequestException('This notification candidate cannot become a verified fact');
+      }
+      const payload: Record<string, JsonValue> = { subjectKey: receipt.id, amountMinor: receipt.amountMinor as number, currency: 'CNY' };
+      return { parserId: spec.parserId, resourceHint: spec.resourceHint, candidateResource: 'mobile.billing.transaction', payload };
+    }
+
+    const status = typeof snapshot.candidateStatus === 'string' && snapshot.candidateStatus ? snapshot.candidateStatus : null;
+    if (!status) throw new BadRequestException('This notification candidate is missing its normalized status');
+    const payload: Record<string, JsonValue> = { subjectKey: receipt.id, status };
+    return { parserId: spec.parserId, resourceHint: spec.resourceHint, candidateResource: String(snapshot.candidateResource ?? spec.resourceHint), payload };
   }
 
   private toResponse(row: typeof truthRecords.$inferSelect) {
