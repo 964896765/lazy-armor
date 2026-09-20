@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
+import { useState } from 'react';
 import type { BottomTabBarProps } from 'expo-router/build/react-navigation/bottom-tabs';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -8,6 +9,7 @@ import { useAuthStore } from './auth-store';
 import { RailItem } from './design';
 import { discoverLaunchableApps } from './device-app-bridge';
 import { buildConnectionRailModel } from './rail-model';
+import { SpaceDrawer } from './space-drawer';
 
 interface RailConnection {
   id: string;
@@ -29,6 +31,7 @@ interface RailTrustedDevice { id: string; status: 'active' | 'revoked' }
 interface RailPendingNotification { id: string; connectionId: string }
 const RAIL_WIDTH = 54;
 export function ConnectionRail({ state, navigation }: BottomTabBarProps) {
+  const [spaceDrawerOpen, setSpaceDrawerOpen] = useState(false);
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const token = useAuthStore((store) => store.token);
@@ -97,6 +100,7 @@ export function ConnectionRail({ state, navigation }: BottomTabBarProps) {
   return (
     <View style={[styles.frame, { top: Math.max(insets.top, 5), bottom: Math.max(insets.bottom, 5) }]}>
       <View style={styles.fixedTop}>
+        <RailItem label="空间" icon="grid-outline" selected={spaceDrawerOpen} showLabel onPress={() => setSpaceDrawerOpen(true)} />
         <RailItem label="今天" icon="sunny-outline" badgeCount={pendingNotifications.data?.length ?? 0} selected={activeRoute === 'index'} tone="brand" showLabel onPress={() => selectTab('index')} />
         <RailItem label="计划" icon="list-outline" selected={activeRoute === 'plans'} showLabel onPress={() => selectTab('plans')} />
         <RailItem label="连接" icon="link-outline" selected={activeRoute === 'connections'} showLabel onPress={() => selectTab('connections')} />
@@ -122,6 +126,7 @@ export function ConnectionRail({ state, navigation }: BottomTabBarProps) {
         {rail.overflowCount > 0 ? <RailItem label={`更多 ${rail.overflowCount}`} icon="ellipsis-horizontal" showLabel={false} onPress={() => selectTab('connections')} /> : null}
         <RailItem label="添加连接" icon="add" tone="action" showLabel={false} onPress={() => router.push('/connections/add' as never)} />
       </ScrollView>
+      <SpaceDrawer visible={spaceDrawerOpen} onClose={() => setSpaceDrawerOpen(false)} />
     </View>
   );
 }
