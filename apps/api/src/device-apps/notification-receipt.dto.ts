@@ -44,7 +44,7 @@ export class CreateMobileNotificationReceiptDto {
   @IsIn(['CNY'])
   currency!: 'CNY' | null;
 
-  @ValidateIf((value: CreateMobileNotificationReceiptDto) => value.candidateStatus !== null)
+  @ValidateIf((value: CreateMobileNotificationReceiptDto) => value.candidateStatus != null)
   @IsString() @MaxLength(40)
   candidateStatus!: string | null;
 
