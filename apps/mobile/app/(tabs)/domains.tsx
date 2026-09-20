@@ -25,15 +25,15 @@ export default function DomainsDirectory() {
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <ScrollView style={styles.page} contentContainerStyle={styles.content}>
-        <WorkspaceHeader title="领域与计划" subtitle="19 个领域 · 96 个标准场景" />
+        <WorkspaceHeader title="我的空间" subtitle="从生活领域找到要管理的场景；目录不代表已开通" />
         <View style={styles.summary}>
-          <SummaryStat icon="grid-outline" value={CANONICAL_DOMAIN_CATALOG.length} label="领域" tone="orange" />
-          <SummaryStat icon="layers-outline" value={CANONICAL_SCENARIOS.length} label="场景" tone="green" />
+          <SummaryStat icon="grid-outline" value={CANONICAL_DOMAIN_CATALOG.length} label="目录领域" tone="orange" />
+          <SummaryStat icon="layers-outline" value={CANONICAL_SCENARIOS.length} label="目录场景" tone="green" />
           <SummaryStat icon="options-outline" value={PLAN_STRATEGIES.length} label="管理方式" tone="violet" />
         </View>
         {plans.isLoading ? <View style={styles.loading}><ActivityIndicator color={colors.primary} /><Text style={styles.loadingText}>正在整理领域…</Text></View> : null}
-        {!token ? <InlineState title="登录后查看领域" description="计划与生活资料只会显示在你的账号内。" action="去登录" onPress={() => router.push('/auth/login' as never)} /> : null}
-        {token ? GROUP_ORDER.map((group) => {
+        {!token ? <InlineState title="目录可以浏览" description="登录后才会读取你的计划、授权与场景可用状态。" action="去登录" onPress={() => router.push('/auth/login' as never)} /> : null}
+        {GROUP_ORDER.map((group) => {
           const definition = DOMAIN_GROUPS[group];
           const domains = CANONICAL_DOMAIN_CATALOG.filter((domain) => domain.group === group);
           return (
@@ -45,7 +45,8 @@ export default function DomainsDirectory() {
               </View>
             </View>
           );
-        }) : null}
+        })}
+        <View style={styles.future}><Text style={styles.futureTitle}>我的成长 · 尚未开放</Text><Text style={styles.futureCopy}>当前目录尚无对应场景，不会显示虚构的计划或运行状态。</Text></View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -103,6 +104,9 @@ const styles = StyleSheet.create({
   inlineAction: { paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: radius.md, backgroundColor: colors.primary },
   inlineActionText: { ...typography.label, color: colors.surface },
   group: { marginTop: spacing.lg },
+  future: { marginTop: spacing.xl, padding: spacing.md, backgroundColor: colors.background, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border },
+  futureTitle: { ...typography.bodyStrong, color: colors.textSecondary },
+  futureCopy: { ...typography.caption, color: colors.textMuted, marginTop: spacing.xs },
   groupTitle: { ...typography.section, color: colors.text },
   groupDescription: { ...typography.caption, color: colors.textSecondary, marginTop: 2, marginBottom: spacing.sm },
   domainList: { flexDirection: 'row', flexWrap: 'wrap', borderTopWidth: 1, borderLeftWidth: 1, borderColor: colors.border },
