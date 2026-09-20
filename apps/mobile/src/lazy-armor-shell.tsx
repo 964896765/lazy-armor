@@ -1,8 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
-import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import type { BottomTabBarProps } from 'expo-router/build/react-navigation/bottom-tabs';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { api } from './api';
 import { useAuthStore } from './auth-store';
@@ -98,13 +97,13 @@ export function ConnectionRail({ state, navigation }: BottomTabBarProps) {
   return (
     <View style={[styles.frame, { top: Math.max(insets.top, 5), bottom: Math.max(insets.bottom, 5) }]}>
       <View style={styles.fixedTop}>
-        <RailItem label="懒人装甲" imageSource={require('../assets/icon.png')} selected={activeRoute === 'plans'} showLabel={false} onPress={() => selectTab('plans')} />
-        <RailItem label="今天" icon="chatbubble-ellipses-outline" badgeCount={pendingNotifications.data?.length ?? 0} selected={activeRoute === 'index'} tone="brand" showLabel={false} onPress={() => selectTab('index')} />
-        <RailItem label="领域" icon="cube-outline" selected={activeRoute === 'domains'} showLabel={false} onPress={() => selectTab('domains')} />
-        <RailItem label="安全" icon="lock-closed-outline" selected={activeRoute === 'permissions'} showLabel={false} onPress={() => selectTab('permissions')} />
-        <RailItem label="懒人商城" icon="bag-handle-outline" selected={activeRoute === 'commerce'} tone="commerce" showLabel={false} onPress={() => selectTab('commerce')} />
+        <RailItem label="今天" icon="sunny-outline" badgeCount={pendingNotifications.data?.length ?? 0} selected={activeRoute === 'index'} tone="brand" showLabel onPress={() => selectTab('index')} />
+        <RailItem label="计划" icon="list-outline" selected={activeRoute === 'plans'} showLabel onPress={() => selectTab('plans')} />
+        <RailItem label="连接" icon="link-outline" selected={activeRoute === 'connections'} showLabel onPress={() => selectTab('connections')} />
+        <RailItem label="记录" icon="time-outline" selected={activeRoute === 'records'} showLabel onPress={() => selectTab('records')} />
+        <RailItem label="我的" icon="person-outline" selected={activeRoute === 'me'} showLabel onPress={() => selectTab('me')} />
         <View style={styles.divider} />
-        <Text style={styles.railLabel}>我的连接</Text>
+        <Text style={styles.railLabel}>快捷连接</Text>
       </View>
 
       <ScrollView style={styles.scroller} contentContainerStyle={styles.connections} showsVerticalScrollIndicator={false}>
@@ -123,9 +122,6 @@ export function ConnectionRail({ state, navigation }: BottomTabBarProps) {
         {rail.overflowCount > 0 ? <RailItem label={`更多 ${rail.overflowCount}`} icon="ellipsis-horizontal" showLabel={false} onPress={() => selectTab('connections')} /> : null}
         <RailItem label="添加连接" icon="add" tone="action" showLabel={false} onPress={() => router.push('/connections/add' as never)} />
       </ScrollView>
-      <Pressable accessibilityRole="button" accessibilityLabel="打开我的" onPress={() => selectTab('me')} style={({ pressed }) => [styles.railAccount, activeRoute === 'me' && styles.railAccountSelected, pressed && styles.pressedAccount]}>
-        <View style={styles.avatar}><Ionicons name="person" size={18} color="#FFFFFF" /><View style={styles.onlineDot} /></View>
-      </Pressable>
     </View>
   );
 }
@@ -150,9 +146,4 @@ const styles = StyleSheet.create({
   railLabel: { width: 44, color: '#788A84', fontSize: 6, lineHeight: 9, textAlign: 'center', fontWeight: '700', marginVertical: 2 },
   scroller: { flex: 1 },
   connections: { alignItems: 'center', gap: 2, paddingVertical: 2 },
-  railAccount: { width: 42, height: 46, alignSelf: 'center', alignItems: 'center', justifyContent: 'center', borderRadius: 13, marginTop: 3 },
-  railAccountSelected: { backgroundColor: '#DDF4ED' },
-  pressedAccount: { opacity: 0.68 },
-  avatar: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: '#087A5A' },
-  onlineDot: { position: 'absolute', right: -1, bottom: -1, width: 12, height: 12, borderRadius: 6, backgroundColor: '#23A559', borderWidth: 2, borderColor: '#FFFFFF' },
 });

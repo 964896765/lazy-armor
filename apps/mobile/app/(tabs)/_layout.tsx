@@ -14,9 +14,9 @@ export default function TabsLayout() {
       <Tabs.Screen name="index" options={{ title: '今天' }} />
       <Tabs.Screen name="plans" options={{ title: '懒人装甲' }} />
       <Tabs.Screen name="create" options={{ href: null }} />
-      <Tabs.Screen name="records" options={{ href: null }} />
-      <Tabs.Screen name="me" options={{ href: null }} />
-      <Tabs.Screen name="connections" options={{ href: null }} />
+      <Tabs.Screen name="records" options={{ title: '记录' }} />
+      <Tabs.Screen name="me" options={{ title: '我的' }} />
+      <Tabs.Screen name="connections" options={{ title: '连接' }} />
       <Tabs.Screen name="domains" options={{ href: null }} />
       <Tabs.Screen name="permissions" options={{ href: null }} />
       <Tabs.Screen name="commerce" options={{ href: null }} />
