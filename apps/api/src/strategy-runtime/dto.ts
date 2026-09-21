@@ -14,3 +14,7 @@ export class DependencyQueryDto {
   @IsOptional() @IsString() @Length(1, 120) resourceType?: string;
   @IsOptional() @IsString() @Length(1, 255) subjectKey?: string;
 }
+
+export class ScenarioBindingsQueryDto {
+  @IsString() @Length(1, 120) scenarioKey!: string;
+}

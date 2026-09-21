@@ -27,6 +27,23 @@ export class StrategyRuntimeService {
     return { schemaVersion: CONDITION_AST_SCHEMA_VERSION, revision: OPERATOR_REGISTRY_REVISION, operators: OPERATOR_REGISTRY };
   }
 
+  /** Consumer read model: only bindings on a user's current or active plan version. */
+  async listScenarioPlans(userId: string, scenarioKey: string) {
+    const rows = await this.db.select({ binding: strategyRuntimeBindings, version: planVersions, plan: plans })
+      .from(strategyRuntimeBindings)
+      .innerJoin(planVersions, eq(planVersions.id, strategyRuntimeBindings.planVersionId))
+      .innerJoin(plans, and(eq(plans.id, planVersions.planId), eq(plans.userId, userId)))
+      .where(and(eq(strategyRuntimeBindings.userId, userId), eq(strategyRuntimeBindings.scenarioKey, scenarioKey),
+        or(eq(plans.currentVersionId, strategyRuntimeBindings.planVersionId), eq(plans.activeVersionId, strategyRuntimeBindings.planVersionId))))
+      .orderBy(desc(strategyRuntimeBindings.createdAt));
+    const byPlan = new Map<string, { planId: string; name: string; status: string; strategyKey: string; versionNumber: number }>();
+    for (const { binding, version, plan } of rows) {
+      if (byPlan.has(plan.id)) continue;
+      byPlan.set(plan.id, { planId: plan.id, name: version.name, status: plan.status, strategyKey: binding.strategyKey, versionNumber: version.versionNumber });
+    }
+    return [...byPlan.values()];
+  }
+
   async bind(userId: string, input: BindingInput) {
     const owned = (await this.db.select({ version: planVersions, plan: plans }).from(planVersions)
       .innerJoin(plans, and(eq(plans.id, planVersions.planId), eq(plans.userId, userId)))

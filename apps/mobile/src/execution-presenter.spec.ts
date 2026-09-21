@@ -3,6 +3,7 @@ import {
   executionAttentionLabel,
   executionListState,
   executionNeedsAttention,
+  executionRecordCategory,
   executionStatusLabel,
   executionStepMark,
   executionStepSummary,
@@ -40,5 +41,14 @@ describe('Execution records presenter', () => {
     expect(executionAttentionLabel('failed')).toBe('需要你处理');
     expect(executionAttentionLabel('waiting_approval')).toBe('需要你确认');
     expect(executionStepSummary('retry_wait')).toContain('重试');
+  });
+
+  it('never presents pending or unknown results as successful records', () => {
+    expect(executionRecordCategory('succeeded')).toBe('success');
+    expect(executionRecordCategory('queued')).toBe('processing');
+    expect(executionRecordCategory('running')).toBe('processing');
+    expect(executionRecordCategory('outcome_unknown')).toBe('exception');
+    expect(executionRecordCategory('unrecognized')).toBe('exception');
+    expect(executionAttentionLabel('running')).toBe('正在处理');
   });
 });

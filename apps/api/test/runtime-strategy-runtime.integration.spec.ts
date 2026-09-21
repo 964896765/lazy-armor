@@ -71,6 +71,13 @@ describe.sequential('runtime productization batch 5 strategy runtime', { timeout
       .query({ factKey: 'device_status.status.state' }).set(auth(owner.token)).expect(200);
     expect(dependencies.body).toHaveLength(1);
     expect(dependencies.body.every((item: { planStatus: string }) => item.planStatus === 'active')).toBe(true);
+    const linked = await request(app.getHttpServer()).get('/api/strategy-runtime/bindings')
+      .query({ scenarioKey: 'device.status' }).set(auth(owner.token)).expect(200);
+    expect(linked.body).toEqual(expect.arrayContaining([expect.objectContaining({ planId, name: `设备状态-${unique}`, status: 'active', strategyKey: 'AUTOMATED_ACTION' })]));
+    const isolated = await request(app.getHttpServer()).get('/api/strategy-runtime/bindings')
+      .query({ scenarioKey: 'device.status' }).set(auth(stranger.token)).expect(200);
+    expect(isolated.body).toEqual([]);
+    await request(app.getHttpServer()).get('/api/strategy-runtime/bindings').set(auth(owner.token)).expect(400);
   });
 
   it('indexes a draft version without making it eligible for Truth wakeups', async () => {

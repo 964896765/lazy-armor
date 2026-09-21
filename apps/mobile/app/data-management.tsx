@@ -18,20 +18,23 @@ export default function DataManagementPage() {
     ],
   });
   const loading = results.some((item) => item.isLoading);
+  const failed = results.some((item) => item.isError);
   const counts = results.map((item) => (item.data ?? []).length);
 
   return (
     <ScrollView style={local.page} contentContainerStyle={local.content}>
       <ShellPage title="数据管理" subtitle="先告诉你现在有哪些连接、资料、计划和记录；账户删除流程尚未正式开启。">
         {loading && <ActivityIndicator />}
-        <View style={styles.card}>
+        {!token ? <View style={styles.card}><Text style={styles.cardTitle}>登录后查看</Text><Text style={styles.cardText}>这里只会读取属于你账号的数据，不会显示示例数量。</Text></View> : null}
+        {failed ? <View style={styles.card}><Text style={styles.cardTitle}>数据暂时无法完整读取</Text><Text style={styles.cardText}>下方不会把加载失败的项目显示成 0。请恢复连接后重试。</Text></View> : null}
+        {token && !loading && !failed ? <View style={styles.card}>
           <Text style={styles.cardTitle}>你当前的数据</Text>
           <Text style={styles.cardText}>连接：{counts[0] ?? 0}</Text>
           <Text style={styles.cardText}>设备资料：{(counts[1] ?? 0) + (counts[3] ?? 0) + (counts[4] ?? 0)}</Text>
           <Text style={styles.cardText}>车辆资料：{counts[2] ?? 0}</Text>
           <Text style={styles.cardText}>计划：{counts[5] ?? 0}</Text>
           <Text style={styles.cardText}>运行记录：{counts[6] ?? 0}</Text>
-        </View>
+        </View> : null}
         <View style={styles.card}>
           <Text style={styles.cardTitle}>删除规则说明</Text>
           <Text style={styles.cardText}>连接断开后会立即失去对应运行权限，但历史计划和记录仍保留事实轨迹。</Text>

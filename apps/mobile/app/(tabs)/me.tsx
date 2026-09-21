@@ -49,7 +49,7 @@ export default function Me() {
           <Divider />
           <MenuRow icon="key-outline" title="权限" detail="管理信息使用范围" onPress={() => router.push('/permissions' as Href)} />
           <Divider />
-          <MenuRow icon="shield-checkmark-outline" title="安全" detail="确认与保护方式" onPress={() => router.push('/automation-safety' as Href)} />
+          <MenuRow icon="shield-checkmark-outline" title="安全中心" detail="授权、审批、设备与审计" onPress={() => router.push('/security-center' as Href)} />
           <Divider />
           <MenuRow icon="receipt-outline" title="安全记录" detail="查看重要操作" onPress={() => router.push('/security-activity' as Href)} />
         </View>

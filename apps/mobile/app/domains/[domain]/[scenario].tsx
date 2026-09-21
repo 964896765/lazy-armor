@@ -8,6 +8,9 @@ import { api } from '../../../src/api';
 import { useAuthStore } from '../../../src/auth-store';
 import { colors, radius, spacing, typography } from '../../../src/design';
 import { readinessReasonCopy } from '../../../src/runtime-details-presenter';
+import { displayTime } from '../../../src/runtime-details-presenter';
+import { executionStatusLabel } from '../../../src/execution-presenter';
+import { planStatusLabel } from '../../../src/plan-presenter';
 import { LoginRequired, RuntimeCard, RuntimeDetailScreen, RuntimeKeyValue, RuntimeLoadState, RuntimeSection, RuntimeText } from '../../../src/runtime-details-ui';
 
 interface ScenarioDefinition {
@@ -18,6 +21,10 @@ interface ScenarioDefinition {
   defaultRiskFloor: string; fallbackPolicy: { unknown: string };
 }
 interface Readiness { reasons: string[] }
+interface ScenarioPlan { planId: string; name: string; status: string; strategyKey: string; versionNumber: number }
+interface ScenarioFact { id: string; factKey: string; valueSummary: string | null; sourceLabel: string | null; observedAt: string | null }
+interface ScenarioExecution { id: string; planId: string; status: string; resultSummary: string | null; createdAt: string }
+interface ScenarioTemplate { key: string; domain: string; name: string; description: string }
 interface ScenarioRuntimeEvidence {
   availableFacts: string[]; missingFacts: string[]; readiness: Readiness;
   product: { userReadiness: string; title: string; reason: string; nextAction: string; actionPath: '/connections' | '/today' | '/records' | null };
@@ -39,10 +46,18 @@ export default function DomainScenarioPage() {
   const definition = useQuery({ queryKey: ['scenario-definition', scenarioKey, token], queryFn: () => api<ScenarioDefinition>(`/scenarios/${scenarioKey}`, token), enabled: Boolean(scenarioKey && token) });
   const readiness = useQuery({ queryKey: ['scenario-readiness', scenarioKey, token], queryFn: () => api<Readiness>(`/scenarios/${scenarioKey}/readiness`, token), enabled: Boolean(scenarioKey && token) });
   const runtime = useQuery({ queryKey: ['scenario-runtime-evidence', scenarioKey, token], queryFn: () => api<{ runtime: ScenarioRuntimeEvidence }>(`/scenario-coverage-ledger/${scenarioKey}/runtime-evidence`, token), enabled: Boolean(scenarioKey && token) });
+  const plans = useQuery({ queryKey: ['scenario-plans', scenarioKey, token], queryFn: () => api<ScenarioPlan[]>(`/strategy-runtime/bindings?scenarioKey=${encodeURIComponent(scenarioKey)}`, token), enabled: Boolean(scenarioKey && token) });
+  const facts = useQuery({ queryKey: ['scenario-truth', token], queryFn: () => api<ScenarioFact[]>('/truth-records', token), enabled: Boolean(token) });
+  const executions = useQuery({ queryKey: ['scenario-executions', token], queryFn: () => api<ScenarioExecution[]>('/executions', token), enabled: Boolean(token && (plans.data?.length ?? 0) > 0) });
+  const templates = useQuery({ queryKey: ['scenario-templates', token], queryFn: () => api<ScenarioTemplate[]>('/templates', token), enabled: Boolean(token) });
   const data = definition.data;
   const evidence = runtime.data?.runtime;
   const destination = actionRoute(evidence?.product.actionPath ?? null);
   const reasons = [...new Set((evidence?.readiness.reasons ?? readiness.data?.reasons ?? []).map(readinessReasonCopy))];
+  const matchingFacts = (facts.data ?? []).filter((fact) => data?.requiredFacts.includes(fact.factKey));
+  const planIds = new Set((plans.data ?? []).map((plan) => plan.planId));
+  const recentExecutions = (executions.data ?? []).filter((item) => planIds.has(item.planId)).slice(0, 3);
+  const matchingTemplates = (templates.data ?? []).filter((template) => template.domain === data?.domain).slice(0, 3);
 
   return <RuntimeDetailScreen title={data?.label ?? '场景详情'} subtitle="了解能帮你管理什么，以及现在还差哪一步" onBack={() => router.back()}>
     {!token ? <LoginRequired /> : null}
@@ -60,8 +75,11 @@ export default function DomainScenarioPage() {
         <View style={styles.metricRow}><View style={styles.metric}><Text style={styles.metricValue}>{evidence.availableFacts.length}</Text><Text style={styles.metricLabel}>已具备事实类型</Text></View><View style={styles.metric}><Text style={styles.metricValue}>{evidence.missingFacts.length}</Text><Text style={styles.metricLabel}>待补充事实类型</Text></View></View>
         {reasons.length > 0 ? <View style={styles.reasons}>{reasons.slice(0, 3).map((reason) => <Text key={reason} style={styles.reasonLine}>· {reason}</Text>)}</View> : null}
       </RuntimeCard></RuntimeSection>
+      <RuntimeSection title="当前事实"><RuntimeCard>{facts.isLoading ? <RuntimeText>正在读取已验证事实…</RuntimeText> : facts.isError ? <RuntimeText>事实暂时无法读取；不会把读取失败显示成“没有事实”。</RuntimeText> : matchingFacts.length === 0 ? <RuntimeText>还没有该场景所需的已验证事实。</RuntimeText> : matchingFacts.slice(0, 3).map((fact) => <Pressable accessibilityRole="button" key={fact.id} onPress={() => router.push(`/truth/${fact.id}` as never)} style={styles.listRow}><View style={styles.listCopy}><Text style={styles.listTitle}>{fact.valueSummary || fact.factKey}</Text><Text style={styles.listMeta}>{fact.sourceLabel || '来源未标注'} · {fact.observedAt ? displayTime(fact.observedAt) : '时间未记录'}</Text></View><Ionicons name="chevron-forward" size={16} color={colors.textMuted} /></Pressable>)}</RuntimeCard></RuntimeSection>
       <RuntimeSection title="目录支持的管理方式"><RuntimeCard>{data.supportedStrategies.length === 0 ? <RuntimeText>暂未提供管理方式。</RuntimeText> : data.supportedStrategies.map((strategy) => <Pressable accessibilityRole="button" key={strategy} onPress={() => router.push(`/strategies/${strategy}` as never)} style={styles.strategyRow}><Text style={styles.strategyName}>{strategyLabel(strategy)}</Text>{strategy === data.defaultStrategy ? <Text style={styles.defaultLabel}>默认</Text> : null}<Ionicons name="chevron-forward" size={16} color={colors.textMuted} /></Pressable>)}</RuntimeCard></RuntimeSection>
-      <RuntimeSection title="我的计划"><RuntimeCard><RuntimeText>已创建的计划以计划列表为准。此处不把场景目录当作你已启用的计划。</RuntimeText><Pressable accessibilityRole="button" onPress={() => router.push('/(tabs)/plans' as never)} style={styles.linkRow}><Text style={styles.linkText}>查看全部计划</Text><Ionicons name="arrow-forward" size={16} color={colors.primary} /></Pressable></RuntimeCard></RuntimeSection>
+      <RuntimeSection title="关联计划"><RuntimeCard>{plans.isLoading ? <RuntimeText>正在读取关联计划…</RuntimeText> : plans.isError ? <RuntimeText>暂时无法读取关联计划。</RuntimeText> : plans.data?.length === 0 ? <RuntimeText>还没有与这个场景建立运行时关联的计划。</RuntimeText> : plans.data?.map((plan) => <Pressable accessibilityRole="button" key={plan.planId} onPress={() => router.push(`/plans/${plan.planId}` as never)} style={styles.listRow}><View style={styles.listCopy}><Text style={styles.listTitle}>{plan.name}</Text><Text style={styles.listMeta}>{strategyLabel(plan.strategyKey)} · {planStatusLabel(plan.status)}</Text></View><Ionicons name="chevron-forward" size={16} color={colors.textMuted} /></Pressable>)}<Pressable accessibilityRole="button" onPress={() => router.push('/(tabs)/plans' as never)} style={styles.linkRow}><Text style={styles.linkText}>查看全部计划</Text><Ionicons name="arrow-forward" size={16} color={colors.primary} /></Pressable></RuntimeCard></RuntimeSection>
+      <RuntimeSection title="最近执行"><RuntimeCard>{plans.isLoading ? <RuntimeText>正在核对关联计划…</RuntimeText> : plans.isError ? <RuntimeText>关联计划暂时无法读取，因此不能判断该场景的执行记录。</RuntimeText> : plans.data?.length === 0 ? <RuntimeText>没有关联计划，因此还没有该场景的执行记录。</RuntimeText> : executions.isLoading ? <RuntimeText>正在读取最近执行…</RuntimeText> : executions.isError ? <RuntimeText>最近执行暂时无法读取。</RuntimeText> : recentExecutions.length === 0 ? <RuntimeText>最近的记录中还没有该场景的执行。</RuntimeText> : recentExecutions.map((execution) => <Pressable accessibilityRole="button" key={execution.id} onPress={() => router.push(`/executions/${execution.id}` as never)} style={styles.listRow}><View style={styles.listCopy}><Text style={styles.listTitle}>{execution.resultSummary || executionStatusLabel(execution.status)}</Text><Text style={styles.listMeta}>{displayTime(execution.createdAt)} · {executionStatusLabel(execution.status)}</Text></View><Ionicons name="chevron-forward" size={16} color={colors.textMuted} /></Pressable>)}</RuntimeCard></RuntimeSection>
+      <RuntimeSection title="同领域模板"><RuntimeCard>{templates.isLoading ? <RuntimeText>正在读取模板…</RuntimeText> : templates.isError ? <RuntimeText>模板暂时无法读取。</RuntimeText> : matchingTemplates.length === 0 ? <RuntimeText>该领域暂未提供可参考的模板。</RuntimeText> : matchingTemplates.map((template) => <Pressable accessibilityRole="button" key={template.key} onPress={() => router.push(`/templates/${template.key}` as never)} style={styles.listRow}><View style={styles.listCopy}><Text style={styles.listTitle}>{template.name}</Text><Text style={styles.listMeta}>{template.description}</Text></View><Ionicons name="chevron-forward" size={16} color={colors.textMuted} /></Pressable>)}</RuntimeCard></RuntimeSection>
       <RuntimeSection title="运行边界"><Pressable accessibilityRole="button" accessibilityState={{ expanded: detailsOpen }} onPress={() => setDetailsOpen(!detailsOpen)} style={styles.disclosure}><Text style={styles.disclosureText}>{detailsOpen ? '收起技术依据' : '查看事实、能力与安全规则'}</Text><Ionicons name={detailsOpen ? 'chevron-up' : 'chevron-down'} size={17} color={colors.primary} /></Pressable>
         {detailsOpen ? <RuntimeCard><RuntimeKeyValue label="所需事实" value={data.requiredFacts.join('、') || '未声明'} /><RuntimeKeyValue label="已具备事实" value={evidence.availableFacts.join('、') || '暂无'} /><RuntimeKeyValue label="来源能力" value={data.sourceRequirements.map((item) => item.capabilityKey).join('、') || '未声明'} /><RuntimeKeyValue label="动作能力" value={data.actionRequirements.map((item) => item.capabilityKey).join('、') || '未声明'} /><RuntimeKeyValue label="风险下限" value={data.defaultRiskFloor} /><RuntimeKeyValue label="未知结果处理" value={data.fallbackPolicy.unknown} last /><RuntimeText>实际执行、审批与验证由后端决定；本页只展示证据，不在手机上重新判断。</RuntimeText></RuntimeCard> : null}
       </RuntimeSection>
@@ -81,5 +99,6 @@ const styles = StyleSheet.create({
   reasons: { marginTop: spacing.md }, reasonLine: { ...typography.caption, color: colors.textSecondary, lineHeight: 19 },
   strategyRow: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.border }, strategyName: { ...typography.bodyStrong, color: colors.text, flex: 1 }, defaultLabel: { ...typography.caption, color: colors.primary },
   linkRow: { minHeight: 42, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: spacing.sm }, linkText: { ...typography.bodyStrong, color: colors.primary },
+  listRow: { minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.border, paddingVertical: spacing.sm }, listCopy: { flex: 1 }, listTitle: { ...typography.bodyStrong, color: colors.text }, listMeta: { ...typography.caption, color: colors.textSecondary, marginTop: 3 },
   disclosure: { minHeight: 42, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, disclosureText: { ...typography.bodyStrong, color: colors.primary },
 });

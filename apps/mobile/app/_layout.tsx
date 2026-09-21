@@ -42,6 +42,7 @@ export default function RootLayout() {
           <Stack.Screen name="vehicles" options={{ headerShown: false }} />
           <Stack.Screen name="notification-settings" options={{ title: '通知' }} />
           <Stack.Screen name="automation-safety" options={{ title: '自动化安全等级' }} />
+          <Stack.Screen name="security-center" options={{ headerShown: false }} />
           <Stack.Screen name="data-management" options={{ title: '数据管理' }} />
           <Stack.Screen name="security-activity" options={{ title: '安全记录' }} />
           <Stack.Screen name="oauth/callback" options={{ title: '连接服务' }} />

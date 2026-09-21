@@ -7,7 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/api';
 import { useAuthStore } from '../../src/auth-store';
 import { EmptyState, Surface, WorkspaceHeader, WorkspaceSection, colors, radius, spacing, typography } from '../../src/design';
-import { executionAttentionLabel, executionListState, executionNeedsAttention, executionStatusLabel } from '../../src/execution-presenter';
+import { executionAttentionLabel, executionListState, executionNeedsAttention, executionRecordCategory, executionStatusLabel } from '../../src/execution-presenter';
 
 interface ExecutionRecord {
   id: string;
@@ -17,10 +17,11 @@ interface ExecutionRecord {
   createdAt: string;
 }
 
-type RecordFilter = 'all' | 'success' | 'failed' | 'exception';
-const FILTERS: Array<{ key: RecordFilter; label: string; icon: 'list' | 'checkmark-circle' | 'close-circle' | 'warning' }> = [
+type RecordFilter = 'all' | 'success' | 'processing' | 'failed' | 'exception';
+const FILTERS: Array<{ key: RecordFilter; label: string; icon: 'list' | 'checkmark-circle' | 'time-outline' | 'close-circle' | 'warning' }> = [
   { key: 'all', label: '全部', icon: 'list' },
   { key: 'success', label: '成功', icon: 'checkmark-circle' },
+  { key: 'processing', label: '处理中', icon: 'time-outline' },
   { key: 'failed', label: '失败', icon: 'close-circle' },
   { key: 'exception', label: '异常', icon: 'warning' },
 ];
@@ -30,7 +31,7 @@ export default function Records() {
   const [filter, setFilter] = useState<RecordFilter>('all');
   const executions = useQuery({ queryKey: ['executions', token], queryFn: () => api<ExecutionRecord[]>('/executions', token), enabled: Boolean(token) });
   const state = executionListState(executions.isLoading, executions.isError, executions.data?.length ?? 0);
-  const shown = useMemo(() => (executions.data ?? []).filter((item) => filter === 'all' || recordCategory(item.status) === filter), [executions.data, filter]);
+  const shown = useMemo(() => (executions.data ?? []).filter((item) => filter === 'all' || executionRecordCategory(item.status) === filter), [executions.data, filter]);
   const groups = groupByDay(shown);
 
   return (
@@ -51,9 +52,10 @@ export default function Records() {
             <View style={styles.timelineGroup}>
               {records.map((item, index) => {
                 const needsAttention = executionNeedsAttention(item.status);
+                const category = executionRecordCategory(item.status);
                 return (
                   <Pressable key={item.id} accessibilityRole="button" onPress={() => router.push(`/executions/${item.id}` as never)} style={({ pressed }) => [styles.timelineRow, index < records.length - 1 && styles.divider, pressed && styles.pressedRow]}>
-                    <View style={styles.markerColumn}><View style={[styles.marker, needsAttention ? styles.markerWarning : styles.markerSuccess]}><Ionicons name={needsAttention ? 'warning' : 'checkmark'} size={12} color={needsAttention ? '#B54708' : '#16834A'} /></View></View>
+                    <View style={styles.markerColumn}><View style={[styles.marker, category === 'success' ? styles.markerSuccess : category === 'processing' ? styles.markerProcessing : styles.markerWarning]}><Ionicons name={category === 'success' ? 'checkmark' : category === 'processing' ? 'time' : 'warning'} size={12} color={category === 'success' ? '#16834A' : category === 'processing' ? colors.primary : '#B54708'} /></View></View>
                     <View style={styles.recordCopy}>
                       <View style={styles.recordHeader}><Text numberOfLines={1} style={styles.recordTitle}>{item.planName}</Text><Text style={styles.time}>{formatTime(item.createdAt)}</Text></View>
                       <Text numberOfLines={2} style={styles.summary}>{item.resultSummary ?? executionStatusLabel(item.status)}</Text>
@@ -78,12 +80,6 @@ function groupByDay(records: ExecutionRecord[]): Array<[string, ExecutionRecord[
     groups.set(label, [...(groups.get(label) ?? []), record]);
   }
   return [...groups.entries()];
-}
-
-function recordCategory(status: string): Exclude<RecordFilter, 'all'> {
-  if (['completed', 'succeeded', 'success', 'verified'].includes(status)) return 'success';
-  if (['failed', 'action_failed', 'execution_failed'].includes(status)) return 'failed';
-  return executionNeedsAttention(status) ? 'exception' : 'success';
 }
 
 function dayLabel(value: string) {
@@ -134,6 +130,7 @@ const styles = StyleSheet.create({
   markerColumn: { width: 30, alignItems: 'center' },
   marker: { width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   markerSuccess: { backgroundColor: '#E8F7EF' },
+  markerProcessing: { backgroundColor: colors.accentSoft },
   markerWarning: { backgroundColor: '#FFF4E5' },
   recordCopy: { flex: 1, minWidth: 0 },
   recordHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },

@@ -14,6 +14,14 @@ const STEP_MARKS: Record<string, string> = {
 };
 
 export type ExecutionListState = 'loading' | 'error' | 'empty' | 'ready';
+export type ExecutionRecordCategory = 'success' | 'processing' | 'failed' | 'exception';
+
+export function executionRecordCategory(status: string): ExecutionRecordCategory {
+  if (status === 'succeeded') return 'success';
+  if (status === 'failed') return 'failed';
+  if (['created', 'queued', 'running', 'retry_wait', 'waiting_dispatch'].includes(status)) return 'processing';
+  return 'exception';
+}
 
 export function executionStatusLabel(status: string) { return STATUS_LABELS[status] ?? '处理中'; }
 export function executionStepMark(status: string) { return STEP_MARKS[status] ?? '○'; }
@@ -33,7 +41,8 @@ export function executionAttentionLabel(status: string) {
   if (status === 'failed' || status === 'partially_succeeded') return '需要你处理';
   if (status === 'cancelled') return '这次已取消';
   if (status === 'outcome_unknown' || status === 'unknown') return '结果待确认';
-  return '已自动处理';
+  if (executionRecordCategory(status) === 'processing') return '正在处理';
+  return status === 'succeeded' ? '已完成' : '需要查看结果';
 }
 
 export function executionStepSummary(status: string) {
