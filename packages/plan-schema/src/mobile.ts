@@ -37,3 +37,11 @@ export {
   type LifecycleReadStep,
   type LifecycleReadStepKey,
 } from './lifecycle-read-projection';
+
+export {
+  assertAppReadProfile,
+  isSensitiveField,
+  resolveStructuredReadOutcome,
+  type AppReadProfile,
+  type StructuredReadOutcome,
+} from './structured-read';
