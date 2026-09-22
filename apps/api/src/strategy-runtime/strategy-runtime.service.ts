@@ -44,6 +44,22 @@ export class StrategyRuntimeService {
     return [...byPlan.values()];
   }
 
+  /** Per-scenario active-plan counts for the Scenario Canvas state chips. */
+  async listScenarioPlanCounts(userId: string) {
+    const rows = await this.db.select({ scenarioKey: strategyRuntimeBindings.scenarioKey, planId: plans.id })
+      .from(strategyRuntimeBindings)
+      .innerJoin(planVersions, eq(planVersions.id, strategyRuntimeBindings.planVersionId))
+      .innerJoin(plans, and(eq(plans.id, planVersions.planId), eq(plans.userId, userId)))
+      .where(and(eq(strategyRuntimeBindings.userId, userId), or(eq(plans.currentVersionId, strategyRuntimeBindings.planVersionId), eq(plans.activeVersionId, strategyRuntimeBindings.planVersionId))));
+    const byScenario = new Map<string, Set<string>>();
+    for (const { scenarioKey, planId } of rows) {
+      const set = byScenario.get(scenarioKey) ?? new Set<string>();
+      set.add(planId);
+      byScenario.set(scenarioKey, set);
+    }
+    return [...byScenario.entries()].map(([scenarioKey, planIds]) => ({ scenarioKey, planCount: planIds.size }));
+  }
+
   async bind(userId: string, input: BindingInput) {
     const owned = (await this.db.select({ version: planVersions, plan: plans }).from(planVersions)
       .innerJoin(plans, and(eq(plans.id, planVersions.planId), eq(plans.userId, userId)))

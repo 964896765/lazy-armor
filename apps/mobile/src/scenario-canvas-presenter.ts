@@ -36,6 +36,10 @@ const DOMAIN_ICONS: Record<string, string> = {
 
 export function scenarioKeyOf(row: ScenarioRow): string { return `${row.productDomain}.${row.key}`; }
 
+export function scenarioStateLabel(row: ScenarioRow, planCount: number): string {
+  return planCount > 0 ? `${planCount} 个计划` : '可创建';
+}
+
 export function buildScenarioSections(input: { space: SpaceFilter; query: string }): ScenarioSection[] {
   const q = input.query.trim().toLowerCase();
   const domains = CANONICAL_DOMAIN_CATALOG.filter((domain) => input.space === 'all' || domain.group === input.space);

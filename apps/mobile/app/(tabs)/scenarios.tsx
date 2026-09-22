@@ -1,18 +1,34 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useQuery } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import type { ComponentProps } from 'react';
 import { useMemo, useState } from 'react';
 import { Pressable, SectionList, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { api } from '../../src/api';
+import { useAuthStore } from '../../src/auth-store';
 import { colors, radius, spacing, typography } from '../../src/design';
-import { SPACE_FILTERS, TOTAL_SCENARIO_COUNT, buildScenarioSections, type ScenarioRow, type ScenarioSection, type SpaceFilter } from '../../src/scenario-canvas-presenter';
+import { SPACE_FILTERS, TOTAL_SCENARIO_COUNT, buildScenarioSections, scenarioKeyOf, scenarioStateLabel, type ScenarioRow, type ScenarioSection, type SpaceFilter } from '../../src/scenario-canvas-presenter';
 
 type IconName = ComponentProps<typeof Ionicons>['name'];
+
+interface ScenarioPlanCount { scenarioKey: string; planCount: number }
 
 export default function ScenarioCanvas() {
   const [query, setQuery] = useState('');
   const [space, setSpace] = useState<SpaceFilter>('all');
+  const token = useAuthStore((store) => store.token);
   const sections = useMemo(() => buildScenarioSections({ space, query }), [space, query]);
+  const planCounts = useQuery({
+    queryKey: ['scenario-plan-counts', token],
+    queryFn: () => api<ScenarioPlanCount[]>('/strategy-runtime/scenario-plan-counts', token),
+    enabled: Boolean(token),
+  });
+  const countByKey = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const item of planCounts.data ?? []) map.set(item.scenarioKey, item.planCount);
+    return map;
+  }, [planCounts.data]);
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -35,7 +51,7 @@ export default function ScenarioCanvas() {
         sections={sections}
         keyExtractor={(item) => `${item.productDomain}.${item.key}`}
         renderSectionHeader={({ section }) => <SectionHeader section={section} />}
-        renderItem={({ item, section }) => <Row item={item} icon={section.icon} />}
+        renderItem={({ item, section }) => <Row item={item} icon={section.icon} planCount={countByKey.get(scenarioKeyOf(item)) ?? 0} />}
         stickySectionHeadersEnabled
         contentContainerStyle={styles.list}
         showsVerticalScrollIndicator={false}
@@ -55,12 +71,12 @@ function SectionHeader({ section }: { section: ScenarioSection }) {
   );
 }
 
-function Row({ item, icon }: { item: ScenarioRow; icon: string }) {
+function Row({ item, icon, planCount }: { item: ScenarioRow; icon: string; planCount: number }) {
   return (
     <Pressable accessibilityRole="button" onPress={() => router.push(`/domains/${item.productDomain}/${item.key}` as never)} style={({ pressed }) => [styles.row, pressed && styles.pressed]}>
       <View style={styles.rowIcon}><Ionicons name={icon as IconName} size={18} color={colors.primary} /></View>
       <Text style={styles.rowLabel}>{item.label}</Text>
-      <Text style={styles.rowState}>可创建</Text>
+      <Text style={styles.rowState}>{scenarioStateLabel(item, planCount)}</Text>
       <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
     </Pressable>
   );
