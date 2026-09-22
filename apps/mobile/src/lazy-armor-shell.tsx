@@ -114,7 +114,7 @@ export function ConnectionRail({ state, navigation }: BottomTabBarProps) {
             status={connection.status}
             badgeCount={connection.unread}
             showLabel={false}
-            onPress={() => selectTab('connections')}
+            onPress={() => connection.kind === 'app' ? router.push(`/apps/${connection.id}` as never) : router.push(`/connections/${connection.id}` as never)}
           />
         ))}
         {rail.overflowCount > 0 ? <RailItem label={`更多 ${rail.overflowCount}`} icon="ellipsis-horizontal" showLabel={false} onPress={() => selectTab('connections')} /> : null}
