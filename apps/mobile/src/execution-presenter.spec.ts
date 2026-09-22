@@ -4,6 +4,7 @@ import {
   executionListState,
   executionNeedsAttention,
   executionRecordCategory,
+  executionRecordCategoryLabel,
   executionStatusLabel,
   executionStepMark,
   executionStepSummary,
@@ -50,5 +51,13 @@ describe('Execution records presenter', () => {
     expect(executionRecordCategory('outcome_unknown')).toBe('exception');
     expect(executionRecordCategory('unrecognized')).toBe('exception');
     expect(executionAttentionLabel('running')).toBe('正在处理');
+  });
+
+  it('separates undetermined outcomes into their own record category', () => {
+    expect(executionRecordCategory('succeeded', 'OUTCOME_UNKNOWN')).toBe('outcome');
+    expect(executionRecordCategory('partially_succeeded', 'OUTCOME_UNKNOWN')).toBe('outcome');
+    expect(executionRecordCategory('succeeded', null)).toBe('success');
+    expect(executionRecordCategory('failed', undefined)).toBe('failed');
+    expect(executionRecordCategoryLabel('outcome')).toBe('结果待确认');
   });
 });

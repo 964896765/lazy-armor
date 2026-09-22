@@ -6,6 +6,7 @@ import { ActivityIndicator, Alert, Pressable, RefreshControl, ScrollView, StyleS
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/api';
 import { useAuthStore } from '../../src/auth-store';
+import { AttentionBell } from '../../src/attention-bell';
 import {
   AttentionCard,
   MessageRow,
@@ -131,7 +132,7 @@ export default function Today() {
         contentContainerStyle={styles.content}
         refreshControl={token ? <RefreshControl tintColor={colors.primary} refreshing={today.isFetching} onRefresh={() => today.refetch()} /> : undefined}
       >
-        <WorkspaceHeader title="今天" subtitle={formatToday()} />
+        <WorkspaceHeader title="今天" subtitle={formatToday()} action={<AttentionBell />} />
 
         {state === 'signed_out' ? (
           <CompactState icon="shield-checkmark-outline" title="登录后开始使用" description="计划、提醒和完成结果会集中在这里。" actionLabel="去登录" onPress={() => router.push('/auth/login' as never)} />

@@ -36,6 +36,7 @@ export default function RootLayout() {
           <Stack.Screen name="apps/[id]" options={{ headerShown: false }} />
           <Stack.Screen name="approvals" options={{ headerShown: false }} />
           <Stack.Screen name="approvals/[id]" options={{ headerShown: false }} />
+          <Stack.Screen name="attention" options={{ headerShown: false }} />
           <Stack.Screen name="plan-center" options={{ headerShown: false }} />
           <Stack.Screen name="connections/trusted-devices" options={{ title: '可信设备' }} />
           <Stack.Screen name="connections/notification-sources" options={{ title: '通知来源' }} />

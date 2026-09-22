@@ -3,7 +3,7 @@ import { ConnectorRegistry, resolveSideEffectContract } from '@lazy-armor/connec
 import { executions, executionSteps, reconciliationCases, sideEffectOperations, verificationEvidence, verificationPolicies } from '@lazy-armor/database';
 import { catalogHash, verificationPolicyHash, type RuntimeResultState, type VerificationPolicy } from '@lazy-armor/plan-schema';
 import { newId } from '@lazy-armor/shared';
-import { and, asc, desc, eq, isNull, lte, or } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, lte, or } from 'drizzle-orm';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
 import { workerEnabled } from '../common/app-role';
 import { AuditService } from '../audit/audit.service';
@@ -19,6 +19,16 @@ export class ReconciliationService {
     private readonly verification: VerificationService, private readonly audit: AuditService) {}
 
   async list(userId: string) { return this.db.select().from(reconciliationCases).where(eq(reconciliationCases.userId, userId)).orderBy(desc(reconciliationCases.createdAt)).limit(100); }
+
+  /** Execution ids whose result is still undetermined (an unresolved OUTCOME_UNKNOWN case exists). */
+  async outcomeUnknownExecutionIds(userId: string, executionIds: string[]): Promise<Set<string>> {
+    if (executionIds.length === 0) return new Set();
+    const rows = await this.db.select({ executionId: reconciliationCases.executionId })
+      .from(reconciliationCases)
+      .where(and(eq(reconciliationCases.userId, userId), inArray(reconciliationCases.executionId, executionIds), eq(reconciliationCases.resultState, 'OUTCOME_UNKNOWN')));
+    return new Set(rows.map((row) => row.executionId));
+  }
+
   async get(userId: string, id: string) {
     const row = (await this.db.select().from(reconciliationCases).where(and(eq(reconciliationCases.id, id), eq(reconciliationCases.userId, userId))).limit(1))[0];
     if (!row) throw new NotFoundException('Reconciliation case not found');

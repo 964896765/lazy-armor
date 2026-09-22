@@ -7,6 +7,7 @@ import { Pressable, SectionList, StyleSheet, Text, TextInput, View } from 'react
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/api';
 import { useAuthStore } from '../../src/auth-store';
+import { AttentionBell } from '../../src/attention-bell';
 import { colors, radius, spacing, typography } from '../../src/design';
 import { SPACE_FILTERS, TOTAL_SCENARIO_COUNT, buildScenarioSections, scenarioKeyOf, scenarioStateLabel, type ScenarioRow, type ScenarioSection, type SpaceFilter } from '../../src/scenario-canvas-presenter';
 
@@ -33,7 +34,10 @@ export default function ScenarioCanvas() {
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <View style={styles.header}>
-        <Text style={styles.title}>全部场景</Text>
+        <View style={styles.titleRow}>
+          <Text style={styles.title}>全部场景</Text>
+          <AttentionBell />
+        </View>
         <Text style={styles.subtitle}>懒人装甲能替你管理的 {TOTAL_SCENARIO_COUNT} 件事</Text>
         <View style={styles.searchBox}>
           <Ionicons name="search" size={18} color={colors.textMuted} />
@@ -85,6 +89,7 @@ function Row({ item, icon, planCount }: { item: ScenarioRow; icon: string; planC
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors.background },
   header: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.sm },
+  titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   title: { ...typography.title, color: colors.text },
   subtitle: { ...typography.caption, color: colors.textSecondary, marginTop: 4 },
   searchBox: { minHeight: 44, marginTop: spacing.md, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.md, borderRadius: radius.md, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },

@@ -14,14 +14,21 @@ const STEP_MARKS: Record<string, string> = {
 };
 
 export type ExecutionListState = 'loading' | 'error' | 'empty' | 'ready';
-export type ExecutionRecordCategory = 'success' | 'processing' | 'failed' | 'exception';
+export type ExecutionRecordCategory = 'success' | 'processing' | 'failed' | 'exception' | 'outcome';
 
-export function executionRecordCategory(status: string): ExecutionRecordCategory {
+const CATEGORY_LABELS: Record<ExecutionRecordCategory, string> = {
+  success: '成功', processing: '处理中', failed: '失败', exception: '异常', outcome: '结果待确认',
+};
+
+export function executionRecordCategory(status: string, resultState?: string | null): ExecutionRecordCategory {
+  if (resultState === 'OUTCOME_UNKNOWN') return 'outcome';
   if (status === 'succeeded') return 'success';
   if (status === 'failed') return 'failed';
   if (['created', 'queued', 'running', 'retry_wait', 'waiting_dispatch'].includes(status)) return 'processing';
   return 'exception';
 }
+
+export function executionRecordCategoryLabel(category: ExecutionRecordCategory): string { return CATEGORY_LABELS[category]; }
 
 export function executionStatusLabel(status: string) { return STATUS_LABELS[status] ?? '处理中'; }
 export function executionStepMark(status: string) { return STEP_MARKS[status] ?? '○'; }

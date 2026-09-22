@@ -13,8 +13,16 @@ export class ExecutionsController {
 
   @Post('plans/:id/executions') create(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() input: ManualExecutionDto) { return this.dispatch.dispatchManual(user.id, id, input.requestId, input.triggerPayload); }
   @Post('plans/:id/resolved-executions') createResolved(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() input: ResolvedExecutionDto) { return this.dispatch.dispatchManual(user.id, id, input.requestId, input.triggerPayload, input.resolutionDecisionIds); }
-  @Get('executions') list(@CurrentUser() user: AuthenticatedUser, @Query() query: ListExecutionsDto) { return this.executions.list(user.id, query); }
-  @Get('executions/page') listPage(@CurrentUser() user: AuthenticatedUser, @Query() query: ListExecutionsPageDto) { return this.executions.listPage(user.id, query); }
+  @Get('executions') async list(@CurrentUser() user: AuthenticatedUser, @Query() query: ListExecutionsDto) {
+    const rows = await this.executions.list(user.id, query);
+    const unknown = await this.reconciliation.outcomeUnknownExecutionIds(user.id, rows.map((row) => row.id));
+    return rows.map((row) => ({ ...row, resultState: unknown.has(row.id) ? 'OUTCOME_UNKNOWN' : null }));
+  }
+  @Get('executions/page') async listPage(@CurrentUser() user: AuthenticatedUser, @Query() query: ListExecutionsPageDto) {
+    const page = await this.executions.listPage(user.id, query);
+    const unknown = await this.reconciliation.outcomeUnknownExecutionIds(user.id, page.items.map((row) => row.id));
+    return { items: page.items.map((row) => ({ ...row, resultState: unknown.has(row.id) ? 'OUTCOME_UNKNOWN' : null })), nextCursor: page.nextCursor };
+  }
   @Get('executions/:id') async get(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
     const [detail, verification] = await Promise.all([this.executions.get(user.id, id), this.reconciliation.executionResult(user.id, id)]);
     return { ...detail, resultState: verification.resultState, reconciliationCases: verification.reconciliationCases };

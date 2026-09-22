@@ -14,16 +14,18 @@ interface ExecutionRecord {
   planName: string;
   status: string;
   resultSummary: string | null;
+  resultState: string | null;
   createdAt: string;
 }
 
-type RecordFilter = 'all' | 'success' | 'processing' | 'failed' | 'exception';
-const FILTERS: Array<{ key: RecordFilter; label: string; icon: 'list' | 'checkmark-circle' | 'time-outline' | 'close-circle' | 'warning' }> = [
+type RecordFilter = 'all' | 'success' | 'processing' | 'failed' | 'exception' | 'outcome';
+const FILTERS: Array<{ key: RecordFilter; label: string; icon: 'list' | 'checkmark-circle' | 'time-outline' | 'close-circle' | 'warning' | 'help-circle' }> = [
   { key: 'all', label: '全部', icon: 'list' },
   { key: 'success', label: '成功', icon: 'checkmark-circle' },
   { key: 'processing', label: '处理中', icon: 'time-outline' },
   { key: 'failed', label: '失败', icon: 'close-circle' },
   { key: 'exception', label: '异常', icon: 'warning' },
+  { key: 'outcome', label: '结果待确认', icon: 'help-circle' },
 ];
 
 export default function Records() {
@@ -31,14 +33,14 @@ export default function Records() {
   const [filter, setFilter] = useState<RecordFilter>('all');
   const executions = useQuery({ queryKey: ['executions', token], queryFn: () => api<ExecutionRecord[]>('/executions', token), enabled: Boolean(token) });
   const state = executionListState(executions.isLoading, executions.isError, executions.data?.length ?? 0);
-  const shown = useMemo(() => (executions.data ?? []).filter((item) => filter === 'all' || executionRecordCategory(item.status) === filter), [executions.data, filter]);
+  const shown = useMemo(() => (executions.data ?? []).filter((item) => filter === 'all' || executionRecordCategory(item.status, item.resultState) === filter), [executions.data, filter]);
   const groups = groupByDay(shown);
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <ScrollView style={styles.page} contentContainerStyle={styles.content} refreshControl={token ? <RefreshControl tintColor={colors.primary} refreshing={executions.isFetching} onRefresh={() => executions.refetch()} /> : undefined}>
         <WorkspaceHeader title="最近做了什么" subtitle="计划触发、判断、审批、执行与结果，统一记录在这里" action={<Pressable accessibilityRole="button" onPress={() => router.push('/reconciliation' as never)} style={styles.reconciliationLink}><Text style={styles.reconciliationLinkText}>结果待确认</Text></Pressable>} />
-        <View style={styles.filters}>{FILTERS.map((item) => <Pressable key={item.key} onPress={() => setFilter(item.key)} style={[styles.filter, filter === item.key && styles.filterSelected]}><Ionicons name={item.icon} size={15} color={filter === item.key ? colors.primary : item.key === 'failed' ? colors.danger : item.key === 'exception' ? colors.warning : colors.textSecondary} /><Text style={[styles.filterText, filter === item.key && styles.filterTextSelected]}>{item.label}</Text></Pressable>)}</View>
+        <View style={styles.filters}>{FILTERS.map((item) => <Pressable key={item.key} onPress={() => setFilter(item.key)} style={[styles.filter, filter === item.key && styles.filterSelected]}><Ionicons name={item.icon} size={15} color={filter === item.key ? colors.primary : item.key === 'failed' ? colors.danger : item.key === 'exception' || item.key === 'outcome' ? colors.warning : colors.textSecondary} /><Text style={[styles.filterText, filter === item.key && styles.filterTextSelected]}>{item.label}</Text></Pressable>)}</View>
 
         {!token ? <Surface style={styles.stateSurface}><EmptyState icon="time-outline" title="登录后查看完成记录" action={{ label: '去登录', onPress: () => router.push('/connections') }} /></Surface> : null}
         {state === 'loading' ? <View style={styles.loading}><ActivityIndicator color={colors.primary} /><Text style={styles.loadingText}>正在同步记录…</Text></View> : null}
@@ -51,15 +53,16 @@ export default function Records() {
           <WorkspaceSection key={label} title={label} count={records.length}>
             <View style={styles.timelineGroup}>
               {records.map((item, index) => {
-                const needsAttention = executionNeedsAttention(item.status);
-                const category = executionRecordCategory(item.status);
+                const category = executionRecordCategory(item.status, item.resultState);
+                const needsAttention = category === 'outcome' || executionNeedsAttention(item.status);
+                const statusText = category === 'outcome' ? '结果待确认' : executionAttentionLabel(item.status);
                 return (
                   <Pressable key={item.id} accessibilityRole="button" onPress={() => router.push(`/executions/${item.id}` as never)} style={({ pressed }) => [styles.timelineRow, index < records.length - 1 && styles.divider, pressed && styles.pressedRow]}>
-                    <View style={styles.markerColumn}><View style={[styles.marker, category === 'success' ? styles.markerSuccess : category === 'processing' ? styles.markerProcessing : styles.markerWarning]}><Ionicons name={category === 'success' ? 'checkmark' : category === 'processing' ? 'time' : 'warning'} size={12} color={category === 'success' ? '#16834A' : category === 'processing' ? colors.primary : '#B54708'} /></View></View>
+                    <View style={styles.markerColumn}><View style={[styles.marker, category === 'success' ? styles.markerSuccess : category === 'processing' ? styles.markerProcessing : styles.markerWarning]}><Ionicons name={category === 'success' ? 'checkmark' : category === 'processing' ? 'time' : category === 'outcome' ? 'help-circle' : 'warning'} size={12} color={category === 'success' ? '#16834A' : category === 'processing' ? colors.primary : '#B54708'} /></View></View>
                     <View style={styles.recordCopy}>
                       <View style={styles.recordHeader}><Text numberOfLines={1} style={styles.recordTitle}>{item.planName}</Text><Text style={styles.time}>{formatTime(item.createdAt)}</Text></View>
                       <Text numberOfLines={2} style={styles.summary}>{item.resultSummary ?? executionStatusLabel(item.status)}</Text>
-                      <Text style={[styles.status, needsAttention && styles.statusWarning]}>{executionAttentionLabel(item.status)}</Text>
+                      <Text style={[styles.status, needsAttention && styles.statusWarning]}>{statusText}</Text>
                     </View>
                     <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
                   </Pressable>
