@@ -30,7 +30,7 @@ export const ACTION_RECIPES: readonly ActionRecipe[] = Object.freeze([
   Object.freeze({
     key: 'finance.abnormal_transaction.anomaly',
     scenarioKey: 'finance.abnormal_transaction',
-    scenarioRevision: 1,
+    scenarioRevision: 2,
     strategy: 'ANOMALY_DETECTION',
     steps: Object.freeze([
       step('classify', {}),
@@ -42,7 +42,7 @@ export const ACTION_RECIPES: readonly ActionRecipe[] = Object.freeze([
   Object.freeze({
     key: 'daily_life.delivery.silent',
     scenarioKey: 'daily_life.delivery',
-    scenarioRevision: 1,
+    scenarioRevision: 2,
     strategy: 'SILENT_FOLLOW_UP',
     steps: Object.freeze([
       step('summarize', { domain: 'logistics', notifyOnDelivered: true }),
@@ -53,7 +53,7 @@ export const ACTION_RECIPES: readonly ActionRecipe[] = Object.freeze([
   Object.freeze({
     key: 'device.consumables.predictive',
     scenarioKey: 'device.consumables',
-    scenarioRevision: 1,
+    scenarioRevision: 2,
     strategy: 'PREDICTIVE_PREPARE',
     steps: Object.freeze([
       step('summarize', { domain: 'device' }),
@@ -65,7 +65,7 @@ export const ACTION_RECIPES: readonly ActionRecipe[] = Object.freeze([
   Object.freeze({
     key: 'family.family_supply.predictive',
     scenarioKey: 'family.family_supply',
-    scenarioRevision: 1,
+    scenarioRevision: 2,
     strategy: 'PREDICTIVE_PREPARE',
     steps: Object.freeze([
       step('summarize', { domain: 'household' }),
@@ -77,7 +77,7 @@ export const ACTION_RECIPES: readonly ActionRecipe[] = Object.freeze([
   Object.freeze({
     key: 'daily_life.errands.summary',
     scenarioKey: 'daily_life.errands',
-    scenarioRevision: 1,
+    scenarioRevision: 2,
     strategy: 'PERIODIC_SUMMARY',
     steps: Object.freeze([
       step('summarize', { domain: 'daily_summary' }),

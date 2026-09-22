@@ -172,7 +172,9 @@ export const SCENARIO_DEFINITIONS: readonly ScenarioDefinition[] = Object.freeze
     verificationRequirements: Object.freeze(['AUDIT_RECORD'] as const),
     fallbackPolicy: Object.freeze({ unknown: 'RECONCILE' as const, conflict: 'BLOCK' as const, unavailable: 'DEGRADE_TO_REMINDER' as const }),
     templates: Object.freeze([]), availabilityPolicy: Object.freeze({ initialReadiness: 'CATALOG_ONLY' as const, executableRequiresRuntimeReadiness: true as const }),
-    revision: 1, status: 'CATALOG_ONLY' as const,
+    // These five runtime-backed scenarios changed their resource/fact contract
+    // after the original catalog was persisted. Keep revision 1 immutable.
+    revision: runtimeFacts ? 2 : 1, status: 'CATALOG_ONLY' as const,
   });
 }));
 
@@ -183,7 +185,8 @@ for (const scenario of SCENARIO_DEFINITIONS) {
     if (!factMap.has(key)) factMap.set(key, Object.freeze({
       schemaVersion: '1', key, resourceType, field, valueType, unit: null, nullable: false, enumValues: Object.freeze([]),
       freshnessTtlSeconds: 86_400, semanticIdentity: Object.freeze(['subject_key', 'resource_key', 'field']), sensitivity: 'PERSONAL',
-      minimumReality: 'OBSERVED', acceptedVerificationMethods: Object.freeze(['SOURCE_EVIDENCE', 'USER_CONFIRMATION', 'READ_BACK']), revision: 1, status: 'ACTIVE',
+      minimumReality: 'OBSERVED', acceptedVerificationMethods: Object.freeze(['SOURCE_EVIDENCE', 'USER_CONFIRMATION', 'READ_BACK']),
+      revision: key === 'shipment.updated_at' ? 2 : 1, status: 'ACTIVE',
     }));
   }
 }

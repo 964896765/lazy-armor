@@ -10,9 +10,11 @@ import {
   STRATEGY_PROFILES,
   STRATEGY_RUNTIME_KEY,
   assertScenarioCoverageLedger,
+  compileScenarioPlan,
   buildStrategyRuntime,
   evaluateScenarioCoverageReadiness,
   scenarioByKey,
+  scenarioByRevision,
   terminalFollowUpRule,
   terminalFollowUpScenario,
 } from '../src';
@@ -42,6 +44,13 @@ function readinessFixture() {
 }
 
 describe('Scenario Coverage Ledger contract', () => {
+  it('compiles the current revision without silently relabeling an immutable old one', () => {
+    const current = scenarioByKey('daily_life.delivery');
+    expect(current?.revision).toBe(2);
+    expect(compileScenarioPlan({ scenarioKey: 'daily_life.delivery' }).scenarioRevision).toBe(2);
+    expect(scenarioByRevision('daily_life.delivery', 1)).toBeUndefined();
+    expect(() => compileScenarioPlan({ scenarioKey: 'daily_life.delivery', scenarioRevision: 1 })).toThrow(/Unknown scenario/);
+  });
   it('covers exactly 96/96 immutable canonical Scenarios with every required field', () => {
     expect(SCENARIO_DEFINITIONS).toHaveLength(96);
     expect(SCENARIO_COVERAGE_LEDGER).toHaveLength(96);
@@ -49,7 +58,7 @@ describe('Scenario Coverage Ledger contract', () => {
 
     for (const entry of SCENARIO_COVERAGE_LEDGER) {
       expect(requiredFields.every((field) => Object.hasOwn(entry, field))).toBe(true);
-      expect(entry.definition).toMatchObject({ scenarioRevision: 1, immutableRevision: true, status: 'CATALOG_ONLY' });
+      expect(entry.definition).toMatchObject({ scenarioRevision: SCENARIO_DEFINITIONS.find((item) => item.key === entry.scenarioKey)?.revision, immutableRevision: true, status: 'CATALOG_ONLY' });
       expect(entry.definition.definitionHash).toMatch(/^[a-f0-9]{64}$/);
       expect(entry.resources.length).toBeGreaterThan(0);
       expect(entry.facts.some((fact) => fact.required)).toBe(true);

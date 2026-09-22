@@ -78,7 +78,8 @@ export function terminalFollowUpRule(scenarioKey: string, revision: number): Ter
 }
 
 export function scenarioByRevision(key: string, revision: number): ScenarioDefinition | undefined {
-  if (revision === 1) return scenarioByKey(key) ?? undefined;
+  const canonical = scenarioByKey(key);
+  if (canonical?.revision === revision) return canonical;
   const rule = terminalFollowUpRule(key, revision);
   return rule ? terminalFollowUpScenario(rule) : undefined;
 }

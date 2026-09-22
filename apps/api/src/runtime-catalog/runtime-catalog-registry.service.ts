@@ -47,7 +47,7 @@ export class RuntimeCatalogRegistryService implements OnModuleInit {
 
   async compile(userId: string, key: string, input: { scenarioRevision?: number; strategy?: StrategyKey; name?: string; subjectKey?: string; target?: TerminalHandoffTarget }) {
     try {
-      const scenario = scenarioByRevision(key, input.scenarioRevision ?? 1);
+      const scenario = scenarioByRevision(key, input.scenarioRevision ?? this.getScenario(key).revision);
       const readiness = scenario
         ? (await this.evidence.project(userId, scenario, await this.resolveUsableCapabilities(userId))).input
         : undefined;

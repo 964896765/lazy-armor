@@ -28,9 +28,10 @@ export interface CompiledScenarioPlan {
 
 /** Compiles a catalog scenario and strategy into the existing Plan Engine schema. */
 export function compileScenarioPlan(input: ScenarioCompileInput): CompiledScenarioPlan {
-  const revision = input.scenarioRevision ?? 1;
+  const canonical = scenarioByKey(input.scenarioKey);
+  const revision = input.scenarioRevision ?? canonical?.revision ?? 1;
   const terminalRule = terminalFollowUpRule(input.scenarioKey, revision);
-  const scenario = terminalRule ? terminalFollowUpScenario(terminalRule) : revision === 1 ? scenarioByKey(input.scenarioKey) : undefined;
+  const scenario = terminalRule ? terminalFollowUpScenario(terminalRule) : canonical?.revision === revision ? canonical : undefined;
   if (!scenario) throw new Error(`Unknown scenario: ${input.scenarioKey}`);
   const strategy = input.strategy ?? scenario.defaultStrategy;
   if (!scenario.supportedStrategies.includes(strategy)) throw new Error(`Strategy ${strategy} is not supported by ${scenario.key}`);

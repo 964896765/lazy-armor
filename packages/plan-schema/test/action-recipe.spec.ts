@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ACTION_RECIPES, compileScenarioPlan, resolveActionRecipe } from '../src';
+import { ACTION_RECIPES, compileScenarioPlan, resolveActionRecipe, scenarioByKey } from '../src';
 
 describe('R3 declarative action recipe registry', () => {
   it('registers exactly the five R3 golden-journey recipes', () => {
@@ -13,9 +13,16 @@ describe('R3 declarative action recipe registry', () => {
   });
 
   it('resolves the account-journey recipe into an ordered action sequence', () => {
-    const recipe = resolveActionRecipe('finance.abnormal_transaction', 1, 'ANOMALY_DETECTION');
+    const recipe = resolveActionRecipe('finance.abnormal_transaction', 2, 'ANOMALY_DETECTION');
     expect(recipe).not.toBeNull();
     expect(recipe!.steps.map((step) => step.actionType)).toEqual(['classify', 'summarize', 'notify', 'record']);
+  });
+
+  it('keeps every golden-journey recipe on its current immutable scenario revision', () => {
+    for (const recipe of ACTION_RECIPES) {
+      expect(recipe.scenarioRevision).toBe(scenarioByKey(recipe.scenarioKey)?.revision);
+      expect(resolveActionRecipe(recipe.scenarioKey, recipe.scenarioRevision, recipe.strategy)).toBe(recipe);
+    }
   });
 
   it('compiles the recipe into a plan instead of the generic single action', () => {
