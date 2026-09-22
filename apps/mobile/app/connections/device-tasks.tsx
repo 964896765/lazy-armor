@@ -27,6 +27,7 @@ export default function DeviceTasksPage() {
       <Text style={styles.heading}>{task.taskType}</Text>
       <Text style={styles.body}>{task.resourceType} · {task.status}</Text>
       <Text style={styles.note}>执行结果必须来自真实设备采集。当前页面不会模拟 UI 节点或自动完成任务。</Text>
+      <ActionButton label="查看任务与证据" tone="quiet" onPress={() => router.push(`/connections/device-tasks/${task.id}`)} />
     </Surface>)}
   </ScrollView></SafeAreaView>;
 }

@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException, forwardRef } from '@nestjs/common';
 import { createHash } from 'node:crypto';
-import { deviceAppConnections, deviceHeartbeats, deviceTasks } from '@lazy-armor/database';
+import { candidateFacts, deviceAppConnections, deviceHeartbeats, deviceTasks, readEvidence, sourceObservations, truthRecords } from '@lazy-armor/database';
 import { realityValueHash, type JsonValue, type ParserKey, type SourceMode, type SourceObservationInput } from '@lazy-armor/plan-schema';
 import { newId } from '@lazy-armor/shared';
 import { and, desc, eq, gte, inArray, lt } from 'drizzle-orm';
@@ -223,6 +223,33 @@ export class DeviceTasksService {
 
   async get(userId: string, trustedDeviceId: string, deviceId: string, taskId: string) {
     return this.toResponse(await this.getRowForDevice(userId, trustedDeviceId, deviceId, taskId), { revealClaimToken: true });
+  }
+
+  /** Redacted, device-scoped read model. Never returns task payload, result or claim token. */
+  async evidence(userId: string, trustedDeviceId: string, deviceId: string, taskId: string) {
+    const task = await this.getRowForDevice(userId, trustedDeviceId, deviceId, taskId);
+    const payload = task.payloadJson as Record<string, unknown>;
+    const requestId = typeof payload.requestId === 'string' ? payload.requestId : task.id;
+    const structured = STRUCTURED_READ_TASK_TYPES.has(task.taskType);
+    const eventKey = structured ? `structured-read:${requestId}` : `device-task:${task.id}`;
+    const observations = await this.db.select({ id: sourceObservations.id, status: sourceObservations.status, observedAt: sourceObservations.observedAt })
+      .from(sourceObservations).where(and(eq(sourceObservations.userId, userId), eq(sourceObservations.providerKey, 'edge-device'), eq(sourceObservations.externalEventKey, eventKey)));
+    const observationIds = observations.map((item) => item.id);
+    const candidates = observationIds.length ? await this.db.select({ id: candidateFacts.id, observationId: candidateFacts.observationId, status: candidateFacts.status, truthRecordId: candidateFacts.truthRecordId })
+      .from(candidateFacts).where(and(eq(candidateFacts.userId, userId), inArray(candidateFacts.observationId, observationIds))) : [];
+    const truthIds = [...new Set(candidates.flatMap((item) => item.truthRecordId ? [item.truthRecordId] : []))];
+    const truths = truthIds.length ? await this.db.select({ id: truthRecords.id, status: truthRecords.status, revokedAt: truthRecords.revokedAt })
+      .from(truthRecords).where(and(eq(truthRecords.userId, userId), inArray(truthRecords.id, truthIds))) : [];
+    const reads = structured ? await this.db.select({ id: readEvidence.id, status: readEvidence.status, blockedReason: readEvidence.blockedReason })
+      .from(readEvidence).where(and(eq(readEvidence.userId, userId), eq(readEvidence.requestId, requestId))) : [];
+    return {
+      task: { id: task.id, taskType: task.taskType, resourceType: task.resourceType, factKey: task.factKey, status: task.status,
+        errorCode: task.errorCode, createdAt: task.createdAt.toISOString(), completedAt: task.completedAt?.toISOString() ?? null },
+      observations: observations.map((item) => ({ id: item.id, status: item.status, observedAt: item.observedAt.toISOString() })),
+      candidates: candidates.map((item) => ({ id: item.id, observationId: item.observationId, status: item.status })),
+      truths: truths.map((item) => ({ id: item.id, status: item.status, current: item.status === 'verified' && !item.revokedAt })),
+      readEvidence: reads.map((item) => ({ id: item.id, status: item.status, blockedReason: item.blockedReason })),
+    };
   }
 
   private async markVerificationFailed(tx: RealityExecutor, task: typeof deviceTasks.$inferSelect, result: Record<string, unknown>, resultHash: string, errorCode = 'RESULT_VERIFICATION_FAILED') {

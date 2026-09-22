@@ -60,6 +60,7 @@ export default function RootLayout() {
           <Stack.Screen name="truth/[id]" options={{ headerShown: false }} />
           <Stack.Screen name="plans/[id]/edit" options={{ title: '编辑计划' }} />
           <Stack.Screen name="connections/app-read-session" options={{ headerShown: false }} />
+          <Stack.Screen name="connections/device-tasks/[id]" options={{ headerShown: false }} />
         </Stack>
       </AuthGate>
     </QueryClientProvider>

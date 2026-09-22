@@ -16,6 +16,14 @@ export interface DeviceTask {
   errorCode: string | null;
 }
 
+export interface DeviceTaskEvidence {
+  task: { id: string; taskType: string; resourceType: string; factKey: string; status: DeviceTaskStatus; errorCode: string | null; createdAt: string; completedAt: string | null };
+  observations: Array<{ id: string; status: string; observedAt: string }>;
+  candidates: Array<{ id: string; observationId: string; status: string }>;
+  truths: Array<{ id: string; status: string; current: boolean }>;
+  readEvidence: Array<{ id: string; status: string; blockedReason: string | null }>;
+}
+
 const CLAIM_TOKEN = /^[a-f0-9]{64}$/;
 
 export async function heartbeatDevice(token: string, onlineState: 'online' | 'offline' | 'unknown' = 'online') {
@@ -28,6 +36,18 @@ export async function listDeviceTasks(token: string): Promise<DeviceTask[]> {
   const device = await ensureTrustedDevice(token);
   const tasks = await deviceBoundApi<DeviceTask[]>('/device-tasks', token, { method: 'GET' });
   return tasks.filter((task) => task.deviceId === device.deviceId && task.trustedDeviceId === device.id);
+}
+
+export async function getDeviceTaskEvidence(token: string, taskId: string): Promise<DeviceTaskEvidence> {
+  const device = await ensureTrustedDevice(token);
+  const evidence = await deviceBoundApi<DeviceTaskEvidence>(`/device-tasks/${encodeURIComponent(taskId)}/evidence`, token, { method: 'GET' });
+  // The endpoint is signed and scoped server-side; the list check also prevents
+  // accidentally rendering a task from a different local device after rotation.
+  const tasks = await listDeviceTasks(token);
+  if (!tasks.some((task) => task.id === evidence.task.id && task.deviceId === device.deviceId && task.trustedDeviceId === device.id)) {
+    throw new Error('DEVICE_TASK_WRONG_DEVICE');
+  }
+  return evidence;
 }
 
 export async function claimDeviceTask(token: string, task: DeviceTask): Promise<DeviceTask> {

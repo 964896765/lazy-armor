@@ -102,6 +102,16 @@ describe.sequential('R4 edge device task transport', { timeout: 60_000 }, () => 
     expect(completed.body.reality.truth).toMatchObject({ status: 'verified' });
     expect(completed.body.reality.truth.currentVersion.value).toMatchObject({ factKey: 'device.consumable.remaining_days', value: { remainingDays: 25 } });
 
+    const evidencePath = `/device-tasks/${task.id}/evidence`;
+    const evidence = await request(app.getHttpServer()).get(`/api${evidencePath}`).set(auth(owner.token))
+      .set(signedHeaders({}, 'GET', evidencePath)).expect(200);
+    expect(evidence.body.task).toMatchObject({ id: task.id, status: 'SUCCEEDED' });
+    expect(evidence.body.observations).toHaveLength(1);
+    expect(evidence.body.candidates).toHaveLength(1);
+    expect(evidence.body.truths).toEqual(expect.arrayContaining([expect.objectContaining({ status: 'verified', current: true })]));
+    expect(JSON.stringify(evidence.body)).not.toContain(claimed.body.claimToken);
+    expect(JSON.stringify(evidence.body)).not.toContain('remainingDays');
+
     await request(app.getHttpServer()).post(`/api/device-tasks/${task.id}/complete`).set(auth(owner.token))
       .set(signedHeaders(completeBody, 'POST', `/device-tasks/${task.id}/complete`)).send(completeBody).expect(409);
 
@@ -161,6 +171,9 @@ describe.sequential('R4 edge device task transport', { timeout: 60_000 }, () => 
     const getB = await request(app.getHttpServer()).get(`/api/device-tasks/${task.id}`).set(auth(owner.token))
       .set(deviceHeaders(second.deviceSessionId, second.privateKey, {}, 'GET', `/device-tasks/${task.id}`));
     expect(getB.status).toBe(404);
+    const evidencePath = `/device-tasks/${task.id}/evidence`;
+    await request(app.getHttpServer()).get(`/api${evidencePath}`).set(auth(owner.token))
+      .set(deviceHeaders(second.deviceSessionId, second.privateKey, {}, 'GET', evidencePath)).expect(404);
 
     const claimB = await request(app.getHttpServer()).post(`/api/device-tasks/${task.id}/claim`).set(auth(owner.token))
       .set(deviceHeaders(second.deviceSessionId, second.privateKey, {}, 'POST', `/device-tasks/${task.id}/claim`)).send({});
