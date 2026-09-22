@@ -5,6 +5,7 @@ import { ConnectionRail, shellLayout } from '../../src/lazy-armor-shell';
 export default function TabsLayout() {
   return (
     <View style={styles.container}><Tabs
+      initialRouteName="scenarios"
       tabBar={(props) => <ConnectionRail {...props} />}
       screenOptions={{
         headerShown: false,
@@ -12,6 +13,7 @@ export default function TabsLayout() {
         sceneStyle: { marginLeft: shellLayout.railWidth },
       }}
     >
+      <Tabs.Screen name="scenarios" options={{ title: '全部场景' }} />
       <Tabs.Screen name="index" options={{ title: '今天' }} />
       <Tabs.Screen name="plans" options={{ title: '懒人装甲' }} />
       <Tabs.Screen name="create" options={{ href: null }} />

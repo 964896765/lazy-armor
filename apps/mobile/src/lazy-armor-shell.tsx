@@ -101,7 +101,7 @@ export function ConnectionRail({ state, navigation }: BottomTabBarProps) {
 
   return (
     <View style={[styles.frame, { top: Math.max(insets.top, 5), bottom: Math.max(insets.bottom, 5) }]}>
-      <RailItem label="懒人装甲" symbol="LA" tone="brand" selected={activeRoute === 'index'} showLabel onPress={() => selectTab('index')} />
+      <RailItem label="懒人装甲" symbol="LA" tone="brand" selected={activeRoute === 'scenarios'} showLabel onPress={() => selectTab('scenarios')} />
       <View style={styles.divider} />
 
       <ScrollView style={styles.scroller} contentContainerStyle={styles.connections} showsVerticalScrollIndicator={false}>
