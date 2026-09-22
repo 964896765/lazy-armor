@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { CANONICAL_DOMAIN_CATALOG, CANONICAL_SCENARIOS, DOMAIN_GROUPS, PLAN_STRATEGIES, type DomainGroupKey, canonicalPlanDomain, scenariosForDomain } from '@lazy-armor/plan-schema/mobile';
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import type { ComponentProps } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -14,6 +14,8 @@ interface PlanDomainSummary { id: string; domain: string | null }
 const GROUP_ORDER: DomainGroupKey[] = ['money', 'life', 'work', 'things'];
 
 export default function DomainsDirectory() {
+  const { group } = useLocalSearchParams<{ group?: string }>();
+  const selectedGroup = typeof group === 'string' && GROUP_ORDER.includes(group as DomainGroupKey) ? group as DomainGroupKey : null;
   const token = useAuthStore((store) => store.token);
   const plans = useQuery({
     queryKey: ['domain-directory-plans', token],
@@ -25,15 +27,10 @@ export default function DomainsDirectory() {
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <ScrollView style={styles.page} contentContainerStyle={styles.content}>
-        <WorkspaceHeader title="我的空间" subtitle="从生活领域找到要管理的场景；目录不代表已开通" />
-        <View style={styles.summary}>
-          <SummaryStat icon="grid-outline" value={CANONICAL_DOMAIN_CATALOG.length} label="目录领域" tone="orange" />
-          <SummaryStat icon="layers-outline" value={CANONICAL_SCENARIOS.length} label="目录场景" tone="green" />
-          <SummaryStat icon="options-outline" value={PLAN_STRATEGIES.length} label="管理方式" tone="violet" />
-        </View>
+        <WorkspaceHeader title={selectedGroup ? DOMAIN_GROUPS[selectedGroup].label : '我的空间'} subtitle="从领域找到要管理的场景；目录不代表已开通" action={selectedGroup ? <Pressable accessibilityRole="button" onPress={() => router.replace('/domains' as never)}><Text style={styles.allSpaces}>全部空间</Text></Pressable> : undefined} />
         {plans.isLoading ? <View style={styles.loading}><ActivityIndicator color={colors.primary} /><Text style={styles.loadingText}>正在整理领域…</Text></View> : null}
         {!token ? <InlineState title="目录可以浏览" description="登录后才会读取你的计划、授权与场景可用状态。" action="去登录" onPress={() => router.push('/auth/login' as never)} /> : null}
-        {GROUP_ORDER.map((group) => {
+        {GROUP_ORDER.filter((item) => !selectedGroup || item === selectedGroup).map((group) => {
           const definition = DOMAIN_GROUPS[group];
           const domains = CANONICAL_DOMAIN_CATALOG.filter((domain) => domain.group === group);
           return (
@@ -46,7 +43,12 @@ export default function DomainsDirectory() {
             </View>
           );
         })}
-        <View style={styles.future}><Text style={styles.futureTitle}>我的成长 · 尚未开放</Text><Text style={styles.futureCopy}>当前目录尚无对应场景，不会显示虚构的计划或运行状态。</Text></View>
+        <Text style={styles.catalogLabel}>了解产品目录</Text>
+        <View style={styles.summary}>
+          <SummaryStat icon="grid-outline" value={CANONICAL_DOMAIN_CATALOG.length} label="目录领域" tone="orange" />
+          <SummaryStat icon="layers-outline" value={CANONICAL_SCENARIOS.length} label="目录场景" tone="green" />
+          <SummaryStat icon="options-outline" value={PLAN_STRATEGIES.length} label="运行方式" tone="violet" />
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -86,10 +88,10 @@ function groupIconStyle(group: DomainGroupKey) {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: colors.surface },
-  page: { flex: 1, backgroundColor: colors.surface },
+  safeArea: { flex: 1, backgroundColor: colors.background },
+  page: { flex: 1, backgroundColor: colors.background },
   content: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: 32 },
-  summary: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border },
+  summary: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: spacing.sm, padding: spacing.md, borderRadius: radius.lg, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
   summaryItem: { flexDirection: 'row', alignItems: 'center', gap: 7 },
   summaryIcon: { width: 30, height: 30, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
   orangeIcon: { backgroundColor: '#FFF0E7' }, greenIcon: { backgroundColor: colors.successSoft }, violetIcon: { backgroundColor: '#F0EBFF' },
@@ -104,13 +106,12 @@ const styles = StyleSheet.create({
   inlineAction: { paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: radius.md, backgroundColor: colors.primary },
   inlineActionText: { ...typography.label, color: colors.surface },
   group: { marginTop: spacing.lg },
-  future: { marginTop: spacing.xl, padding: spacing.md, backgroundColor: colors.background, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border },
-  futureTitle: { ...typography.bodyStrong, color: colors.textSecondary },
-  futureCopy: { ...typography.caption, color: colors.textMuted, marginTop: spacing.xs },
+  catalogLabel: { ...typography.label, color: colors.textSecondary, marginTop: spacing.xl },
+  allSpaces: { ...typography.caption, color: colors.primary, fontWeight: '700' },
   groupTitle: { ...typography.section, color: colors.text },
   groupDescription: { ...typography.caption, color: colors.textSecondary, marginTop: 2, marginBottom: spacing.sm },
-  domainList: { flexDirection: 'row', flexWrap: 'wrap', borderTopWidth: 1, borderLeftWidth: 1, borderColor: colors.border },
-  domainRow: { width: '50%', minHeight: 58, flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.sm, gap: spacing.sm, borderRightWidth: 1, borderBottomWidth: 1, borderColor: colors.border },
+  domainList: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  domainRow: { width: '48.5%', minHeight: 66, flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.sm, gap: spacing.sm, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, backgroundColor: colors.surface },
   domainIcon: { width: 30, height: 30, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
   iconMoney: { backgroundColor: colors.accentSoft },
   iconLife: { backgroundColor: colors.successSoft },

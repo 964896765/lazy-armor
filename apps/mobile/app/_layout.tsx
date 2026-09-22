@@ -1,8 +1,10 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Stack } from 'expo-router';
 import { useEffect, useState } from 'react';
+import { StatusBar } from 'react-native';
 import { AuthGate } from '../src/auth-gate';
 import { useAuthStore } from '../src/auth-store';
+import { useAuthSessionRefresh } from '../src/auth-session-refresh';
 import { colors } from '../src/design';
 import { useDeviceTaskRunnerLifecycle } from '../src/device-task-lifecycle-hook';
 
@@ -14,6 +16,7 @@ export default function RootLayout() {
     },
   }));
   const hydrate = useAuthStore((state) => state.hydrate);
+  useAuthSessionRefresh();
   useDeviceTaskRunnerLifecycle();
   useEffect(() => {
     void hydrate();
@@ -21,6 +24,7 @@ export default function RootLayout() {
 
   return (
     <QueryClientProvider client={client}>
+      <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
       <AuthGate>
         <Stack screenOptions={{ contentStyle: { backgroundColor: colors.background }, headerStyle: { backgroundColor: colors.background }, headerShadowVisible: false, headerTintColor: colors.primary, headerTitleStyle: { color: colors.text, fontWeight: '700' } }}>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />

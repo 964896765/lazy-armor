@@ -78,8 +78,8 @@ function MenuRow({ icon, title, detail, onPress }: { icon: ComponentProps<typeof
 function Divider() { return <View style={styles.divider} />; }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#FFFFFF' },
-  page: { flex: 1, backgroundColor: '#FFFFFF' },
+  safeArea: { flex: 1, backgroundColor: colors.background },
+  page: { flex: 1, backgroundColor: colors.background },
   content: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: 80 },
   profile: { minHeight: 82, flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginBottom: spacing.sm, paddingHorizontal: spacing.xs, borderBottomWidth: 1, borderBottomColor: colors.border },
   avatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
@@ -87,7 +87,7 @@ const styles = StyleSheet.create({
   profileName: { ...typography.cardTitle, color: colors.text },
   profileMeta: { ...typography.caption, color: colors.textSecondary, marginTop: spacing.xs },
   sectionLabel: { ...typography.label, color: colors.textMuted, marginTop: spacing.lg, marginBottom: spacing.xs, paddingLeft: spacing.xs },
-  menu: { padding: 0 },
+  menu: { paddingHorizontal: spacing.sm, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg },
   row: { minHeight: 64, flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
   pressed: { backgroundColor: '#F7F8FA' },
   rowIcon: { width: 34, height: 34, borderRadius: radius.md, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' },

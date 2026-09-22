@@ -1,12 +1,13 @@
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
 import type { BottomTabBarProps } from 'expo-router/build/react-navigation/bottom-tabs';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { api } from './api';
 import { useAuthStore } from './auth-store';
-import { RailItem } from './design';
+import { RailItem, colors } from './design';
 import { discoverLaunchableApps } from './device-app-bridge';
 import { buildConnectionRailModel } from './rail-model';
 import { SpaceDrawer } from './space-drawer';
@@ -29,11 +30,14 @@ interface RailDeviceAppConnection {
 
 interface RailTrustedDevice { id: string; status: 'active' | 'revoked' }
 interface RailPendingNotification { id: string; connectionId: string }
-const RAIL_WIDTH = 54;
+const RAIL_WIDTH = 64;
+const MOBILE_HEADER_HEIGHT = 54;
 export function ConnectionRail({ state, navigation }: BottomTabBarProps) {
   const [spaceDrawerOpen, setSpaceDrawerOpen] = useState(false);
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
+  const compact = width < 700;
   const token = useAuthStore((store) => store.token);
   const connections = useQuery({
     queryKey: ['rail-connections', token],
@@ -97,6 +101,15 @@ export function ConnectionRail({ state, navigation }: BottomTabBarProps) {
 
   const activeRoute = state.routes[state.index]?.name;
 
+  if (compact) {
+    return <View style={[styles.mobileHeader, { top: insets.top }]}>
+      <Pressable accessibilityRole="button" accessibilityLabel="打开空间导航" onPress={() => setSpaceDrawerOpen(true)} style={styles.mobileMenu}><Ionicons name="menu" size={24} color={colors.text} /></Pressable>
+      <Text style={styles.mobileTitle}>懒人装甲</Text>
+      <Pressable accessibilityRole="button" accessibilityLabel="查看今天" onPress={() => selectTab('index')} style={styles.mobileToday}><Ionicons name="notifications-outline" size={22} color={colors.text} />{(pendingNotifications.data?.length ?? 0) > 0 ? <View style={styles.mobileUnread} /> : null}</Pressable>
+      <SpaceDrawer visible={spaceDrawerOpen} onClose={() => setSpaceDrawerOpen(false)} />
+    </View>;
+  }
+
   return (
     <View style={[styles.frame, { top: Math.max(insets.top, 5), bottom: Math.max(insets.bottom, 5) }]}>
       <View style={styles.fixedTop}>
@@ -142,13 +155,18 @@ function connectionIcon(label: string): 'logo-github' | 'mail-outline' | 'chatbu
   return 'link-outline';
 }
 
-export const shellLayout = { railWidth: RAIL_WIDTH } as const;
+export const shellLayout = { railWidth: RAIL_WIDTH, mobileHeaderHeight: MOBILE_HEADER_HEIGHT } as const;
 
 const styles = StyleSheet.create({
-  frame: { position: 'absolute', left: 0, width: RAIL_WIDTH, zIndex: 10, paddingHorizontal: 5, paddingVertical: 6, backgroundColor: '#EFF8F5', borderRightWidth: 1, borderRightColor: '#DDECE7' },
+  frame: { position: 'absolute', left: 0, width: RAIL_WIDTH, zIndex: 10, paddingHorizontal: 5, paddingVertical: 6, backgroundColor: '#FFF9F2', borderRightWidth: 1, borderRightColor: '#F2E8DB' },
   fixedTop: { alignItems: 'center', gap: 2 },
   divider: { width: 36, height: 1, backgroundColor: '#EAECF0', marginVertical: 3 },
   railLabel: { width: 44, color: '#788A84', fontSize: 6, lineHeight: 9, textAlign: 'center', fontWeight: '700', marginVertical: 2 },
   scroller: { flex: 1 },
   connections: { alignItems: 'center', gap: 2, paddingVertical: 2 },
+  mobileHeader: { position: 'absolute', left: 0, right: 0, height: MOBILE_HEADER_HEIGHT, zIndex: 20, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border },
+  mobileMenu: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 12, backgroundColor: colors.accentSoft },
+  mobileTitle: { flex: 1, marginLeft: 12, color: colors.text, fontSize: 16, fontWeight: '800' },
+  mobileToday: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center' },
+  mobileUnread: { position: 'absolute', top: 5, right: 6, width: 7, height: 7, borderRadius: 4, backgroundColor: colors.danger },
 });

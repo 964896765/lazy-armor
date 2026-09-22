@@ -61,7 +61,7 @@ export default function Records() {
                       <Text numberOfLines={2} style={styles.summary}>{item.resultSummary ?? executionStatusLabel(item.status)}</Text>
                       <Text style={[styles.status, needsAttention && styles.statusWarning]}>{executionAttentionLabel(item.status)}</Text>
                     </View>
-                    <Ionicons name="ellipsis-horizontal" size={18} color={colors.textMuted} />
+                    <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
                   </Pressable>
                 );
               })}
@@ -102,8 +102,8 @@ function formatTime(value: string) {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#FFFFFF' },
-  page: { flex: 1, backgroundColor: '#FFFFFF' },
+  safeArea: { flex: 1, backgroundColor: colors.background },
+  page: { flex: 1, backgroundColor: colors.background },
   content: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: 80 },
   reconciliationLink: { paddingHorizontal: spacing.sm, paddingVertical: 6, borderRadius: radius.pill, backgroundColor: colors.accentSoft },
   reconciliationLinkText: { ...typography.label, color: colors.primary },
@@ -123,7 +123,7 @@ const styles = StyleSheet.create({
   emptyAction: { minHeight: 34, paddingHorizontal: spacing.md, borderRadius: 12, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
   emptyActionText: { color: '#FFFFFF', fontSize: 11, lineHeight: 16, fontWeight: '700' },
   pressed: { opacity: 0.7 },
-  timelineGroup: { backgroundColor: '#FFFFFF' },
+  timelineGroup: { backgroundColor: colors.surface, paddingHorizontal: spacing.sm, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg },
   timelineRow: { minHeight: 82, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.sm, paddingHorizontal: spacing.xs },
   divider: { borderBottomWidth: 1, borderBottomColor: '#EAECF0' },
   pressedRow: { backgroundColor: '#F7F8FA' },

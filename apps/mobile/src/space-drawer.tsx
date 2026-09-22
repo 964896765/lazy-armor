@@ -27,7 +27,10 @@ export function SpaceDrawer({ visible, onClose }: { visible: boolean; onClose: (
         </View>
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           <Pressable accessibilityRole="button" onPress={() => open('/(tabs)')} style={styles.shortcut}><Ionicons name="sunny-outline" size={19} color={colors.primary} /><Text style={styles.shortcutText}>今天</Text></Pressable>
-          <Pressable accessibilityRole="button" onPress={() => open('/(tabs)/plans')} style={styles.shortcut}><Ionicons name="list-outline" size={19} color={colors.primary} /><Text style={styles.shortcutText}>全部计划</Text></Pressable>
+          <Pressable accessibilityRole="button" onPress={() => open('/(tabs)/plans')} style={styles.shortcut}><Ionicons name="grid-outline" size={19} color={colors.primary} /><Text style={styles.shortcutText}>工作区与计划</Text></Pressable>
+          <Pressable accessibilityRole="button" onPress={() => open('/(tabs)/connections')} style={styles.shortcut}><Ionicons name="link-outline" size={19} color={colors.primary} /><Text style={styles.shortcutText}>连接</Text></Pressable>
+          <Pressable accessibilityRole="button" onPress={() => open('/(tabs)/records')} style={styles.shortcut}><Ionicons name="time-outline" size={19} color={colors.primary} /><Text style={styles.shortcutText}>记录</Text></Pressable>
+          <Pressable accessibilityRole="button" onPress={() => open('/security-center')} style={styles.shortcut}><Ionicons name="shield-checkmark-outline" size={19} color={colors.primary} /><Text style={styles.shortcutText}>安全</Text></Pressable>
           <View style={styles.divider} />
           {spaces.map((space) => <View key={space.key} style={styles.space}>
             <Pressable accessibilityRole="button" accessibilityState={{ expanded: expanded === space.key }} onPress={() => setExpanded(expanded === space.key ? null : space.key)} style={styles.spaceHead}>
@@ -38,7 +41,8 @@ export function SpaceDrawer({ visible, onClose }: { visible: boolean; onClose: (
               <Text style={styles.domainName}>{domain.label}</Text><Text style={styles.domainCount}>{domain.scenarioCount} 个场景</Text><Ionicons name="chevron-forward" size={15} color={colors.textMuted} />
             </Pressable>) : null}
           </View>)}
-          <View style={styles.future}><Text style={styles.futureTitle}>我的成长 · 尚未开放</Text><Text style={styles.futureDescription}>当前目录尚无对应领域与场景；不会显示虚构的计划或运行状态。</Text></View>
+          <View style={styles.divider} />
+          <Pressable accessibilityRole="button" onPress={() => open('/(tabs)/me')} style={styles.shortcut}><Ionicons name="person-outline" size={19} color={colors.primary} /><Text style={styles.shortcutText}>我的账号与隐私</Text></Pressable>
           <Text style={styles.note}>空间只整理入口。场景可用性由当前账号的实时证据决定。</Text>
         </ScrollView>
       </View>
@@ -48,7 +52,7 @@ export function SpaceDrawer({ visible, onClose }: { visible: boolean; onClose: (
 
 const styles = StyleSheet.create({
   overlay: { flex: 1, flexDirection: 'row' },
-  scrim: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: 'rgba(13, 35, 30, 0.42)' },
+  scrim: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: 'rgba(22, 33, 58, 0.44)' },
   drawer: { width: '84%', maxWidth: 380, backgroundColor: colors.surface, paddingHorizontal: spacing.lg },
   heading: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', paddingBottom: spacing.lg },
   eyebrow: { ...typography.caption, color: colors.primary, fontWeight: '700' },
@@ -67,8 +71,5 @@ const styles = StyleSheet.create({
   domain: { minHeight: 42, flexDirection: 'row', alignItems: 'center', paddingLeft: spacing.md, gap: spacing.sm },
   domainName: { ...typography.body, color: colors.text, flex: 1 },
   domainCount: { ...typography.caption, color: colors.textMuted },
-  future: { marginTop: spacing.lg, borderRadius: radius.md, backgroundColor: colors.background, padding: spacing.md },
-  futureTitle: { ...typography.bodyStrong, color: colors.textSecondary },
-  futureDescription: { ...typography.caption, color: colors.textMuted, marginTop: spacing.xs },
   note: { ...typography.caption, color: colors.textMuted, marginTop: spacing.lg, lineHeight: 18 },
 });

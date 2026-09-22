@@ -2,8 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import type { ComponentProps } from 'react';
 import { router } from 'expo-router';
-import { useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/api';
 import { useAuthStore } from '../../src/auth-store';
@@ -30,13 +29,10 @@ interface TodayData { pendingApprovals: ApprovalCard[]; connectionIssues: Connec
 interface PendingNotificationCandidate { id: string; candidateResource: string | null; candidateConfidence: number; amountMinor: number | null; currency: string | null; postedAt: string }
 interface PresentableAlert extends AlertCard { section: 'attention' | 'exception' | 'summary' }
 interface AttentionMessage { id: string; icon: string; title: string; description: string; meta?: string; tone: 'warning' | 'danger' | 'brand'; onPress?: () => void }
-type MessageFilter = 'all' | 'attention' | 'approval' | 'completed';
 
 export default function Today() {
   const token = useAuthStore((store) => store.token);
   const client = useQueryClient();
-  const [filter, setFilter] = useState<MessageFilter>('all');
-  const [search, setSearch] = useState('');
   const today = useQuery({
     queryKey: ['today', token],
     queryFn: () => api<TodayData>('/today', token),
@@ -124,11 +120,9 @@ export default function Today() {
       onPress: alertOnPress(item),
     })),
   ];
-  const needle = search.trim().toLowerCase();
-  const matches = (title: string, description: string) => !needle || `${title} ${description}`.toLowerCase().includes(needle);
-  const shownApprovals = (today.data?.pendingApprovals ?? []).filter((item) => matches(item.planName, item.summary));
-  const shownAttention = attentionMessages.filter((item) => matches(item.title, item.description));
-  const shownResults = resultMessages.filter((item) => matches(item.title, item.description));
+  const shownApprovals = today.data?.pendingApprovals ?? [];
+  const shownAttention = attentionMessages;
+  const shownResults = resultMessages;
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -139,15 +133,8 @@ export default function Today() {
       >
         <WorkspaceHeader title="今天" subtitle={formatToday()} />
 
-        {token ? <><View style={styles.search}><Ionicons name="search-outline" size={19} color={colors.textMuted} /><TextInput value={search} onChangeText={setSearch} placeholder="搜索消息、计划或内容" placeholderTextColor={colors.textMuted} style={styles.searchInput} />{search ? <Pressable accessibilityLabel="清空搜索" onPress={() => setSearch('')}><Ionicons name="close-circle" size={18} color={colors.textMuted} /></Pressable> : null}</View><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters}>{([
-          { key: 'all', label: '全部', count: totalCount },
-          { key: 'attention', label: '需处理', count: attentionMessages.length },
-          { key: 'approval', label: '审批', count: today.data?.pendingApprovals.length ?? 0 },
-          { key: 'completed', label: '已完成', count: resultMessages.length },
-        ] as Array<{ key: MessageFilter; label: string; count: number }>).map((item) => <Pressable key={item.key} onPress={() => setFilter(item.key)} style={[styles.filter, filter === item.key && styles.filterSelected]}><Text style={[styles.filterText, filter === item.key && styles.filterTextSelected]}>{item.label}</Text>{item.count > 0 ? <Text style={[styles.filterCount, filter === item.key && styles.filterCountSelected]}>{item.count}</Text> : null}</Pressable>)}</ScrollView></> : null}
-
         {state === 'signed_out' ? (
-          <CompactState icon="shield-checkmark-outline" title="登录后开始使用" description="计划、提醒和完成结果会集中在这里。" actionLabel="开始使用" onPress={() => router.push('/connections')} />
+          <CompactState icon="shield-checkmark-outline" title="登录后开始使用" description="计划、提醒和完成结果会集中在这里。" actionLabel="去登录" onPress={() => router.push('/auth/login' as never)} />
         ) : null}
 
         {state === 'loading' ? (
@@ -165,11 +152,11 @@ export default function Today() {
         {state === 'ready' ? (
           <>
             <View style={[styles.summaryBar, attentionCount > 0 && styles.summaryWarning]}>
-              <View style={[styles.summaryDot, attentionCount > 0 && styles.summaryDotWarning]} />
-              <Text style={styles.summaryText}>{attentionCount > 0 ? `${attentionCount} 件事情需要你看看` : '今天没有需要你处理的事情'}</Text>
+              <View style={[styles.summaryIcon, attentionCount > 0 && styles.summaryIconWarning]}><Ionicons name={attentionCount > 0 ? 'notifications-outline' : 'checkmark'} size={22} color={attentionCount > 0 ? colors.warning : colors.success} /></View>
+              <View style={styles.summaryCopy}><Text style={styles.summaryText}>{attentionCount > 0 ? `${attentionCount} 件事需要你留意` : '今天不用操心'}</Text><Text style={styles.summaryDetail}>{attentionCount > 0 ? '先处理需要你确认的事项，其他事情会继续由计划跟进。' : '计划会继续运行；只有重要变化才会提醒你。'}</Text></View>
             </View>
 
-            {(filter === 'all' || filter === 'approval') && shownApprovals.length > 0 ? (
+            {shownApprovals.length > 0 ? (
               <WorkspaceSection title="待你确认" count={shownApprovals.length} action={{ label: '审批中心', onPress: () => router.push('/approvals' as never) }}>
                 <View style={styles.approvalList}>
                   {shownApprovals.map((item) => (
@@ -187,18 +174,17 @@ export default function Today() {
               </WorkspaceSection>
             ) : null}
 
-            {(filter === 'all' || filter === 'attention') && shownAttention.length > 0 ? (
+            {shownAttention.length > 0 ? (
               <WorkspaceSection title="需要处理" count={shownAttention.length}>
                 <View style={styles.messageGroup}>{shownAttention.map((item, index) => <MessageRow key={item.id} {...item} last={index === shownAttention.length - 1} />)}</View>
               </WorkspaceSection>
             ) : null}
 
-            {(filter === 'all' || filter === 'completed') && shownResults.length > 0 ? (
-              <WorkspaceSection title="最近完成" action={{ label: '全部记录', onPress: () => router.push('/records') }}>
+            {shownResults.length > 0 ? (
+              <WorkspaceSection title="完成摘要" action={{ label: '全部记录', onPress: () => router.push('/records') }}>
                 <View style={styles.messageGroup}>{shownResults.slice(0, 6).map((item, index, shown) => <MessageRow key={item.id} {...item} tone="success" last={index === shown.length - 1} />)}</View>
               </WorkspaceSection>
             ) : null}
-            {shownApprovals.length === 0 && shownAttention.length === 0 && shownResults.length === 0 && search ? <View style={styles.noResult}><Ionicons name="search-outline" size={20} color={colors.textMuted} /><Text style={styles.noResultText}>没有匹配的消息</Text></View> : null}
           </>
         ) : null}
       </ScrollView>
@@ -258,39 +244,30 @@ function formatMessageTime(value: string | null) {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#FFFFFF' },
-  page: { flex: 1, backgroundColor: '#FFFFFF' },
+  safeArea: { flex: 1, backgroundColor: colors.background },
+  page: { flex: 1, backgroundColor: colors.background },
   content: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: 80 },
-  search: { minHeight: 44, marginTop: spacing.md, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.md, borderRadius: radius.md, backgroundColor: '#F3F6F8' },
-  searchInput: { ...typography.body, color: colors.text, flex: 1, paddingVertical: 0 },
-  filters: { gap: spacing.sm, paddingTop: spacing.sm, paddingBottom: spacing.xs },
-  filter: { minHeight: 34, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: spacing.md, borderRadius: radius.pill, backgroundColor: '#F2F4F7' },
-  filterSelected: { backgroundColor: colors.accentSoft },
-  filterText: { ...typography.caption, color: colors.textSecondary, fontWeight: '600' },
-  filterTextSelected: { color: colors.primary, fontWeight: '800' },
-  filterCount: { ...typography.label, color: colors.textMuted },
-  filterCountSelected: { color: colors.primary },
-  noResult: { minHeight: 120, alignItems: 'center', justifyContent: 'center', gap: spacing.sm },
-  noResultText: { ...typography.caption, color: colors.textMuted },
   loading: { alignItems: 'center', paddingVertical: 64, gap: spacing.md },
   loadingText: { ...typography.caption, color: colors.textSecondary },
-  compactState: { minHeight: 74, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.lg, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, backgroundColor: '#F2F3F5', borderRadius: radius.md },
+  compactState: { minHeight: 74, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.lg, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border },
   compactStateIcon: { width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentSoft },
   compactStateCopy: { flex: 1 },
   compactStateTitle: { ...typography.bodyStrong, color: colors.text },
   compactStateDescription: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
   compactStateAction: { minHeight: 34, justifyContent: 'center', paddingHorizontal: spacing.md, borderRadius: radius.md, backgroundColor: colors.primary },
   compactStateActionText: { ...typography.label, color: '#FFFFFF' },
-  quietState: { minHeight: 70, flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.lg, paddingHorizontal: spacing.xs },
-  quietIcon: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: '#E8F7EF' },
+  quietState: { minHeight: 100, flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.md, paddingHorizontal: spacing.lg, backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border },
+  quietIcon: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.successSoft },
   quietCopy: { flex: 1 },
   quietTitle: { ...typography.bodyStrong, color: colors.text },
   quietDescription: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
-  summaryBar: { minHeight: 42, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.lg, paddingHorizontal: spacing.md, borderRadius: radius.md, backgroundColor: '#E8F7EF' },
-  summaryWarning: { backgroundColor: '#FFF4E5' },
-  summaryDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#23A559' },
-  summaryDotWarning: { backgroundColor: '#F79009' },
-  summaryText: { ...typography.bodyStrong, color: colors.text },
+  summaryBar: { minHeight: 108, flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.md, paddingHorizontal: spacing.lg, borderRadius: radius.lg, backgroundColor: colors.successSoft },
+  summaryWarning: { backgroundColor: colors.warningSoft },
+  summaryIcon: { width: 48, height: 48, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface },
+  summaryIconWarning: { backgroundColor: '#FFFBF3' },
+  summaryCopy: { flex: 1 },
+  summaryText: { ...typography.section, color: colors.text },
+  summaryDetail: { ...typography.caption, color: colors.textSecondary, marginTop: 4, lineHeight: 18 },
   approvalList: { gap: spacing.sm },
-  messageGroup: { backgroundColor: '#FFFFFF', paddingHorizontal: 0 },
+  messageGroup: { backgroundColor: colors.surface, paddingHorizontal: spacing.sm, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border },
 });

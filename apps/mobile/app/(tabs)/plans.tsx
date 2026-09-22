@@ -61,21 +61,30 @@ export default function Plans() {
         refreshControl={token ? <RefreshControl tintColor={colors.primary} refreshing={plans.isFetching} onRefresh={() => plans.refetch()} /> : undefined}
       >
         <WorkspaceHeader
-          title="懒人装甲工作区"
-          subtitle={activeCount > 0 ? `${activeCount} 个计划正在运行` : '还没有运行中的计划'}
-          action={<Pressable accessibilityRole="button" accessibilityLabel="创建计划" onPress={() => router.push('/create' as never)} style={({ pressed }) => [styles.addButton, pressed && styles.pressed]}><Ionicons name="add" size={22} color="#344054" /></Pressable>}
+          title="工作区"
+          subtitle={activeCount > 0 ? `${activeCount} 个计划在帮你照看生活` : '从一个场景开始安排生活'}
         />
+
+        <View style={styles.hero}>
+          <View style={styles.heroIcon}><Ionicons name="sparkles-outline" size={24} color={colors.primary} /></View>
+          <View style={styles.heroCopy}><Text style={styles.heroTitle}>你关心的事，交给计划持续跟进</Text><Text style={styles.heroDescription}>从真实场景出发，查看已有计划或安排新事项。</Text></View>
+        </View>
+
+        <Text style={styles.spaceHeading}>我的空间</Text>
+        <View style={styles.spaceGrid}>
+          {consumerGroups.slice(0, 4).map((group, index) => <Pressable key={group} accessibilityRole="button" onPress={() => router.push(`/domains?group=${(['money', 'life', 'work', 'things'] as const)[index]}` as never)} style={({ pressed }) => [styles.spaceCard, pressed && styles.pressed]}><View style={[styles.spaceIcon, index === 1 && styles.spaceIconLife, index === 2 && styles.spaceIconWork, index === 3 && styles.spaceIconThings]}><Ionicons name={(['wallet-outline', 'home-outline', 'briefcase-outline', 'cube-outline'] as const)[index]} size={20} color={colors.primary} /></View><Text style={styles.spaceLabel}>{group}</Text><Text style={styles.spaceCount}>{plans.data ? `${plans.data.filter((plan) => consumerPlanGroup({ consumerGroup: plan.consumerGroup ?? null, domain: plan.domain, templateKey: plan.templateKey, planCenterKind: plan.planCenterSummary?.kind ?? null }) === group).length} 个计划` : '计划数待同步'}</Text></Pressable>)}
+        </View>
 
         <View style={styles.tools}>
           <Pressable accessibilityRole="button" onPress={() => router.push('/plan-center' as never)} style={({ pressed }) => [styles.tool, pressed && styles.pressed]}><Ionicons name="list-circle-outline" size={18} color={colors.primary} /><Text style={styles.toolText}>计划中心</Text></Pressable>
           <View style={styles.toolDivider} />
-          <Pressable accessibilityRole="button" onPress={() => router.push('/domains' as never)} style={({ pressed }) => [styles.tool, pressed && styles.pressed]}><Ionicons name="grid-outline" size={17} color={colors.primary} /><Text style={styles.toolText}>管理领域</Text></Pressable>
+          <Pressable accessibilityRole="button" onPress={() => router.push('/domains' as never)} style={({ pressed }) => [styles.tool, pressed && styles.pressed]}><Ionicons name="grid-outline" size={17} color={colors.primary} /><Text style={styles.toolText}>浏览场景</Text></Pressable>
           <View style={styles.toolDivider} />
           <Pressable accessibilityRole="button" onPress={() => router.push('/records' as never)} style={({ pressed }) => [styles.tool, pressed && styles.pressed]}><Ionicons name="list-outline" size={18} color={colors.primary} /><Text style={styles.toolText}>查看记录</Text></Pressable>
         </View>
 
         {!token ? (
-          <InlineState icon="shield-checkmark-outline" title="登录后查看计划" description="已经安排的事情都会在这里。" action="去登录" onPress={() => router.push('/connections')} />
+          <InlineState icon="shield-checkmark-outline" title="登录后查看计划" description="已经安排的事情都会在这里。" action="去登录" onPress={() => router.push('/auth/login' as never)} />
         ) : null}
         {plans.isLoading ? <View style={styles.loading}><ActivityIndicator color={colors.primary} /><Text style={styles.loadingText}>正在同步计划…</Text></View> : null}
         {plans.isError ? <InlineState icon="refresh-outline" title="暂时没能读取计划" description="网络恢复后可重新加载。" action="重试" onPress={() => plans.refetch()} /> : null}
@@ -140,11 +149,24 @@ function planDescription(plan: PlanSummary) {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#FFFFFF' },
-  page: { flex: 1, backgroundColor: '#FFFFFF' },
+  safeArea: { flex: 1, backgroundColor: colors.background },
+  page: { flex: 1, backgroundColor: colors.background },
   content: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: 80 },
-  addButton: { width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F2F4F7', borderWidth: 1, borderColor: '#EAECF0' },
   pressed: { opacity: 0.65 },
+  hero: { minHeight: 112, flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.lg, marginTop: spacing.sm, borderRadius: radius.lg, backgroundColor: '#FFF1E5' },
+  heroIcon: { width: 48, height: 48, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface },
+  heroCopy: { flex: 1 },
+  heroTitle: { ...typography.bodyStrong, color: colors.text, fontSize: 16, lineHeight: 23 },
+  heroDescription: { ...typography.caption, color: colors.textSecondary, lineHeight: 18, marginTop: 4 },
+  spaceHeading: { ...typography.section, color: colors.text, marginTop: spacing.xl, marginBottom: spacing.sm },
+  spaceGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: spacing.sm },
+  spaceCard: { width: '48.5%', minHeight: 118, padding: spacing.md, backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border },
+  spaceIcon: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 12, backgroundColor: colors.accentSoft },
+  spaceIconLife: { backgroundColor: colors.successSoft },
+  spaceIconWork: { backgroundColor: '#EAF2FF' },
+  spaceIconThings: { backgroundColor: '#F1EBFF' },
+  spaceLabel: { ...typography.bodyStrong, color: colors.text, marginTop: spacing.sm },
+  spaceCount: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
   tools: { minHeight: 50, flexDirection: 'row', alignItems: 'center', marginTop: spacing.sm, borderBottomWidth: 1, borderBottomColor: '#E3E5E8' },
   tool: { flex: 1, minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm },
   toolDivider: { width: 1, height: 24, backgroundColor: '#EAECF0' },
@@ -166,5 +188,5 @@ const styles = StyleSheet.create({
   loading: { paddingVertical: 64, alignItems: 'center', gap: spacing.md },
   loadingText: { ...typography.caption, color: colors.textSecondary },
   groupSubtitle: { ...typography.caption, color: colors.textSecondary, marginBottom: spacing.sm },
-  planGroup: { backgroundColor: '#FFFFFF' },
+  planGroup: { backgroundColor: colors.surface, paddingHorizontal: spacing.sm, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border },
 });

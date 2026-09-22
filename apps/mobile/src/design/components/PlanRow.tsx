@@ -23,7 +23,7 @@ export function PlanRow({ icon, name, description, detail, status, statusTone = 
         <Text numberOfLines={1} style={styles.description}>{description}</Text>
         <Text numberOfLines={1} style={styles.detail}>{detail}</Text>
       </View>
-      <Ionicons name="ellipsis-horizontal" size={18} color={colors.textMuted} />
+      <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
     </Pressable>
   );
 }
