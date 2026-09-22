@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { ScenarioReadiness } from '@lazy-armor/plan-schema';
+import { isConsumerReadinessProjection, type ScenarioReadiness } from '@lazy-armor/plan-schema';
 import type { CapabilityReadinessEvidence } from '../src/runtime-catalog/readiness-evidence.service';
 import { projectConsumerReadiness } from '../src/runtime-catalog/readiness-product-projection';
 
@@ -16,6 +16,7 @@ describe('consumer readiness projection', () => {
   it('keeps platform implementation separate from user authorization', () => {
     const result = projectConsumerReadiness({ readiness: readiness({ missingCapabilities: ['READ_SHIPMENT'] }), capabilities: [capability({ grant: 'REVOKED', usable: false })], platformSupported: true, deviceRequired: false, deviceOnline: false });
     expect(result).toMatchObject({ productReadiness: 'IMPLEMENTED', userReadiness: 'NEEDS_PERMISSION', actionPath: '/connections' });
+    expect(isConsumerReadinessProjection(result)).toBe(true);
   });
 
   it('never presents an unverified provider as usable', () => {

@@ -12,6 +12,10 @@
     "./mobile": {
       "types": "./src/mobile.ts",
       "default": "./dist/mobile.js"
+    },
+    "./consumer": {
+      "types": "./src/consumer-projection.ts",
+      "default": "./dist/consumer-projection.js"
     }
   },
   "scripts": {

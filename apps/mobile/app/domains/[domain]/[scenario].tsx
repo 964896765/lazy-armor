@@ -1,4 +1,5 @@
 import { PLAN_STRATEGIES } from '@lazy-armor/plan-schema/mobile';
+import { isConsumerReadinessProjection, type ConsumerActionPath, type ConsumerReadinessProjection } from '@lazy-armor/plan-schema/consumer';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -27,11 +28,11 @@ interface ScenarioExecution { id: string; planId: string; status: string; result
 interface ScenarioTemplate { key: string; domain: string; name: string; description: string }
 interface ScenarioRuntimeEvidence {
   availableFacts: string[]; missingFacts: string[]; readiness: Readiness;
-  product: { userReadiness: string; title: string; reason: string; nextAction: string; actionPath: '/connections' | '/today' | '/records' | null };
+  product: ConsumerReadinessProjection;
 }
 
 function strategyLabel(key: string): string { return PLAN_STRATEGIES.find((item) => item.key === key)?.label ?? key; }
-function actionRoute(path: ScenarioRuntimeEvidence['product']['actionPath']): string | null {
+function actionRoute(path: ConsumerActionPath): string | null {
   if (path === '/today') return '/(tabs)';
   if (path === '/connections') return '/(tabs)/connections';
   if (path === '/records') return '/(tabs)/records';
@@ -45,7 +46,11 @@ export default function DomainScenarioPage() {
   const scenarioKey = domain && scenario ? `${domain}.${scenario}` : '';
   const definition = useQuery({ queryKey: ['scenario-definition', scenarioKey, token], queryFn: () => api<ScenarioDefinition>(`/scenarios/${scenarioKey}`, token), enabled: Boolean(scenarioKey && token) });
   const readiness = useQuery({ queryKey: ['scenario-readiness', scenarioKey, token], queryFn: () => api<Readiness>(`/scenarios/${scenarioKey}/readiness`, token), enabled: Boolean(scenarioKey && token) });
-  const runtime = useQuery({ queryKey: ['scenario-runtime-evidence', scenarioKey, token], queryFn: () => api<{ runtime: ScenarioRuntimeEvidence }>(`/scenario-coverage-ledger/${scenarioKey}/runtime-evidence`, token), enabled: Boolean(scenarioKey && token) });
+  const runtime = useQuery({ queryKey: ['scenario-runtime-evidence', scenarioKey, token], queryFn: async () => {
+    const response = await api<{ runtime: ScenarioRuntimeEvidence }>(`/scenario-coverage-ledger/${scenarioKey}/runtime-evidence`, token);
+    if (!isConsumerReadinessProjection(response?.runtime?.product)) throw new Error('场景可用状态契约无效');
+    return response;
+  }, enabled: Boolean(scenarioKey && token) });
   const plans = useQuery({ queryKey: ['scenario-plans', scenarioKey, token], queryFn: () => api<ScenarioPlan[]>(`/strategy-runtime/bindings?scenarioKey=${encodeURIComponent(scenarioKey)}`, token), enabled: Boolean(scenarioKey && token) });
   const facts = useQuery({ queryKey: ['scenario-truth', token], queryFn: () => api<ScenarioFact[]>('/truth-records', token), enabled: Boolean(token) });
   const executions = useQuery({ queryKey: ['scenario-executions', token], queryFn: () => api<ScenarioExecution[]>('/executions', token), enabled: Boolean(token && (plans.data?.length ?? 0) > 0) });

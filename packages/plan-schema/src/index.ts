@@ -39,6 +39,15 @@ export {
   type LifecycleReadStep,
   type LifecycleReadStepKey,
 } from './lifecycle-read-projection';
+export {
+  CONSUMER_PROJECTION_VERSION,
+  CONSUMER_READINESS_STATES,
+  isConsumerReadinessProjection,
+  type ConsumerActionPath,
+  type ConsumerProductReadiness,
+  type ConsumerReadinessProjection,
+  type ConsumerReadinessState,
+} from './consumer-projection';
 
 export const SOURCE_TYPES = ['manual', 'email', 'calendar', 'notification', 'file', 'webhook', 'internal', 'commerce', 'device', 'vehicle', 'billing', 'content_platform'] as const;
 export const TRIGGER_TYPES = ['manual', 'schedule', 'event', 'webhook', 'threshold', 'date_before', 'date_after', 'data_changed'] as const;

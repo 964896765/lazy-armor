@@ -1,16 +1,11 @@
-import type { ScenarioReadiness } from '@lazy-armor/plan-schema';
+import {
+  CONSUMER_PROJECTION_VERSION,
+  type ConsumerReadinessProjection,
+  type ConsumerReadinessState,
+  type ScenarioReadiness,
+} from '@lazy-armor/plan-schema';
 import type { CapabilityReadinessEvidence } from './readiness-evidence.service';
-
-export type ConsumerReadinessState = 'READY' | 'NEEDS_CONNECTION' | 'NEEDS_PERMISSION' | 'NEEDS_DATA' | 'DEVICE_OFFLINE' | 'SERVICE_UNAVAILABLE' | 'NEEDS_CONFIRMATION';
-
-export interface ConsumerReadinessProjection {
-  productReadiness: 'IMPLEMENTED' | 'NOT_VERIFIED';
-  userReadiness: ConsumerReadinessState;
-  title: string;
-  reason: string;
-  nextAction: string;
-  actionPath: '/connections' | '/today' | '/records' | null;
-}
+export type { ConsumerReadinessProjection } from '@lazy-armor/plan-schema';
 
 interface Input {
   readiness: ScenarioReadiness;
@@ -42,7 +37,8 @@ export function projectConsumerReadiness(input: Input): ConsumerReadinessProject
     DEVICE_OFFLINE: ['手机离线', '这项能力需要手机在线并保持设备心跳。', '检查手机连接', '/connections'],
     SERVICE_UNAVAILABLE: ['暂不可用', '平台能力尚未核实、实现，或当前服务不健康。', '查看连接状态', '/connections'],
     NEEDS_CONFIRMATION: ['需要你确认', '已有数据，但执行前仍需要确认或更多运行证据。', '查看今天的待办', '/today'],
+    RESULT_UNKNOWN: ['结果待确认', '操作可能已发生，系统已停止自动重试。', '查看记录并核对结果', '/records'],
   };
   const [title, reason, nextAction, actionPath] = copy[userReadiness];
-  return { productReadiness, userReadiness, title, reason, nextAction, actionPath };
+  return { contractVersion: CONSUMER_PROJECTION_VERSION, productReadiness, userReadiness, title, reason, nextAction, actionPath };
 }

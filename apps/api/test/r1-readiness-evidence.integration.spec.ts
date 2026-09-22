@@ -44,6 +44,8 @@ describe.sequential('R1 evidence-backed readiness runtime projection', { timeout
       capabilities: [],
     });
     expect(response.body.runtime.readiness.state).toBe('BLOCKED_PROVIDER');
+    expect(response.body.runtime.product).toMatchObject({ contractVersion: 1, productReadiness: expect.any(String) });
+    expect(response.body.runtime.product.userReadiness).not.toBe('READY');
     expect(response.body.runtime.missingFacts).toContain('bill.bill.state');
   });
 
