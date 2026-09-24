@@ -3,9 +3,10 @@ import { Link, router } from 'expo-router';
 import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { api } from '../../src/api';
+import { api, resolveAppEnv } from '../../src/api';
 import { useAuthStore } from '../../src/auth-store';
 import { ActionButton, Surface, colors, radius, spacing, typography } from '../../src/design';
+import { normalizeLoginIdentifier } from '../../src/login-identifier';
 import type { SessionTokens } from '../../src/secure-token-store';
 
 export default function LoginPage() {
@@ -13,13 +14,13 @@ export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const login = useMutation({
-    mutationFn: () => api<SessionTokens>('/auth/login', undefined, { method: 'POST', body: JSON.stringify({ email: email.trim(), password }) }),
+    mutationFn: () => api<SessionTokens>('/auth/login', undefined, { method: 'POST', body: JSON.stringify({ email: normalizeLoginIdentifier(email, resolveAppEnv()), password }) }),
     onSuccess: async (tokens) => { await setSession(tokens); router.replace('/' as never); },
   });
   return <AuthPage title="欢迎回来" subtitle="登录后，继续让懒人装甲替你照看事情。">
-    <TextInput style={styles.input} accessibilityLabel="邮箱" autoCapitalize="none" autoComplete="email" keyboardType="email-address" placeholder="邮箱" placeholderTextColor={colors.textMuted} value={email} onChangeText={setEmail} />
+    <TextInput style={styles.input} accessibilityLabel="账号或邮箱" autoCapitalize="none" autoComplete="email" keyboardType="email-address" placeholder="账号或邮箱" placeholderTextColor={colors.textMuted} value={email} onChangeText={setEmail} />
     <TextInput style={styles.input} accessibilityLabel="密码" autoComplete="current-password" secureTextEntry placeholder="密码" placeholderTextColor={colors.textMuted} value={password} onChangeText={setPassword} />
-    {login.isError ? <Text style={styles.error}>没有登录成功，请检查邮箱和密码后重试。</Text> : null}
+    {login.isError ? <Text style={styles.error}>没有登录成功，请检查账号和密码后重试。</Text> : null}
     <View style={styles.action}><ActionButton label={login.isPending ? '登录中…' : '登录'} onPress={() => login.mutate()} disabled={login.isPending || !email.trim() || !password} /></View>
     <Link href={'/auth/forgot-password' as never} style={styles.textLink}>忘记密码？</Link>
     <View style={styles.footer}><Text style={styles.footerText}>第一次使用？</Text><Link href={'/auth/register' as never} style={styles.strongLink}>创建账号</Link></View>

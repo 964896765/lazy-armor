@@ -105,7 +105,16 @@ describe.sequential('R4 edge device task transport', { timeout: 60_000 }, () => 
     const evidencePath = `/device-tasks/${task.id}/evidence`;
     const evidence = await request(app.getHttpServer()).get(`/api${evidencePath}`).set(auth(owner.token))
       .set(signedHeaders({}, 'GET', evidencePath)).expect(200);
-    expect(evidence.body.task).toMatchObject({ id: task.id, status: 'SUCCEEDED' });
+    expect(evidence.body.task).toMatchObject({
+      id: task.id,
+      status: 'SUCCEEDED',
+      attemptCount: 1,
+      deviceOnline: true,
+      claimedAt: expect.any(String),
+      leaseExpiresAt: expect.any(String),
+      deviceHeartbeatAt: expect.any(String),
+      resultHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+    });
     expect(evidence.body.observations).toHaveLength(1);
     expect(evidence.body.candidates).toHaveLength(1);
     expect(evidence.body.truths).toEqual(expect.arrayContaining([expect.objectContaining({ status: 'verified', current: true })]));

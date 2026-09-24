@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
-import { colors } from '../colors';
+import { workspaceColors as colors } from '../workspace';
 import { radius } from '../radius';
 import { spacing } from '../spacing';
 

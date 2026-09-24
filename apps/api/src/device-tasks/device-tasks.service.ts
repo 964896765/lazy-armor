@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException, forwardRef } from '@nestjs/common';
 import { createHash } from 'node:crypto';
-import { candidateFacts, deviceAppConnections, deviceHeartbeats, deviceTasks, readEvidence, sourceObservations, truthRecords } from '@lazy-armor/database';
+import { auditLogs, candidateFacts, deviceAppConnections, deviceHeartbeats, deviceTasks, readEvidence, sourceObservations, truthRecords } from '@lazy-armor/database';
 import { realityValueHash, type JsonValue, type ParserKey, type SourceMode, type SourceObservationInput } from '@lazy-armor/plan-schema';
 import { newId } from '@lazy-armor/shared';
 import { and, desc, eq, gte, inArray, lt } from 'drizzle-orm';
@@ -242,9 +242,18 @@ export class DeviceTasksService {
       .from(truthRecords).where(and(eq(truthRecords.userId, userId), inArray(truthRecords.id, truthIds))) : [];
     const reads = structured ? await this.db.select({ id: readEvidence.id, status: readEvidence.status, blockedReason: readEvidence.blockedReason })
       .from(readEvidence).where(and(eq(readEvidence.userId, userId), eq(readEvidence.requestId, requestId))) : [];
+    const claimEvents = await this.db.select({ id: auditLogs.id }).from(auditLogs).where(and(
+      eq(auditLogs.userId, userId), eq(auditLogs.resourceType, 'device_task'), eq(auditLogs.resourceId, task.id), eq(auditLogs.action, 'DEVICE_TASK_CLAIMED'),
+    ));
+    const heartbeat = (await this.db.select({ onlineState: deviceHeartbeats.onlineState, lastHeartbeatAt: deviceHeartbeats.lastHeartbeatAt })
+      .from(deviceHeartbeats).where(and(eq(deviceHeartbeats.userId, userId), eq(deviceHeartbeats.trustedDeviceId, trustedDeviceId))).limit(1))[0];
+    const deviceOnline = Boolean(heartbeat && Date.now() - heartbeat.lastHeartbeatAt.getTime() <= ONLINE_WINDOW_MS);
     return {
       task: { id: task.id, taskType: task.taskType, resourceType: task.resourceType, factKey: task.factKey, status: task.status,
-        errorCode: task.errorCode, createdAt: task.createdAt.toISOString(), completedAt: task.completedAt?.toISOString() ?? null },
+        errorCode: task.errorCode, attemptCount: claimEvents.length, claimedAt: task.claimedAt?.toISOString() ?? null,
+        leaseExpiresAt: task.leaseExpiresAt?.toISOString() ?? null, resultHash: task.resultHash,
+        createdAt: task.createdAt.toISOString(), updatedAt: task.updatedAt.toISOString(), completedAt: task.completedAt?.toISOString() ?? null,
+        deviceOnline, deviceHeartbeatAt: heartbeat?.lastHeartbeatAt.toISOString() ?? null },
       observations: observations.map((item) => ({ id: item.id, status: item.status, observedAt: item.observedAt.toISOString() })),
       candidates: candidates.map((item) => ({ id: item.id, observationId: item.observationId, status: item.status })),
       truths: truths.map((item) => ({ id: item.id, status: item.status, current: item.status === 'verified' && !item.revokedAt })),

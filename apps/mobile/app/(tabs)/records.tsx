@@ -6,7 +6,7 @@ import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, T
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/api';
 import { useAuthStore } from '../../src/auth-store';
-import { EmptyState, Surface, WorkspaceHeader, WorkspaceSection, colors, radius, spacing, typography } from '../../src/design';
+import { EmptyState, Surface, WorkspaceHeader, WorkspaceSection, workspaceColors as colors, radius, spacing, typography } from '../../src/design';
 import { executionAttentionLabel, executionListState, executionNeedsAttention, executionRecordCategory, executionStatusLabel } from '../../src/execution-presenter';
 
 interface ExecutionRecord {
@@ -39,8 +39,9 @@ export default function Records() {
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <ScrollView style={styles.page} contentContainerStyle={styles.content} refreshControl={token ? <RefreshControl tintColor={colors.primary} refreshing={executions.isFetching} onRefresh={() => executions.refetch()} /> : undefined}>
-        <WorkspaceHeader title="最近做了什么" subtitle="计划触发、判断、审批、执行与结果，统一记录在这里" action={<Pressable accessibilityRole="button" onPress={() => router.push('/reconciliation' as never)} style={styles.reconciliationLink}><Text style={styles.reconciliationLinkText}>结果待确认</Text></Pressable>} />
-        <View style={styles.filters}>{FILTERS.map((item) => <Pressable key={item.key} onPress={() => setFilter(item.key)} style={[styles.filter, filter === item.key && styles.filterSelected]}><Ionicons name={item.icon} size={15} color={filter === item.key ? colors.primary : item.key === 'failed' ? colors.danger : item.key === 'exception' || item.key === 'outcome' ? colors.warning : colors.textSecondary} /><Text style={[styles.filterText, filter === item.key && styles.filterTextSelected]}>{item.label}</Text></Pressable>)}</View>
+        <WorkspaceHeader title="最近做了什么" subtitle="计划触发、审批、执行和结果都记录在这里" />
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters}>{FILTERS.map((item) => <Pressable key={item.key} onPress={() => setFilter(item.key)} style={[styles.filter, filter === item.key && styles.filterSelected]}><Ionicons name={item.icon} size={14} color={filter === item.key ? colors.primary : item.key === 'failed' ? colors.danger : item.key === 'exception' || item.key === 'outcome' ? colors.warning : colors.textSecondary} /><Text style={[styles.filterText, filter === item.key && styles.filterTextSelected]}>{item.label}</Text></Pressable>)}</ScrollView>
+        {filter === 'outcome' ? <Pressable accessibilityRole="button" onPress={() => router.push('/reconciliation' as never)} style={styles.reconciliationLink}><Text style={styles.reconciliationLinkText}>打开结果回查中心</Text><Ionicons name="arrow-forward" size={15} color={colors.primary} /></Pressable> : null}
 
         {!token ? <Surface style={styles.stateSurface}><EmptyState icon="time-outline" title="登录后查看完成记录" action={{ label: '去登录', onPress: () => router.push('/connections') }} /></Surface> : null}
         {state === 'loading' ? <View style={styles.loading}><ActivityIndicator color={colors.primary} /><Text style={styles.loadingText}>正在同步记录…</Text></View> : null}
@@ -108,10 +109,10 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors.background },
   page: { flex: 1, backgroundColor: colors.background },
   content: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: 80 },
-  reconciliationLink: { paddingHorizontal: spacing.sm, paddingVertical: 6, borderRadius: radius.pill, backgroundColor: colors.accentSoft },
+  reconciliationLink: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: spacing.sm, paddingHorizontal: spacing.md, paddingVertical: 8, borderRadius: radius.pill, backgroundColor: colors.accentSoft },
   reconciliationLinkText: { ...typography.label, color: colors.primary },
-  filters: { minHeight: 50, flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginTop: spacing.sm, padding: 3, borderRadius: radius.md, backgroundColor: '#F3F6F8' },
-  filter: { flex: 1, minHeight: 38, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, borderRadius: radius.sm },
+  filters: { minHeight: 42, alignItems: 'center', gap: spacing.xs, marginTop: spacing.sm, padding: 3, paddingRight: spacing.md, borderRadius: radius.md, backgroundColor: '#F3F6F8' },
+  filter: { minHeight: 36, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, paddingHorizontal: 10, borderRadius: radius.sm },
   filterSelected: { backgroundColor: colors.surface },
   filterText: { ...typography.caption, color: colors.textSecondary, fontWeight: '600' },
   filterTextSelected: { color: colors.primary, fontWeight: '800' },

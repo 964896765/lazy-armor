@@ -6,7 +6,7 @@ import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, T
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/api';
 import { useAuthStore } from '../../src/auth-store';
-import { AnimatedEntry, PlanRow, WorkspaceHeader, WorkspaceSection, colors, radius, spacing, typography } from '../../src/design';
+import { AnimatedEntry, PlanRow, WorkspaceHeader, WorkspaceSection, workspaceColors as colors, radius, spacing, typography } from '../../src/design';
 import {
   consumerPlanGroup,
   consumerPlanGroupSubtitle,

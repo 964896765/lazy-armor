@@ -46,8 +46,11 @@ export async function api<T>(path: string, token?: string, init?: RequestInit): 
   try {
     const response = await fetch(`${API_URL}/api${path}`, {
       ...init,
+      // React Query owns client-side freshness. A native HTTP 304 has no JSON
+      // body and cannot satisfy this typed transport contract.
+      cache: 'no-store',
       signal: controller.signal,
-      headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}), ...init?.headers },
+      headers: { 'content-type': 'application/json', 'cache-control': 'no-cache', ...(token ? { authorization: `Bearer ${token}` } : {}), ...init?.headers },
     });
     if (!response.ok) {
       const body = await response.json().catch(() => null) as { code?: string; message?: string } | null;

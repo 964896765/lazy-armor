@@ -11,7 +11,7 @@ import {
   type AttentionReconciliation,
   type AttentionToday,
 } from '../src/attention-presenter';
-import { EmptyState, MessageRow, Surface, WorkspaceHeader, WorkspaceSection, colors, radius, spacing, typography } from '../src/design';
+import { EmptyState, MessageRow, Surface, WorkspaceHeader, WorkspaceSection, workspaceColors as colors, radius, spacing, typography } from '../src/design';
 
 export default function AttentionPage() {
   const token = useAuthStore((store) => store.token);

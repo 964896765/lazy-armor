@@ -7,7 +7,7 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/api';
 import { useAuthStore } from '../../src/auth-store';
-import { WorkspaceHeader, colors, radius, spacing, typography } from '../../src/design';
+import { WorkspaceHeader, workspaceColors as colors, radius, spacing, typography } from '../../src/design';
 
 interface PlanDomainSummary { id: string; domain: string | null }
 

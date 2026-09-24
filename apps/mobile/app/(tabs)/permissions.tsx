@@ -7,7 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/api';
 import { useAuthStore } from '../../src/auth-store';
 import { capabilityDescription, capabilityLabel, connectionStatusLabel } from '../../src/connection-presenter';
-import { EmptyState, Surface, WorkspaceHeader, WorkspaceSection, colors, radius, spacing, typography } from '../../src/design';
+import { EmptyState, Surface, WorkspaceHeader, WorkspaceSection, workspaceColors as colors, radius, spacing, typography } from '../../src/design';
 
 interface Connection { id: string; connectorId: string; connectorName: string; externalAccountName: string; status: string }
 interface Permission { capability: string; name: string; granted: boolean }

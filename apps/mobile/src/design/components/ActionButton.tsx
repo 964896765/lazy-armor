@@ -1,5 +1,5 @@
 import { Pressable, StyleSheet, Text } from 'react-native';
-import { colors } from '../colors';
+import { workspaceColors as colors } from '../workspace';
 import { radius } from '../radius';
 import { spacing } from '../spacing';
 import { typography } from '../typography';
@@ -24,7 +24,7 @@ export function ActionButton({ label, onPress, tone = 'primary', disabled = fals
 }
 
 const buttonStyles = StyleSheet.create({
-  base: { minHeight: 42, paddingHorizontal: spacing.lg, paddingVertical: 10, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center' },
+  base: { minHeight: 48, paddingHorizontal: spacing.lg, paddingVertical: 12, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
   primary: { backgroundColor: colors.primary },
   quiet: { backgroundColor: colors.accentSoft },
   danger: { backgroundColor: colors.danger },

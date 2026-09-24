@@ -64,6 +64,8 @@ export default function RootLayout() {
           <Stack.Screen name="strategies/index" options={{ headerShown: false }} />
           <Stack.Screen name="strategies/[strategy]" options={{ headerShown: false }} />
           <Stack.Screen name="truth/[id]" options={{ headerShown: false }} />
+          <Stack.Screen name="evidence/[id]" options={{ headerShown: false }} />
+          <Stack.Screen name="devices/[id]" options={{ headerShown: false }} />
           <Stack.Screen name="plans/[id]/edit" options={{ title: '编辑计划' }} />
           <Stack.Screen name="connections/app-read-session" options={{ headerShown: false }} />
           <Stack.Screen name="connections/device-tasks/[id]" options={{ headerShown: false }} />

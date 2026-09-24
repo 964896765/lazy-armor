@@ -6,6 +6,7 @@ import { APP_READ_SESSION_HEARTBEAT_GRACE_SECONDS, evaluateScenarioReadiness, ty
 import { CapabilityUsabilityService } from '../provider-capabilities/capability-usability.service';
 import { ProviderCapabilityRegistryService } from '../provider-capabilities/provider-capability-registry.service';
 import { projectConsumerReadiness, type ConsumerReadinessProjection } from './readiness-product-projection';
+import { projectScenarioFacts } from './scenario-fact-projection';
 
 export type CapabilityReadinessDimension = 'declared' | 'implemented' | 'authorized' | 'healthy' | 'executable' | 'verifiable';
 
@@ -70,8 +71,8 @@ export class ReadinessEvidenceService {
       .from(truthRecords)
       .innerJoin(truthRecordVersions, eq(truthRecords.currentVersionId, truthRecordVersions.id))
       .where(and(eq(truthRecords.userId, userId), eq(truthRecords.status, 'verified'), isNull(truthRecords.revokedAt)));
-    const availableFacts = [...new Set(currentTruth.filter((row) => row.createdAt >= freshAfter)
-      .map((row) => row.value.factKey).filter((key): key is string => typeof key === 'string'))];
+    const factProjection = projectScenarioFacts(scenario.requiredFacts, currentTruth, freshAfter);
+    const { availableFacts } = factProjection;
 
     // Observation pipeline: a recent source observation or an active read session.
     const observationRows = await this.db.select({ id: sourceObservations.id })
@@ -112,9 +113,9 @@ export class ReadinessEvidenceService {
         usableCapabilities,
         observedFactCount: input.availableFacts?.length ?? 0,
         hasObservationSource: observationRows.length > 0 || sessionRows.length > 0,
-        hasDecidedTruth: currentTruth.length > 0,
+        hasDecidedTruth: factProjection.hasDecidedTruth,
         hasSuccessfulScenarioExecution: executionRows.length > 0,
-        staleFactCount: currentTruth.length - availableFacts.length,
+        staleFactCount: factProjection.staleFactCount,
       },
     };
   }

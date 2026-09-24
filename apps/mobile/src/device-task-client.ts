@@ -17,7 +17,11 @@ export interface DeviceTask {
 }
 
 export interface DeviceTaskEvidence {
-  task: { id: string; taskType: string; resourceType: string; factKey: string; status: DeviceTaskStatus; errorCode: string | null; createdAt: string; completedAt: string | null };
+  task: {
+    id: string; taskType: string; resourceType: string; factKey: string; status: DeviceTaskStatus; errorCode: string | null;
+    attemptCount: number; claimedAt: string | null; leaseExpiresAt: string | null; resultHash: string | null;
+    createdAt: string; updatedAt: string; completedAt: string | null; deviceOnline: boolean; deviceHeartbeatAt: string | null;
+  };
   observations: Array<{ id: string; status: string; observedAt: string }>;
   candidates: Array<{ id: string; observationId: string; status: string }>;
   truths: Array<{ id: string; status: string; current: boolean }>;

@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { desc, eq } from 'drizzle-orm';
 import { candidateFacts, sourceObservations, truthRecordVersions } from '@lazy-armor/database';
 import { mobileCandidateKindForParser } from '@lazy-armor/plan-schema';
@@ -7,6 +7,7 @@ import { DATABASE, type InjectedDatabase } from '../common/database.module';
 export type MobileEvidenceStatus = 'normalized' | 'candidate_created' | 'truth_verified' | 'rejected';
 
 export interface MobileEvidenceExport {
+  id: string;
   sourceType: string;
   packageIdentity: string;
   observedAt: string;
@@ -29,6 +30,7 @@ export class MobileEvidenceService {
 
   async list(userId: string): Promise<MobileEvidenceExport[]> {
     const rows = await this.db.select({
+      id: sourceObservations.id,
       sourceMode: sourceObservations.sourceMode,
       providerKey: sourceObservations.providerKey,
       parserKey: sourceObservations.parserKey,
@@ -52,6 +54,7 @@ export class MobileEvidenceService {
       }
       const payload = row.payloadJson as Record<string, unknown>;
       return {
+        id: row.id,
         sourceType: row.sourceMode,
         packageIdentity: typeof payload.packageName === 'string' ? payload.packageName : row.providerKey,
         observedAt: row.observedAt.toISOString(),
@@ -66,5 +69,11 @@ export class MobileEvidenceService {
         truth,
       };
     }));
+  }
+
+  async get(userId: string, id: string): Promise<MobileEvidenceExport> {
+    const evidence = (await this.list(userId)).find((item) => item.id === id);
+    if (!evidence) throw new NotFoundException('Evidence not found');
+    return evidence;
   }
 }

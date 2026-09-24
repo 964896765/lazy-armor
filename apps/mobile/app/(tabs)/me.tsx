@@ -2,11 +2,11 @@ import { useQuery } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { router, type Href } from 'expo-router';
 import type { ComponentProps } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/api';
 import { useAuthStore } from '../../src/auth-store';
-import { WorkspaceHeader, colors, radius, spacing, typography } from '../../src/design';
+import { WorkspaceHeader, workspaceColors as colors, radius, spacing, typography } from '../../src/design';
 
 interface Connection { id: string; status: string }
 interface DeviceProfile { id: string }
@@ -16,6 +16,7 @@ interface Profile { displayName: string; status: string }
 
 export default function Me() {
   const token = useAuthStore((store) => store.token);
+  const clearSession = useAuthStore((store) => store.clear);
   const profile = useQuery({ queryKey: ['me', token], queryFn: () => api<Profile>('/me', token), enabled: Boolean(token) });
   const connections = useQuery({ queryKey: ['connections', token], queryFn: () => api<Connection[]>('/connections', token), enabled: Boolean(token) });
   const devices = useQuery({ queryKey: ['device-profiles', token], queryFn: () => api<DeviceProfile[]>('/device-profiles', token), enabled: Boolean(token) });
@@ -24,13 +25,20 @@ export default function Me() {
   const loading = profile.isLoading || connections.isLoading || devices.isLoading || vehicles.isLoading || unread.isLoading;
   const name = profile.data?.displayName ?? (token ? '我的账号' : '还没有登录');
 
+  function confirmLogout() {
+    Alert.alert('退出当前账号？', '这只会清除本机登录状态，不会删除你的计划、事实或记录。', [
+      { text: '取消', style: 'cancel' },
+      { text: '退出登录', style: 'destructive', onPress: async () => { await clearSession(); router.replace('/auth/login' as Href); } },
+    ]);
+  }
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <ScrollView style={styles.page} contentContainerStyle={styles.content}>
         <WorkspaceHeader title="我的" subtitle="账号、连接与隐私设置" />
         <View style={styles.profile}>
           <View style={styles.avatar}><Ionicons name="person" size={24} color={colors.surface} /></View>
-          <View style={styles.profileCopy}><Text style={styles.profileName}>{name}</Text><Text style={styles.profileMeta}>{token ? '懒人装甲正在为你服务' : '登录后开始管理生活'}</Text></View>
+          <View style={styles.profileCopy}><Text style={styles.profileName}>{name}</Text>{!token ? <Text style={styles.profileMeta}>登录后开始使用</Text> : null}</View>
           {loading ? <ActivityIndicator color={colors.primary} /> : null}
         </View>
 
@@ -60,6 +68,8 @@ export default function Me() {
           <Divider />
           <MenuRow icon="server-outline" title="数据管理" detail="查看与管理你的数据" onPress={() => router.push('/data-management' as Href)} />
         </View>
+
+        {token ? <Pressable accessibilityRole="button" accessibilityLabel="退出登录" onPress={confirmLogout} style={({ pressed }) => [styles.logout, pressed && styles.pressed]}><Text style={styles.logoutText}>退出登录</Text></Pressable> : null}
       </ScrollView>
     </SafeAreaView>
   );
@@ -95,4 +105,6 @@ const styles = StyleSheet.create({
   rowTitle: { ...typography.bodyStrong, color: colors.text },
   rowDetail: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
   divider: { height: 1, backgroundColor: colors.border, marginLeft: 64 },
+  logout: { minHeight: 48, marginTop: spacing.xl, borderRadius: radius.md, borderWidth: 1, borderColor: colors.danger, alignItems: 'center', justifyContent: 'center' },
+  logoutText: { ...typography.bodyStrong, color: colors.danger },
 });

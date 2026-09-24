@@ -126,6 +126,7 @@ describe.sequential('R2 unified mobile observation → candidate → truth', { t
     expect(exported.length).toBeGreaterThan(0);
     const entry = exported[0];
     expect(entry).toMatchObject({
+      id: expect.stringMatching(/^[0-9a-f-]{36}$/),
       sourceType: expect.any(String),
       packageIdentity: 'com.example.mobile',
       evidenceHash: expect.stringMatching(/^[a-f0-9]{64}$/),
@@ -138,5 +139,7 @@ describe.sequential('R2 unified mobile observation → candidate → truth', { t
     expect(serialized).not.toMatch(/"amountMinor"|"currency"|"subjectKey"/);
     expect(exported.some((item) => item.status === 'truth_verified')).toBe(true);
     expect(exported.some((item) => item.truth !== null)).toBe(true);
+    await expect(evidence.get(owner.userId, entry.id)).resolves.toEqual(entry);
+    await expect(evidence.get(stranger.userId, entry.id)).rejects.toThrow(/not found/i);
   });
 });

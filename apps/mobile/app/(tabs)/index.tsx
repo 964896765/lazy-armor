@@ -12,7 +12,7 @@ import {
   MessageRow,
   WorkspaceHeader,
   WorkspaceSection,
-  colors,
+  workspaceColors as colors,
   radius,
   spacing,
   typography,

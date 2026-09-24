@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import type { ComponentProps } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { colors } from '../colors';
+import { workspaceColors as colors } from '../workspace';
 import { spacing } from '../spacing';
 import { typography } from '../typography';
 import { RailBadge } from './RailBadge';
@@ -27,7 +27,7 @@ const styles = StyleSheet.create({
   row: { minHeight: 72, flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: spacing.md, paddingHorizontal: spacing.sm },
   divider: { borderBottomWidth: 1, borderBottomColor: '#EAECF0' },
   pressed: { backgroundColor: '#F7F8FA' },
-  icon: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', position: 'relative' },
+  icon: { width: 42, height: 42, borderRadius: 13, alignItems: 'center', justifyContent: 'center', position: 'relative' },
   neutralIcon: { backgroundColor: '#F2F4F7' },
   successIcon: { backgroundColor: '#E8F7EF' },
   warningIcon: { backgroundColor: '#FFF4E5' },
@@ -36,7 +36,7 @@ const styles = StyleSheet.create({
   iconText: { fontSize: 17 },
   copy: { flex: 1, minWidth: 0 },
   titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
-  title: { ...typography.bodyStrong, color: colors.text, flex: 1 },
+  title: { ...typography.bodyStrong, fontSize: 15, lineHeight: 22, color: colors.text, flex: 1 },
   meta: { ...typography.caption, color: colors.textMuted },
-  description: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
+  description: { ...typography.caption, fontSize: 13, lineHeight: 20, color: colors.textSecondary, marginTop: 4 },
 });

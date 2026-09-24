@@ -27,7 +27,7 @@ import {
   mobileAppStateLabel,
   providerReadinessLabel,
 } from '../../src/connection-presenter';
-import { ActionButton, CollapsedAppFolder, EmptyState, Surface, WorkspaceHeader, WorkspaceSection, colors, radius, spacing, typography } from '../../src/design';
+import { ActionButton, CollapsedAppFolder, EmptyState, Surface, WorkspaceHeader, WorkspaceSection, workspaceColors as colors, radius, spacing, typography } from '../../src/design';
 
 WebBrowser.maybeCompleteAuthSession();
 

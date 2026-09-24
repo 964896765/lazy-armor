@@ -3,13 +3,13 @@ import { useQuery } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import type { ComponentProps } from 'react';
 import { useMemo, useState } from 'react';
-import { Pressable, SectionList, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, SectionList, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/api';
 import { useAuthStore } from '../../src/auth-store';
 import { AttentionBell } from '../../src/attention-bell';
-import { colors, radius, spacing, typography } from '../../src/design';
-import { SPACE_FILTERS, TOTAL_SCENARIO_COUNT, buildScenarioSections, scenarioKeyOf, scenarioStateLabel, type ScenarioRow, type ScenarioSection, type SpaceFilter } from '../../src/scenario-canvas-presenter';
+import { workspaceColors as colors, radius, spacing, typography } from '../../src/design';
+import { SPACE_FILTERS, buildScenarioSections, scenarioKeyOf, scenarioStateLabel, type ScenarioRow, type ScenarioSection, type SpaceFilter } from '../../src/scenario-canvas-presenter';
 
 type IconName = ComponentProps<typeof Ionicons>['name'];
 
@@ -38,18 +38,17 @@ export default function ScenarioCanvas() {
           <Text style={styles.title}>全部场景</Text>
           <AttentionBell />
         </View>
-        <Text style={styles.subtitle}>懒人装甲能替你管理的 {TOTAL_SCENARIO_COUNT} 件事</Text>
         <View style={styles.searchBox}>
           <Ionicons name="search" size={18} color={colors.textMuted} />
-          <TextInput value={query} onChangeText={setQuery} placeholder="搜索场景、计划、应用，或直接描述需求" placeholderTextColor={colors.textMuted} style={styles.searchInput} returnKeyType="search" />
+          <TextInput value={query} onChangeText={setQuery} placeholder="搜索场景或计划" placeholderTextColor={colors.textMuted} style={styles.searchInput} returnKeyType="search" />
         </View>
-        <View style={styles.filters}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters}>
           {SPACE_FILTERS.map((item) => (
             <Pressable key={item.key} accessibilityRole="button" onPress={() => setSpace(item.key)} style={[styles.filterChip, space === item.key && styles.filterChipActive]}>
               <Text style={[styles.filterText, space === item.key && styles.filterTextActive]}>{item.label}</Text>
             </Pressable>
           ))}
-        </View>
+        </ScrollView>
       </View>
       <SectionList
         sections={sections}
@@ -91,10 +90,9 @@ const styles = StyleSheet.create({
   header: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.sm },
   titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   title: { ...typography.title, color: colors.text },
-  subtitle: { ...typography.caption, color: colors.textSecondary, marginTop: 4 },
   searchBox: { minHeight: 44, marginTop: spacing.md, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.md, borderRadius: radius.md, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
   searchInput: { flex: 1, ...typography.body, color: colors.text, paddingVertical: 0 },
-  filters: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
+  filters: { gap: spacing.sm, marginTop: spacing.md, paddingRight: spacing.lg },
   filterChip: { minHeight: 32, justifyContent: 'center', paddingHorizontal: spacing.md, borderRadius: radius.pill, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
   filterChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   filterText: { ...typography.caption, color: colors.textSecondary, fontWeight: '600' },

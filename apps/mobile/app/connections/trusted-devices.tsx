@@ -48,7 +48,7 @@ export default function TrustedDevicesPage() {
       <Text style={styles.detail}>最近证明：{formatTime(device.lastProvedAt)}</Text>
       <Text style={styles.detail}>校验摘要：{shortFingerprint(device.publicKeyFingerprint)}</Text>
       <Text style={styles.detail}>{device.status === 'active' ? '可创建本机应用连接；每项通知来源仍须独立授权。' : `已于 ${device.revokedAt ? formatTime(device.revokedAt) : '此前'} 撤销，相关连接已停用。`}</Text>
-      {device.status === 'active' ? <View style={styles.action}><ActionButton label={revoke.isPending ? '正在撤销…' : '撤销这台设备'} tone="quiet" onPress={() => confirmRevoke(device)} disabled={revoke.isPending} /></View> : null}
+      <View style={styles.action}><ActionButton label="查看设备详情" tone="quiet" onPress={() => router.push(`/devices/${device.id}` as never)} />{device.status === 'active' ? <ActionButton label={revoke.isPending ? '正在撤销…' : '撤销这台设备'} tone="quiet" onPress={() => confirmRevoke(device)} disabled={revoke.isPending} /> : null}</View>
     </Surface>)}</View>
   </ScrollView></SafeAreaView>;
 }
@@ -60,5 +60,5 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors.background }, page: { flex: 1, backgroundColor: colors.background }, content: { padding: spacing.page, paddingBottom: 72 },
   header: { marginBottom: spacing.xxl }, title: { ...typography.display, color: colors.text }, subtitle: { ...typography.body, color: colors.textSecondary, marginTop: spacing.sm },
   list: { gap: spacing.md }, row: { flexDirection: 'row', justifyContent: 'space-between' }, copy: { gap: 2 }, name: { ...typography.cardTitle, color: colors.text }, status: { ...typography.caption }, active: { color: colors.success }, revoked: { color: colors.textMuted },
-  detail: { ...typography.caption, color: colors.textSecondary, marginTop: spacing.sm }, action: { alignItems: 'flex-start', marginTop: spacing.lg },
+  detail: { ...typography.caption, color: colors.textSecondary, marginTop: spacing.sm }, action: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, alignItems: 'flex-start', marginTop: spacing.lg },
 });

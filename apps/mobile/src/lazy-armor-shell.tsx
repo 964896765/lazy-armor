@@ -101,7 +101,15 @@ export function ConnectionRail({ state, navigation }: BottomTabBarProps) {
 
   return (
     <View style={[styles.frame, { top: Math.max(insets.top, 5), bottom: Math.max(insets.bottom, 5) }]}>
-      <RailItem label="懒人装甲" symbol="LA" tone="brand" selected={activeRoute === 'scenarios'} showLabel onPress={() => selectTab('scenarios')} />
+      <RailItem
+        label="懒人装甲"
+        imageSource={require('../assets/icon.png')}
+        imageScale={1.45}
+        tone="brand"
+        selected={activeRoute === 'scenarios'}
+        showLabel
+        onPress={() => selectTab('scenarios')}
+      />
       <View style={styles.divider} />
 
       <ScrollView style={styles.scroller} contentContainerStyle={styles.connections} showsVerticalScrollIndicator={false}>
@@ -180,7 +188,7 @@ const styles = StyleSheet.create({
   connections: { alignItems: 'center', gap: 2, paddingVertical: 2 },
   overlay: { flex: 1, flexDirection: 'row' },
   scrim: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: 'rgba(22, 33, 58, 0.44)' },
-  drawer: { width: '82%', maxWidth: 360, backgroundColor: colors.surface, paddingHorizontal: spacing.lg },
+  drawer: { width: '70%', maxWidth: 292, minWidth: 232, backgroundColor: colors.surface, paddingHorizontal: spacing.md },
   heading: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingBottom: spacing.lg },
   title: { ...typography.title, color: colors.text },
   close: { width: 36, height: 36, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background },

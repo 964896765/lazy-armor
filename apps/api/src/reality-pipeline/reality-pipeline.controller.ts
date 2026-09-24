@@ -17,4 +17,5 @@ export class RealityPipelineController {
   @Get('truth') listTruth(@CurrentUser() user: AuthenticatedUser) { return this.pipeline.listTruth(user.id); }
   @Get('truth/:id') truth(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) { return this.pipeline.truthResponse(user.id, id); }
   @Get('mobile-evidence') listEvidence(@CurrentUser() user: AuthenticatedUser) { return this.evidence.list(user.id); }
+  @Get('mobile-evidence/:id') getEvidence(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) { return this.evidence.get(user.id, id); }
 }
