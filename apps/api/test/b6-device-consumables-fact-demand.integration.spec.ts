@@ -148,5 +148,27 @@ describe.sequential('B6 device.consumables FactDemand source resolution', { time
     const replacement = await request(app.getHttpServer()).post(`/api/planning/offers/plans/${chosen.body.planId}/replan`)
       .set(auth(owner.token)).send({}).expect(201);
     expect(replacement.body.replacementOffer.status).toBe('UNAVAILABLE');
+
+    // A reminder result and a user-attested physical replacement are different
+    // outcomes. Only this explicit replacement operation advances the cycle.
+    await pool.query('UPDATE truth_records SET revoked_at=NULL WHERE id=UUID_TO_BIN(?)',
+      [ownerResult.body.demands[0].selectedSource.truthRecordId]);
+    const replaced = await request(app.getHttpServer()).patch(`/api/device-consumables/${consumableId}/replacement`)
+      .set(auth(owner.token)).send({ lastReplacedAt: '2026-09-24T08:00:00.000Z' }).expect(200);
+    expect(replaced.body.lastReplacedAt).toBe('2026-09-24T08:00:00.000Z');
+    const [replacementState] = await pool.query(
+      `SELECT dc.last_replaced_at, tr.revoked_at,
+        (SELECT COUNT(*) FROM audit_logs al WHERE al.user_id=UUID_TO_BIN(?) AND al.action='DEVICE_CONSUMABLE_REPLACEMENT_ATTESTED' AND al.resource_id=?) AS audit_count
+       FROM device_consumables dc JOIN truth_records tr ON tr.id=UUID_TO_BIN(?) WHERE dc.id=UUID_TO_BIN(?)`,
+      [owner.userId, consumableId, ownerResult.body.demands[0].selectedSource.truthRecordId, consumableId],
+    ) as [{ last_replaced_at: Date; revoked_at: Date | null; audit_count: number }[], unknown];
+    expect(replacementState[0]!.last_replaced_at.toISOString()).toBe('2026-09-24T08:00:00.000Z');
+    expect(replacementState[0]!.revoked_at).toBeInstanceOf(Date);
+    expect(Number(replacementState[0]!.audit_count)).toBe(1);
+    await request(app.getHttpServer()).patch(`/api/device-consumables/${consumableId}/replacement`)
+      .set(auth(owner.token)).send({ lastReplacedAt: '2026-09-24T08:00:00.000Z' }).expect(200);
+    const afterReplacement = await request(app.getHttpServer()).get(`/api/planning/offers/plans/${chosen.body.planId}/availability`)
+      .set(auth(owner.token)).expect(200);
+    expect(afterReplacement.body.assessment).toMatchObject({ state: 'RECONFIRMATION_REQUIRED' });
   });
 });

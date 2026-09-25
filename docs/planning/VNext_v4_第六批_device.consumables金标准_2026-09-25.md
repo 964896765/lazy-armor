@@ -59,3 +59,5 @@
 - 准备购物清单不等于完成购买；购买需要用户确认，保持既有风险与确认边界。
 - 无数据时不推断剩余寿命，返回 `NEEDS_MANUAL_INPUT` 并引导手动登记（`ALLOW_MANUAL_ASSISTED`）。
 - `LOCAL_NOTIFICATION_RECORD_PERSISTED` 只验证应用内提醒记录已持久化，不证明用户已经确认，更不证明耗材实际上已经更换。
+- 用户显式记录“已实际更换”时，服务端在同一事务内锁定耗材、推进更换周期、撤销上一周期的 remaining-life Truth，并记录 `DEVICE_CONSUMABLE_REPLACEMENT_ATTESTED` 审计证据；同一更换时间的并发/重试不重复推进。
+- 该记录仍是**用户声明（attestation）**，不是设备传感器或 Provider 的独立证明；前端不得将其文案升级为“已客观验证更换”。
