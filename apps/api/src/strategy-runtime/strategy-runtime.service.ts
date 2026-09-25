@@ -206,6 +206,8 @@ export class StrategyRuntimeService {
         eq(truthRecords.status, 'verified'),
         isNull(truthRecords.revokedAt),
         eq(truthRecords.resourceKey, dependency.resourceType),
+        ...(dependency.scope === 'EXACT_SUBJECT' && dependency.subjectKey
+          ? [eq(truthRecords.subjectKey, dependency.subjectKey)] : []),
         sql`JSON_UNQUOTE(JSON_EXTRACT(${truthRecordVersions.valueJson}, '$.factKey')) = ${dependency.factKey}`,
       ))
       .orderBy(desc(truthRecords.verifiedAt))

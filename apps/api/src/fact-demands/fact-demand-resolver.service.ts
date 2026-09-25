@@ -1,6 +1,7 @@
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import {
   deviceAppConnections,
+  deviceConsumables,
   deviceHeartbeats,
   trustedDevices,
   truthProvenance,
@@ -31,6 +32,7 @@ export class FactDemandResolverService {
   async resolve(userId: string, raw: ResolveFactDemandsDto) {
     try {
       const { request, contract } = factDemandRequestForScenario(raw);
+      await this.validateManagedSubject(userId, request.subject.resourceType, request.subject.subjectKey);
       const [providerCandidates, deviceCandidates, truths] = await Promise.all([
         this.providerCandidates(userId, contract.factDemands.flatMap((demand) => demand.acceptedSourceCapabilities)),
         this.deviceCandidates(userId, contract.factDemands.flatMap((demand) => demand.acceptedSourceCapabilities)),
@@ -60,15 +62,30 @@ export class FactDemandResolverService {
     }
   }
 
+  private async validateManagedSubject(userId: string, resourceType: string, subjectKey: string) {
+    if (resourceType !== 'device.consumable') return;
+    const prefix = 'device.consumable:';
+    const id = subjectKey.startsWith(prefix) ? subjectKey.slice(prefix.length) : '';
+    if (!id) throw new BadRequestException('ResourceSubject must reference a managed device consumable');
+    const owned = (await this.db.select({ id: deviceConsumables.id }).from(deviceConsumables)
+      .where(and(eq(deviceConsumables.id, id), eq(deviceConsumables.userId, userId))).limit(1))[0];
+    if (!owned) throw new BadRequestException('ResourceSubject does not belong to the current user');
+  }
+
   private async providerCandidates(userId: string, allowedCapabilities: readonly string[]): Promise<SourceCandidateEvidence[]> {
     const allowed = new Set(allowedCapabilities);
     const candidates = await this.readiness.projectCapabilityCandidates(userId);
     return candidates.filter((candidate) => allowed.has(candidate.capabilityKey)).map((candidate) => ({
       sourceId: `connection:${candidate.connectionId}:${candidate.capabilityKey}`,
+      kind: 'PROVIDER_CONNECTION' as const,
       providerKey: candidate.providerKey,
       connectionId: candidate.connectionId,
       sourceMode: candidate.sourceModes[0] ?? 'OFFICIAL_API',
       capabilityKey: candidate.capabilityKey,
+      trustedDeviceId: null,
+      deviceAppConnectionId: null,
+      truthRecordId: null,
+      truthVersionId: null,
       discovered: candidate.dimensions.declared,
       ownedByUser: true,
       implemented: candidate.dimensions.implemented,
@@ -110,10 +127,15 @@ export class FactDemandResolverService {
         && now - (row.lastHeartbeatAt?.getTime() ?? 0) <= 30_000;
       return {
         sourceId: `device-app:${row.id}`,
+        kind: 'TRUSTED_DEVICE' as const,
         providerKey: row.packageName,
         connectionId: null,
         sourceMode: 'NOTIFICATION',
         capabilityKey,
+        trustedDeviceId: row.trustedDeviceId,
+        deviceAppConnectionId: row.id,
+        truthRecordId: null,
+        truthVersionId: null,
         discovered: true,
         ownedByUser: true,
         implemented,
@@ -165,7 +187,7 @@ export class FactDemandResolverService {
         verified: row.status === 'verified',
         observedAt: (row.observedAt ?? row.createdAt).toISOString(),
         createdAt: row.createdAt.toISOString(),
-        conflict: row.status === 'conflict',
+        conflict: row.status === 'conflict' || row.status === 'conflicted',
       } satisfies FactTruthEvidence];
     });
   }

@@ -8,11 +8,12 @@ import {
   type ScenarioGoalSpec,
   type ScenarioResourceSubject,
 } from './scenario-contract-v2';
+import { buildSourceSelection, sourceIdNamespace, type SourceSelection, type SourceSelectionKind } from './source-selection';
 
 export const FACT_DEMAND_CONTRACT_VERSION = 1 as const;
 export const FACT_DEMAND_STATES = [
   'SATISFIED', 'CONFLICT', 'STALE', 'NEEDS_VERIFICATION', 'PENDING_ACQUISITION', 'NEEDS_PERMISSION',
-  'DEVICE_OFFLINE', 'PROVIDER_UNHEALTHY', 'SOURCE_NOT_IMPLEMENTED', 'NEEDS_SOURCE',
+  'DEVICE_OFFLINE', 'PROVIDER_UNHEALTHY', 'SOURCE_NOT_IMPLEMENTED', 'NEEDS_MANUAL_INPUT', 'NEEDS_SOURCE',
 ] as const;
 export type FactDemandState = typeof FACT_DEMAND_STATES[number];
 
@@ -27,10 +28,15 @@ export type FactDemandRequest = z.infer<typeof factDemandRequestSchema>;
 
 export interface SourceCandidateEvidence {
   sourceId: string;
+  kind: SourceSelectionKind;
   providerKey: string;
   connectionId: string | null;
   sourceMode: string;
   capabilityKey: string | null;
+  trustedDeviceId: string | null;
+  deviceAppConnectionId: string | null;
+  truthRecordId: string | null;
+  truthVersionId: string | null;
   discovered: boolean;
   ownedByUser: boolean;
   implemented: boolean;
@@ -82,6 +88,7 @@ export interface FactDemandProjection {
   dataActuallyAcquired: boolean;
   dataVerified: boolean;
   selectedSourceId: string | null;
+  selectedSource: SourceSelection | null;
   candidateSources: readonly Readonly<SourceCandidateEvidence & { rank: number; usable: boolean; acquired: boolean; verified: boolean }>[];
   truthEvidence: readonly FactTruthEvidence[];
   reasonCodes: readonly string[];
@@ -107,18 +114,54 @@ export function buildFactDemandProjections(input: {
   const now = new Date(input.evaluatedAt);
   if (Number.isNaN(now.getTime())) throw new Error('FactDemand evaluatedAt must be an ISO timestamp');
   return Object.freeze(input.contract.factDemands.map((definition) => {
-    const compatibleSources = input.sources.filter((source) => source.contractCompatible
-      && (definition.acceptedSourceCapabilities.includes(source.capabilityKey ?? '')
-        || definition.acceptedSourceModes.includes(source.sourceMode as never)));
     const relevantTruths = input.truths.filter((truth) => truth.factKey === definition.factKey
       && truth.subjectKey === request.subject.subjectKey);
+    const truthSources: SourceCandidateEvidence[] = relevantTruths
+      .filter((truth) => truth.sourceMode === 'MANUAL' || truth.sourceMode === 'INTERNAL')
+      .map((truth) => ({
+        sourceId: `${truth.sourceMode === 'MANUAL' ? 'manual' : 'internal'}:${truth.truthRecordId}:${truth.truthVersionId}`,
+        kind: truth.sourceMode === 'MANUAL' ? 'MANUAL_INPUT' : 'INTERNAL_FACT',
+        providerKey: truth.sourceProviderKey,
+        connectionId: null,
+        sourceMode: truth.sourceMode,
+        capabilityKey: null,
+        trustedDeviceId: null,
+        deviceAppConnectionId: null,
+        truthRecordId: truth.truthRecordId,
+        truthVersionId: truth.truthVersionId,
+        discovered: true,
+        ownedByUser: true,
+        implemented: true,
+        authorized: true,
+        deviceOnline: true,
+        healthy: !truth.conflict,
+        contractCompatible: definition.acceptedSourceModes.includes(truth.sourceMode as never),
+        estimatedLatencyMs: 0,
+        costClass: 'FREE',
+        evidenceRefs: [`truth-record:${truth.truthRecordId}`, `truth-version:${truth.truthVersionId}`],
+        reasonCodes: truth.conflict ? ['TRUTH_SOURCE_CONFLICT'] : [],
+      }));
+    const manualPending: SourceCandidateEvidence[] = definition.acceptedSourceModes.includes('MANUAL')
+      && !truthSources.some((source) => source.kind === 'MANUAL_INPUT') ? [{
+        sourceId: `manual:pending:${catalogHash({ subjectKey: request.subject.subjectKey, factKey: definition.factKey }).slice(0, 24)}`,
+        kind: 'MANUAL_INPUT', providerKey: 'manual', connectionId: null, sourceMode: 'MANUAL', capabilityKey: null,
+        trustedDeviceId: null, deviceAppConnectionId: null, truthRecordId: null, truthVersionId: null,
+        discovered: false, ownedByUser: true, implemented: true, authorized: true, deviceOnline: true, healthy: true,
+        contractCompatible: true, estimatedLatencyMs: null, costClass: 'FREE', evidenceRefs: [], reasonCodes: ['MANUAL_INPUT_REQUIRED'],
+      }] : [];
+    const compatibleSources = [...input.sources, ...truthSources, ...manualPending].filter((source) => source.contractCompatible
+      && (definition.acceptedSourceCapabilities.includes(source.capabilityKey ?? '')
+        || definition.acceptedSourceModes.includes(source.sourceMode as never)));
     const freshTruths = relevantTruths.filter((truth) => now.getTime() - new Date(truth.createdAt).getTime() <= definition.maximumAgeSeconds * 1000);
     const verifiedTruths = freshTruths.filter((truth) => truth.verified
       && REALITY_RANK[truth.realityLevel] >= REALITY_RANK[definition.minimumReality]);
     const conflict = relevantTruths.some((truth) => truth.conflict)
       || new Set(verifiedTruths.map((truth) => truth.valueHash)).size > 1;
     const rankedSources = compatibleSources.map((source) => {
-      const usable = source.discovered && source.ownedByUser && source.implemented && source.authorized
+      const identityComplete = source.kind === 'PROVIDER_CONNECTION' ? Boolean(source.connectionId && source.capabilityKey)
+        : source.kind === 'TRUSTED_DEVICE' ? Boolean(source.trustedDeviceId && source.deviceAppConnectionId && source.capabilityKey)
+          : Boolean(source.truthRecordId && source.truthVersionId);
+      const usable = identityComplete && source.discovered && source.ownedByUser && source.implemented && source.authorized
         && source.deviceOnline && source.healthy && source.contractCompatible;
       const matchingTruth = relevantTruths.filter((truth) => truth.sourceProviderKey === source.providerKey);
       const acquired = matchingTruth.length > 0;
@@ -140,6 +183,7 @@ export function buildFactDemandProjections(input: {
     else if (rankedSources.some((source) => !source.deviceOnline)) state = 'DEVICE_OFFLINE';
     else if (rankedSources.some((source) => !source.healthy)) state = 'PROVIDER_UNHEALTHY';
     else if (rankedSources.some((source) => !source.implemented)) state = 'SOURCE_NOT_IMPLEMENTED';
+    else if (rankedSources.some((source) => source.kind === 'MANUAL_INPUT' && !source.truthVersionId)) state = 'NEEDS_MANUAL_INPUT';
     else state = 'NEEDS_SOURCE';
     reasonCodes.push(`FACT_DEMAND_${state}`);
     if (!compatibleSources.length) reasonCodes.push('NO_CONTRACT_COMPATIBLE_SOURCE');
@@ -173,6 +217,16 @@ export function buildFactDemandProjections(input: {
       dataActuallyAcquired: relevantTruths.length > 0,
       dataVerified: verifiedTruths.length > 0 && !conflict,
       selectedSourceId: selected?.sourceId ?? null,
+      selectedSource: selected ? buildSourceSelection({
+        kind: selected.kind,
+        sourceId: selected.sourceId,
+        connectionId: selected.connectionId,
+        capabilityKey: selected.capabilityKey,
+        trustedDeviceId: selected.trustedDeviceId,
+        deviceAppConnectionId: selected.deviceAppConnectionId,
+        truthRecordId: selected.truthRecordId,
+        truthVersionId: selected.truthVersionId,
+      }) : null,
       candidateSources: Object.freeze(rankedSources),
       truthEvidence: Object.freeze(relevantTruths),
       reasonCodes: Object.freeze(reasonCodes),

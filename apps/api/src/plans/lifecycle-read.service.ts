@@ -100,6 +100,12 @@ export class LifecycleReadService {
 
     const verificationStage = resultStage(latestEvidenceStates(evidence), 'VERIFICATION_EVIDENCE');
     if (verificationStage) observe({ key: 'VERIFICATION', ...verificationStage });
+    else if (execution.status === 'succeeded' && notices.length > 0) {
+      // An in-app notification is a local, persisted outcome. This proves that
+      // the reminder record was created; it deliberately does not prove that
+      // the external business event (for example, replacing a consumable) happened.
+      observe({ key: 'VERIFICATION', state: 'SUCCEEDED', reason: 'LOCAL_NOTIFICATION_RECORD_PERSISTED' });
+    }
 
     const reconciliationStage = reconciliationObservation(cases, events.map((row) => row.eventType));
     if (reconciliationStage) observe({ key: 'FALLBACK_RECONCILIATION', ...reconciliationStage });

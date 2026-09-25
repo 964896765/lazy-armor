@@ -4,6 +4,7 @@ import {
   scenarioContractV2ByKey,
   type FactDemandRequest,
   type FactTruthEvidence,
+  type ScenarioContractV2,
   type SourceCandidateEvidence,
 } from '../src';
 
@@ -18,8 +19,9 @@ const now = '2026-09-25T12:00:00.000Z';
 
 function source(overrides: Partial<SourceCandidateEvidence> = {}): SourceCandidateEvidence {
   return {
-    sourceId: 'provider-1:connection-1', providerKey: 'provider-1', connectionId: 'connection-1',
+    sourceId: 'connection:connection-1:READ_SHIPMENT', kind: 'PROVIDER_CONNECTION', providerKey: 'provider-1', connectionId: 'connection-1',
     sourceMode: 'OFFICIAL_API', capabilityKey: 'READ_SHIPMENT', discovered: true, ownedByUser: true,
+    trustedDeviceId: null, deviceAppConnectionId: null, truthRecordId: null, truthVersionId: null,
     implemented: true, authorized: true, deviceOnline: true, healthy: true, contractCompatible: true,
     estimatedLatencyMs: 500, costClass: 'FREE', evidenceRefs: ['connection:connection-1'], reasonCodes: [],
     ...overrides,
@@ -68,7 +70,8 @@ describe('FactDemand contract and deterministic Source Resolution', () => {
       state: 'SATISFIED', capabilityDiscovered: true, userOwnsSource: true,
       sourceCurrentlyUsable: true, dataActuallyAcquired: true, dataVerified: true,
     });
-    expect(result.selectedSourceId).toBe('provider-1:connection-1');
+    expect(result.selectedSourceId).toBe('connection:connection-1:READ_SHIPMENT');
+    expect(result.selectedSource).toMatchObject({ kind: 'PROVIDER_CONNECTION', connectionId: 'connection-1' });
   });
 
   it('marks old data stale, fresh unverified data pending verification, and identical duplicates non-conflicting', () => {
@@ -79,7 +82,7 @@ describe('FactDemand contract and deterministic Source Resolution', () => {
   });
 
   it('does not guess when multiple verified sources conflict', () => {
-    const result = project([source(), source({ sourceId: 'provider-2:connection-2', providerKey: 'provider-2' })], [
+    const result = project([source(), source({ sourceId: 'connection:connection-2:READ_SHIPMENT', connectionId: 'connection-2', providerKey: 'provider-2' })], [
       truth(), truth({ truthRecordId: 'truth-2', truthVersionId: 'truth-version-2', sourceProviderKey: 'provider-2', valueHash: 'b'.repeat(64) }),
     ]);
     expect(result.state).toBe('CONFLICT');
@@ -91,5 +94,18 @@ describe('FactDemand contract and deterministic Source Resolution', () => {
     const result = project([source({ capabilityKey: 'READ_BANK_BALANCE', sourceMode: 'OS_API' })]);
     expect(result.state).toBe('NEEDS_SOURCE');
     expect(result.candidateSources).toHaveLength(0);
+  });
+
+  it('uses a user-scoped verified INTERNAL truth as an INTERNAL_FACT identity when the contract allows it', () => {
+    const internalContract = {
+      ...contract,
+      definitionHash: 'c'.repeat(64),
+      factDemands: contract.factDemands.map((item) => ({ ...item, acceptedSourceModes: ['INTERNAL'] as const })),
+    } as ScenarioContractV2;
+    const result = buildFactDemandProjections({ request, contract: internalContract, sources: [], truths: [truth({
+      sourceMode: 'INTERNAL', sourceProviderKey: 'lazy-armor-internal',
+    })], evaluatedAt: now })[0]!;
+    expect(result).toMatchObject({ state: 'SATISFIED', sourceCurrentlyUsable: true,
+      selectedSource: { kind: 'INTERNAL_FACT', truthRecordId: 'truth-1', truthVersionId: 'truth-version-1' } });
   });
 });

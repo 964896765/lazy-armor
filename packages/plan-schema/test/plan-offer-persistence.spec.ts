@@ -10,8 +10,11 @@ const demand = (overrides: Partial<FactDemandProjection> = {}): FactDemandProjec
   verificationRequirements: ['SOURCE_EVIDENCE'], conflictPolicy: 'LATEST_VERIFIED_THEN_OBSERVED',
   missingPolicy: 'BLOCK_PLAN_OFFER', state: 'PENDING_ACQUISITION', capabilityDiscovered: true, userOwnsSource: true,
   sourceCurrentlyUsable: true, dataActuallyAcquired: false, dataVerified: false, selectedSourceId: 'device-app:1',
-  candidateSources: [{ sourceId: 'device-app:1', providerKey: 'cainiao', connectionId: null, sourceMode: 'NOTIFICATION',
+  selectedSource: { schemaVersion: 1, kind: 'TRUSTED_DEVICE', sourceId: 'device-app:1', connectionId: null,
+    capabilityKey: 'READ_SHIPMENT', trustedDeviceId: 'device-1', deviceAppConnectionId: '1', truthRecordId: null, truthVersionId: null },
+  candidateSources: [{ sourceId: 'device-app:1', kind: 'TRUSTED_DEVICE', providerKey: 'cainiao', connectionId: null, sourceMode: 'NOTIFICATION',
     capabilityKey: 'READ_SHIPMENT', discovered: true, ownedByUser: true, implemented: true, authorized: true,
+    trustedDeviceId: 'device-1', deviceAppConnectionId: '1', truthRecordId: null, truthVersionId: null,
     deviceOnline: true, healthy: true, contractCompatible: true, estimatedLatencyMs: 10, costClass: 'FREE',
     evidenceRefs: [], reasonCodes: [], rank: 1000, usable: true, acquired: false, verified: false }],
   truthEvidence: [], reasonCodes: [], evaluatedAt: '2026-09-25T00:00:00.000Z', ...overrides,
@@ -24,7 +27,9 @@ describe('persistent Plan Offer contract', () => {
   it('allows a draft only with a currently usable source and never promises execution', () => {
     const offer = buildPersistentPlanOffer({ request, demands: [demand()], contractHash: 'a'.repeat(64),
       strategyKey: 'SILENT_FOLLOW_UP', planDefinitionHash: 'b'.repeat(64), generatedAt: '2026-09-25T00:00:00.000Z' });
-    expect(offer).toMatchObject({ state: 'DRAFT_ELIGIBLE', selectable: true, planMode: 'DRAFT' });
+    expect(offer).toMatchObject({ contractVersion: 2, state: 'DRAFT_ELIGIBLE', selectable: true, planMode: 'DRAFT',
+      sourceSelections: [{ demandId: 'fd_test', selection: { kind: 'TRUSTED_DEVICE' } }] });
+    expect(offer.sourceSelectionHash).toMatch(/^[a-f0-9]{64}$/);
     expect(offer.reasonCodes).toContain('EXECUTION_CAPABILITY_NOT_YET_PROMISED');
   });
 

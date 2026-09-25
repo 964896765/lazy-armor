@@ -1,6 +1,7 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { connections, deviceAppConnections, deviceHeartbeats, planCreationContracts, planOfferSnapshots, plans,
-  trustedDevices } from '@lazy-armor/database';
+import { connectionCapabilityGrants, connectionPermissions, connections, connectorCapabilities, deviceAppConnections,
+  deviceHeartbeats, planCreationContracts, planOfferSnapshots, plans, providerCapabilityHealth, trustedDevices,
+  truthProvenance, truthRecords, truthRecordVersions } from '@lazy-armor/database';
 import { assessPlanAvailability, buildDeterministicPlanOffer, buildPersistentPlanOffer, canonicalStringify, catalogHash,
   choosePlanOfferRequestSchema, compileScenarioPlan, definitionHash, persistentPlanOfferRequestSchema,
   scenarioContractV2ByKey, type FactDemandProjection, type PersistentPlanOffer } from '@lazy-armor/plan-schema';
@@ -155,7 +156,7 @@ export class PlanningOffersService {
     const assessment = assessPlanAvailability({
       expectedContractHash: authority.contract.contractHash,
       currentContractHash: current.contractHash,
-      previousSelections: authority.contract.sourceSelectionJson as Array<{ demandId: string; selectedSourceId: string | null }>,
+      previousSelections: jsonArray(authority.contract.sourceSelectionJson),
       currentDemands: current.demands,
       evaluatedAt: current.evaluatedAt,
     });
@@ -215,24 +216,56 @@ export class PlanningOffersService {
   private async lockAndValidateSelectedSources(tx: Parameters<Parameters<InjectedDatabase['transaction']>[0]>[0], userId: string,
     demands: readonly FactDemandProjection[], now: Date) {
     for (const demand of demands) {
-      if (!demand.selectedSourceId) return false;
-      if (demand.selectedSourceId.startsWith('connection:')) {
-        const connectionId = demand.selectedSourceId.split(':')[1]!;
+      const selection = demand.selectedSource;
+      if (!selection) return false;
+      if (selection.kind === 'PROVIDER_CONNECTION') {
+        const connectionId = selection.connectionId!;
         let query = tx.select().from(connections).where(and(eq(connections.id, connectionId), eq(connections.userId, userId))).limit(1);
         if ('for' in query) query = query.for('update') as typeof query;
         const row = (await query)[0];
         if (!row || row.status !== 'connected' || (row.expiresAt && row.expiresAt <= now)) return false;
-      } else if (demand.selectedSourceId.startsWith('device-app:')) {
-        const appId = demand.selectedSourceId.slice('device-app:'.length);
+        const capabilityKey = selection.capabilityKey;
+        if (!capabilityKey) return false;
+        let grantQuery = tx.select().from(connectionCapabilityGrants).where(and(eq(connectionCapabilityGrants.connectionId, connectionId),
+          eq(connectionCapabilityGrants.capabilityKey, capabilityKey))).limit(1);
+        if ('for' in grantQuery) grantQuery = grantQuery.for('update') as typeof grantQuery;
+        const grant = (await grantQuery)[0];
+        let permissionQuery = tx.select({ permission: connectionPermissions }).from(connectionPermissions)
+          .innerJoin(connectorCapabilities, eq(connectionPermissions.connectorCapabilityId, connectorCapabilities.id))
+          .where(and(eq(connectionPermissions.connectionId, connectionId), eq(connectorCapabilities.key, capabilityKey))).limit(1);
+        if ('for' in permissionQuery) permissionQuery = permissionQuery.for('update') as typeof permissionQuery;
+        const permission = (await permissionQuery)[0]?.permission;
+        const grantValid = grant?.status === 'GRANTED' && !grant.revokedAt && (!grant.expiresAt || grant.expiresAt > now);
+        const legacyValid = permission?.granted === 1 && !permission.revokedAt && (!permission.expiresAt || permission.expiresAt > now);
+        if (!grantValid && !legacyValid) return false;
+        let healthQuery = tx.select().from(providerCapabilityHealth).where(and(eq(providerCapabilityHealth.connectionId, connectionId),
+          eq(providerCapabilityHealth.capabilityKey, capabilityKey))).limit(1);
+        if ('for' in healthQuery) healthQuery = healthQuery.for('update') as typeof healthQuery;
+        const health = (await healthQuery)[0];
+        if (health && (health.status !== 'HEALTHY' || (health.validUntil && health.validUntil <= now))) return false;
+      } else if (selection.kind === 'TRUSTED_DEVICE') {
+        const appId = selection.deviceAppConnectionId!;
         let query = tx.select({ app: deviceAppConnections, device: trustedDevices, heartbeat: deviceHeartbeats })
           .from(deviceAppConnections).innerJoin(trustedDevices, and(eq(deviceAppConnections.trustedDeviceId, trustedDevices.id),
             eq(trustedDevices.userId, userId))).leftJoin(deviceHeartbeats, and(eq(deviceHeartbeats.trustedDeviceId, trustedDevices.id),
             eq(deviceHeartbeats.userId, userId))).where(and(eq(deviceAppConnections.id, appId), eq(deviceAppConnections.userId, userId))).limit(1);
         if ('for' in query) query = query.for('update') as typeof query;
         const row = (await query)[0];
-        if (!row || row.app.enabled !== 1 || !row.app.modesJson.includes('notification_read') || row.device.status !== 'active'
+        if (!row || row.device.id !== selection.trustedDeviceId || row.app.enabled !== 1 || !row.app.modesJson.includes('notification_read') || row.device.status !== 'active'
           || row.device.revokedAt || row.heartbeat?.onlineState !== 'online' || !row.heartbeat.lastHeartbeatAt
           || now.getTime() - row.heartbeat.lastHeartbeatAt.getTime() > 30_000) return false;
+      } else if (selection.kind === 'MANUAL_INPUT' || selection.kind === 'INTERNAL_FACT') {
+        const row = (await tx.select({ record: truthRecords, version: truthRecordVersions, provenance: truthProvenance })
+          .from(truthRecords).innerJoin(truthRecordVersions, and(eq(truthRecordVersions.id, selection.truthVersionId!),
+            eq(truthRecordVersions.truthRecordId, truthRecords.id)))
+          .innerJoin(truthProvenance, eq(truthProvenance.truthRecordVersionId, truthRecordVersions.id))
+          .where(and(eq(truthRecords.id, selection.truthRecordId!), eq(truthRecords.userId, userId),
+            eq(truthRecords.subjectKey, demand.subject.subjectKey))).limit(1))[0];
+        const valueFactKey = row?.version.valueJson.factKey;
+        const expectedMode = selection.kind === 'MANUAL_INPUT' ? 'MANUAL' : 'INTERNAL';
+        if (!row || row.record.currentVersionId !== selection.truthVersionId || row.record.status !== 'verified'
+          || row.record.revokedAt || valueFactKey !== demand.factKey || row.provenance.sourceMode !== expectedMode
+          || now.getTime() - row.version.createdAt.getTime() > demand.maximumAgeSeconds * 1_000) return false;
       } else return false;
     }
     return true;
@@ -241,7 +274,16 @@ export class PlanningOffersService {
 
 function sourceSelections(demands: readonly FactDemandProjection[]) {
   return demands.map((demand) => ({ demandId: demand.demandId, factKey: demand.factKey,
-    selectedSourceId: demand.selectedSourceId, state: demand.state, reasonCodes: demand.reasonCodes }));
+    subjectKey: demand.subject.subjectKey, selectedSourceId: demand.selectedSourceId, selectedSource: demand.selectedSource,
+    maximumAgeSeconds: demand.maximumAgeSeconds, verificationRequirements: demand.verificationRequirements,
+    truthEvidence: demand.truthEvidence.map((truth) => ({ truthRecordId: truth.truthRecordId,
+      truthVersionId: truth.truthVersionId, valueHash: truth.valueHash, observedAt: truth.observedAt })),
+    state: demand.state, reasonCodes: demand.reasonCodes }));
+}
+function jsonArray(value: unknown): Array<{ demandId: string; selectedSourceId?: string | null; selectedSource?: import('@lazy-armor/plan-schema').SourceSelection | null }> {
+  if (Array.isArray(value)) return value as Array<{ demandId: string; selectedSourceId?: string | null; selectedSource?: import('@lazy-armor/plan-schema').SourceSelection | null }>;
+  if (typeof value === 'string') { const parsed: unknown = JSON.parse(value); if (Array.isArray(parsed)) return parsed as ReturnType<typeof jsonArray>; }
+  throw new ConflictException('Persisted source selection contract is invalid');
 }
 function hash(value: unknown) { return createHash('sha256').update(canonicalStringify(value)).digest('hex'); }
 function isDuplicate(error: unknown) { let current = error; for (let index = 0; index < 5 && current && typeof current === 'object'; index += 1) {

@@ -91,6 +91,10 @@ describe.sequential('VNext persistent Plan Offer transaction', { timeout: 90_000
       .set(auth(owner.token)).expect(200);
     expect(before.body.assessment).toMatchObject({ state: 'REFRESH_REQUIRED' });
     expect(before.body.subject.subjectKey).toBe(body('continuous-reassessment').subject.subjectKey);
+    await pool.query("UPDATE plan_creation_contracts SET source_selection_json=JSON_REMOVE(source_selection_json,'$[0].selectedSource') WHERE plan_id=UUID_TO_BIN(?)", [chosen.body.planId]);
+    const legacy = await request(app.getHttpServer()).get(`/api/planning/offers/plans/${chosen.body.planId}/availability`)
+      .set(auth(owner.token)).expect(200);
+    expect(legacy.body.assessment).toMatchObject({ state: 'REFRESH_REQUIRED' });
 
     await pool.query("UPDATE device_heartbeats SET online_state='offline' WHERE trusted_device_id=UUID_TO_BIN(?)", [deviceId]);
     const unavailable = await request(app.getHttpServer()).get(`/api/planning/offers/plans/${chosen.body.planId}/availability`)
@@ -137,6 +141,14 @@ describe.sequential('VNext persistent Plan Offer transaction', { timeout: 90_000
     expect(await scalar('SELECT COUNT(*) value FROM plan_creation_contracts WHERE offer_snapshot_id=UUID_TO_BIN(?)', [offerId])).toBe(0);
     const [rows] = await pool.query('SELECT status FROM plan_offer_snapshots WHERE id=UUID_TO_BIN(?)', [offerId]) as [{ status: string }[], unknown];
     expect(rows[0]?.status).toBe('EXPIRED');
+  });
+
+  it('invalidates a tampered immutable Scenario Contract snapshot', async () => {
+    const offerId = await createOffer('contract-tamper');
+    await pool.query('UPDATE plan_offer_snapshots SET contract_hash=? WHERE id=UUID_TO_BIN(?)', [sha(`tampered-${unique}`), offerId]);
+    await request(app.getHttpServer()).post(`/api/planning/offers/${offerId}/choose`).set(auth(owner.token))
+      .send({ idempotencyKey: `tamper-${unique}` }).expect(409);
+    expect(await scalar('SELECT COUNT(*) value FROM plan_creation_contracts WHERE offer_snapshot_id=UUID_TO_BIN(?)', [offerId])).toBe(0);
   });
 
   it('rolls back Plan, PlanVersion and contract when Strategy Binding fails', async () => {

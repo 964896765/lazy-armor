@@ -110,6 +110,10 @@ export {
   type ChoosePlanOfferRequest, type PersistentPlanOffer, type PersistentPlanOfferRequest, type PlanAvailabilityAssessment,
   type PlanAvailabilityState, type PlanOfferState,
 } from './plan-offer-persistence';
+export {
+  SOURCE_SELECTION_KINDS, SOURCE_SELECTION_SCHEMA_VERSION, buildSourceSelection, isSourceSelection, sourceIdNamespace,
+  type SourceSelection, type SourceSelectionKind,
+} from './source-selection';
 
 export const SOURCE_TYPES = ['manual', 'email', 'calendar', 'notification', 'file', 'webhook', 'internal', 'commerce', 'device', 'vehicle', 'billing', 'content_platform'] as const;
 export const TRIGGER_TYPES = ['manual', 'schedule', 'event', 'webhook', 'threshold', 'date_before', 'date_after', 'data_changed'] as const;

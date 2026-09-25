@@ -110,7 +110,7 @@ export class PlanLifecycleProjectionService {
       const availability = assessPlanAvailability({
         expectedContractHash: creationContract.contractHash,
         currentContractHash: exactDemands.contractHash,
-        previousSelections: creationContract.sourceSelection as Array<{ demandId: string; selectedSourceId: string | null }>,
+        previousSelections: parseSelections(creationContract.sourceSelection),
         currentDemands: exactDemands.demands,
         evaluatedAt: exactDemands.evaluatedAt,
       });
@@ -154,7 +154,7 @@ export class PlanLifecycleProjectionService {
 }
 
 function hardDemandBlock(demand: FactDemandProjection) {
-  return ['CONFLICT', 'NEEDS_PERMISSION', 'DEVICE_OFFLINE', 'PROVIDER_UNHEALTHY', 'SOURCE_NOT_IMPLEMENTED', 'NEEDS_SOURCE'].includes(demand.state);
+  return ['CONFLICT', 'NEEDS_PERMISSION', 'DEVICE_OFFLINE', 'PROVIDER_UNHEALTHY', 'SOURCE_NOT_IMPLEMENTED', 'NEEDS_MANUAL_INPUT', 'NEEDS_SOURCE'].includes(demand.state);
 }
 function demandReadinessState(demands: readonly FactDemandProjection[]): PlanLifecycleObservation['state'] {
   if (demands.some(hardDemandBlock)) return 'BLOCKED';
@@ -181,4 +181,9 @@ function mapInnerState(state: string): PlanLifecycleObservation['state'] {
   if (state === 'RUNNING' || state === 'UNKNOWN') return 'ACTIVE';
   if (state === 'BLOCKED' || state === 'FAILED' || state === 'OUTCOME_UNKNOWN' || state === 'SKIPPED') return state;
   return 'READY';
+}
+function parseSelections(value: unknown): Array<{ demandId: string; selectedSourceId?: string | null; selectedSource?: import('@lazy-armor/plan-schema').SourceSelection | null }> {
+  if (Array.isArray(value)) return value as ReturnType<typeof parseSelections>;
+  if (typeof value === 'string') { const parsed: unknown = JSON.parse(value); if (Array.isArray(parsed)) return parsed as ReturnType<typeof parseSelections>; }
+  return [];
 }

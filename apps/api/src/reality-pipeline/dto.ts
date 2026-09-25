@@ -1,4 +1,4 @@
-import { IsIn, IsISO8601, IsObject, IsOptional, IsString, IsUUID, Matches, MaxLength } from 'class-validator';
+import { IsIn, IsISO8601, IsObject, IsOptional, IsString, IsUUID, Matches, MaxLength, MinLength } from 'class-validator';
 import { PARSER_KEYS, SOURCE_MODES, type SourceObservationInput } from '@lazy-armor/plan-schema';
 
 export class CreateSourceObservationDto implements SourceObservationInput {
@@ -12,4 +12,14 @@ export class CreateSourceObservationDto implements SourceObservationInput {
   @IsString() @Matches(/^[a-f0-9]{64}$/) evidenceHash!: string;
   @IsISO8601() observedAt!: string;
   @IsOptional() @IsISO8601() occurredAt?: string | null;
+}
+
+export const MANUAL_FACT_PARSERS = ['generic.consumable-remaining.v1', 'generic.household-supply.v1'] as const;
+
+export class RegisterManualFactDto {
+  @IsString() @MinLength(8) @MaxLength(120) idempotencyKey!: string;
+  @IsIn(MANUAL_FACT_PARSERS) parserKey!: typeof MANUAL_FACT_PARSERS[number];
+  @IsString() @MaxLength(120) resourceHint!: string;
+  @IsObject() payload!: SourceObservationInput['payload'];
+  @IsISO8601() observedAt!: string;
 }

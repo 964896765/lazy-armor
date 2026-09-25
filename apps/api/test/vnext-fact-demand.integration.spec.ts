@@ -64,9 +64,12 @@ describe.sequential('VNext FactDemand and user-scoped Source Resolver', { timeou
       userOwnsSource: true, sourceCurrentlyUsable: true, dataActuallyAcquired: false, dataVerified: false,
     })]);
     expect(response.body.demands[0].candidateSources[0]).toMatchObject({
-      providerKey: 'com.cainiao.wireless', sourceMode: 'NOTIFICATION', capabilityKey: 'READ_SHIPMENT',
+      kind: 'TRUSTED_DEVICE', providerKey: 'com.cainiao.wireless', sourceMode: 'NOTIFICATION', capabilityKey: 'READ_SHIPMENT',
+      trustedDeviceId, deviceAppConnectionId: appConnectionId,
       discovered: true, ownedByUser: true, implemented: true, authorized: true, deviceOnline: true, usable: true,
     });
+    expect(response.body.demands[0].selectedSource).toMatchObject({ kind: 'TRUSTED_DEVICE', trustedDeviceId,
+      deviceAppConnectionId: appConnectionId });
   });
 
   it('isolates sources and Truth by user and exact ResourceSubject', async () => {
