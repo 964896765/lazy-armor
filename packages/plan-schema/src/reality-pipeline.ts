@@ -216,7 +216,10 @@ export function parseAndNormalizeObservation(input: SourceObservationInput): Nor
     const transactionState = optionalEnum(input.payload.transactionState, ['POSTED', 'PENDING', 'REFUND', 'REVERSAL'] as const);
     // Cross-source matching only follows a stable source-supplied transaction id.
     // Time/amount/merchant similarity must never silently merge transactions.
-    const canonicalSubject = transactionId ? `finance.transaction:${transactionId}` : subjectKey;
+    // The source provider (and account connection when present) namespaces the id
+    // so two sources cannot collide on the same external transaction id.
+    const sourceNamespace = input.connectionId ? `${input.providerKey}:${input.connectionId}` : input.providerKey;
+    const canonicalSubject = transactionId ? `finance.transaction:${sourceNamespace}:${transactionId}` : subjectKey;
     const value: Record<string, JsonValue> = { amountMinor, currency };
     if (transactionId) value.transactionId = transactionId;
     if (relatedTransactionId) value.relatedTransactionId = relatedTransactionId;
