@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { catalogHash, scenarioByKey, type RealityLevel } from './runtime-catalog';
+import { type ProductDomainKey } from './product-model';
 
 export const SCENARIO_CONTRACT_VERSION = 2 as const;
 export const SCENARIO_GOVERNANCE_STATES = [
@@ -81,6 +82,42 @@ const deviceConsumables = scenarioByKey('device.consumables');
 if (!deviceConsumables) throw new Error('Golden scenario device.consumables is not registered');
 const abnormalTransaction = scenarioByKey('finance.abnormal_transaction');
 if (!abnormalTransaction) throw new Error('Golden scenario finance.abnormal_transaction is not registered');
+
+/**
+ * V2-only 场景：不在不可变的 96 场景目录内，作为 Contract V2 侧车注册。
+ * 只携带 Contract V2 所需的最小引用，不得改动 96 目录定义与历史 hash。
+ */
+export type ScenarioContractReference = {
+  key: string;
+  revision: number;
+  domain: ProductDomainKey;
+  label: string;
+  requiredFacts: readonly string[];
+  sourceRequirements: readonly { capabilityKey: string }[];
+  actionRequirements: readonly { capabilityKey: string }[];
+  freshnessPolicy: { maximumAgeSeconds: number };
+  minimumReality: RealityLevel;
+  verificationRequirements: readonly ('AUDIT_RECORD' | 'READ_BACK_OR_CALLBACK')[];
+};
+
+const financeAccounting = Object.freeze({
+  key: 'finance.accounting',
+  revision: 1,
+  domain: 'finance' as ProductDomainKey,
+  label: '账目整理',
+  requiredFacts: Object.freeze(['finance.transaction.amount']),
+  sourceRequirements: Object.freeze([{ capabilityKey: 'READ_TRANSACTION' }]),
+  actionRequirements: Object.freeze([{ capabilityKey: 'SEND_NOTIFICATION' }]),
+  freshnessPolicy: Object.freeze({ maximumAgeSeconds: 86_400 }),
+  minimumReality: 'OBSERVED' as RealityLevel,
+  verificationRequirements: Object.freeze(['AUDIT_RECORD'] as const),
+} satisfies ScenarioContractReference);
+
+export const V2_SCENARIO_DEFINITIONS: readonly ScenarioContractReference[] = Object.freeze([financeAccounting]);
+
+function scenarioContractReferenceByKey(key: string): ScenarioContractReference | null {
+  return scenarioByKey(key) ?? V2_SCENARIO_DEFINITIONS.find((scenario) => scenario.key === key) ?? null;
+}
 
 /**
  * Contract V2 is an additive sidecar. It references an immutable V1 scenario
@@ -194,7 +231,7 @@ export const SCENARIO_CONTRACT_V2_REGISTRY: readonly ScenarioContractV2[] = Obje
       evidenceRefs: Object.freeze(['test:runtime-reality-pipeline', 'test:r3-consumer-golden-journeys', 'test:vnext-finance-multisource']),
     }),
     goal: Object.freeze({
-      supportedIntents: Object.freeze(['SUMMARIZE_ACCOUNT_PERIOD', 'DETECT_TRANSACTION_ANOMALY', 'ANALYZE_BUDGET', 'RECONCILE_TRANSACTION_RESULT']),
+      supportedIntents: Object.freeze(['DETECT_TRANSACTION_ANOMALY']),
       requiredSubjectTypes: Object.freeze(['finance.transaction']),
     }),
     factDemands: Object.freeze([
@@ -234,6 +271,55 @@ export const SCENARIO_CONTRACT_V2_REGISTRY: readonly ScenarioContractV2[] = Obje
       '真实银行和支付平台接入需要合法授权与独立平台验收',
     ]),
   }),
+  defineContract({
+    scenario: Object.freeze({ key: financeAccounting.key, revision: financeAccounting.revision }),
+    governance: Object.freeze({
+      state: 'DETERMINISTIC_SANDBOX',
+      realSourceVerified: false,
+      realActionVerified: false,
+      evidenceRefs: Object.freeze(['test:b7-transaction-file-import', 'test:runtime-reality-pipeline']),
+    }),
+    goal: Object.freeze({
+      supportedIntents: Object.freeze(['SUMMARIZE_ACCOUNT_PERIOD', 'RECONCILE_TRANSACTION_RESULT', 'ANALYZE_BUDGET', 'DETECT_DUPLICATE_TRANSACTION']),
+      requiredSubjectTypes: Object.freeze(['finance.transaction']),
+    }),
+    factDemands: Object.freeze([
+      Object.freeze({
+        factKey: 'finance.transaction.amount',
+        subjectType: 'finance.transaction',
+        required: true,
+        maximumAgeSeconds: financeAccounting.freshnessPolicy.maximumAgeSeconds,
+        minimumReality: financeAccounting.minimumReality,
+        acceptedSourceCapabilities: Object.freeze(financeAccounting.sourceRequirements.map((item) => item.capabilityKey)),
+        acceptedSourceModes: Object.freeze(['OFFICIAL_API', 'NOTIFICATION', 'FILE', 'MANUAL', 'INTERNAL'] as const),
+        refreshPolicy: 'ON_CHANGE',
+        verificationRequirements: Object.freeze(['SOURCE_EVIDENCE', 'USER_CONFIRMATION', 'READ_BACK'] as const),
+        conflictPolicy: 'REQUIRE_CONFIRMATION',
+        missingPolicy: 'ALLOW_MANUAL_ASSISTED',
+      }),
+    ]),
+    actionDemands: Object.freeze([
+      Object.freeze({
+        intentKey: 'SEND_ACCOUNTING_SUMMARY',
+        capabilityKey: 'SEND_NOTIFICATION',
+        resourceType: 'Notification',
+        requiresUserConfirmation: false,
+        verification: Object.freeze(financeAccounting.verificationRequirements),
+      }),
+    ]),
+    privacy: Object.freeze({
+      classes: Object.freeze(['SENSITIVE'] as const),
+      purpose: '依据用户明确授权或确认的交易证据进行跨来源归类、周期汇总、重复识别与账目核对，不发起资金操作',
+      rawEvidenceRetention: 'SOURCE_POLICY',
+    }),
+    unsupportedConditions: Object.freeze([
+      '交易事实只来自用户授权或确认的证据，不自动补造缺失交易',
+      '金额、时间与商户名称相同不能作为跨平台合并依据',
+      '未验证交易保留独立候选，等待用户核对，不推断合并',
+      '汇总结果必须标明数据覆盖范围，不得将未验证交易计入可信汇总',
+      '不执行自动转账、自动支付或任何资金划转',
+    ]),
+  }),
 ]);
 
 export function scenarioContractV2ByKey(key: string): ScenarioContractV2 | null {
@@ -241,7 +327,7 @@ export function scenarioContractV2ByKey(key: string): ScenarioContractV2 | null 
 }
 
 export function assertScenarioContractV2(contract: ScenarioContractV2): void {
-  const scenario = scenarioByKey(contract.scenario.key);
+  const scenario = scenarioContractReferenceByKey(contract.scenario.key);
   if (!scenario || scenario.revision !== contract.scenario.revision) throw new Error('Scenario Contract V2 references an unknown immutable scenario revision');
   if (!contract.factDemands.length) throw new Error('Scenario Contract V2 requires at least one FactDemand');
   if (!contract.factDemands.filter((item) => item.required).every((item) => scenario.requiredFacts.includes(item.factKey))) {
