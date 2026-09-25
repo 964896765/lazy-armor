@@ -1,5 +1,5 @@
 import { compileActionRecipe, normalizePlanDefinition, resolveActionRecipe, type PlanDefinition, type PlanDefinitionInput } from './index';
-import { evaluateScenarioReadiness, scenarioByKey, type ScenarioReadinessInput, type StrategyKey } from './runtime-catalog';
+import { evaluateScenarioReadiness, scenarioDefinitionByKey, type ScenarioReadinessInput, type StrategyKey } from './runtime-catalog';
 import { productDomainFromStorageKey } from './product-model';
 import { buildStrategyRuntime, type CompiledStrategyRuntime } from './strategy-runtime';
 import { buildTerminalFollowUpRuntime, terminalFollowUpRule, terminalFollowUpScenario, terminalTargetConfig, validateTerminalTarget, type TerminalHandoffTarget } from './terminal-follow-up';
@@ -28,7 +28,7 @@ export interface CompiledScenarioPlan {
 
 /** Compiles a catalog scenario and strategy into the existing Plan Engine schema. */
 export function compileScenarioPlan(input: ScenarioCompileInput): CompiledScenarioPlan {
-  const canonical = scenarioByKey(input.scenarioKey);
+  const canonical = scenarioDefinitionByKey(input.scenarioKey);
   const revision = input.scenarioRevision ?? canonical?.revision ?? 1;
   const terminalRule = terminalFollowUpRule(input.scenarioKey, revision);
   const scenario = terminalRule ? terminalFollowUpScenario(terminalRule) : canonical?.revision === revision ? canonical : undefined;

@@ -1,6 +1,5 @@
 import { z } from 'zod';
-import { catalogHash, scenarioByKey, type RealityLevel } from './runtime-catalog';
-import { type ProductDomainKey } from './product-model';
+import { catalogHash, scenarioByKey, scenarioDefinitionByKey, type RealityLevel } from './runtime-catalog';
 
 export const SCENARIO_CONTRACT_VERSION = 2 as const;
 export const SCENARIO_GOVERNANCE_STATES = [
@@ -82,46 +81,13 @@ const deviceConsumables = scenarioByKey('device.consumables');
 if (!deviceConsumables) throw new Error('Golden scenario device.consumables is not registered');
 const abnormalTransaction = scenarioByKey('finance.abnormal_transaction');
 if (!abnormalTransaction) throw new Error('Golden scenario finance.abnormal_transaction is not registered');
-
-/**
- * V2-only 场景：不在不可变的 96 场景目录内，作为 Contract V2 侧车注册。
- * 只携带 Contract V2 所需的最小引用，不得改动 96 目录定义与历史 hash。
- */
-export type ScenarioContractReference = {
-  key: string;
-  revision: number;
-  domain: ProductDomainKey;
-  label: string;
-  requiredFacts: readonly string[];
-  sourceRequirements: readonly { capabilityKey: string }[];
-  actionRequirements: readonly { capabilityKey: string }[];
-  freshnessPolicy: { maximumAgeSeconds: number };
-  minimumReality: RealityLevel;
-  verificationRequirements: readonly ('AUDIT_RECORD' | 'READ_BACK_OR_CALLBACK')[];
-};
-
-const financeAccounting = Object.freeze({
-  key: 'finance.accounting',
-  revision: 1,
-  domain: 'finance' as ProductDomainKey,
-  label: '账目整理',
-  requiredFacts: Object.freeze(['finance.transaction.amount']),
-  sourceRequirements: Object.freeze([{ capabilityKey: 'READ_TRANSACTION' }]),
-  actionRequirements: Object.freeze([{ capabilityKey: 'SEND_NOTIFICATION' }]),
-  freshnessPolicy: Object.freeze({ maximumAgeSeconds: 86_400 }),
-  minimumReality: 'OBSERVED' as RealityLevel,
-  verificationRequirements: Object.freeze(['AUDIT_RECORD'] as const),
-} satisfies ScenarioContractReference);
-
-export const V2_SCENARIO_DEFINITIONS: readonly ScenarioContractReference[] = Object.freeze([financeAccounting]);
-
-function scenarioContractReferenceByKey(key: string): ScenarioContractReference | null {
-  return scenarioByKey(key) ?? V2_SCENARIO_DEFINITIONS.find((scenario) => scenario.key === key) ?? null;
-}
+const financeAccounting = scenarioDefinitionByKey('finance.accounting');
+if (!financeAccounting) throw new Error('Golden scenario finance.accounting is not registered');
 
 /**
  * Contract V2 is an additive sidecar. It references an immutable V1 scenario
- * revision and must never change that scenario's definition/hash.
+ * revision (or a V2-only scenario) and must never change that scenario's
+ * definition/hash.
  */
 export const SCENARIO_CONTRACT_V2_REGISTRY: readonly ScenarioContractV2[] = Object.freeze([
   defineContract({
@@ -327,7 +293,7 @@ export function scenarioContractV2ByKey(key: string): ScenarioContractV2 | null 
 }
 
 export function assertScenarioContractV2(contract: ScenarioContractV2): void {
-  const scenario = scenarioContractReferenceByKey(contract.scenario.key);
+  const scenario = scenarioDefinitionByKey(contract.scenario.key);
   if (!scenario || scenario.revision !== contract.scenario.revision) throw new Error('Scenario Contract V2 references an unknown immutable scenario revision');
   if (!contract.factDemands.length) throw new Error('Scenario Contract V2 requires at least one FactDemand');
   if (!contract.factDemands.filter((item) => item.required).every((item) => scenario.requiredFacts.includes(item.factKey))) {

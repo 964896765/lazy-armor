@@ -1,7 +1,7 @@
 import { BadRequestException, Inject, Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
 import {
   FACT_SCHEMA_CATALOG, RESOURCE_CATALOG, SCENARIO_DEFINITIONS, STRATEGY_PROFILES, catalogHash,
-  compileScenarioPlan, evaluateScenarioReadiness, scenarioByKey, scenarioByRevision, PRODUCT_DOMAINS,
+  compileScenarioPlan, evaluateScenarioReadiness, scenarioByKey, scenarioByRevision, scenarioDefinitionByKey, PRODUCT_DOMAINS,
   scenarioContractV2ByKey,
   type StrategyKey, type TerminalHandoffTarget,
   TERMINAL_FOLLOW_UP_RULES, terminalFollowUpScenario,
@@ -27,7 +27,7 @@ export class RuntimeCatalogRegistryService implements OnModuleInit {
 
   listDomains() { return PRODUCT_DOMAINS.map((domain) => ({ ...domain, scenarioCount: SCENARIO_DEFINITIONS.filter((item) => item.domain === domain.key).length })); }
   listScenarios(domain?: string) { return domain ? SCENARIO_DEFINITIONS.filter((item) => item.domain === domain) : SCENARIO_DEFINITIONS; }
-  getScenario(key: string) { const value = scenarioByKey(key); if (!value) throw new NotFoundException('Scenario not found'); return value; }
+  getScenario(key: string) { const value = scenarioDefinitionByKey(key); if (!value) throw new NotFoundException('Scenario not found'); return value; }
   getScenarioContractV2(key: string) {
     this.getScenario(key);
     const value = scenarioContractV2ByKey(key);

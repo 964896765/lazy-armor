@@ -178,6 +178,32 @@ export const SCENARIO_DEFINITIONS: readonly ScenarioDefinition[] = Object.freeze
   });
 }));
 
+/**
+ * V2-only 场景（不在不可变 96 目录内）。与 Contract V2 侧车配套，提供完整
+ * ScenarioDefinition，使 compileScenarioPlan / 策略运行时能统一处理新场景。
+ */
+const financeAccountingScenario: ScenarioDefinition = Object.freeze({
+  schemaVersion: '1', key: 'finance.accounting', domain: 'finance', label: '账目整理',
+  primaryResourceTypes: Object.freeze(['finance.transaction']), requiredFacts: Object.freeze(['finance.transaction.amount']),
+  optionalFacts: Object.freeze(['finance_transaction.updated_at']),
+  supportedStrategies: Object.freeze(PLAN_STRATEGIES.map((strategy) => strategy.key)), defaultStrategy: 'PERIODIC_SUMMARY',
+  sourceRequirements: Object.freeze([{ operation: 'READ' as const, resourceType: 'Transaction', capabilityKey: 'READ_TRANSACTION', optional: false }]),
+  actionRequirements: Object.freeze([{ operation: 'EXECUTE' as const, resourceType: 'Notification', capabilityKey: 'SEND_NOTIFICATION', optional: false }]),
+  triggerProfile: Object.freeze({ modes: Object.freeze(['MANUAL', 'SCHEDULE', 'FACT_CHANGED'] as const), deterministic: true as const }),
+  conditionSchema: Object.freeze({ factKey: 'finance.transaction.amount', operators: Object.freeze(['EXISTS', 'CHANGED', 'EQ', 'GT', 'LT'] as const) }),
+  defaultRiskFloor: 'R1', minimumReality: 'OBSERVED',
+  truthPolicy: Object.freeze({ minimumConfidence: 0.8, requireEvidence: true as const }),
+  freshnessPolicy: Object.freeze({ onStale: 'REFRESH' as const, maximumAgeSeconds: 86_400 }),
+  conflictPolicy: Object.freeze({ resolution: 'LATEST_VERIFIED_THEN_OBSERVED' as const, unresolved: 'BLOCK' as const }),
+  verificationRequirements: Object.freeze(['AUDIT_RECORD'] as const),
+  fallbackPolicy: Object.freeze({ unknown: 'RECONCILE' as const, conflict: 'BLOCK' as const, unavailable: 'DEGRADE_TO_REMINDER' as const }),
+  templates: Object.freeze([]),
+  availabilityPolicy: Object.freeze({ initialReadiness: 'CATALOG_ONLY' as const, executableRequiresRuntimeReadiness: true as const }),
+  revision: 1, status: 'CATALOG_ONLY',
+});
+
+export const V2_SCENARIO_DEFINITIONS: readonly ScenarioDefinition[] = Object.freeze([financeAccountingScenario]);
+
 const factMap = new Map<string, FactSchemaDefinition>();
 for (const scenario of SCENARIO_DEFINITIONS) {
   const resourceType = scenario.primaryResourceTypes[0];
@@ -227,6 +253,11 @@ export const STRATEGY_PROFILES: readonly StrategyProfile[] = Object.freeze(PLAN_
 export function catalogHash(value: unknown): string { return createHash('sha256').update(canonicalStringify(value)).digest('hex'); }
 
 export function scenarioByKey(key: string): ScenarioDefinition | null { return SCENARIO_DEFINITIONS.find((scenario) => scenario.key === key) ?? null; }
+
+/** 统一查找：先查不可变 96 目录，再查 V2-only 场景。 */
+export function scenarioDefinitionByKey(key: string): ScenarioDefinition | null {
+  return scenarioByKey(key) ?? V2_SCENARIO_DEFINITIONS.find((scenario) => scenario.key === key) ?? null;
+}
 
 export function evaluateScenarioReadiness(definition: ScenarioDefinition, input: ScenarioReadinessInput = {}): ScenarioReadiness {
   const facts = new Set(input.availableFacts ?? []);
