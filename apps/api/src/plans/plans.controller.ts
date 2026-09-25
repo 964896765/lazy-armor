@@ -4,10 +4,15 @@ import { ChangePlanStatusDto, PlanDefinitionDto } from './dto';
 import { PlansService } from './plans.service';
 import { LifecycleReadService } from './lifecycle-read.service';
 import { CursorPageDto } from '../common/cursor-pagination';
+import { PlanLifecycleProjectionService } from './plan-lifecycle-projection.service';
 
 @Controller('plans')
 export class PlansController {
-  constructor(private readonly plans: PlansService, private readonly lifecycleRead: LifecycleReadService) {}
+  constructor(
+    private readonly plans: PlansService,
+    private readonly lifecycleRead: LifecycleReadService,
+    private readonly planLifecycle: PlanLifecycleProjectionService,
+  ) {}
 
   @Post() create(@CurrentUser() user: AuthenticatedUser, @Body() input: PlanDefinitionDto) { return this.plans.create(user.id, input); }
   @Get() list(@CurrentUser() user: AuthenticatedUser) { return this.plans.list(user.id); }
@@ -17,6 +22,10 @@ export class PlansController {
     // Ownership is established by the canonical plan query before the read model runs.
     await this.plans.get(user.id, id);
     return this.lifecycleRead.forPlan(user.id, id);
+  }
+  @Get(':id/lifecycle-projection') async lifecycleProjection(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    await this.plans.get(user.id, id);
+    return this.planLifecycle.forPlan(user.id, id);
   }
   @Get(':id/versions') versions(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) { return this.plans.listVersions(user.id, id); }
   @Get(':id/versions/:version') version(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Param('version', ParseIntPipe) version: number) { return this.plans.getVersion(user.id, id, version); }

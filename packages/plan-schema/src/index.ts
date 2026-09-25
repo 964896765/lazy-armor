@@ -48,6 +48,27 @@ export {
   type ConsumerReadinessProjection,
   type ConsumerReadinessState,
 } from './consumer-projection';
+export {
+  PLAN_LIFECYCLE_PROJECTION_VERSION,
+  PLAN_LIFECYCLE_STATES,
+  PLAN_LIFECYCLE_STEPS,
+  buildPlanLifecycleProjection,
+  isPlanLifecycleProjection,
+  planLifecycleObservationSchema,
+  type PlanLifecycleObservation,
+  type PlanLifecycleProjection,
+  type PlanLifecycleState,
+  type PlanLifecycleStepKey,
+} from './plan-lifecycle';
+export {
+  PLAN_OFFER_AVAILABILITY,
+  PLAN_OFFER_CONTRACT_VERSION,
+  buildDeterministicPlanOffer,
+  planOfferRequestSchema,
+  type PlanOffer,
+  type PlanOfferAvailability,
+  type PlanOfferRequest,
+} from './plan-offer';
 
 export const SOURCE_TYPES = ['manual', 'email', 'calendar', 'notification', 'file', 'webhook', 'internal', 'commerce', 'device', 'vehicle', 'billing', 'content_platform'] as const;
 export const TRIGGER_TYPES = ['manual', 'schedule', 'event', 'webhook', 'threshold', 'date_before', 'date_after', 'data_changed'] as const;

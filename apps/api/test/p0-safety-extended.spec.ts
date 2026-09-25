@@ -240,7 +240,13 @@ describe.sequential('P0-6 Extended Risk, Approval, Authorization, Notification a
   it('expires Approval through the scheduler and never re-generates an infinite chain', async () => {
     const plan = await createPlan(definition('Expiry fallback', [action('TEST_R3_EXTERNAL')]));
     const waiting = await runToWait(plan.id);
-    await wait(2_100); await approvalService.expireDue();
+    // Datetime(6) is precise, but CI scheduling and the DB/client clock boundary
+    // are not guaranteed to wake within the original 100 ms margin.
+    await wait(2_100);
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      await approvalService.expireDue();
+      await wait(250);
+    }
     const after = await detail(waiting.execution.id);
     expect(after.status).toBe('failed');
     expect(after.errorCode).toBe('APPROVAL_EXPIRED');

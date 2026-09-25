@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { scenarioByKey } from '@lazy-armor/plan-schema';
 import type { CompiledAgentContext } from './agent-context-compiler.service';
 
 /**
@@ -117,7 +118,7 @@ export class FixtureAgentModel implements AgentModelAdapter {
         intentSummary: intent,
         domain: 'daily_life',
         scenarioKey: 'daily_life.delivery',
-        scenarioRevision: 1,
+        scenarioRevision: scenarioByKey('daily_life.delivery')?.revision ?? null,
         strategyKey: 'SILENT_FOLLOW_UP',
         requiredFacts: ['shipment.status'],
         selectedTruthRefs: [],
@@ -177,7 +178,7 @@ export class FixtureAgentModel implements AgentModelAdapter {
       intentSummary: intent,
       domain: scenarioKey.split('.')[0],
       scenarioKey,
-      scenarioRevision: 1,
+      scenarioRevision: scenarioByKey(scenarioKey)?.revision ?? null,
       strategyKey,
       requiredFacts: options.requiredFacts ?? [],
       selectedTruthRefs: options.selectedTruthRefs ?? [],

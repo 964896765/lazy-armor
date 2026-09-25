@@ -56,6 +56,7 @@ import { StructuredReadModule } from './structured-read/structured-read.module';
 import { TerminalHandoffController, TerminalHandoffService } from './strategy-runtime/terminal-handoff.service';
 import { PortableSkillsModule } from './portable-skills/portable-skills.module';
 import { McpModule } from './mcp/mcp.module';
+import { PlanningOffersModule } from './planning-offers/planning-offers.module';
 
 @Module({
   imports: [
@@ -119,6 +120,7 @@ import { McpModule } from './mcp/mcp.module';
     AdminModule,
     PortableSkillsModule,
     McpModule,
+    PlanningOffersModule,
   ],
   controllers: [TerminalHandoffController],
   providers: [

@@ -6,19 +6,22 @@ import { PlansController } from './plans.controller';
 import { PlansService } from './plans.service';
 import { LifecycleReadService } from './lifecycle-read.service';
 import { MembershipModule } from '../membership/membership.module';
+import { RuntimeCatalogModule } from '../runtime-catalog/runtime-catalog.module';
+import { PlanLifecycleProjectionService } from './plan-lifecycle-projection.service';
 
 export const PLAN_SERVICE = 'PLAN_SERVICE';
 
 @Module({
-  imports: [AuditModule, MembershipModule],
+  imports: [AuditModule, MembershipModule, RuntimeCatalogModule],
   controllers: [PlansController],
   providers: [
     PlanDefinitionAssembler,
     PlanStateService,
     PlansService,
     LifecycleReadService,
+    PlanLifecycleProjectionService,
     { provide: PLAN_SERVICE, useExisting: PlansService },
   ],
-  exports: [PlansService, LifecycleReadService, PLAN_SERVICE, PlanDefinitionAssembler, PlanStateService],
+  exports: [PlansService, LifecycleReadService, PlanLifecycleProjectionService, PLAN_SERVICE, PlanDefinitionAssembler, PlanStateService],
 })
 export class PlansModule {}
