@@ -8,6 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/api';
 import { useAuthStore } from '../../src/auth-store';
 import { executionStatusLabel } from '../../src/execution-presenter';
+import { consumerOutcomeLabel, type ConsumerOutcome } from '../../src/outcome-presenter';
 import {
   actionSummary,
   boolLabel,
@@ -35,7 +36,7 @@ interface PlanSummary {
   nextExpectedRunAt: string | null;
   hasMissingConnection: boolean;
   missingConnections: Array<{ providerKey: string; providerName: string; requiredCapabilities: string[]; usedBy: string[] }>;
-  latestExecution: { id: string; status: string; resultSummary: string | null; createdAt: string } | null;
+  latestExecution: { id: string; status: string; resultSummary: string | null; createdAt: string; outcome: { outcome: ConsumerOutcome | null } | null } | null;
   allowedTransitions: string[];
   currentVersion: { versionNumber: number; name: string; templateKey: string | null; templateVersion: string | null; templateConfig: Record<string, unknown> | null; automationLevel: string } | null;
   activeVersion: { versionNumber: number; name: string } | null;
@@ -221,7 +222,7 @@ export default function PlanDetailPage() {
             <Text style={local.sectionTitle}>最近结果</Text>
             <View style={local.sectionBody}>
               <Text style={local.resultDate}>{summary.data.latestExecution ? formatTime(summary.data.latestExecution.createdAt) : '还没有运行记录'}</Text>
-              <Text style={local.resultTitle}>{summary.data.latestExecution?.resultSummary ?? (summary.data.planCenterSummary ? planCenterStatusLabel(summary.data.planCenterSummary.kind, summary.data.planCenterSummary.currentStatus) : '第一次运行后，结果会出现在这里。')}</Text>
+              <Text style={local.resultTitle}>{summary.data.latestExecution ? `${consumerOutcomeLabel(summary.data.latestExecution.outcome?.outcome)} · ${summary.data.latestExecution.resultSummary ?? executionStatusLabel(summary.data.latestExecution.status)}` : (summary.data.planCenterSummary ? planCenterStatusLabel(summary.data.planCenterSummary.kind, summary.data.planCenterSummary.currentStatus) : '第一次运行后，结果会出现在这里。')}</Text>
               {summary.data.latestExecution ? <View style={local.inlineAction}><ActionButton label="查看完整记录" tone="quiet" onPress={() => router.push(`/executions/${summary.data?.latestExecution?.id}` as never)} /></View> : null}
             </View>
 

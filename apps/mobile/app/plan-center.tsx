@@ -8,6 +8,7 @@ import { api } from '../src/api';
 import { useAuthStore } from '../src/auth-store';
 import { EmptyState, PlanRow, WorkspaceHeader, colors, radius, spacing, typography } from '../src/design';
 import { planCenterStatusLabel, planDomainLabel, planNextRunLabel, planStatusLabel, planStatusTone, planVisualIcon } from '../src/plan-presenter';
+import { consumerOutcomeLabel, type ConsumerOutcome } from '../src/outcome-presenter';
 
 interface PlanSummary {
   id: string;
@@ -18,7 +19,7 @@ interface PlanSummary {
   nextExpectedRunAt: string | null;
   hasMissingConnection: boolean;
   currentVersion: { name: string } | null;
-  latestExecution: { status: string; resultSummary: string | null } | null;
+  latestExecution: { status: string; resultSummary: string | null; outcome: { outcome: ConsumerOutcome | null } | null } | null;
   planCenterSummary: { kind: 'logistics' | 'household' | 'content' | 'daily_summary' | 'study' | 'device'; currentStatus: string } | null;
 }
 
@@ -65,7 +66,7 @@ export default function PlanCenter() {
         {!plans.isLoading && token && shown.length === 0 ? <EmptyState icon="search-outline" title={query ? '没有匹配的计划' : '这个分类还没有计划'} description={query ? '换个关键词试试。' : '创建后会出现在这里。'} action={{ label: '创建计划', onPress: () => router.push('/create' as never) }} /> : null}
         {shown.length > 0 ? <View style={styles.list}>{shown.map((plan, index) => {
           const name = plan.name ?? plan.currentVersion?.name ?? '我的计划';
-          const description = plan.planCenterSummary ? planCenterStatusLabel(plan.planCenterSummary.kind, plan.planCenterSummary.currentStatus) : plan.latestExecution?.resultSummary ?? plan.description ?? '按你的设置持续运行';
+          const description = plan.planCenterSummary ? planCenterStatusLabel(plan.planCenterSummary.kind, plan.planCenterSummary.currentStatus) : plan.latestExecution ? `${consumerOutcomeLabel(plan.latestExecution.outcome?.outcome)}${plan.latestExecution.resultSummary ? ` · ${plan.latestExecution.resultSummary}` : ''}` : plan.description ?? '按你的设置持续运行';
           return <PlanRow key={plan.id} icon={planVisualIcon(name, plan.planCenterSummary?.kind)} name={name} description={description} detail={`${planDomainLabel(plan.domain)} · ${planNextRunLabel(plan.status, plan.nextExpectedRunAt)}`} status={plan.hasMissingConnection ? '还差一步' : planStatusLabel(plan.status)} statusTone={plan.hasMissingConnection ? 'warning' : planStatusTone(plan.status)} onPress={() => router.push(`/plans/${plan.id}` as never)} last={index === shown.length - 1} />;
         })}</View> : null}
       </ScrollView>
@@ -74,7 +75,7 @@ export default function PlanCenter() {
 }
 
 function isRunning(status: string) { return status === 'active' || status === 'ready'; }
-function isFailed(plan: PlanSummary) { return ['failed', 'error', 'blocked'].includes(plan.status) || ['failed', 'error', 'blocked'].includes(plan.latestExecution?.status ?? ''); }
+function isFailed(plan: PlanSummary) { return ['failed', 'error', 'blocked'].includes(plan.status) || ['failed', 'error', 'blocked'].includes(plan.latestExecution?.status ?? '') || plan.latestExecution?.outcome?.outcome === 'FAILED'; }
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: '#FFFFFF' },
