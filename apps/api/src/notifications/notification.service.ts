@@ -1,5 +1,6 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { approvalRequests, connections, connectors, executions, notifications, planActions, planSources, planVersions, plans, reconciliationCases } from '@lazy-armor/database';
+import { projectConsumerOutcome, type ConsumerOutcomeProjection, type RuntimeResultState } from '@lazy-armor/plan-schema';
 import { newId } from '@lazy-armor/shared';
 import { and, desc, eq, gte, inArray, ne, or } from 'drizzle-orm';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
@@ -8,6 +9,27 @@ import { UsageService } from '../usage/usage.service';
 
 export type NotificationPriority = 'P0' | 'P1' | 'P2' | 'P3';
 export type TodayPresentationCategory = 'attention' | 'exception' | 'summary';
+
+/** Server-side outcome projection for a recent plan on the Today home screen. */
+export interface TodayRecentPlan {
+  planId: string;
+  planName: string | null;
+  planStatus: string;
+  latestExecutionId: string | null;
+  /** execution.status (actual internal state, not the projection). */
+  executionStatus: string | null;
+  approvalStatus: string | null;
+  resultState: RuntimeResultState | null;
+  consumerOutcome: ConsumerOutcomeProjection;
+  /** Raw execution result summary (traceable, never rewritten). */
+  resultSummary: string | null;
+  /** Most recent meaningful activity: execution activity, else plan update. */
+  lastActivityAt: string | null;
+  /** Whether a confirmation/approval item still awaits the user. */
+  hasPendingConfirmation: boolean;
+  /** Whether the plan requires user attention (confirmation, unknown result, or failure). */
+  needsUserAction: boolean;
+}
 
 export interface NotificationEmitInput {
   userId: string;
@@ -166,7 +188,129 @@ export class NotificationService {
         category: this.classifyTodayCategory(item.eventType, item.priority as NotificationPriority, Boolean(item.actionRequired)),
       })),
       processed,
+      recentPlans: await this.recentPlans(userId),
     };
+  }
+
+  /**
+   * Server-side outcome projection for the user's most recent plans.
+   * Resolves the latest execution (and its reconciliation/approval state) in
+   * batched queries — no N+1 and strictly scoped to `userId`.
+   */
+  private async recentPlans(userId: string): Promise<TodayRecentPlan[]> {
+    const planRows = await this.db.select({
+      id: plans.id,
+      status: plans.status,
+      updatedAt: plans.updatedAt,
+      currentVersionId: plans.currentVersionId,
+      activeVersionId: plans.activeVersionId,
+    }).from(plans)
+      .where(and(eq(plans.userId, userId), ne(plans.status, 'archived')))
+      .orderBy(desc(plans.updatedAt))
+      .limit(10);
+
+    if (planRows.length === 0) return [];
+
+    const versionIds = [...new Set(planRows.flatMap((p) => [p.currentVersionId, p.activeVersionId]).filter((v): v is string => Boolean(v)))];
+    const versionRows = versionIds.length
+      ? await this.db.select({ id: planVersions.id, name: planVersions.name }).from(planVersions).where(inArray(planVersions.id, versionIds))
+      : [];
+    const nameByVersion = new Map(versionRows.map((v) => [v.id, v.name]));
+
+    const planIds = planRows.map((p) => p.id);
+    const execRows = await this.db.select({
+      id: executions.id,
+      planId: executions.planId,
+      status: executions.status,
+      approvalStatus: executions.approvalStatus,
+      resultSummary: executions.resultSummary,
+      createdAt: executions.createdAt,
+      startedAt: executions.startedAt,
+      finishedAt: executions.finishedAt,
+    }).from(executions)
+      .where(and(eq(executions.userId, userId), inArray(executions.planId, planIds)))
+      .orderBy(desc(executions.createdAt));
+
+    const latestByPlan = new Map<string, typeof execRows[number]>();
+    for (const exec of execRows) {
+      if (!latestByPlan.has(exec.planId)) latestByPlan.set(exec.planId, exec);
+    }
+
+    const latestExecIds = [...latestByPlan.values()].map((e) => e.id);
+
+    const reconciliationRows = latestExecIds.length
+      ? await this.db.select({
+        executionId: reconciliationCases.executionId,
+        status: reconciliationCases.status,
+        resultState: reconciliationCases.resultState,
+      }).from(reconciliationCases)
+        .where(and(eq(reconciliationCases.userId, userId), inArray(reconciliationCases.executionId, latestExecIds)))
+      : [];
+    const reconciliationByExec = new Map<string, typeof reconciliationRows[number][]>();
+    for (const row of reconciliationRows) {
+      const list = reconciliationByExec.get(row.executionId) ?? [];
+      list.push(row);
+      reconciliationByExec.set(row.executionId, list);
+    }
+
+    const pendingApprovalRows = latestExecIds.length
+      ? await this.db.select({ executionId: approvalRequests.executionId })
+        .from(approvalRequests)
+        .where(and(eq(approvalRequests.userId, userId), eq(approvalRequests.status, 'pending'), inArray(approvalRequests.executionId, latestExecIds)))
+      : [];
+    const pendingApprovalByExec = new Set(pendingApprovalRows.map((r) => r.executionId));
+
+    return planRows.map((plan) => {
+      const name = nameByVersion.get(plan.currentVersionId ?? plan.activeVersionId ?? '') ?? null;
+      const exec = latestByPlan.get(plan.id);
+      if (!exec) {
+        return {
+          planId: plan.id,
+          planName: name,
+          planStatus: plan.status,
+          latestExecutionId: null,
+          executionStatus: null,
+          approvalStatus: null,
+          resultState: null,
+          consumerOutcome: projectConsumerOutcome({ executionStatus: null, approvalStatus: null, resultState: null, reconciliationOpen: false, reconciliationNeedsUser: false }),
+          resultSummary: null,
+          lastActivityAt: plan.updatedAt.toISOString(),
+          hasPendingConfirmation: false,
+          needsUserAction: false,
+        };
+      }
+      const cases = reconciliationByExec.get(exec.id) ?? [];
+      const hasOutcomeUnknown = cases.some((c) => c.resultState === 'OUTCOME_UNKNOWN');
+      const reconciliationOpen = cases.some((c) => c.status === 'OPEN' || c.status === 'RECONCILING');
+      const reconciliationNeedsUser = cases.some((c) => c.status === 'NEEDS_USER');
+      const resultState: RuntimeResultState | null = hasOutcomeUnknown ? 'OUTCOME_UNKNOWN'
+        : exec.status === 'succeeded' ? 'SUCCEEDED'
+        : exec.status === 'failed' ? 'FAILED'
+        : exec.status === 'partially_succeeded' ? 'PARTIALLY_SUCCEEDED'
+        : null;
+      const hasPendingConfirmation = exec.approvalStatus === 'pending' || exec.status === 'waiting_approval' || pendingApprovalByExec.has(exec.id);
+      const outcome = projectConsumerOutcome({
+        executionStatus: exec.status,
+        approvalStatus: exec.approvalStatus,
+        resultState,
+        reconciliationOpen,
+        reconciliationNeedsUser,
+      });
+      return {
+        planId: plan.id,
+        planName: name,
+        planStatus: plan.status,
+        latestExecutionId: exec.id,
+        executionStatus: exec.status,
+        approvalStatus: exec.approvalStatus,
+        resultState,
+        consumerOutcome: outcome,
+        resultSummary: exec.resultSummary,
+        lastActivityAt: (exec.finishedAt ?? exec.startedAt ?? exec.createdAt).toISOString(),
+        hasPendingConfirmation,
+        needsUserAction: outcome.outcome === 'PENDING_CONFIRMATION' || outcome.outcome === 'OUTCOME_UNKNOWN' || outcome.outcome === 'FAILED',
+      };
+    });
   }
 
   private classifyTodayCategory(eventType: string, priority: NotificationPriority, actionRequired: boolean): TodayPresentationCategory {

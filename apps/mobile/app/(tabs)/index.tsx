@@ -20,13 +20,15 @@ import {
 import { connectionRecoveryAction, connectionStatusExplanation, connectionStatusLabel, connectionStatusNextStep, consumerErrorMessage, consumerErrorNextStep } from '../../src/connection-presenter';
 import { notificationDeepLink } from '../../src/consumer-error-presenter';
 import { executionStatusLabel } from '../../src/execution-presenter';
+import { consumerOutcomeProjectionLabel, consumerOutcomeProjectionTone, type ConsumerOutcomeProjection } from '../../src/outcome-presenter';
 import { approvalRiskText, todayEmptyDescription, todayEmptyTitle, todayState } from '../../src/today-presenter';
 
 interface ApprovalCard { id: string; executionId: string; riskLevel: string; summary: string; expiresAt: string; planName: string }
 interface AlertCard { id: string; priority: string; title: string; body: string; executionId?: string; approvalRequestId?: string | null; connectionId?: string | null; reconciliationCaseId?: string | null; eventType?: string | null; createdAt: string; category?: 'attention' | 'exception' | 'summary' }
 interface ProcessedCard { id: string; status: string; resultSummary: string | null; finishedAt: string | null; planName: string; planVersionNumber: number }
 interface ConnectionIssue { connectionId: string; connectionStatus: string; providerKey: string; providerName: string; planId: string; planName: string }
-interface TodayData { pendingApprovals: ApprovalCard[]; connectionIssues: ConnectionIssue[]; alerts: AlertCard[]; processed: ProcessedCard[] }
+interface RecentPlanCard { planId: string; planName: string | null; planStatus: string; latestExecutionId: string | null; executionStatus: string | null; approvalStatus: string | null; resultState: 'SUCCESS' | 'FAILED' | 'PARTIALLY_SUCCEEDED' | 'OUTCOME_UNKNOWN' | null; consumerOutcome: ConsumerOutcomeProjection; resultSummary: string | null; lastActivityAt: string | null; hasPendingConfirmation: boolean; needsUserAction: boolean }
+interface TodayData { pendingApprovals: ApprovalCard[]; connectionIssues: ConnectionIssue[]; alerts: AlertCard[]; processed: ProcessedCard[]; recentPlans: RecentPlanCard[] }
 interface PendingNotificationCandidate { id: string; candidateResource: string | null; candidateConfidence: number; amountMinor: number | null; currency: string | null; postedAt: string }
 interface PresentableAlert extends AlertCard { section: 'attention' | 'exception' | 'summary' }
 interface AttentionMessage { id: string; icon: string; title: string; description: string; meta?: string; tone: 'warning' | 'danger' | 'brand'; onPress?: () => void }
@@ -63,7 +65,7 @@ export default function Today() {
     + (pendingNotificationCandidates.data?.length ?? 0)
     + attentionAlerts.length
     + exceptionAlerts.length;
-  const totalCount = attentionCount + summaryAlerts.length + (today.data?.processed.length ?? 0);
+  const totalCount = attentionCount + summaryAlerts.length + (today.data?.processed.length ?? 0) + (today.data?.recentPlans.length ?? 0);
   const state = todayState(Boolean(token), today.isLoading, today.isError, totalCount);
 
   const confirm = (approval: ApprovalCard, decision: 'approve' | 'reject') => Alert.alert(
@@ -124,6 +126,15 @@ export default function Today() {
   const shownApprovals = today.data?.pendingApprovals ?? [];
   const shownAttention = attentionMessages;
   const shownResults = resultMessages;
+  const recentMessages = (today.data?.recentPlans ?? []).map((plan) => ({
+    id: `recent:${plan.planId}`,
+    icon: 'time-outline',
+    title: plan.planName ?? '未命名计划',
+    description: plan.consumerOutcome.reason || consumerOutcomeProjectionLabel(plan.consumerOutcome),
+    meta: formatMessageTime(plan.lastActivityAt),
+    tone: consumerOutcomeProjectionTone(plan.consumerOutcome),
+    onPress: () => router.push((plan.latestExecutionId ? `/executions/${plan.latestExecutionId}` : `/plans/${plan.planId}`) as never),
+  }));
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -156,6 +167,12 @@ export default function Today() {
               <View style={[styles.summaryIcon, attentionCount > 0 && styles.summaryIconWarning]}><Ionicons name={attentionCount > 0 ? 'notifications-outline' : 'checkmark'} size={22} color={attentionCount > 0 ? colors.warning : colors.success} /></View>
               <View style={styles.summaryCopy}><Text style={styles.summaryText}>{attentionCount > 0 ? `${attentionCount} 件事需要你留意` : '今天不用操心'}</Text><Text style={styles.summaryDetail}>{attentionCount > 0 ? '先处理需要你确认的事项，其他事情会继续由计划跟进。' : '计划会继续运行；只有重要变化才会提醒你。'}</Text></View>
             </View>
+
+            {recentMessages.length > 0 ? (
+              <WorkspaceSection title="最近" count={recentMessages.length}>
+                <View style={styles.messageGroup}>{recentMessages.map((item, index) => <MessageRow key={item.id} {...item} last={index === recentMessages.length - 1} />)}</View>
+              </WorkspaceSection>
+            ) : null}
 
             {shownApprovals.length > 0 ? (
               <WorkspaceSection title="待你确认" count={shownApprovals.length} action={{ label: '审批中心', onPress: () => router.push('/approvals' as never) }}>
