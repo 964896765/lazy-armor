@@ -49,6 +49,9 @@ describe.sequential('B7 transaction file import through Reality Pipeline', { tim
       expect(candidate.fact_key).toBe('finance.transaction.amount');
       expect(candidate.subject_key).toMatch(/^finance\.transaction:local_file:txn-/);
     }
+    // 未经确认的候选不得成为 Truth。
+    const [truthCount] = await pool.query<RowDataPacket[]>('SELECT COUNT(*) count FROM truth_records WHERE user_id=UUID_TO_BIN(?)', [owner.userId]);
+    expect(Number(truthCount[0].count)).toBe(0);
   });
 
   it('deduplicates the same source-namespaced transaction id', async () => {

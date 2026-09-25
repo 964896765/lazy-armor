@@ -48,6 +48,27 @@ describe('generic reality parser and normalizer registry', () => {
     expect(a.subjectKey).not.toBe(b.subjectKey);
   });
 
+  it('does not merge the same transaction id across different accounts of one source', () => {
+    const accountA = parseAndNormalizeObservation({ ...base('generic.transaction.v1', { transactionId: 'txn-001', amountMinor: 100, currency: 'CNY' }), providerKey: 'bank', connectionId: 'account-a' })[0];
+    const accountB = parseAndNormalizeObservation({ ...base('generic.transaction.v1', { transactionId: 'txn-001', amountMinor: 100, currency: 'CNY' }), providerKey: 'bank', connectionId: 'account-b' })[0];
+    expect(accountA.subjectKey).toBe('finance.transaction:bank:account-a:txn-001');
+    expect(accountB.subjectKey).toBe('finance.transaction:bank:account-b:txn-001');
+    expect(accountA.subjectKey).not.toBe(accountB.subjectKey);
+  });
+
+  it('preserves refund/reversal association with the original transaction', () => {
+    const refund = parseAndNormalizeObservation(base('generic.transaction.v1', {
+      transactionId: 'txn-refund-1', relatedTransactionId: 'txn-original-1',
+      amountMinor: 12850, currency: 'CNY', direction: 'CREDIT', transactionState: 'REFUND',
+    }))[0];
+    const original = parseAndNormalizeObservation(base('generic.transaction.v1', {
+      transactionId: 'txn-original-1', amountMinor: 12850, currency: 'CNY', direction: 'DEBIT', transactionState: 'POSTED',
+    }))[0];
+    expect(refund.value).toMatchObject({ transactionId: 'txn-refund-1', relatedTransactionId: 'txn-original-1', direction: 'CREDIT', transactionState: 'REFUND' });
+    expect(refund.subjectKey).not.toBe(original.subjectKey);
+    expect(refund.value.relatedTransactionId).toBe('txn-original-1');
+  });
+
   it('deduplicates by semantic identity and normalized value', () => {
     const draft = parseAndNormalizeObservation(base('generic.shipment-status.v1', { subjectKey: 's1', status: 'DELIVERED' }))[0];
     expect(candidateDedupeKey('u1', draft)).toBe(candidateDedupeKey('u1', { ...draft, value: { status: 'DELIVERED' } }));
