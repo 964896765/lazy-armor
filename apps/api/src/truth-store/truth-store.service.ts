@@ -63,6 +63,40 @@ export class TruthStoreService {
     return { ...context, mobileBillingTransactions: transactions, mobileBillingTotalMinor: transactions.reduce((total, item) => total + (item.amountMinor ?? 0), 0) };
   }
 
+  /**
+   * finance.accounting 账目整理的交易事实来源：读取已确认（verified）的
+   * finance.transaction.amount Truth，绝不读取 PENDING 候选或未验证数据。
+   * 返回结构在 context 中供 classify / summarize / compare 动作使用。
+   */
+  async resolveFinanceTransactions(userId: string, context: Record<string, unknown>) {
+    const rows = await this.db.select({
+      truthId: truthRecords.id,
+      subjectKey: truthRecords.subjectKey,
+      verifiedAt: truthRecords.verifiedAt,
+      value: truthRecordVersions.valueJson,
+    }).from(truthRecords).innerJoin(truthRecordVersions, eq(truthRecords.currentVersionId, truthRecordVersions.id))
+      .where(and(eq(truthRecords.userId, userId), eq(truthRecords.status, 'verified'), eq(truthRecords.resourceKey, 'finance.transaction')))
+      .orderBy(desc(truthRecords.verifiedAt));
+    const transactions = rows.flatMap((row) => {
+      const wrapped = row.value as Record<string, unknown>;
+      const inner = (wrapped.value ?? wrapped) as Record<string, unknown>;
+      return [{
+        truthRecordId: row.truthId,
+        subjectKey: row.subjectKey,
+        amountMinor: typeof inner.amountMinor === 'number' ? inner.amountMinor : null,
+        currency: typeof inner.currency === 'string' ? inner.currency : null,
+        transactionId: typeof inner.transactionId === 'string' ? inner.transactionId : null,
+        relatedTransactionId: typeof inner.relatedTransactionId === 'string' ? inner.relatedTransactionId : null,
+        merchant: typeof inner.merchant === 'string' ? inner.merchant : null,
+        direction: typeof inner.direction === 'string' ? inner.direction : null,
+        transactionState: typeof inner.transactionState === 'string' ? inner.transactionState : null,
+        occurredAt: typeof wrapped.occurredAt === 'string' ? wrapped.occurredAt : row.verifiedAt.toISOString(),
+        verifiedAt: row.verifiedAt.toISOString(),
+      }];
+    }).filter((tx) => tx.amountMinor !== null && tx.currency !== null);
+    return { ...context, financeTransactions: transactions, financeTransactionCount: transactions.length };
+  }
+
   async get(userId: string, id: string) {
     const record = (await this.db.select().from(truthRecords)
       .where(and(eq(truthRecords.id, id), eq(truthRecords.userId, userId), eq(truthRecords.status, 'verified')))

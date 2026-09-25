@@ -103,6 +103,10 @@ export class SourceResolver {
           context = await this.truthStore.resolveMobileBillingTransactions(userId, context);
           continue;
         }
+        if (source.config.resource === 'finance.transaction') {
+          context = await this.truthStore.resolveFinanceTransactions(userId, context);
+          continue;
+        }
         throw new ExecutionRuntimeError('SOURCE_CONNECTION_REQUIRED', 'Internal source requires a connection');
       }
       const checked = await this.guard.assertUsable(userId, source.connectionId, 'READ_INTERNAL');

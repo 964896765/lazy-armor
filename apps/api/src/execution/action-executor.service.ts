@@ -59,6 +59,15 @@ export class ActionExecutor {
     }
     const local = this.enrichLocalContext(context);
     if (action.actionType === 'classify' && !action.connectionId) {
+      if (action.config.taxonomy === 'finance') {
+        const finance = this.enrichFinanceContext(local);
+        return {
+          amount: finance.amount,
+          categoryTotals: finance.categoryTotals,
+          transactionCount: finance.transactionCount,
+          financeSummary: finance,
+        };
+      }
       const enriched = this.billing.enrichContext(local);
       const totalAmount = enriched.amount ?? 0;
       const categoryTotals = enriched.categoryTotals ?? {};
@@ -176,6 +185,21 @@ export class ActionExecutor {
       const logistics = this.logistics.enrichContext(local, action.config);
       const household = this.household.enrichContext(local);
       const study = this.study.enrichContext(local);
+      if (action.config.domain === 'finance') {
+        const finance = this.enrichFinanceContext(local);
+        const humanSummary = finance.transactionCount === 0
+          ? '当前没有已确认的交易。'
+          : `账目已整理，共 ${finance.transactionCount} 笔，合计 ${finance.amount.toFixed(2)} 元。`;
+        return {
+          financeSummary: finance,
+          humanSummary,
+          resultSummary: humanSummary,
+          shouldNotify: finance.transactionCount > 0,
+          notificationPriority: 'P2',
+          notificationEventType: 'accounting_report_ready',
+          notificationDedupeKey: `accounting:${executionId}`,
+        };
+      }
       if (action.config.domain === 'billing' && action.config.summaryType === 'daily_account') {
         const totalAmount = typeof billing.amount === 'number' ? billing.amount : 0;
         const transactionCount = Array.isArray(billing.billingRecords) ? billing.billingRecords.length : 0;
@@ -587,6 +611,20 @@ export class ActionExecutor {
 
   private enrichLocalContext(context: Record<string, unknown>) {
     return this.study.enrichContext(this.device.enrichContext(this.dailySummary.enrichContext(this.household.enrichContext(this.logistics.enrichContext(this.content.enrichContext(this.billing.enrichContext(context)))))));
+  }
+
+  /** 把已确认的 finance.transaction 事实归一化为账目汇总（仅 verified Truth，不读候选）。 */
+  private enrichFinanceContext(context: Record<string, unknown>) {
+    const transactions = Array.isArray(context.financeTransactions)
+      ? (context.financeTransactions as Array<Record<string, unknown>>)
+      : [];
+    const amount = Number((transactions.reduce((sum, tx) => sum + (typeof tx.amountMinor === 'number' ? tx.amountMinor : 0), 0) / 100).toFixed(2));
+    const categoryTotals = transactions.reduce<Record<string, number>>((acc, tx) => {
+      const key = typeof tx.merchant === 'string' && tx.merchant ? tx.merchant : typeof tx.direction === 'string' && tx.direction ? tx.direction : '其他';
+      acc[key] = Number(((acc[key] ?? 0) + (typeof tx.amountMinor === 'number' ? tx.amountMinor / 100 : 0)).toFixed(2));
+      return acc;
+    }, {});
+    return { amount, categoryTotals, transactionCount: transactions.length };
   }
 
   private normalizeGeneratedVariants(value: unknown) {
