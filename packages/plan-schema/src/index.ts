@@ -49,6 +49,16 @@ export {
   type ConsumerReadinessState,
 } from './consumer-projection';
 export {
+  CONSUMER_OUTCOMES,
+  CONSUMER_OUTCOME_VERSION,
+  isConsumerOutcomeProjection,
+  projectConsumerOutcome,
+  type ConsumerOutcome,
+  type ConsumerOutcomeActionPath,
+  type ConsumerOutcomeEvidence,
+  type ConsumerOutcomeProjection,
+} from './consumer-outcome';
+export {
   PLAN_LIFECYCLE_PROJECTION_VERSION,
   PLAN_LIFECYCLE_STATES,
   PLAN_LIFECYCLE_STEPS,

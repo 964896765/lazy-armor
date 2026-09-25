@@ -11,14 +11,17 @@ import {
   planTriggers,
   planVersions,
   plans,
+  reconciliationCases,
 } from '@lazy-armor/database';
 import {
   ACTION_DEFINITIONS,
   definitionHash,
   normalizePlanDefinition,
+  projectConsumerOutcome,
   type PlanDefinition,
   type PlanDefinitionInput,
   type PlanState,
+  type RuntimeResultState,
 } from '@lazy-armor/plan-schema';
 import { newId } from '@lazy-armor/shared';
 import { and, asc, desc, eq, lt, or } from 'drizzle-orm';
@@ -572,13 +575,31 @@ export class PlansService {
       id: executions.id,
       status: executions.status,
       resultSummary: executions.resultSummary,
+      approvalStatus: executions.approvalStatus,
       finishedAt: executions.finishedAt,
       createdAt: executions.createdAt,
     }).from(executions)
       .where(and(eq(executions.userId, userId), eq(executions.planId, planId)))
       .orderBy(desc(executions.createdAt))
       .limit(1);
-    return rows[0] ?? null;
+    const row = rows[0];
+    if (!row) return null;
+    const unresolved = (await this.db.select({ id: reconciliationCases.id })
+      .from(reconciliationCases)
+      .where(and(eq(reconciliationCases.executionId, row.id), eq(reconciliationCases.userId, userId), eq(reconciliationCases.resultState, 'OUTCOME_UNKNOWN')))
+      .limit(1))[0];
+    const resultState: RuntimeResultState | null = unresolved ? 'OUTCOME_UNKNOWN'
+      : row.status === 'succeeded' ? 'SUCCEEDED'
+      : row.status === 'failed' ? 'FAILED'
+      : row.status === 'partially_succeeded' ? 'PARTIALLY_SUCCEEDED'
+      : null;
+    return { ...row, resultState, outcome: projectConsumerOutcome({
+      executionStatus: row.status,
+      approvalStatus: row.approvalStatus,
+      resultState,
+      reconciliationOpen: Boolean(unresolved),
+      reconciliationNeedsUser: false,
+    }) };
   }
 
   private async buildPlanCenterSummary(

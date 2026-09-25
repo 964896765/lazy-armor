@@ -16,6 +16,10 @@
     "./consumer": {
       "types": "./src/consumer-projection.ts",
       "default": "./dist/consumer-projection.js"
+    },
+    "./outcome": {
+      "types": "./src/consumer-outcome.ts",
+      "default": "./dist/consumer-outcome.js"
     }
   },
   "scripts": {

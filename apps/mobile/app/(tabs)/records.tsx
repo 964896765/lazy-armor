@@ -8,6 +8,7 @@ import { api } from '../../src/api';
 import { useAuthStore } from '../../src/auth-store';
 import { EmptyState, Surface, WorkspaceHeader, WorkspaceSection, workspaceColors as colors, radius, spacing, typography } from '../../src/design';
 import { executionAttentionLabel, executionListState, executionNeedsAttention, executionRecordCategory, executionStatusLabel } from '../../src/execution-presenter';
+import { consumerOutcomeLabel } from '../../src/outcome-presenter';
 
 interface ExecutionRecord {
   id: string;
@@ -15,6 +16,7 @@ interface ExecutionRecord {
   status: string;
   resultSummary: string | null;
   resultState: string | null;
+  outcome: { outcome: 'SUCCESS' | 'FAILED' | 'PENDING_CONFIRMATION' | 'OUTCOME_UNKNOWN' | null } | null;
   createdAt: string;
 }
 
@@ -56,7 +58,7 @@ export default function Records() {
               {records.map((item, index) => {
                 const category = executionRecordCategory(item.status, item.resultState);
                 const needsAttention = category === 'outcome' || executionNeedsAttention(item.status);
-                const statusText = category === 'outcome' ? '结果待确认' : executionAttentionLabel(item.status);
+                const statusText = item.outcome ? consumerOutcomeLabel(item.outcome.outcome) : (category === 'outcome' ? '结果待确认' : executionAttentionLabel(item.status));
                 return (
                   <Pressable key={item.id} accessibilityRole="button" onPress={() => router.push(`/executions/${item.id}` as never)} style={({ pressed }) => [styles.timelineRow, index < records.length - 1 && styles.divider, pressed && styles.pressedRow]}>
                     <View style={styles.markerColumn}><View style={[styles.marker, category === 'success' ? styles.markerSuccess : category === 'processing' ? styles.markerProcessing : styles.markerWarning]}><Ionicons name={category === 'success' ? 'checkmark' : category === 'processing' ? 'time' : category === 'outcome' ? 'help-circle' : 'warning'} size={12} color={category === 'success' ? '#16834A' : category === 'processing' ? colors.primary : '#B54708'} /></View></View>
