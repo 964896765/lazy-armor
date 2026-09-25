@@ -11,6 +11,7 @@ export class RuntimeCatalogController {
   @Get('scenarios/:key/readiness') readiness(@CurrentUser() user: AuthenticatedUser, @Param('key') key: string) { return this.catalog.readiness(user.id, key); }
   @Post('scenarios/:key/compile') compile(@CurrentUser() user: AuthenticatedUser, @Param('key') key: string, @Body() input: CompileScenarioDto) { return this.catalog.compile(user.id, key, input); }
   @Get('scenarios/:key') scenario(@Param('key') key: string) { return this.catalog.getScenario(key); }
+  @Get('scenarios/:key/contract-v2') scenarioContractV2(@Param('key') key: string) { return this.catalog.getScenarioContractV2(key); }
   @Get('resources') resources() { return this.catalog.listResources(); }
   @Get('resources/:type/facts') facts(@Param('type') type: string) { return this.catalog.factsForResource(type); }
   @Get('strategies') strategies(@CurrentUser() _user: AuthenticatedUser) { return this.catalog.listStrategies(); }

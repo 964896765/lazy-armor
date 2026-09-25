@@ -2,6 +2,7 @@ import { BadRequestException, Inject, Injectable, NotFoundException, OnModuleIni
 import {
   FACT_SCHEMA_CATALOG, RESOURCE_CATALOG, SCENARIO_DEFINITIONS, STRATEGY_PROFILES, catalogHash,
   compileScenarioPlan, evaluateScenarioReadiness, scenarioByKey, scenarioByRevision, PRODUCT_DOMAINS,
+  scenarioContractV2ByKey,
   type StrategyKey, type TerminalHandoffTarget,
   TERMINAL_FOLLOW_UP_RULES, terminalFollowUpScenario,
 } from '@lazy-armor/plan-schema';
@@ -27,6 +28,12 @@ export class RuntimeCatalogRegistryService implements OnModuleInit {
   listDomains() { return PRODUCT_DOMAINS.map((domain) => ({ ...domain, scenarioCount: SCENARIO_DEFINITIONS.filter((item) => item.domain === domain.key).length })); }
   listScenarios(domain?: string) { return domain ? SCENARIO_DEFINITIONS.filter((item) => item.domain === domain) : SCENARIO_DEFINITIONS; }
   getScenario(key: string) { const value = scenarioByKey(key); if (!value) throw new NotFoundException('Scenario not found'); return value; }
+  getScenarioContractV2(key: string) {
+    this.getScenario(key);
+    const value = scenarioContractV2ByKey(key);
+    if (!value) throw new NotFoundException('Scenario Contract V2 not available');
+    return value;
+  }
   listResources() { return RESOURCE_CATALOG; }
   factsForResource(resourceType: string) {
     if (!RESOURCE_CATALOG.some((item) => item.key === resourceType)) throw new NotFoundException('Resource not found');

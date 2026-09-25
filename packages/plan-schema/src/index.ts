@@ -69,6 +69,19 @@ export {
   type PlanOfferAvailability,
   type PlanOfferRequest,
 } from './plan-offer';
+export {
+  SCENARIO_CONTRACT_VERSION,
+  SCENARIO_CONTRACT_V2_REGISTRY,
+  SCENARIO_GOVERNANCE_STATES,
+  assertScenarioContractV2,
+  scenarioContractV2ByKey,
+  scenarioGoalSpecSchema,
+  scenarioResourceSubjectSchema,
+  type ScenarioContractV2,
+  type ScenarioGoalSpec,
+  type ScenarioGovernanceState,
+  type ScenarioResourceSubject,
+} from './scenario-contract-v2';
 
 export const SOURCE_TYPES = ['manual', 'email', 'calendar', 'notification', 'file', 'webhook', 'internal', 'commerce', 'device', 'vehicle', 'billing', 'content_platform'] as const;
 export const TRIGGER_TYPES = ['manual', 'schedule', 'event', 'webhook', 'threshold', 'date_before', 'date_after', 'data_changed'] as const;
