@@ -17,7 +17,7 @@ describe('Scenario Contract V2 compatibility sidecar', () => {
 
   it('defines the delivery golden contract without claiming real verification', () => {
     const contract = scenarioContractV2ByKey('daily_life.delivery')!;
-    expect(SCENARIO_CONTRACT_V2_REGISTRY).toHaveLength(1);
+    expect(SCENARIO_CONTRACT_V2_REGISTRY).toHaveLength(2);
     expect(() => assertScenarioContractV2(contract)).not.toThrow();
     expect(contract.governance).toMatchObject({
       state: 'DETERMINISTIC_SANDBOX',
@@ -26,6 +26,23 @@ describe('Scenario Contract V2 compatibility sidecar', () => {
     });
     expect(contract.factDemands.map((item) => item.factKey)).toContain('shipment.status');
     expect(contract.actionDemands.map((item) => item.capabilityKey)).toContain('SEND_NOTIFICATION');
+  });
+
+  it('defines the device.consumables golden contract from manual registration without overclaiming device reads', () => {
+    const contract = scenarioContractV2ByKey('device.consumables')!;
+    expect(() => assertScenarioContractV2(contract)).not.toThrow();
+    expect(contract.scenario).toEqual({ key: 'device.consumables', revision: 2 });
+    expect(contract.governance).toMatchObject({
+      state: 'DETERMINISTIC_SANDBOX',
+      realSourceVerified: false,
+      realActionVerified: false,
+    });
+    expect(contract.goal.requiredSubjectTypes).toContain('device.consumable');
+    expect(contract.factDemands.map((item) => item.factKey)).toContain('device.consumable.remaining_days');
+    expect(contract.factDemands[0].acceptedSourceModes).toContain('MANUAL');
+    expect(contract.factDemands[0].missingPolicy).toBe('ALLOW_MANUAL_ASSISTED');
+    expect(contract.actionDemands.map((item) => item.capabilityKey)).toContain('SEND_NOTIFICATION');
+    expect(contract.unsupportedConditions.join(' ')).toContain('不宣称设备实时读取能力');
   });
 
   it('validates GoalSpec and ResourceSubject independently from the legacy Plan definition', () => {

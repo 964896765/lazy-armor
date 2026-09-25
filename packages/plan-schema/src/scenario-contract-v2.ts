@@ -77,6 +77,8 @@ function defineContract(input: Omit<ScenarioContractV2, 'contractVersion' | 'def
 
 const delivery = scenarioByKey('daily_life.delivery');
 if (!delivery) throw new Error('Golden scenario daily_life.delivery is not registered');
+const deviceConsumables = scenarioByKey('device.consumables');
+if (!deviceConsumables) throw new Error('Golden scenario device.consumables is not registered');
 
 /**
  * Contract V2 is an additive sidecar. It references an immutable V1 scenario
@@ -129,6 +131,56 @@ export const SCENARIO_CONTRACT_V2_REGISTRY: readonly ScenarioContractV2[] = Obje
       '营销通知不进入候选事实',
       '没有可验证来源时不宣称实时物流能力',
       '提醒已发送不等于包裹业务终态已完成',
+    ]),
+  }),
+  defineContract({
+    scenario: Object.freeze({ key: deviceConsumables.key, revision: deviceConsumables.revision }),
+    governance: Object.freeze({
+      state: 'DETERMINISTIC_SANDBOX',
+      realSourceVerified: false,
+      realActionVerified: false,
+      evidenceRefs: Object.freeze(['test:p1-device', 'test:p4-consumer-journeys', 'test:p1-canonical-plans']),
+    }),
+    goal: Object.freeze({
+      supportedIntents: Object.freeze(['NOTIFY_ON_CONSUMABLE_DUE', 'PREPARE_CONSUMABLE_REPLACEMENT', 'DETECT_CONSUMABLE_ANOMALY']),
+      requiredSubjectTypes: Object.freeze(['device.consumable']),
+    }),
+    factDemands: Object.freeze([
+      Object.freeze({
+        factKey: 'device.consumable.remaining_days',
+        subjectType: 'device.consumable',
+        required: true,
+        maximumAgeSeconds: deviceConsumables.freshnessPolicy.maximumAgeSeconds,
+        minimumReality: deviceConsumables.minimumReality,
+        acceptedSourceCapabilities: Object.freeze(deviceConsumables.sourceRequirements.map((item) => item.capabilityKey)),
+        // 用户手动登记是已证明的一等来源；授权设备数据是目标来源但尚未验证。
+        acceptedSourceModes: Object.freeze(['MANUAL', 'OFFICIAL_API', 'FILE', 'APP_READ_SESSION'] as const),
+        refreshPolicy: 'ON_STALE',
+        verificationRequirements: Object.freeze(['SOURCE_EVIDENCE', 'USER_CONFIRMATION'] as const),
+        conflictPolicy: 'LATEST_VERIFIED_THEN_OBSERVED',
+        missingPolicy: 'ALLOW_MANUAL_ASSISTED',
+      }),
+    ]),
+    actionDemands: Object.freeze([
+      Object.freeze({
+        intentKey: 'SEND_CONSUMABLE_REMINDER',
+        capabilityKey: 'SEND_NOTIFICATION',
+        resourceType: 'Notification',
+        requiresUserConfirmation: false,
+        verification: Object.freeze(deviceConsumables.verificationRequirements),
+      }),
+    ]),
+    privacy: Object.freeze({
+      classes: Object.freeze(['PERSONAL'] as const),
+      purpose: '根据用户登记的耗材更换周期计算剩余天数并提醒更换，不推断设备实时健康状态',
+      rawEvidenceRetention: 'SOURCE_POLICY',
+    }),
+    unsupportedConditions: Object.freeze([
+      '没有可验证来源时不宣称设备实时读取能力',
+      '不依据真实登记之外的信息推断耗材剩余寿命',
+      '提醒已发送不等于耗材已更换',
+      '准备购物清单不代表完成购买',
+      '设备离线时不虚构在线状态',
     ]),
   }),
 ]);
