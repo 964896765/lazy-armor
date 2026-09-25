@@ -1,7 +1,8 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { actionIntents, actionAdapterBindings, executionSteps, executions, planActions, plans, strategyRuntimeBindings, strategyRuntimeWakeups } from '@lazy-armor/database';
+import { actionIntents, actionAdapterBindings, connectors, executionSteps, executions, planActions, plans, strategyRuntimeBindings, strategyRuntimeWakeups } from '@lazy-armor/database';
 import { ACTION_ADAPTER_REVISION, TERMINAL_FOLLOW_UP_RULES, buildActionIntent, catalogHash, definitionHash,
-  requiresTerminalHandoffProof, riskMaximum, terminalFollowUpRule, type ContextRiskSignal, type RiskLevel } from '@lazy-armor/plan-schema';
+  requiresTerminalHandoffProof, riskMaximum, terminalFollowUpRule, buildVerificationContract, verificationContractHash,
+  actionResolutionContractHash, type ActionResolutionContract, type ContextRiskSignal, type RiskLevel } from '@lazy-armor/plan-schema';
 import { newId } from '@lazy-armor/shared';
 import { and, asc, eq } from 'drizzle-orm';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
@@ -18,6 +19,7 @@ import { RISK_SCORE } from '../risk/risk.types';
 import { CapabilityResolverService } from '../capability-resolver/capability-resolver.service';
 import { TerminalHandoffGuard, type TerminalHandoffProof } from '../strategy-runtime/terminal-handoff-guard.service';
 import { TruthHandoffGuard, type HandoffTransaction, type TruthHandoffProof } from '../strategy-runtime/truth-handoff-guard.service';
+import { VerificationPolicyRegistry } from './verification-policy-registry.service';
 
 export function requiresServerOwnedTerminalHandoff(actions: readonly { config: Record<string, unknown> }[]): boolean {
   return actions.some((action) => requiresTerminalHandoffProof(action.config)
@@ -40,6 +42,7 @@ export class ExecutionDispatchService {
     private readonly resolver: CapabilityResolverService,
     private readonly terminalGuard: TerminalHandoffGuard,
     private readonly truthGuard: TruthHandoffGuard,
+    private readonly verificationPolicies: VerificationPolicyRegistry,
   ) {}
 
   async dispatchManual(userId: string, planId: string, requestId: string, triggerPayload: Record<string, unknown>, resolutionDecisionIds?: string[]) {
@@ -135,10 +138,33 @@ export class ExecutionDispatchService {
             sideEffectKey: intent.sideEffectKey, providerRiskFloor: intent.providerRiskFloor, scenarioRiskFloor: intent.scenarioRiskFloor,
             actionRisk: intent.actionRisk, contextRiskElevation: intent.contextRiskElevation, effectiveRiskLevel: intent.effectiveRisk,
             contextSignalsJson: intent.contextSignals as unknown as Record<string, unknown>[], intentHash: intent.intentHash, status: 'BOUND_TO_EXECUTION', createdAt: now });
+          const resolvedConnector = row.connectorId
+            ? (await tx.select({ key: connectors.key }).from(connectors).where(eq(connectors.id, row.connectorId)).limit(1))[0]
+            : null;
+          const providerKey = resolvedConnector?.key ?? action.connectorKey;
+          const verificationPolicy = this.verificationPolicies.select(providerKey, row.requiredCapability);
+          const verificationContract = buildVerificationContract(providerKey, row.requiredCapability, verificationPolicy);
+          const frozenVerificationHash = verificationContractHash(verificationContract);
+          const resolutionContract: ActionResolutionContract = {
+            version: '1', planVersionId: pinnedVersionId, actionIntentId: intentId, actionIntentHash: intent.intentHash,
+            adapterRevision: ACTION_ADAPTER_REVISION, adapterKey: 'existing-runner:' + action.actionType,
+            connectorId: row.connectorId, connectionId: row.connectionId, capabilityKey: row.requiredCapability,
+            capabilityResolutionDecisionId: resolution?.row.id ?? null,
+            capabilityResolutionDecisionHash: resolution?.row.decisionHash ?? null,
+            riskInputFingerprint: riskSnapshot.inputFingerprint, effectiveRisk: riskSnapshot.effectiveRisk,
+            verificationContractHash: frozenVerificationHash,
+          };
+          const frozenResolutionHash = actionResolutionContractHash(resolutionContract);
           const adapter = { actionIntentId: intentId, adapterRevision: ACTION_ADAPTER_REVISION,
             adapterKey: 'existing-runner:' + action.actionType, connectorId: row.connectorId, connectionId: row.connectionId, capabilityKey: row.requiredCapability,
-            capabilityResolutionDecisionId: resolution?.row.id ?? null, capabilityResolutionDecisionHash: resolution?.row.decisionHash ?? null };
-          await tx.insert(actionAdapterBindings).values({ id: newId(), ...adapter, bindingHash: catalogHash(adapter), status: 'BOUND', createdAt: now });
+            capabilityResolutionDecisionId: resolution?.row.id ?? null, capabilityResolutionDecisionHash: resolution?.row.decisionHash ?? null,
+            resolutionContractHash: frozenResolutionHash, verificationContractHash: frozenVerificationHash };
+          await tx.insert(actionAdapterBindings).values({ id: newId(), ...adapter,
+            resolutionContractJson: resolutionContract as unknown as Record<string, unknown>,
+            verificationPolicyKey: verificationPolicy.key, verificationPolicyRevision: verificationPolicy.revision,
+            verificationPolicyHash: verificationContract.policyHash,
+            verificationContractJson: verificationContract as unknown as Record<string, unknown>,
+            bindingHash: catalogHash(adapter), status: 'BOUND', createdAt: now });
           await tx.insert(executionSteps).values({
             id: newId(), executionId: id, planActionId: row.id, actionIntentId: intentId, stepOrder: row.stepOrder, actionType: row.actionType,
             connectorId: row.connectorId, connectionId: row.connectionId, requiredCapability: row.requiredCapability,

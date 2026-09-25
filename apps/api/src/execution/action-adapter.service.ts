@@ -1,6 +1,8 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { actionAdapterBindings, actionIntents, connectors, executionSteps, executions, planActions, approvalRequests } from '@lazy-armor/database';
-import { ACTION_ADAPTER_REVISION, buildActionIntent, catalogHash, type ContextRiskSignal, type NormalizedAction, type RiskLevel } from '@lazy-armor/plan-schema';
+import { ACTION_ADAPTER_REVISION, actionResolutionContractHash, buildActionIntent, catalogHash, verificationContractHash,
+  verificationPolicyHash, type ActionResolutionContract, type ContextRiskSignal, type NormalizedAction, type RiskLevel,
+  type VerificationContract } from '@lazy-armor/plan-schema';
 import { and, eq } from 'drizzle-orm';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
 import { ExecutionRuntimeError } from './execution.types';
@@ -8,11 +10,13 @@ import { CapabilityResolverService } from '../capability-resolver/capability-res
 import { RiskEngine } from '../risk/risk-engine.service';
 import type { RiskSnapshot } from '../risk/risk.types';
 import { ExecutionApprovalGate } from './execution-approval-gate.service';
+import { VerificationPolicyRegistry } from './verification-policy-registry.service';
 
 @Injectable()
 export class ActionAdapter {
   constructor(@Inject(DATABASE) private readonly db: InjectedDatabase, private readonly resolver: CapabilityResolverService,
-    private readonly risk: RiskEngine, private readonly approvalGate: ExecutionApprovalGate) {}
+    private readonly risk: RiskEngine, private readonly approvalGate: ExecutionApprovalGate,
+    private readonly verificationPolicies: VerificationPolicyRegistry) {}
 
   async assertOperation(executionId: string, stepId: string) {
     const execution = (await this.db.select().from(executions).where(eq(executions.id, executionId)).limit(1))[0];
@@ -47,9 +51,11 @@ export class ActionAdapter {
       payload: row.payloadJson, desiredOutcome: row.desiredOutcome, sideEffectKey: row.sideEffectKey,
       providerRiskFloor: row.providerRiskFloor as RiskLevel, scenarioRiskFloor: row.scenarioRiskFloor as RiskLevel,
       actionRisk: row.actionRisk as RiskLevel, contextSignals: row.contextSignalsJson as unknown as ContextRiskSignal[] });
+    const hasFrozenContract = Boolean(binding?.resolutionContractHash || binding?.verificationContractHash || binding?.resolutionContractJson || binding?.verificationContractJson);
     const adapterIdentity = binding && { actionIntentId: row.id, adapterRevision: binding.adapterRevision,
       adapterKey: binding.adapterKey, connectorId: binding.connectorId, connectionId: binding.connectionId, capabilityKey: binding.capabilityKey,
-      capabilityResolutionDecisionId: binding.capabilityResolutionDecisionId, capabilityResolutionDecisionHash: binding.capabilityResolutionDecisionHash };
+      capabilityResolutionDecisionId: binding.capabilityResolutionDecisionId, capabilityResolutionDecisionHash: binding.capabilityResolutionDecisionHash,
+      ...(hasFrozenContract ? { resolutionContractHash: binding.resolutionContractHash, verificationContractHash: binding.verificationContractHash } : {}) };
     if (row.executionId !== execution.id || row.planVersionId !== execution.planVersionId || row.planActionId !== step.planActionId
       || row.actionType !== action.actionType || row.capabilityKey !== action.requiredCapability || row.status !== 'BOUND_TO_EXECUTION'
       || row.intentHash !== intent.intentHash || row.payloadHash !== intent.payloadHash || row.effectiveRiskLevel !== intent.effectiveRisk
@@ -60,6 +66,31 @@ export class ActionAdapter {
       || binding.connectionId !== step.connectionId || binding.capabilityKey !== step.requiredCapability
       || binding.bindingHash !== catalogHash(adapterIdentity)) {
       throw new ExecutionRuntimeError('ACTION_ADAPTER_INTEGRITY_ERROR', 'ActionIntent or adapter binding changed; execution denied');
+    }
+    if (hasFrozenContract) {
+      try {
+        if (!binding.resolutionContractJson || !binding.resolutionContractHash || !binding.verificationContractJson || !binding.verificationContractHash
+          || !binding.verificationPolicyKey || !binding.verificationPolicyRevision || !binding.verificationPolicyHash) throw new Error('Incomplete frozen contract');
+        const resolutionContract = binding.resolutionContractJson as unknown as ActionResolutionContract;
+        const verificationContract = binding.verificationContractJson as unknown as VerificationContract;
+        const currentPolicy = this.verificationPolicies.select(action.connectorKey, action.requiredCapability);
+        if (actionResolutionContractHash(resolutionContract) !== binding.resolutionContractHash
+          || verificationContractHash(verificationContract) !== binding.verificationContractHash
+          || verificationPolicyHash(verificationContract.policy) !== binding.verificationPolicyHash
+          || verificationContract.policy.key !== binding.verificationPolicyKey
+          || verificationContract.policy.revision !== binding.verificationPolicyRevision
+          || verificationPolicyHash(currentPolicy) !== binding.verificationPolicyHash
+          || resolutionContract.planVersionId !== execution.planVersionId || resolutionContract.actionIntentId !== row.id
+          || resolutionContract.actionIntentHash !== row.intentHash || resolutionContract.adapterRevision !== binding.adapterRevision
+          || resolutionContract.adapterKey !== binding.adapterKey || resolutionContract.connectorId !== binding.connectorId
+          || resolutionContract.connectionId !== binding.connectionId || resolutionContract.capabilityKey !== binding.capabilityKey
+          || resolutionContract.capabilityResolutionDecisionId !== binding.capabilityResolutionDecisionId
+          || resolutionContract.capabilityResolutionDecisionHash !== binding.capabilityResolutionDecisionHash
+          || resolutionContract.riskInputFingerprint !== step.inputFingerprint || resolutionContract.effectiveRisk !== step.effectiveRiskLevel
+          || resolutionContract.verificationContractHash !== binding.verificationContractHash) throw new Error('Frozen contract mismatch');
+      } catch {
+        throw new ExecutionRuntimeError('ACTION_RESOLUTION_CHANGED', 'Frozen action or verification contract changed; execution denied');
+      }
     }
     if (binding.capabilityResolutionDecisionId) {
       const resolution = await this.resolver.revalidate(execution.userId, binding.capabilityResolutionDecisionId);
