@@ -31,7 +31,7 @@ import { resolvePlanTemplate } from '../templates/template-registry';
 import { EntitlementService } from '../membership/entitlement.service';
 import { decodeCursor, encodeCursor, type CursorPageDto } from '../common/cursor-pagination';
 
-type PlanExecutor = PlanQueryExecutor & Pick<InjectedDatabase, 'insert' | 'update'>;
+export type PlanExecutor = PlanQueryExecutor & Pick<InjectedDatabase, 'insert' | 'update'>;
 type TemplateVersionMetadata = {
   templateKey?: string | null;
   templateVersion?: string | null;
@@ -53,26 +53,27 @@ export class PlansService {
   ) {}
 
   async create(userId: string, input: PlanDefinitionInput) {
-    const parsed = this.parse(input);
-    const planId = newId();
+    let planId = '';
     await this.db.transaction(async (tx) => {
-      const now = new Date();
-      await tx.insert(plans).values({
-        id: planId,
-        userId,
-        status: 'draft',
-        currentVersionId: null,
-        activeVersionId: null,
-        createdAt: now,
-        updatedAt: now,
-        archivedAt: null,
-      });
-      const resolved = await this.resolveReferences(tx, userId, parsed, { allowMissingConnections: true });
-      const versionId = await this.insertVersion(tx, userId, planId, 1, resolved, now);
-      await tx.update(plans).set({ currentVersionId: versionId, updatedAt: now }).where(eq(plans.id, planId));
-      await this.audit.append({ actorType: 'user', actorUserId: userId, action: 'PLAN_CREATED', resourceType: 'plan', resourceId: planId, userId, correlationId: planId, changeSummary: `Plan created with version 1: ${parsed.name}`, source: 'api', result: 'success' }, tx);
+      ({ planId } = await this.createInTransaction(userId, input, tx));
     });
     return this.get(userId, planId);
+  }
+
+  /** Used by orchestration flows that must atomically persist a Plan and related authority records. */
+  async createInTransaction(userId: string, input: PlanDefinitionInput | PlanDefinition, executor: PlanExecutor) {
+    const parsed = this.parse(input);
+    const planId = newId();
+    const now = new Date();
+    await executor.insert(plans).values({ id: planId, userId, status: 'draft', currentVersionId: null,
+      activeVersionId: null, createdAt: now, updatedAt: now, archivedAt: null });
+    const resolved = await this.resolveReferences(executor, userId, parsed, { allowMissingConnections: true });
+    const versionId = await this.insertVersion(executor, userId, planId, 1, resolved, now);
+    await executor.update(plans).set({ currentVersionId: versionId, updatedAt: now }).where(eq(plans.id, planId));
+    await this.audit.append({ actorType: 'user', actorUserId: userId, action: 'PLAN_CREATED', resourceType: 'plan',
+      resourceId: planId, userId, correlationId: planId, changeSummary: `Plan created with version 1: ${parsed.name}`,
+      source: 'api', result: 'success' }, executor);
+    return { planId, planVersionId: versionId, versionNumber: 1, definition: resolved };
   }
 
   async createFromTemplate(userId: string, input: PlanDefinitionInput, metadata: TemplateVersionMetadata) {

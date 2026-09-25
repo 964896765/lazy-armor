@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import {
   approvalRequests,
   executions,
+  planCreationContracts,
   plans,
   planVersions,
   strategyRuntimeBindings,
@@ -37,7 +38,7 @@ export class PlanLifecycleProjectionService {
     const planVersionId = plan.currentVersionId ?? plan.activeVersionId;
     if (!planVersionId) return buildPlanLifecycleProjection({ planId, evaluatedAt: new Date().toISOString() });
 
-    const [version, binding, latestExecution] = await Promise.all([
+    const [version, binding, latestExecution, creationContract] = await Promise.all([
       this.db.select({ id: planVersions.id, domain: planVersions.domain, name: planVersions.name })
         .from(planVersions).where(and(eq(planVersions.id, planVersionId), eq(planVersions.planId, planId))).limit(1).then((rows) => rows[0]),
       this.db.select({ id: strategyRuntimeBindings.id, scenarioKey: strategyRuntimeBindings.scenarioKey })
@@ -45,6 +46,11 @@ export class PlanLifecycleProjectionService {
       this.db.select({ id: executions.id, status: executions.status, resultCode: executions.resultCode })
         .from(executions).where(and(eq(executions.planId, planId), eq(executions.userId, userId)))
         .orderBy(desc(executions.createdAt), desc(executions.id)).limit(1).then((rows) => rows[0]),
+      this.db.select({ id: planCreationContracts.id, goal: planCreationContracts.goalJson,
+        subject: planCreationContracts.subjectJson, factDemands: planCreationContracts.factDemandsJson,
+        sourceSelection: planCreationContracts.sourceSelectionJson, offer: planCreationContracts.offerJson })
+        .from(planCreationContracts).where(and(eq(planCreationContracts.userId, userId),
+          eq(planCreationContracts.planVersionId, planVersionId))).limit(1).then((rows) => rows[0]),
     ]);
     const scenario = binding ? scenarioByKey(binding.scenarioKey) : null;
     const runtime = scenario ? await this.readiness.projectScenarioRuntimeEvidence(userId, scenario) : null;
@@ -67,8 +73,16 @@ export class PlanLifecycleProjectionService {
       observe('CAPABILITY_DISCOVERY', 'COMPLETED', 'USER_RUNTIME_EVIDENCE_EVALUATED', [`scenario:${scenario.key}@${scenario.revision}`]);
     } else observe('SCENARIO', 'BLOCKED', 'SCENARIO_RUNTIME_BINDING_MISSING');
 
-    // Existing PlanVersion has only name/description, not a versioned GoalSpec + ResourceSubject.
-    observe('GOAL_OBJECT', 'BLOCKED', 'GOAL_SPEC_OR_RESOURCE_SUBJECT_NOT_VERSIONED', [`plan-version:${planVersionId}`]);
+    if (creationContract) {
+      observe('GOAL_OBJECT', 'COMPLETED', 'GOAL_SPEC_AND_RESOURCE_SUBJECT_PERSISTED', [`plan-contract:${creationContract.id}`]);
+      observe('PLAN_OFFERS', 'COMPLETED', 'PLAN_OFFER_SNAPSHOT_PERSISTED', [`plan-contract:${creationContract.id}`]);
+      observe('RANK_EXPLAIN', 'COMPLETED', 'DETERMINISTIC_OFFER_EXPLANATION_PERSISTED', [`plan-contract:${creationContract.id}`]);
+      observe('USER_SELECTION', 'COMPLETED', 'USER_OFFER_CONFIRMATION_PERSISTED', [`plan-contract:${creationContract.id}`]);
+    } else {
+      // Historical plans stay valid; missing new records are never backfilled with invented evidence.
+      observe('GOAL_OBJECT', 'BLOCKED', 'GOAL_SPEC_OR_RESOURCE_SUBJECT_NOT_VERSIONED', [`plan-version:${planVersionId}`]);
+      observe('USER_SELECTION', 'SKIPPED', 'LEGACY_PLAN_WITHOUT_PERSISTED_OFFER', [`plan-version:${planVersionId}`]);
+    }
     if (runtime) {
       const readinessState = runtime.product.userReadiness === 'READY' ? 'COMPLETED'
         : runtime.product.userReadiness === 'NEEDS_CONFIRMATION' ? 'READY' : 'BLOCKED';
@@ -79,8 +93,6 @@ export class PlanLifecycleProjectionService {
       observe('AVAILABILITY_RECONCILIATION', 'ACTIVE', 'RUNTIME_READINESS_REEVALUATED', [`scenario:${runtime.scenarioKey}@${runtime.scenarioRevision}`]);
     }
 
-    // Pre-Offer legacy plans remain valid, but we must not invent historical Offer evidence.
-    observe('USER_SELECTION', 'SKIPPED', 'LEGACY_PLAN_WITHOUT_PERSISTED_OFFER', [`plan-version:${planVersionId}`]);
     observe('USER_PLAN', 'COMPLETED', plan.activeVersionId === planVersionId ? 'IMMUTABLE_PLAN_VERSION_ACTIVE' : 'IMMUTABLE_PLAN_VERSION_PERSISTED', [`plan-version:${planVersionId}`]);
     if (decisions[0]) observe('DECISION', 'COMPLETED', 'STRATEGY_DECISION_PERSISTED', [`strategy-decision:${decisions[0].id}`]);
     if (approvals.some((item) => item.status === 'pending')) observe('RISK_POLICY_APPROVAL', 'ACTIVE', 'APPROVAL_PENDING', approvals.map((item) => `approval:${item.id}`));

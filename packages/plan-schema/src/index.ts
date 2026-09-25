@@ -94,6 +94,11 @@ export {
   type FactTruthEvidence,
   type SourceCandidateEvidence,
 } from './fact-demand';
+export {
+  PERSISTENT_PLAN_OFFER_CONTRACT_VERSION, PLAN_OFFER_STATES, buildPersistentPlanOffer,
+  choosePlanOfferRequestSchema, persistentPlanOfferRequestSchema, planOfferPreconditionHash,
+  type ChoosePlanOfferRequest, type PersistentPlanOffer, type PersistentPlanOfferRequest, type PlanOfferState,
+} from './plan-offer-persistence';
 
 export const SOURCE_TYPES = ['manual', 'email', 'calendar', 'notification', 'file', 'webhook', 'internal', 'commerce', 'device', 'vehicle', 'billing', 'content_platform'] as const;
 export const TRIGGER_TYPES = ['manual', 'schedule', 'event', 'webhook', 'threshold', 'date_before', 'date_after', 'data_changed'] as const;

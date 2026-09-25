@@ -14,8 +14,8 @@ import { and, desc, eq, isNull, lt, or, sql } from 'drizzle-orm';
 import { AuditService } from '../audit/audit.service';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
 
-type StrategyRuntimeExecutor = Pick<InjectedDatabase, 'select' | 'insert'>;
-type BindingInput = { planVersionId: string; scenarioKey: string; scenarioRevision?: number; strategy?: StrategyKey; subjectKey?: string };
+export type StrategyRuntimeExecutor = Pick<InjectedDatabase, 'select' | 'insert'>;
+export type BindingInput = { planVersionId: string; scenarioKey: string; scenarioRevision?: number; strategy?: StrategyKey; subjectKey?: string };
 type DependencyQuery = { factKey?: string; resourceType?: string; subjectKey?: string };
 type TruthChangeInput = { truthRecordVersionId: string; factKey: string; resourceType: string; subjectKey: string };
 
@@ -61,83 +61,58 @@ export class StrategyRuntimeService {
   }
 
   async bind(userId: string, input: BindingInput) {
-    const owned = (await this.db.select({ version: planVersions, plan: plans }).from(planVersions)
-      .innerJoin(plans, and(eq(plans.id, planVersions.planId), eq(plans.userId, userId)))
-      .where(eq(planVersions.id, input.planVersionId)).limit(1))[0];
-    if (!owned) throw new NotFoundException('Plan version not found');
-
-    let compiled;
-    try {
-      compiled = compileScenarioPlan({
-        scenarioKey: input.scenarioKey,
-        scenarioRevision: input.scenarioRevision,
-        strategy: input.strategy,
-        subjectKey: input.subjectKey,
-        name: owned.version.name,
-        mode: 'DRAFT',
-        readiness: { manualInputAvailable: true, observationPipelineAvailable: true, executionPipelineAvailable: true },
-      });
-    } catch (error) {
-      throw new BadRequestException(error instanceof Error ? error.message : 'Strategy runtime compilation failed');
-    }
-    if (definitionHash(compiled.definition) !== owned.version.definitionHash) {
-      throw new ConflictException('Plan version does not match the compiled scenario definition');
-    }
-
-    const prior = await this.findBinding(userId, input.planVersionId);
-    if (prior) {
-      if (prior.runtimeHash !== compiled.runtime.runtimeHash) throw new ConflictException('Plan version already has a different immutable runtime binding');
-      return this.bindingResponse(prior);
-    }
-
-    const bindingId = newId();
-    const now = new Date();
     try {
       await this.db.transaction(async (tx) => {
-        await tx.insert(strategyRuntimeBindings).values({
-          id: bindingId,
-          userId,
-          planVersionId: input.planVersionId,
-          scenarioKey: compiled.scenarioKey,
-          scenarioRevision: compiled.scenarioRevision,
-          strategyKey: compiled.strategy,
-          strategyRevision: compiled.runtime.strategyRevision,
-          schemaVersion: compiled.runtime.schemaVersion,
-          runtimeHash: compiled.runtime.runtimeHash,
-          runtimeJson: compiled.runtime as unknown as Record<string, unknown>,
-          createdAt: now,
-        });
-        for (const dependency of compiled.runtime.dependencies) {
-          await tx.insert(truthFactDependencies).values({
-            id: newId(),
-            bindingId,
-            userId,
-            planVersionId: input.planVersionId,
-            dependencyKey: hash({ planVersionId: input.planVersionId, ...dependency }),
-            factKey: dependency.factKey,
-            resourceType: dependency.resourceType,
-            field: dependency.field,
-            scope: dependency.scope,
-            subjectKey: dependency.subjectKey,
-            createdAt: now,
-          });
-        }
-        await this.audit.append({
-          actorType: 'user', actorUserId: userId, action: 'STRATEGY_RUNTIME_BOUND',
-          resourceType: 'strategy_runtime_binding', resourceId: bindingId, userId,
-          correlationId: owned.plan.id, causationId: input.planVersionId,
-          after: { scenarioKey: compiled.scenarioKey, strategy: compiled.strategy, runtimeHash: compiled.runtime.runtimeHash },
-          changeSummary: `Bound ${compiled.strategy} runtime to immutable plan version`,
-          source: 'api', result: 'success',
-        }, tx);
+        await this.bindInTransaction(userId, input, tx);
       });
     } catch (error) {
       if (!isDuplicate(error)) throw error;
     }
     const binding = await this.findBinding(userId, input.planVersionId);
     if (!binding) throw new ConflictException('Strategy runtime binding could not be materialized');
-    if (binding.runtimeHash !== compiled.runtime.runtimeHash) throw new ConflictException('Plan version already has a different immutable runtime binding');
     return this.bindingResponse(binding);
+  }
+
+  /** Binds runtime/dependencies using a caller-owned transaction. */
+  async bindInTransaction(userId: string, input: BindingInput, executor: StrategyRuntimeExecutor) {
+    const owned = (await executor.select({ version: planVersions, plan: plans }).from(planVersions)
+      .innerJoin(plans, and(eq(plans.id, planVersions.planId), eq(plans.userId, userId)))
+      .where(eq(planVersions.id, input.planVersionId)).limit(1))[0];
+    if (!owned) throw new NotFoundException('Plan version not found');
+    let compiled;
+    try {
+      compiled = compileScenarioPlan({ scenarioKey: input.scenarioKey, scenarioRevision: input.scenarioRevision,
+        strategy: input.strategy, subjectKey: input.subjectKey, name: owned.version.name, mode: 'DRAFT',
+        readiness: { manualInputAvailable: true, observationPipelineAvailable: true, executionPipelineAvailable: true } });
+    } catch (error) {
+      throw new BadRequestException(error instanceof Error ? error.message : 'Strategy runtime compilation failed');
+    }
+    if (definitionHash(compiled.definition) !== owned.version.definitionHash) {
+      throw new ConflictException('Plan version does not match the compiled scenario definition');
+    }
+    const prior = await this.findBinding(userId, input.planVersionId, executor);
+    if (prior) {
+      if (prior.runtimeHash !== compiled.runtime.runtimeHash) throw new ConflictException('Plan version already has a different immutable runtime binding');
+      return { bindingId: prior.id, runtimeHash: prior.runtimeHash, created: false };
+    }
+    const bindingId = newId();
+    const now = new Date();
+    await executor.insert(strategyRuntimeBindings).values({ id: bindingId, userId, planVersionId: input.planVersionId,
+      scenarioKey: compiled.scenarioKey, scenarioRevision: compiled.scenarioRevision, strategyKey: compiled.strategy,
+      strategyRevision: compiled.runtime.strategyRevision, schemaVersion: compiled.runtime.schemaVersion,
+      runtimeHash: compiled.runtime.runtimeHash, runtimeJson: compiled.runtime as unknown as Record<string, unknown>, createdAt: now });
+    for (const dependency of compiled.runtime.dependencies) {
+      await executor.insert(truthFactDependencies).values({ id: newId(), bindingId, userId, planVersionId: input.planVersionId,
+        dependencyKey: hash({ planVersionId: input.planVersionId, ...dependency }), factKey: dependency.factKey,
+        resourceType: dependency.resourceType, field: dependency.field, scope: dependency.scope,
+        subjectKey: dependency.subjectKey, createdAt: now });
+    }
+    await this.audit.append({ actorType: 'user', actorUserId: userId, action: 'STRATEGY_RUNTIME_BOUND',
+      resourceType: 'strategy_runtime_binding', resourceId: bindingId, userId, correlationId: owned.plan.id,
+      causationId: input.planVersionId, after: { scenarioKey: compiled.scenarioKey, strategy: compiled.strategy,
+        runtimeHash: compiled.runtime.runtimeHash }, changeSummary: `Bound ${compiled.strategy} runtime to immutable plan version`,
+      source: 'api', result: 'success' }, executor);
+    return { bindingId, runtimeHash: compiled.runtime.runtimeHash, created: true };
   }
 
   async listDependencies(userId: string, query: DependencyQuery = {}) {
@@ -381,8 +356,8 @@ export class StrategyRuntimeService {
     return this.decisionResponse(decision);
   }
 
-  private async findBinding(userId: string, planVersionId: string) {
-    return (await this.db.select().from(strategyRuntimeBindings).where(and(eq(strategyRuntimeBindings.userId, userId), eq(strategyRuntimeBindings.planVersionId, planVersionId))).limit(1))[0];
+  private async findBinding(userId: string, planVersionId: string, executor: StrategyRuntimeExecutor = this.db) {
+    return (await executor.select().from(strategyRuntimeBindings).where(and(eq(strategyRuntimeBindings.userId, userId), eq(strategyRuntimeBindings.planVersionId, planVersionId))).limit(1))[0];
   }
 
   private async findDecision(userId: string, wakeupId: string) {

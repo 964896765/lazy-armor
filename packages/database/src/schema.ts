@@ -1065,6 +1065,54 @@ export const planActions = mysqlTable('plan_actions', {
   createdAt: datetime('created_at', { mode: 'date', fsp: 6 }).notNull(),
 }, (table) => [uniqueIndex('plan_actions_version_step_uq').on(table.planVersionId, table.stepOrder)]);
 
+export const planOfferSnapshots = mysqlTable('plan_offer_snapshots', {
+  id: uuidBinary('id').primaryKey(),
+  userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  offerKey: varchar('offer_key', { length: 64 }).notNull(),
+  scenarioKey: varchar('scenario_key', { length: 120 }).notNull(),
+  scenarioRevision: int('scenario_revision').notNull(),
+  contractHash: char('contract_hash', { length: 64 }).notNull(),
+  offerHash: char('offer_hash', { length: 64 }).notNull(),
+  preconditionHash: char('precondition_hash', { length: 64 }).notNull(),
+  goalJson: json('goal_json').$type<Record<string, unknown>>().notNull(),
+  subjectJson: json('subject_json').$type<Record<string, unknown>>().notNull(),
+  factDemandsJson: json('fact_demands_json').$type<Record<string, unknown>[]>().notNull(),
+  sourceResolutionJson: json('source_resolution_json').$type<Record<string, unknown>[]>().notNull(),
+  offerJson: json('offer_json').$type<Record<string, unknown>>().notNull(),
+  status: varchar('status', { length: 32 }).notNull(),
+  expiresAt: datetime('expires_at', { mode: 'date', fsp: 6 }).notNull(),
+  chosenAt: datetime('chosen_at', { mode: 'date', fsp: 6 }),
+  invalidatedAt: datetime('invalidated_at', { mode: 'date', fsp: 6 }),
+  createdAt: datetime('created_at', { mode: 'date', fsp: 6 }).notNull(),
+}, (table) => [
+  uniqueIndex('plan_offer_user_key_uq').on(table.userId, table.offerKey),
+  index('plan_offer_user_status_idx').on(table.userId, table.status, table.expiresAt),
+]);
+
+export const planCreationContracts = mysqlTable('plan_creation_contracts', {
+  id: uuidBinary('id').primaryKey(),
+  userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  planId: uuidBinary('plan_id').notNull().references(() => plans.id, { onDelete: 'restrict' }),
+  planVersionId: uuidBinary('plan_version_id').notNull().references(() => planVersions.id, { onDelete: 'restrict' }),
+  offerSnapshotId: uuidBinary('offer_snapshot_id').notNull().references(() => planOfferSnapshots.id, { onDelete: 'restrict' }),
+  idempotencyKey: varchar('idempotency_key', { length: 120 }).notNull(),
+  scenarioKey: varchar('scenario_key', { length: 120 }).notNull(),
+  scenarioRevision: int('scenario_revision').notNull(),
+  contractHash: char('contract_hash', { length: 64 }).notNull(),
+  confirmationHash: char('confirmation_hash', { length: 64 }).notNull(),
+  goalJson: json('goal_json').$type<Record<string, unknown>>().notNull(),
+  subjectJson: json('subject_json').$type<Record<string, unknown>>().notNull(),
+  factDemandsJson: json('fact_demands_json').$type<Record<string, unknown>[]>().notNull(),
+  sourceSelectionJson: json('source_selection_json').$type<Record<string, unknown>[]>().notNull(),
+  offerJson: json('offer_json').$type<Record<string, unknown>>().notNull(),
+  createdAt: datetime('created_at', { mode: 'date', fsp: 6 }).notNull(),
+}, (table) => [
+  uniqueIndex('plan_contract_offer_uq').on(table.offerSnapshotId),
+  uniqueIndex('plan_contract_user_idempotency_uq').on(table.userId, table.idempotencyKey),
+  uniqueIndex('plan_contract_version_uq').on(table.planVersionId),
+  index('plan_contract_user_plan_idx').on(table.userId, table.planId),
+]);
+
 export const capabilityResolutionDecisions = mysqlTable('capability_resolution_decisions', {
   id: uuidBinary('id').primaryKey(),
   userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
