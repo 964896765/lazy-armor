@@ -79,6 +79,8 @@ const delivery = scenarioByKey('daily_life.delivery');
 if (!delivery) throw new Error('Golden scenario daily_life.delivery is not registered');
 const deviceConsumables = scenarioByKey('device.consumables');
 if (!deviceConsumables) throw new Error('Golden scenario device.consumables is not registered');
+const abnormalTransaction = scenarioByKey('finance.abnormal_transaction');
+if (!abnormalTransaction) throw new Error('Golden scenario finance.abnormal_transaction is not registered');
 
 /**
  * Contract V2 is an additive sidecar. It references an immutable V1 scenario
@@ -181,6 +183,55 @@ export const SCENARIO_CONTRACT_V2_REGISTRY: readonly ScenarioContractV2[] = Obje
       '提醒已发送不等于耗材已更换',
       '准备购物清单不代表完成购买',
       '设备离线时不虚构在线状态',
+    ]),
+  }),
+  defineContract({
+    scenario: Object.freeze({ key: abnormalTransaction.key, revision: abnormalTransaction.revision }),
+    governance: Object.freeze({
+      state: 'DETERMINISTIC_SANDBOX',
+      realSourceVerified: false,
+      realActionVerified: false,
+      evidenceRefs: Object.freeze(['test:runtime-reality-pipeline', 'test:r3-consumer-golden-journeys', 'test:vnext-finance-multisource']),
+    }),
+    goal: Object.freeze({
+      supportedIntents: Object.freeze(['SUMMARIZE_ACCOUNT_PERIOD', 'DETECT_TRANSACTION_ANOMALY', 'ANALYZE_BUDGET', 'RECONCILE_TRANSACTION_RESULT']),
+      requiredSubjectTypes: Object.freeze(['finance.transaction']),
+    }),
+    factDemands: Object.freeze([
+      Object.freeze({
+        factKey: 'finance.transaction.amount',
+        subjectType: 'finance.transaction',
+        required: true,
+        maximumAgeSeconds: abnormalTransaction.freshnessPolicy.maximumAgeSeconds,
+        minimumReality: abnormalTransaction.minimumReality,
+        acceptedSourceCapabilities: Object.freeze(abnormalTransaction.sourceRequirements.map((item) => item.capabilityKey)),
+        acceptedSourceModes: Object.freeze(['OFFICIAL_API', 'NOTIFICATION', 'FILE', 'MANUAL', 'INTERNAL'] as const),
+        refreshPolicy: 'ON_CHANGE',
+        verificationRequirements: Object.freeze(['SOURCE_EVIDENCE', 'USER_CONFIRMATION', 'READ_BACK'] as const),
+        conflictPolicy: 'REQUIRE_CONFIRMATION',
+        missingPolicy: 'ALLOW_MANUAL_ASSISTED',
+      }),
+    ]),
+    actionDemands: Object.freeze([
+      Object.freeze({
+        intentKey: 'SEND_FINANCE_ATTENTION',
+        capabilityKey: 'SEND_NOTIFICATION',
+        resourceType: 'Notification',
+        requiresUserConfirmation: false,
+        verification: Object.freeze(abnormalTransaction.verificationRequirements),
+      }),
+    ]),
+    privacy: Object.freeze({
+      classes: Object.freeze(['SENSITIVE'] as const),
+      purpose: '依据用户明确授权或确认的交易证据进行分类、周期汇总、异常分析与结果回查，不发起资金操作',
+      rawEvidenceRetention: 'SOURCE_POLICY',
+    }),
+    unsupportedConditions: Object.freeze([
+      '通知内容只形成候选，未经确认不得认定为交易事实',
+      '没有稳定交易标识时不得按金额、商户或时间猜测合并跨来源记录',
+      '退款和冲正必须保留来源证据及关联交易标识',
+      '不执行自动转账、自动支付或任何资金划转',
+      '真实银行和支付平台接入需要合法授权与独立平台验收',
     ]),
   }),
 ]);

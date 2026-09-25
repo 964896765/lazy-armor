@@ -8,7 +8,7 @@ export type ParserKey = typeof PARSER_KEYS[number];
 
 export const REALITY_ADAPTER_REGISTRY = Object.freeze([
   ...PARSER_KEYS.map((key) => Object.freeze({ key, kind: 'PARSER' as const, revision: 1 as const, status: 'ACTIVE' as const })),
-  ...['money.v1', 'shipment-status.v1', 'connection-health.v1', 'device-status.v1', 'bill-reminder.v1', 'email-message.v1', 'calendar-event.v1', 'repository-resource.v1', 'repository-resource.v2', 'document-resource.v1', 'consumable-remaining.v1', 'household-supply.v1', 'feishu-resource.v1', 'dingtalk-resource.v1', 'wecom-resource.v1', 'structured-read.v1'].map((key) => Object.freeze({ key, kind: 'NORMALIZER' as const, revision: 1 as const, status: 'ACTIVE' as const })),
+  ...['money.v1', 'transaction-reconciliation.v1', 'shipment-status.v1', 'connection-health.v1', 'device-status.v1', 'bill-reminder.v1', 'email-message.v1', 'calendar-event.v1', 'repository-resource.v1', 'repository-resource.v2', 'document-resource.v1', 'consumable-remaining.v1', 'household-supply.v1', 'feishu-resource.v1', 'dingtalk-resource.v1', 'wecom-resource.v1', 'structured-read.v1'].map((key) => Object.freeze({ key, kind: 'NORMALIZER' as const, revision: 1 as const, status: 'ACTIVE' as const })),
 ]);
 
 export interface SourceObservationInput {
@@ -63,6 +63,21 @@ const requireInteger = (payload: Record<string, JsonValue>, key: string) => {
 };
 const requireNumber = (payload: Record<string, JsonValue>, key: string) => {
   const value = payload[key]; if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) throw new Error(`Parser requires non-negative number ${key}`); return value;
+};
+const optionalText = (value: JsonValue | undefined, max: number) => {
+  if (value === undefined) return null;
+  if (typeof value !== 'string' || !value.trim() || value.trim().length > max) throw new Error('Parser received invalid optional text');
+  return value.trim();
+};
+const optionalIdentity = (value: JsonValue | undefined) => {
+  const result = optionalText(value, 180);
+  if (result && !/^[A-Za-z0-9._:-]+$/.test(result)) throw new Error('Parser received invalid transaction identity');
+  return result;
+};
+const optionalEnum = <T extends readonly string[]>(value: JsonValue | undefined, values: T): T[number] | null => {
+  if (value === undefined) return null;
+  if (typeof value !== 'string' || !values.includes(value)) throw new Error('Parser received invalid transaction state');
+  return value as T[number];
 };
 
 export function parseAndNormalizeObservation(input: SourceObservationInput): NormalizedFactDraft[] {
@@ -193,7 +208,22 @@ export function parseAndNormalizeObservation(input: SourceObservationInput): Nor
     const amountMinor = requireInteger(input.payload, 'amountMinor');
     const currency = requireString(input.payload, 'currency');
     if (!/^[A-Z]{3}$/.test(currency)) throw new Error('Parser requires ISO currency');
-    return [{ resourceType: 'finance.transaction', resourceKey: subjectKey, subjectKey, factKey: 'finance.transaction.amount', value: { amountMinor, currency }, confidence: input.parserKey === 'mobile-notification-billing.v1' ? 0.8 : 1, normalizerKey: 'money.v1', freshnessPolicyKey: 'transaction.default', conflictPolicyKey: 'latest_verified_then_observed', ...(input.parserKey === 'mobile-notification-billing.v1' ? { compatibilityResourceKey: 'mobile.billing.transaction' } : {}) }];
+    if (Math.abs(amountMinor) > 2_147_483_647) throw new Error('Parser requires an in-range minor amount');
+    const transactionId = optionalIdentity(input.payload.transactionId);
+    const relatedTransactionId = optionalIdentity(input.payload.relatedTransactionId);
+    const merchant = optionalText(input.payload.merchant, 160);
+    const direction = optionalEnum(input.payload.direction, ['DEBIT', 'CREDIT'] as const);
+    const transactionState = optionalEnum(input.payload.transactionState, ['POSTED', 'PENDING', 'REFUND', 'REVERSAL'] as const);
+    // Cross-source matching only follows a stable source-supplied transaction id.
+    // Time/amount/merchant similarity must never silently merge transactions.
+    const canonicalSubject = transactionId ? `finance.transaction:${transactionId}` : subjectKey;
+    const value: Record<string, JsonValue> = { amountMinor, currency };
+    if (transactionId) value.transactionId = transactionId;
+    if (relatedTransactionId) value.relatedTransactionId = relatedTransactionId;
+    if (merchant) value.merchant = merchant;
+    if (direction) value.direction = direction;
+    if (transactionState) value.transactionState = transactionState;
+    return [{ resourceType: 'finance.transaction', resourceKey: canonicalSubject, subjectKey: canonicalSubject, factKey: 'finance.transaction.amount', value, confidence: input.parserKey === 'mobile-notification-billing.v1' ? 0.8 : 1, normalizerKey: 'transaction-reconciliation.v1', freshnessPolicyKey: 'transaction.default', conflictPolicyKey: 'latest_verified_then_observed', ...(input.parserKey === 'mobile-notification-billing.v1' ? { compatibilityResourceKey: 'mobile.billing.transaction' } : {}) }];
   }
   if (input.parserKey === 'generic.shipment-status.v1') {
     const status = requireString(input.payload, 'status');

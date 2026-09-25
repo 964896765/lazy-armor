@@ -70,8 +70,8 @@ describe('FactDemand contract and deterministic Source Resolution', () => {
       state: 'SATISFIED', capabilityDiscovered: true, userOwnsSource: true,
       sourceCurrentlyUsable: true, dataActuallyAcquired: true, dataVerified: true,
     });
-    expect(result.selectedSourceId).toBe('connection:connection-1:READ_SHIPMENT');
-    expect(result.selectedSource).toMatchObject({ kind: 'PROVIDER_CONNECTION', connectionId: 'connection-1' });
+    expect(result.selectedSourceId).toBe('internal:truth-1:truth-version-1');
+    expect(result.selectedSource).toMatchObject({ kind: 'INTERNAL_FACT', truthRecordId: 'truth-1' });
   });
 
   it('marks old data stale, fresh unverified data pending verification, and identical duplicates non-conflicting', () => {

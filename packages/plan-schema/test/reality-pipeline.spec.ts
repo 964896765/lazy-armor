@@ -21,6 +21,19 @@ describe('generic reality parser and normalizer registry', () => {
     expect(parseAndNormalizeObservation(base('mobile-notification-billing.v1', { amountMinor: 1990, currency: 'CNY' }))[0]).toMatchObject({ factKey: 'finance.transaction.amount', compatibilityResourceKey: 'mobile.billing.transaction' });
   });
 
+  it('matches cross-source transactions only on a source-supplied stable identifier', () => {
+    const withId = parseAndNormalizeObservation(base('generic.transaction.v1', {
+      subjectKey: 'file-row-1', transactionId: 'bank:txn-001', relatedTransactionId: 'bank:original-001',
+      amountMinor: 2580, currency: 'CNY', merchant: '测试商户', direction: 'CREDIT', transactionState: 'REFUND',
+    }))[0];
+    const withoutId = parseAndNormalizeObservation(base('generic.transaction.v1', {
+      subjectKey: 'file-row-2', amountMinor: 2580, currency: 'CNY', merchant: '测试商户',
+    }))[0];
+    expect(withId).toMatchObject({ subjectKey: 'finance.transaction:bank:txn-001', resourceKey: 'finance.transaction:bank:txn-001',
+      value: expect.objectContaining({ transactionId: 'bank:txn-001', relatedTransactionId: 'bank:original-001', transactionState: 'REFUND' }) });
+    expect(withoutId.subjectKey).toBe('file-row-2');
+  });
+
   it('deduplicates by semantic identity and normalized value', () => {
     const draft = parseAndNormalizeObservation(base('generic.shipment-status.v1', { subjectKey: 's1', status: 'DELIVERED' }))[0];
     expect(candidateDedupeKey('u1', draft)).toBe(candidateDedupeKey('u1', { ...draft, value: { status: 'DELIVERED' } }));

@@ -116,8 +116,11 @@ export function buildFactDemandProjections(input: {
   return Object.freeze(input.contract.factDemands.map((definition) => {
     const relevantTruths = input.truths.filter((truth) => truth.factKey === definition.factKey
       && truth.subjectKey === request.subject.subjectKey);
+    // A confirmed Truth is internally addressable whatever its original evidence
+    // mode was. Its original mode is still checked against the Scenario Contract,
+    // so a notification can only appear here after it has gone through candidate
+    // confirmation; receipt text never becomes a transaction fact by itself.
     const truthSources: SourceCandidateEvidence[] = relevantTruths
-      .filter((truth) => truth.sourceMode === 'MANUAL' || truth.sourceMode === 'INTERNAL')
       .map((truth) => ({
         sourceId: `${truth.sourceMode === 'MANUAL' ? 'manual' : 'internal'}:${truth.truthRecordId}:${truth.truthVersionId}`,
         kind: truth.sourceMode === 'MANUAL' ? 'MANUAL_INPUT' : 'INTERNAL_FACT',

@@ -262,9 +262,13 @@ export class PlanningOffersService {
           .where(and(eq(truthRecords.id, selection.truthRecordId!), eq(truthRecords.userId, userId),
             eq(truthRecords.subjectKey, demand.subject.subjectKey))).limit(1))[0];
         const valueFactKey = row?.version.valueJson.factKey;
-        const expectedMode = selection.kind === 'MANUAL_INPUT' ? 'MANUAL' : 'INTERNAL';
+        // INTERNAL_FACT means a verified, user-owned Truth Store reference. It
+        // may retain FILE / NOTIFICATION / OFFICIAL_API provenance; the current
+        // FactDemand has already checked that original source mode against the
+        // immutable Scenario Contract. Only MANUAL_INPUT requires MANUAL proof.
+        const expectedMode = selection.kind === 'MANUAL_INPUT' ? 'MANUAL' : null;
         if (!row || row.record.currentVersionId !== selection.truthVersionId || row.record.status !== 'verified'
-          || row.record.revokedAt || valueFactKey !== demand.factKey || row.provenance.sourceMode !== expectedMode
+          || row.record.revokedAt || valueFactKey !== demand.factKey || (expectedMode && row.provenance.sourceMode !== expectedMode)
           || now.getTime() - row.version.createdAt.getTime() > demand.maximumAgeSeconds * 1_000) return false;
       } else return false;
     }

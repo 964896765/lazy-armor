@@ -14,7 +14,7 @@ export class CreateSourceObservationDto implements SourceObservationInput {
   @IsOptional() @IsISO8601() occurredAt?: string | null;
 }
 
-export const MANUAL_FACT_PARSERS = ['generic.consumable-remaining.v1', 'generic.household-supply.v1'] as const;
+export const MANUAL_FACT_PARSERS = ['generic.transaction.v1', 'generic.consumable-remaining.v1', 'generic.household-supply.v1'] as const;
 
 export class RegisterManualFactDto {
   @IsString() @MinLength(8) @MaxLength(120) idempotencyKey!: string;
