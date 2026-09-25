@@ -37,4 +37,27 @@ describe('consumer outcome projection', () => {
     expect(projectConsumerOutcome(evidence({ executionStatus: 'running' })).outcome).toBeNull();
     expect(projectConsumerOutcome(evidence({ executionStatus: 'queued' })).outcome).toBeNull();
   });
+
+  it('distinguishes not-yet-run from still-processing under a null outcome', () => {
+    expect(projectConsumerOutcome(evidence()).title).toBe('尚未运行');
+    expect(projectConsumerOutcome(evidence({ executionStatus: 'running' })).title).toBe('处理中');
+  });
+
+  it('carries explanatory step counts for partially succeeded results', () => {
+    const result = projectConsumerOutcome(evidence({ resultState: 'PARTIALLY_SUCCEEDED', completedSteps: 2, failedSteps: 1 }));
+    expect(result.outcome).toBe('FAILED');
+    expect(result.completedSteps).toBe(2);
+    expect(result.failedSteps).toBe(1);
+    expect(result.reason).toContain('2 步成功');
+    expect(result.reason).toContain('1 步失败');
+  });
+
+  it('carries step counts on success and omits them when absent', () => {
+    const success = projectConsumerOutcome(evidence({ resultState: 'SUCCEEDED', completedSteps: 3, failedSteps: 0 }));
+    expect(success.completedSteps).toBe(3);
+    expect(success.failedSteps).toBe(0);
+    const plain = projectConsumerOutcome(evidence({ resultState: 'SUCCEEDED' }));
+    expect(plain.completedSteps).toBeUndefined();
+    expect(plain.failedSteps).toBeUndefined();
+  });
 });

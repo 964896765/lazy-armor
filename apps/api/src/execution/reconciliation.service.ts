@@ -137,7 +137,10 @@ export class ReconciliationService {
       : outcomes.includes('SUCCEEDED') || outcomes.includes('PARTIALLY_SUCCEEDED') ? 'PARTIALLY_SUCCEEDED'
       : terminal ? execution.status === 'succeeded' ? 'SUCCEEDED' : execution.status === 'partially_succeeded' ? 'PARTIALLY_SUCCEEDED' : 'FAILED' : null;
     return { executionId, historicalExecutionStatus: execution.status,
-      resultState: !terminal && !operations.some((operation) => operation.status === 'outcome_unknown') ? null : resultState, reconciliationCases: cases };
+      resultState: !terminal && !operations.some((operation) => operation.status === 'outcome_unknown') ? null : resultState,
+      completedSteps: outcomes.filter((state) => state === 'SUCCEEDED').length,
+      failedSteps: outcomes.filter((state) => state === 'FAILED').length,
+      reconciliationCases: cases };
   }
 }
 

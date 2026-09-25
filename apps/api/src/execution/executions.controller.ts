@@ -39,6 +39,8 @@ export class ExecutionsController {
         resultState: verification.resultState,
         reconciliationOpen: verification.reconciliationCases.some((item) => item.status === 'OPEN' || item.status === 'RECONCILING'),
         reconciliationNeedsUser: verification.reconciliationCases.some((item) => item.status === 'NEEDS_USER'),
+        completedSteps: verification.completedSteps,
+        failedSteps: verification.failedSteps,
       }) };
   }
   @Get('executions/:id/lifecycle') lifecycle(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) { return this.lifecycleRead.forExecution(user.id, id); }
