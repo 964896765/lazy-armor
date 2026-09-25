@@ -1,4 +1,4 @@
-import { Body, Controller, Param, ParseUUIDPipe, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Post } from '@nestjs/common';
 import { CurrentUser, type AuthenticatedUser } from '../common/auth-context';
 import { ChoosePersistentPlanOfferDto, CreatePersistentPlanOfferDto, CreatePlanOfferDto } from './dto';
 import { PlanningOffersService } from './planning-offers.service';
@@ -16,6 +16,16 @@ export class PlanningOffersController {
   @Post('v2')
   createPersistent(@CurrentUser() user: AuthenticatedUser, @Body() request: CreatePersistentPlanOfferDto) {
     return this.offers.createPersistent(user.id, request);
+  }
+
+  @Get('plans/:planId/availability')
+  planAvailability(@CurrentUser() user: AuthenticatedUser, @Param('planId', ParseUUIDPipe) planId: string) {
+    return this.offers.planAvailability(user.id, planId);
+  }
+
+  @Post('plans/:planId/replan')
+  replan(@CurrentUser() user: AuthenticatedUser, @Param('planId', ParseUUIDPipe) planId: string) {
+    return this.offers.replan(user.id, planId);
   }
 
   @Post(':offerId/choose')

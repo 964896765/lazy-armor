@@ -83,6 +83,36 @@ describe.sequential('VNext persistent Plan Offer transaction', { timeout: 90_000
     expect(await scalar('SELECT COUNT(*) value FROM plan_creation_contracts WHERE offer_snapshot_id=UUID_TO_BIN(?)', [offerId])).toBe(1);
   });
 
+  it('reassesses the exact Plan subject and requires a replacement Offer after device loss', async () => {
+    const offerId = await createOffer('continuous-reassessment');
+    const chosen = await request(app.getHttpServer()).post(`/api/planning/offers/${offerId}/choose`).set(auth(owner.token))
+      .send({ idempotencyKey: `continuous-${unique}` }).expect(201);
+    const before = await request(app.getHttpServer()).get(`/api/planning/offers/plans/${chosen.body.planId}/availability`)
+      .set(auth(owner.token)).expect(200);
+    expect(before.body.assessment).toMatchObject({ state: 'REFRESH_REQUIRED' });
+    expect(before.body.subject.subjectKey).toBe(body('continuous-reassessment').subject.subjectKey);
+
+    await pool.query("UPDATE device_heartbeats SET online_state='offline' WHERE trusted_device_id=UUID_TO_BIN(?)", [deviceId]);
+    const unavailable = await request(app.getHttpServer()).get(`/api/planning/offers/plans/${chosen.body.planId}/availability`)
+      .set(auth(owner.token)).expect(200);
+    expect(unavailable.body.assessment).toMatchObject({ state: 'RECONFIRMATION_REQUIRED' });
+    expect(unavailable.body.assessment.reasonCodes).toContain('FACT_DEMAND_DEVICE_OFFLINE');
+    const lifecycle = await request(app.getHttpServer()).get(`/api/plans/${chosen.body.planId}/lifecycle-projection`)
+      .set(auth(owner.token)).expect(200);
+    const step = (key: string) => lifecycle.body.steps.find((item: { key: string }) => item.key === key);
+    expect(step('READINESS')).toMatchObject({ state: 'BLOCKED', reasonCode: 'FACT_DEMAND_DEVICE_OFFLINE' });
+    expect(step('AVAILABILITY_RECONCILIATION')).toMatchObject({ state: 'BLOCKED' });
+
+    const replacement = await request(app.getHttpServer()).post(`/api/planning/offers/plans/${chosen.body.planId}/replan`)
+      .set(auth(owner.token)).send({}).expect(201);
+    expect(replacement.body).toMatchObject({
+      availability: { state: 'RECONFIRMATION_REQUIRED' },
+      replacementOffer: { status: 'UNAVAILABLE' },
+    });
+    expect(await scalar('SELECT COUNT(*) value FROM plan_versions WHERE plan_id=UUID_TO_BIN(?)', [chosen.body.planId])).toBe(1);
+    await freshHeartbeat();
+  });
+
   it('invalidates confirmation after authorization revocation and device offline', async () => {
     const revokedOffer = await createOffer('revoked');
     await pool.query('UPDATE device_app_connections SET enabled=0,modes_json=JSON_ARRAY(),updated_at=UTC_TIMESTAMP(6) WHERE id=UUID_TO_BIN(?)', [appId]);

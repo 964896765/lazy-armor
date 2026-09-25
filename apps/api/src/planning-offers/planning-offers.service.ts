@@ -1,7 +1,7 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { connections, deviceAppConnections, deviceHeartbeats, planCreationContracts, planOfferSnapshots,
+import { connections, deviceAppConnections, deviceHeartbeats, planCreationContracts, planOfferSnapshots, plans,
   trustedDevices } from '@lazy-armor/database';
-import { buildDeterministicPlanOffer, buildPersistentPlanOffer, canonicalStringify, catalogHash,
+import { assessPlanAvailability, buildDeterministicPlanOffer, buildPersistentPlanOffer, canonicalStringify, catalogHash,
   choosePlanOfferRequestSchema, compileScenarioPlan, definitionHash, persistentPlanOfferRequestSchema,
   scenarioContractV2ByKey, type FactDemandProjection, type PersistentPlanOffer } from '@lazy-armor/plan-schema';
 import { newId } from '@lazy-armor/shared';
@@ -143,6 +143,40 @@ export class PlanningOffersService {
       creationContractId: outcome.contract.id, replayed: outcome.replayed };
   }
 
+  async planAvailability(userId: string, planId: string) {
+    const authority = await this.planCreationAuthority(userId, planId);
+    const request = persistentPlanOfferRequestSchema.parse({
+      scenarioKey: authority.contract.scenarioKey,
+      scenarioRevision: authority.contract.scenarioRevision,
+      goal: authority.contract.goalJson,
+      subject: authority.contract.subjectJson,
+    });
+    const current = await this.factDemands.resolve(userId, request);
+    const assessment = assessPlanAvailability({
+      expectedContractHash: authority.contract.contractHash,
+      currentContractHash: current.contractHash,
+      previousSelections: authority.contract.sourceSelectionJson as Array<{ demandId: string; selectedSourceId: string | null }>,
+      currentDemands: current.demands,
+      evaluatedAt: current.evaluatedAt,
+    });
+    return { planId, planVersionId: authority.planVersionId, scenario: current.scenario,
+      goal: current.goal, subject: current.subject, assessment, factDemands: current.demands };
+  }
+
+  async replan(userId: string, planId: string) {
+    const availability = await this.planAvailability(userId, planId);
+    if (availability.assessment.state === 'CURRENT') {
+      throw new ConflictException('Plan preconditions are current; replacement confirmation is not required');
+    }
+    const replacement = await this.createPersistent(userId, {
+      scenarioKey: availability.scenario.key,
+      scenarioRevision: availability.scenario.revision,
+      goal: availability.goal,
+      subject: availability.subject,
+    });
+    return { availability: availability.assessment, replacementOffer: replacement };
+  }
+
   private compile(request: ReturnType<typeof persistentPlanOfferRequestSchema.parse>, strategy: string) {
     const name = `${request.subject.displayName ?? request.subject.subjectKey} · ${request.goal.intent}`.slice(0, 120);
     return compileScenarioPlan({ scenarioKey: request.scenarioKey, scenarioRevision: request.scenarioRevision,
@@ -155,6 +189,19 @@ export class PlanningOffersService {
       .where(and(eq(planOfferSnapshots.id, id), eq(planOfferSnapshots.userId, userId))).limit(1))[0];
     if (!row) throw new NotFoundException('Plan Offer not found');
     return row;
+  }
+  private async planCreationAuthority(userId: string, planId: string) {
+    const plan = (await this.db.select({ currentVersionId: plans.currentVersionId, activeVersionId: plans.activeVersionId })
+      .from(plans).where(and(eq(plans.id, planId), eq(plans.userId, userId))).limit(1))[0];
+    if (!plan) throw new NotFoundException('Plan not found');
+    const planVersionId = plan.currentVersionId ?? plan.activeVersionId;
+    if (!planVersionId) throw new ConflictException('Plan has no versioned creation contract');
+    const contract = (await this.db.select().from(planCreationContracts).where(and(
+      eq(planCreationContracts.userId, userId), eq(planCreationContracts.planId, planId),
+      eq(planCreationContracts.planVersionId, planVersionId),
+    )).limit(1))[0];
+    if (!contract) throw new ConflictException('Current PlanVersion has no versioned creation contract');
+    return { planVersionId, contract };
   }
   private async findByKey(userId: string, offerKey: string) {
     return (await this.db.select().from(planOfferSnapshots)

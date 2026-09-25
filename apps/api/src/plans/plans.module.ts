@@ -8,11 +8,12 @@ import { LifecycleReadService } from './lifecycle-read.service';
 import { MembershipModule } from '../membership/membership.module';
 import { RuntimeCatalogModule } from '../runtime-catalog/runtime-catalog.module';
 import { PlanLifecycleProjectionService } from './plan-lifecycle-projection.service';
+import { FactDemandsModule } from '../fact-demands/fact-demands.module';
 
 export const PLAN_SERVICE = 'PLAN_SERVICE';
 
 @Module({
-  imports: [AuditModule, MembershipModule, RuntimeCatalogModule],
+  imports: [AuditModule, MembershipModule, RuntimeCatalogModule, FactDemandsModule],
   controllers: [PlansController],
   providers: [
     PlanDefinitionAssembler,

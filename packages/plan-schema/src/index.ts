@@ -95,9 +95,10 @@ export {
   type SourceCandidateEvidence,
 } from './fact-demand';
 export {
-  PERSISTENT_PLAN_OFFER_CONTRACT_VERSION, PLAN_OFFER_STATES, buildPersistentPlanOffer,
+  PERSISTENT_PLAN_OFFER_CONTRACT_VERSION, PLAN_AVAILABILITY_STATES, PLAN_OFFER_STATES, assessPlanAvailability, buildPersistentPlanOffer,
   choosePlanOfferRequestSchema, persistentPlanOfferRequestSchema, planOfferPreconditionHash,
-  type ChoosePlanOfferRequest, type PersistentPlanOffer, type PersistentPlanOfferRequest, type PlanOfferState,
+  type ChoosePlanOfferRequest, type PersistentPlanOffer, type PersistentPlanOfferRequest, type PlanAvailabilityAssessment,
+  type PlanAvailabilityState, type PlanOfferState,
 } from './plan-offer-persistence';
 
 export const SOURCE_TYPES = ['manual', 'email', 'calendar', 'notification', 'file', 'webhook', 'internal', 'commerce', 'device', 'vehicle', 'billing', 'content_platform'] as const;

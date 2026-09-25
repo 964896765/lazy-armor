@@ -10,6 +10,58 @@ export type PersistentPlanOfferRequest = FactDemandRequest;
 export const choosePlanOfferRequestSchema = z.object({ idempotencyKey: z.string().trim().min(8).max(120) }).strict();
 export type ChoosePlanOfferRequest = z.infer<typeof choosePlanOfferRequestSchema>;
 
+export const PLAN_AVAILABILITY_STATES = ['CURRENT', 'REFRESH_REQUIRED', 'RECONFIRMATION_REQUIRED'] as const;
+export type PlanAvailabilityState = typeof PLAN_AVAILABILITY_STATES[number];
+
+export interface PlanAvailabilityAssessment {
+  contractVersion: 1;
+  state: PlanAvailabilityState;
+  reasonCodes: readonly string[];
+  currentPreconditionHash: string;
+  evaluatedAt: string;
+}
+
+export function assessPlanAvailability(input: {
+  expectedContractHash: string;
+  currentContractHash: string;
+  previousSelections: readonly { demandId: string; selectedSourceId: string | null }[];
+  currentDemands: readonly FactDemandProjection[];
+  evaluatedAt: string;
+}): PlanAvailabilityAssessment {
+  const required = input.currentDemands.filter((demand) => demand.required);
+  const previous = new Map(input.previousSelections.map((selection) => [selection.demandId, selection.selectedSourceId]));
+  const reasonCodes = new Set<string>();
+  let state: PlanAvailabilityState = 'CURRENT';
+  if (input.expectedContractHash !== input.currentContractHash) {
+    state = 'RECONFIRMATION_REQUIRED';
+    reasonCodes.add('SCENARIO_CONTRACT_CHANGED');
+  }
+  for (const demand of required) {
+    const priorSource = previous.get(demand.demandId) ?? null;
+    if (!demand.sourceCurrentlyUsable || !demand.selectedSourceId) {
+      state = 'RECONFIRMATION_REQUIRED';
+      reasonCodes.add(demand.reasonCodes[0] ?? `FACT_DEMAND_${demand.state}`);
+    } else if (priorSource !== demand.selectedSourceId) {
+      state = 'RECONFIRMATION_REQUIRED';
+      reasonCodes.add('SELECTED_SOURCE_CHANGED');
+    } else if (demand.state === 'CONFLICT') {
+      state = 'RECONFIRMATION_REQUIRED';
+      reasonCodes.add('TRUTH_CONFLICT_REQUIRES_CONFIRMATION');
+    } else if (demand.state !== 'SATISFIED' && state === 'CURRENT') {
+      state = 'REFRESH_REQUIRED';
+      reasonCodes.add(`FACT_DEMAND_${demand.state}`);
+    }
+  }
+  if (state === 'CURRENT') reasonCodes.add('PLAN_PRECONDITIONS_CURRENT');
+  return Object.freeze({
+    contractVersion: 1,
+    state,
+    reasonCodes: Object.freeze([...reasonCodes]),
+    currentPreconditionHash: planOfferPreconditionHash(input.currentDemands),
+    evaluatedAt: input.evaluatedAt,
+  });
+}
+
 export interface PersistentPlanOffer {
   contractVersion: typeof PERSISTENT_PLAN_OFFER_CONTRACT_VERSION;
   offerKey: string;

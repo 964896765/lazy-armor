@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildPersistentPlanOffer, choosePlanOfferRequestSchema, planOfferPreconditionHash,
+import { assessPlanAvailability, buildPersistentPlanOffer, choosePlanOfferRequestSchema, planOfferPreconditionHash,
   type FactDemandProjection } from '../src/index';
 
 const demand = (overrides: Partial<FactDemandProjection> = {}): FactDemandProjection => ({
@@ -44,5 +44,19 @@ describe('persistent Plan Offer contract', () => {
   it('strictly validates choose idempotency keys', () => {
     expect(() => choosePlanOfferRequestSchema.parse({ idempotencyKey: 'short' })).toThrow();
     expect(() => choosePlanOfferRequestSchema.parse({ idempotencyKey: 'valid-key', injected: true })).toThrow();
+  });
+
+  it('separates refreshable facts from changes that require a new confirmation', () => {
+    const selection = [{ demandId: 'fd_test', selectedSourceId: 'device-app:1' }];
+    expect(assessPlanAvailability({ expectedContractHash: 'a', currentContractHash: 'a', previousSelections: selection,
+      currentDemands: [demand()], evaluatedAt: '2026-09-25T00:00:00.000Z' })).toMatchObject({
+      state: 'REFRESH_REQUIRED', reasonCodes: ['FACT_DEMAND_PENDING_ACQUISITION'],
+    });
+    expect(assessPlanAvailability({ expectedContractHash: 'a', currentContractHash: 'a', previousSelections: selection,
+      currentDemands: [demand({ state: 'DEVICE_OFFLINE', sourceCurrentlyUsable: false, selectedSourceId: null })],
+      evaluatedAt: '2026-09-25T00:00:00.000Z' })).toMatchObject({ state: 'RECONFIRMATION_REQUIRED' });
+    expect(assessPlanAvailability({ expectedContractHash: 'a', currentContractHash: 'a', previousSelections: selection,
+      currentDemands: [demand({ state: 'SATISFIED', dataActuallyAcquired: true, dataVerified: true })],
+      evaluatedAt: '2026-09-25T00:00:00.000Z' })).toMatchObject({ state: 'CURRENT' });
   });
 });

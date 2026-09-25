@@ -9,13 +9,18 @@ import {
   strategyRuntimeDecisions,
 } from '@lazy-armor/database';
 import {
+  assessPlanAvailability,
   buildPlanLifecycleProjection,
+  persistentPlanOfferRequestSchema,
   scenarioByKey,
+  type FactDemandProjection,
   type PlanLifecycleObservation,
 } from '@lazy-armor/plan-schema';
 import { and, desc, eq } from 'drizzle-orm';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
 import { ReadinessEvidenceService } from '../runtime-catalog/readiness-evidence.service';
+import { FactDemandResolverService } from '../fact-demands/fact-demand-resolver.service';
+import { LifecycleReadService } from './lifecycle-read.service';
 
 /**
  * Outer 17-step consumer projection. This service only reads the existing
@@ -26,6 +31,8 @@ export class PlanLifecycleProjectionService {
   constructor(
     @Inject(DATABASE) private readonly db: InjectedDatabase,
     private readonly readiness: ReadinessEvidenceService,
+    private readonly factDemands: FactDemandResolverService,
+    private readonly lifecycleRead: LifecycleReadService,
   ) {}
 
   async forPlan(userId: string, planId: string) {
@@ -46,7 +53,9 @@ export class PlanLifecycleProjectionService {
       this.db.select({ id: executions.id, status: executions.status, resultCode: executions.resultCode })
         .from(executions).where(and(eq(executions.planId, planId), eq(executions.userId, userId)))
         .orderBy(desc(executions.createdAt), desc(executions.id)).limit(1).then((rows) => rows[0]),
-      this.db.select({ id: planCreationContracts.id, goal: planCreationContracts.goalJson,
+      this.db.select({ id: planCreationContracts.id, scenarioKey: planCreationContracts.scenarioKey,
+        scenarioRevision: planCreationContracts.scenarioRevision, contractHash: planCreationContracts.contractHash,
+        goal: planCreationContracts.goalJson,
         subject: planCreationContracts.subjectJson, factDemands: planCreationContracts.factDemandsJson,
         sourceSelection: planCreationContracts.sourceSelectionJson, offer: planCreationContracts.offerJson })
         .from(planCreationContracts).where(and(eq(planCreationContracts.userId, userId),
@@ -54,12 +63,19 @@ export class PlanLifecycleProjectionService {
     ]);
     const scenario = binding ? scenarioByKey(binding.scenarioKey) : null;
     const runtime = scenario ? await this.readiness.projectScenarioRuntimeEvidence(userId, scenario) : null;
-    const [decisions, approvals] = await Promise.all([
+    const [decisions, approvals, exactDemands, executionLifecycle] = await Promise.all([
       binding ? this.db.select({ id: strategyRuntimeDecisions.id, result: strategyRuntimeDecisions.result })
         .from(strategyRuntimeDecisions).where(and(eq(strategyRuntimeDecisions.bindingId, binding.id), eq(strategyRuntimeDecisions.userId, userId)))
         .orderBy(desc(strategyRuntimeDecisions.evaluatedAt)).limit(1) : Promise.resolve([]),
       latestExecution ? this.db.select({ id: approvalRequests.id, status: approvalRequests.status })
         .from(approvalRequests).where(and(eq(approvalRequests.executionId, latestExecution.id), eq(approvalRequests.userId, userId))) : Promise.resolve([]),
+      creationContract ? this.factDemands.resolve(userId, persistentPlanOfferRequestSchema.parse({
+        scenarioKey: creationContract.scenarioKey,
+        scenarioRevision: creationContract.scenarioRevision,
+        goal: creationContract.goal,
+        subject: creationContract.subject,
+      })) : Promise.resolve(null),
+      latestExecution ? this.lifecycleRead.forExecution(userId, latestExecution.id) : Promise.resolve(null),
     ]);
 
     const observations: PlanLifecycleObservation[] = [];
@@ -70,7 +86,9 @@ export class PlanLifecycleProjectionService {
     if (scenario && binding) {
       observe('SCENARIO', 'COMPLETED', 'SCENARIO_RUNTIME_BINDING_PERSISTED', [`strategy-binding:${binding.id}`]);
       observe('REQUIREMENTS', 'COMPLETED', 'VERSIONED_SCENARIO_CONTRACT_LOADED', [`scenario:${scenario.key}@${scenario.revision}`]);
-      observe('CAPABILITY_DISCOVERY', 'COMPLETED', 'USER_RUNTIME_EVIDENCE_EVALUATED', [`scenario:${scenario.key}@${scenario.revision}`]);
+      observe('CAPABILITY_DISCOVERY', 'COMPLETED', exactDemands ? 'PLAN_SUBJECT_SOURCES_EVALUATED' : 'USER_RUNTIME_EVIDENCE_EVALUATED',
+        exactDemands ? exactDemands.demands.flatMap((demand) => demand.candidateSources.flatMap((source) => source.evidenceRefs))
+          : [`scenario:${scenario.key}@${scenario.revision}`]);
     } else observe('SCENARIO', 'BLOCKED', 'SCENARIO_RUNTIME_BINDING_MISSING');
 
     if (creationContract) {
@@ -83,7 +101,23 @@ export class PlanLifecycleProjectionService {
       observe('GOAL_OBJECT', 'BLOCKED', 'GOAL_SPEC_OR_RESOURCE_SUBJECT_NOT_VERSIONED', [`plan-version:${planVersionId}`]);
       observe('USER_SELECTION', 'SKIPPED', 'LEGACY_PLAN_WITHOUT_PERSISTED_OFFER', [`plan-version:${planVersionId}`]);
     }
-    if (runtime) {
+    if (exactDemands && creationContract) {
+      const required = exactDemands.demands.filter((demand) => demand.required);
+      const readinessState = demandReadinessState(required);
+      observe('READINESS', readinessState, demandReadinessReason(required), demandEvidenceRefs(required));
+      observe('TRUTH_REFRESH', truthRefreshState(required), truthRefreshReason(required),
+        required.flatMap((demand) => demand.truthEvidence.map((truth) => `truth-version:${truth.truthVersionId}`)));
+      const availability = assessPlanAvailability({
+        expectedContractHash: creationContract.contractHash,
+        currentContractHash: exactDemands.contractHash,
+        previousSelections: creationContract.sourceSelection as Array<{ demandId: string; selectedSourceId: string | null }>,
+        currentDemands: exactDemands.demands,
+        evaluatedAt: exactDemands.evaluatedAt,
+      });
+      observe('AVAILABILITY_RECONCILIATION', availability.state === 'CURRENT' ? 'COMPLETED'
+        : availability.state === 'REFRESH_REQUIRED' ? 'ACTIVE' : 'BLOCKED', availability.reasonCodes[0]!,
+      [`plan-contract:${creationContract.id}`, ...demandEvidenceRefs(required)]);
+    } else if (runtime) {
       const readinessState = runtime.product.userReadiness === 'READY' ? 'COMPLETED'
         : runtime.product.userReadiness === 'NEEDS_CONFIRMATION' ? 'READY' : 'BLOCKED';
       observe('READINESS', readinessState, runtime.product.userReadiness, [`scenario:${runtime.scenarioKey}@${runtime.scenarioRevision}`]);
@@ -98,13 +132,14 @@ export class PlanLifecycleProjectionService {
     if (approvals.some((item) => item.status === 'pending')) observe('RISK_POLICY_APPROVAL', 'ACTIVE', 'APPROVAL_PENDING', approvals.map((item) => `approval:${item.id}`));
     else if (approvals.some((item) => item.status === 'rejected')) observe('RISK_POLICY_APPROVAL', 'BLOCKED', 'APPROVAL_REJECTED', approvals.map((item) => `approval:${item.id}`));
     else if (approvals.some((item) => item.status === 'approved')) observe('RISK_POLICY_APPROVAL', 'COMPLETED', 'APPROVAL_GRANTED', approvals.map((item) => `approval:${item.id}`));
-    if (latestExecution) {
-      const executionState = executionLifecycleState(latestExecution.status, latestExecution.resultCode);
-      observe('EXECUTION', executionState, `EXECUTION_${latestExecution.status.toUpperCase()}`, [`execution:${latestExecution.id}`]);
-      if (['COMPLETED', 'FAILED', 'OUTCOME_UNKNOWN'].includes(executionState)) {
-        observe('VERIFICATION', executionState, latestExecution.resultCode === 'OUTCOME_UNKNOWN' ? 'RESULT_REQUIRES_RECONCILIATION' : 'EXECUTION_TERMINAL_RESULT', [`execution:${latestExecution.id}`]);
-        observe('TODAY_RECORDS', 'COMPLETED', 'EXECUTION_RECORD_AVAILABLE', [`execution:${latestExecution.id}`]);
-      }
+    if (latestExecution && executionLifecycle) {
+      const inner = new Map(executionLifecycle.lifecycle.steps.map((step) => [step.key, step]));
+      const action = inner.get('EXECUTION');
+      const verification = inner.get('VERIFICATION');
+      const result = inner.get('RESULT');
+      if (action && action.state !== 'NOT_REACHED') observe('EXECUTION', mapInnerState(action.state), action.reason ?? 'EXECUTION_EVIDENCE', [`execution:${latestExecution.id}`]);
+      if (verification && verification.state !== 'NOT_REACHED') observe('VERIFICATION', mapInnerState(verification.state), verification.reason ?? 'VERIFICATION_EVIDENCE', [`execution:${latestExecution.id}`]);
+      if (result && result.state !== 'NOT_REACHED') observe('TODAY_RECORDS', mapInnerState(result.state), result.reason ?? 'EXECUTION_RESULT', [`execution:${latestExecution.id}`]);
     }
 
     return buildPlanLifecycleProjection({
@@ -113,15 +148,37 @@ export class PlanLifecycleProjectionService {
       scenarioKey: scenario?.key ?? null,
       readiness: runtime?.product ?? null,
       observations,
-      evaluatedAt: runtime?.evaluatedAt ?? new Date().toISOString(),
+      evaluatedAt: exactDemands?.evaluatedAt ?? runtime?.evaluatedAt ?? new Date().toISOString(),
     });
   }
 }
 
-function executionLifecycleState(status: string, resultCode: string | null): PlanLifecycleObservation['state'] {
-  if (resultCode === 'OUTCOME_UNKNOWN') return 'OUTCOME_UNKNOWN';
-  if (status === 'succeeded') return 'COMPLETED';
-  if (status === 'failed') return 'FAILED';
-  if (status === 'cancelled') return 'SKIPPED';
-  return 'ACTIVE';
+function hardDemandBlock(demand: FactDemandProjection) {
+  return ['CONFLICT', 'NEEDS_PERMISSION', 'DEVICE_OFFLINE', 'PROVIDER_UNHEALTHY', 'SOURCE_NOT_IMPLEMENTED', 'NEEDS_SOURCE'].includes(demand.state);
+}
+function demandReadinessState(demands: readonly FactDemandProjection[]): PlanLifecycleObservation['state'] {
+  if (demands.some(hardDemandBlock)) return 'BLOCKED';
+  return demands.every((demand) => demand.state === 'SATISFIED') ? 'COMPLETED' : 'READY';
+}
+function demandReadinessReason(demands: readonly FactDemandProjection[]) {
+  const blocked = demands.find(hardDemandBlock);
+  if (blocked) return blocked.reasonCodes[0] ?? `FACT_DEMAND_${blocked.state}`;
+  return demands.every((demand) => demand.state === 'SATISFIED') ? 'PLAN_SUBJECT_FACTS_READY' : 'PLAN_SUBJECT_SOURCES_READY';
+}
+function truthRefreshState(demands: readonly FactDemandProjection[]): PlanLifecycleObservation['state'] {
+  if (demands.some(hardDemandBlock)) return 'BLOCKED';
+  return demands.every((demand) => demand.state === 'SATISFIED') ? 'COMPLETED' : 'ACTIVE';
+}
+function truthRefreshReason(demands: readonly FactDemandProjection[]) {
+  const pending = demands.find((demand) => demand.state !== 'SATISFIED');
+  return pending?.reasonCodes[0] ?? 'PLAN_SUBJECT_FACTS_FRESH';
+}
+function demandEvidenceRefs(demands: readonly FactDemandProjection[]) {
+  return [...new Set(demands.flatMap((demand) => demand.candidateSources.flatMap((source) => source.evidenceRefs)))].slice(0, 50);
+}
+function mapInnerState(state: string): PlanLifecycleObservation['state'] {
+  if (state === 'SUCCEEDED') return 'COMPLETED';
+  if (state === 'RUNNING' || state === 'UNKNOWN') return 'ACTIVE';
+  if (state === 'BLOCKED' || state === 'FAILED' || state === 'OUTCOME_UNKNOWN' || state === 'SKIPPED') return state;
+  return 'READY';
 }
