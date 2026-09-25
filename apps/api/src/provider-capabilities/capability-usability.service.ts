@@ -72,6 +72,7 @@ export class CapabilityUsabilityService {
         key,
         name: declared?.userFacingName ?? declared?.name ?? old?.name ?? key,
         operation: declared?.operation ?? old?.operation ?? 'read',
+        sourceModes: [...(declared?.sourceModes ?? [])],
         riskLevel: declared?.riskLevel ?? old?.riskLevel ?? 'R0',
         dataBoundary: declared?.dataBoundary ?? null,
         verificationMethods: declared?.verificationMethods ?? [],

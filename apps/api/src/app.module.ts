@@ -57,6 +57,7 @@ import { TerminalHandoffController, TerminalHandoffService } from './strategy-ru
 import { PortableSkillsModule } from './portable-skills/portable-skills.module';
 import { McpModule } from './mcp/mcp.module';
 import { PlanningOffersModule } from './planning-offers/planning-offers.module';
+import { FactDemandsModule } from './fact-demands/fact-demands.module';
 
 @Module({
   imports: [
@@ -121,6 +122,7 @@ import { PlanningOffersModule } from './planning-offers/planning-offers.module';
     PortableSkillsModule,
     McpModule,
     PlanningOffersModule,
+    FactDemandsModule,
   ],
   controllers: [TerminalHandoffController],
   providers: [

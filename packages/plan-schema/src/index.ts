@@ -82,6 +82,18 @@ export {
   type ScenarioGovernanceState,
   type ScenarioResourceSubject,
 } from './scenario-contract-v2';
+export {
+  FACT_DEMAND_CONTRACT_VERSION,
+  FACT_DEMAND_STATES,
+  buildFactDemandProjections,
+  factDemandRequestForScenario,
+  factDemandRequestSchema,
+  type FactDemandProjection,
+  type FactDemandRequest,
+  type FactDemandState,
+  type FactTruthEvidence,
+  type SourceCandidateEvidence,
+} from './fact-demand';
 
 export const SOURCE_TYPES = ['manual', 'email', 'calendar', 'notification', 'file', 'webhook', 'internal', 'commerce', 'device', 'vehicle', 'billing', 'content_platform'] as const;
 export const TRIGGER_TYPES = ['manual', 'schedule', 'event', 'webhook', 'threshold', 'date_before', 'date_after', 'data_changed'] as const;

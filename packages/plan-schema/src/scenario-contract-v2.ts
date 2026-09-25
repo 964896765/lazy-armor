@@ -43,10 +43,16 @@ export interface ScenarioContractV2 {
   }>;
   factDemands: readonly Readonly<{
     factKey: string;
+    subjectType: string;
     required: boolean;
     maximumAgeSeconds: number;
     minimumReality: RealityLevel;
     acceptedSourceCapabilities: readonly string[];
+    acceptedSourceModes: readonly ('OFFICIAL_API' | 'WEBHOOK' | 'NOTIFICATION' | 'SHARE' | 'APP_READ_SESSION' | 'FILE' | 'MANUAL' | 'INTERNAL')[];
+    refreshPolicy: 'ON_STALE' | 'ON_CHANGE' | 'MANUAL_ONLY';
+    verificationRequirements: readonly ('SOURCE_EVIDENCE' | 'USER_CONFIRMATION' | 'READ_BACK')[];
+    conflictPolicy: 'LATEST_VERIFIED_THEN_OBSERVED' | 'REQUIRE_CONFIRMATION';
+    missingPolicy: 'BLOCK_PLAN_OFFER' | 'ALLOW_MANUAL_ASSISTED';
   }>[];
   actionDemands: readonly Readonly<{
     intentKey: string;
@@ -92,10 +98,16 @@ export const SCENARIO_CONTRACT_V2_REGISTRY: readonly ScenarioContractV2[] = Obje
     factDemands: Object.freeze([
       Object.freeze({
         factKey: 'shipment.status',
+        subjectType: 'shipment',
         required: true,
         maximumAgeSeconds: delivery.freshnessPolicy.maximumAgeSeconds,
         minimumReality: delivery.minimumReality,
         acceptedSourceCapabilities: Object.freeze(delivery.sourceRequirements.map((item) => item.capabilityKey)),
+        acceptedSourceModes: Object.freeze(['OFFICIAL_API', 'WEBHOOK', 'NOTIFICATION', 'SHARE', 'APP_READ_SESSION'] as const),
+        refreshPolicy: 'ON_STALE',
+        verificationRequirements: Object.freeze(['SOURCE_EVIDENCE', 'USER_CONFIRMATION', 'READ_BACK'] as const),
+        conflictPolicy: 'LATEST_VERIFIED_THEN_OBSERVED',
+        missingPolicy: 'BLOCK_PLAN_OFFER',
       }),
     ]),
     actionDemands: Object.freeze([
@@ -131,6 +143,9 @@ export function assertScenarioContractV2(contract: ScenarioContractV2): void {
   if (!contract.factDemands.length) throw new Error('Scenario Contract V2 requires at least one FactDemand');
   if (!contract.factDemands.filter((item) => item.required).every((item) => scenario.requiredFacts.includes(item.factKey))) {
     throw new Error('Scenario Contract V2 required FactDemand must exist in the V1 scenario contract');
+  }
+  if (!contract.factDemands.every((item) => contract.goal.requiredSubjectTypes.includes(item.subjectType))) {
+    throw new Error('Scenario Contract V2 FactDemand subject type must be allowed by the goal contract');
   }
   if (!contract.actionDemands.every((item) => scenario.actionRequirements.some((requirement) => requirement.capabilityKey === item.capabilityKey))) {
     throw new Error('Scenario Contract V2 ActionDemand must exist in the V1 scenario contract');

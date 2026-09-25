@@ -15,6 +15,7 @@ export interface CapabilityReadinessEvidence {
   providerKey: string;
   connectionId: string;
   operation: string;
+  sourceModes: string[];
   riskLevel: string;
   dimensions: Record<CapabilityReadinessDimension, boolean>;
   providerAvailability: string;
@@ -122,17 +123,21 @@ export class ReadinessEvidenceService {
 
   /** User-scoped six-dimension capability readiness, aggregated across all connections. */
   async projectCapabilities(userId: string): Promise<CapabilityReadinessEvidence[]> {
-    const resolved = await this.resolveConnections(userId);
+    const candidates = await this.projectCapabilityCandidates(userId);
     const byKey = new Map<string, CapabilityReadinessEvidence>();
-    for (const connection of resolved) {
-      for (const capability of connection.capabilities) {
-        const evidence = this.toCapabilityEvidence(connection.connectionId, connection.providerKey, capability);
-        const existing = byKey.get(capability.key);
-        // Prefer the first usable projection; otherwise keep the most informative one.
-        if (!existing || (evidence.usable && !existing.usable)) byKey.set(capability.key, evidence);
-      }
+    for (const evidence of candidates) {
+      const existing = byKey.get(evidence.capabilityKey);
+      // Prefer the first usable projection; otherwise keep the most informative one.
+      if (!existing || (evidence.usable && !existing.usable)) byKey.set(evidence.capabilityKey, evidence);
     }
     return [...byKey.values()];
+  }
+
+  /** All owned connection candidates, without collapsing fallback providers by capability key. */
+  async projectCapabilityCandidates(userId: string): Promise<CapabilityReadinessEvidence[]> {
+    const resolved = await this.resolveConnections(userId);
+    return resolved.flatMap((connection) => connection.capabilities
+      .map((capability) => this.toCapabilityEvidence(connection.connectionId, connection.providerKey, capability)));
   }
 
   /** Full user-scoped runtime evidence for one scenario, combining facts + pipelines + capabilities into readiness. */
@@ -184,6 +189,7 @@ export class ReadinessEvidenceService {
   private toCapabilityEvidence(connectionId: string, providerKey: string, capability: {
     key: string;
     operation: string;
+    sourceModes?: string[];
     riskLevel: string;
     verificationMethods?: string[];
     providerAvailability: string;
@@ -198,6 +204,7 @@ export class ReadinessEvidenceService {
       providerKey,
       connectionId,
       operation: capability.operation,
+      sourceModes: [...(capability.sourceModes ?? [])],
       riskLevel: capability.riskLevel,
       dimensions: {
         declared: capability.providerAvailability === 'AVAILABLE',
