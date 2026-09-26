@@ -1,13 +1,11 @@
-import { CANONICAL_DOMAIN_CATALOG, DOMAIN_GROUPS, scenariosForDomain, type DomainGroupKey } from '@lazy-armor/plan-schema/mobile';
+import { CANONICAL_DOMAIN_CATALOG, scenariosForDomain } from '@lazy-armor/plan-schema/mobile';
+import { UI_SPACES, uiSpaceForDomain, type UiSpaceKey } from './ui-space';
 
-export type SpaceFilter = DomainGroupKey | 'all';
+export type SpaceFilter = UiSpaceKey | 'all';
 
 export const SPACE_FILTERS: readonly { key: SpaceFilter; label: string }[] = [
   { key: 'all', label: '全部' },
-  { key: 'money', label: DOMAIN_GROUPS.money.label },
-  { key: 'life', label: DOMAIN_GROUPS.life.label },
-  { key: 'work', label: DOMAIN_GROUPS.work.label },
-  { key: 'things', label: DOMAIN_GROUPS.things.label },
+  ...UI_SPACES.map((space) => ({ key: space.key as SpaceFilter, label: space.label })),
 ];
 
 export interface ScenarioRow {
@@ -37,12 +35,12 @@ const DOMAIN_ICONS: Record<string, string> = {
 export function scenarioKeyOf(row: ScenarioRow): string { return `${row.productDomain}.${row.key}`; }
 
 export function scenarioStateLabel(row: ScenarioRow, planCount: number): string {
-  return planCount > 0 ? `${planCount} 个计划` : '可创建';
+  return planCount > 0 ? `${planCount} 个计划` : '查看状态';
 }
 
 export function buildScenarioSections(input: { space: SpaceFilter; query: string }): ScenarioSection[] {
   const q = input.query.trim().toLowerCase();
-  const domains = CANONICAL_DOMAIN_CATALOG.filter((domain) => input.space === 'all' || domain.group === input.space);
+  const domains = CANONICAL_DOMAIN_CATALOG.filter((domain) => input.space === 'all' || uiSpaceForDomain(domain.key) === input.space);
   return domains.map((domain) => {
     const icon = DOMAIN_ICONS[domain.key] ?? 'grid-outline';
     const data = scenariosForDomain(domain.key)
