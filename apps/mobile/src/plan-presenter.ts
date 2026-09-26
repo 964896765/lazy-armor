@@ -217,6 +217,21 @@ export function consumerPlanGroupSubtitle(group: ConsumerPlanGroup): string {
   return group === '其他' ? '其他暂未归类的计划' : uiSpaceDefinition(group).description;
 }
 
+/** 计划中心「管理中」筛选：仍由计划引擎照看的计划，不等于正在执行。 */
+export function isManagingPlanStatus(status: string): boolean {
+  return status === 'active' || status === 'ready' || status === 'degraded' || status === 'blocked';
+}
+
+/** 计划中心「失败」判定：计划或最近执行失败/错误，或 Consumer Outcome 为 FAILED。 */
+export function isFailedPlanStatus(status: string, latestExecutionStatus?: string | null, outcome?: string | null): boolean {
+  return ['failed', 'error'].includes(status) || ['failed', 'error'].includes(latestExecutionStatus ?? '') || outcome === 'FAILED';
+}
+
+/** 创建入口场景上下文参数校验：合法格式为 `domain.key`。 */
+export function isValidScenarioKey(value: string | null | undefined): value is string {
+  return typeof value === 'string' && /^[a-z0-9_]+\.[a-z0-9_]+$/.test(value);
+}
+
 export function sourceTypeLabel(sourceType: string): string {
   switch (sourceType) {
     case 'manual':

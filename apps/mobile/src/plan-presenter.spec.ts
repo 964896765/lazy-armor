@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { consumerPlanGroup, consumerPlanGroupSubtitle, consumerPlanStatusLabel, consumerPlanStatusTone, planDomainLabel, planEvidenceLine, planExceptionReason, planNextRunLabel, planStatusLabel, planStatusTone, planVisualIcon, templateGroupLabel } from './plan-presenter';
+import { consumerPlanGroup, consumerPlanGroupSubtitle, consumerPlanStatusLabel, consumerPlanStatusTone, isFailedPlanStatus, isManagingPlanStatus, isValidScenarioKey, planDomainLabel, planEvidenceLine, planExceptionReason, planNextRunLabel, planStatusLabel, planStatusTone, planVisualIcon, templateGroupLabel } from './plan-presenter';
 
 describe('Plan presenter', () => {
   it('maps known templates into the four consumer spaces', () => {
@@ -84,5 +84,30 @@ describe('Plan presenter', () => {
     expect(line).toContain('计划规则：剩余 ≤ 30 天时提醒');
     expect(line).not.toContain('device.consumable.remaining_days');
     expect(line).not.toContain('PREDICTIVE_PREPARE');
+  });
+
+  it('classifies managed plan statuses without claiming execution', () => {
+    for (const status of ['active', 'ready', 'degraded', 'blocked']) expect(isManagingPlanStatus(status)).toBe(true);
+    for (const status of ['paused', 'archived', 'failed', 'error', 'draft']) expect(isManagingPlanStatus(status)).toBe(false);
+  });
+
+  it('keeps blocked out of the failed bucket so the real block reason stays visible', () => {
+    expect(isFailedPlanStatus('blocked')).toBe(false);
+    expect(isFailedPlanStatus('failed')).toBe(true);
+    expect(isFailedPlanStatus('error')).toBe(true);
+    expect(isFailedPlanStatus('active', 'failed')).toBe(true);
+    expect(isFailedPlanStatus('active', null, 'FAILED')).toBe(true);
+    expect(isFailedPlanStatus('active', 'succeeded', 'SUCCESS')).toBe(false);
+  });
+
+  it('validates the scenario create entry param', () => {
+    expect(isValidScenarioKey('daily_life.delivery')).toBe(true);
+    expect(isValidScenarioKey('finance.bill')).toBe(true);
+    expect(isValidScenarioKey('')).toBe(false);
+    expect(isValidScenarioKey('daily_life')).toBe(false);
+    expect(isValidScenarioKey('daily_life.delivery.extra')).toBe(false);
+    expect(isValidScenarioKey('../etc/passwd')).toBe(false);
+    expect(isValidScenarioKey(null)).toBe(false);
+    expect(isValidScenarioKey(undefined)).toBe(false);
   });
 });

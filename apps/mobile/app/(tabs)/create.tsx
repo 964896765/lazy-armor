@@ -7,7 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/api';
 import { useAuthStore } from '../../src/auth-store';
 import { ActionButton, AnimatedEntry, EmptyState, MessageRow, Surface, WorkspaceHeader, WorkspaceSection, workspaceColors as colors, radius, spacing, typography } from '../../src/design';
-import { planVisualIcon } from '../../src/plan-presenter';
+import { isValidScenarioKey, planVisualIcon } from '../../src/plan-presenter';
 import { clarificationQuestion, presentAgentPlanProposal } from '../../src/privacy-presenter';
 
 interface PlanTemplateSummary {
@@ -54,7 +54,7 @@ export default function Create() {
   const token = useAuthStore((store) => store.token);
   const client = useQueryClient();
   const params = useLocalSearchParams<{ scenarioKey?: string }>();
-  const scenarioKey = typeof params.scenarioKey === 'string' && /^[a-z0-9_]+\.[a-z0-9_]+$/.test(params.scenarioKey) ? params.scenarioKey : null;
+  const scenarioKey = isValidScenarioKey(params.scenarioKey) ? params.scenarioKey : null;
   const [intent, setIntent] = useState('');
   const templates = useQuery({ queryKey: ['templates', token], queryFn: () => api<PlanTemplateSummary[]>('/templates', token), enabled: Boolean(token) });
   const agentPlan = useMutation({

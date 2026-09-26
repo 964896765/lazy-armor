@@ -7,7 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../src/api';
 import { useAuthStore } from '../src/auth-store';
 import { EmptyState, PlanRow, WorkspaceHeader, colors, radius, spacing, typography } from '../src/design';
-import { planCenterStatusLabel, planDomainLabel, planNextRunLabel, planStatusLabel, planStatusTone, planVisualIcon } from '../src/plan-presenter';
+import { isFailedPlanStatus, isManagingPlanStatus, planCenterStatusLabel, planDomainLabel, planNextRunLabel, planStatusLabel, planStatusTone, planVisualIcon } from '../src/plan-presenter';
 import { consumerOutcomeLabel, type ConsumerOutcome } from '../src/outcome-presenter';
 
 interface PlanSummary {
@@ -40,14 +40,14 @@ export default function PlanCenter() {
   const all = plans.data ?? [];
   const counts = useMemo(() => ({
     all: all.length,
-    running: all.filter((item) => isRunning(item.status)).length,
+    running: all.filter((item) => isManagingPlanStatus(item.status)).length,
     paused: all.filter((item) => item.status === 'paused').length,
-    failed: all.filter(isFailed).length,
+    failed: all.filter((item) => isFailedPlanStatus(item.status, item.latestExecution?.status, item.latestExecution?.outcome?.outcome)).length,
   }), [all]);
   const shown = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return all.filter((item) => {
-      const matchesFilter = filter === 'all' || (filter === 'running' && isRunning(item.status)) || (filter === 'paused' && item.status === 'paused') || (filter === 'failed' && isFailed(item));
+      const matchesFilter = filter === 'all' || (filter === 'running' && isManagingPlanStatus(item.status)) || (filter === 'paused' && item.status === 'paused') || (filter === 'failed' && isFailedPlanStatus(item.status, item.latestExecution?.status, item.latestExecution?.outcome?.outcome));
       const haystack = `${item.name ?? ''} ${item.currentVersion?.name ?? ''} ${item.description ?? ''} ${planDomainLabel(item.domain)}`.toLowerCase();
       return matchesFilter && (!needle || haystack.includes(needle));
     });
@@ -74,9 +74,6 @@ export default function PlanCenter() {
     </SafeAreaView>
   );
 }
-
-function isRunning(status: string) { return status === 'active' || status === 'ready' || status === 'degraded' || status === 'blocked'; }
-function isFailed(plan: PlanSummary) { return ['failed', 'error'].includes(plan.status) || ['failed', 'error'].includes(plan.latestExecution?.status ?? '') || plan.latestExecution?.outcome?.outcome === 'FAILED'; }
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: '#FFFFFF' },
