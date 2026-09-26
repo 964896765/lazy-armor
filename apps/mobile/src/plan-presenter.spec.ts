@@ -2,33 +2,34 @@ import { describe, expect, it } from 'vitest';
 import { consumerPlanGroup, consumerPlanGroupSubtitle, consumerPlanStatusLabel, consumerPlanStatusTone, planDomainLabel, planEvidenceLine, planExceptionReason, planNextRunLabel, planStatusLabel, planStatusTone, planVisualIcon, templateGroupLabel } from './plan-presenter';
 
 describe('Plan presenter', () => {
-  it('maps known templates into the four consumer groups', () => {
-    expect(consumerPlanGroup({ templateKey: 'device-consumable-reminder' })).toBe('我的物品');
-    expect(consumerPlanGroup({ templateKey: 'daily-important-summary' })).toBe('我的事情');
-    expect(consumerPlanGroup({ templateKey: 'monthly-bill-summary' })).toBe('我的钱');
-    expect(consumerPlanGroup({ templateKey: 'quiet-delivery-guard' })).toBe('我的生活');
+  it('maps known templates into the four consumer spaces', () => {
+    expect(consumerPlanGroup({ templateKey: 'device-consumable-reminder' })).toBe('property');
+    expect(consumerPlanGroup({ templateKey: 'monthly-bill-summary' })).toBe('property');
+    expect(consumerPlanGroup({ templateKey: 'quiet-delivery-guard' })).toBe('life');
+    // 旧“我的事情”模板在缺少 domain 时不得猜测新空间，归入“其他”。
+    expect(consumerPlanGroup({ templateKey: 'daily-important-summary' })).toBe('其他');
   });
 
-  it('falls back to plan-center kind when template key is unavailable', () => {
-    expect(consumerPlanGroup({ planCenterKind: 'household' })).toBe('我的生活');
-    expect(consumerPlanGroup({ planCenterKind: 'device' })).toBe('我的物品');
-    expect(consumerPlanGroup({ planCenterKind: 'study' })).toBe('我的事情');
-    expect(consumerPlanGroup({ planCenterKind: 'unknown' })).toBe('其他计划');
+  it('does not guess a space from legacy plan-center kind without a domain', () => {
+    expect(consumerPlanGroup({ planCenterKind: 'household' })).toBe('其他');
+    expect(consumerPlanGroup({ planCenterKind: 'device' })).toBe('其他');
+    expect(consumerPlanGroup({ planCenterKind: 'study' })).toBe('其他');
+    expect(consumerPlanGroup({ planCenterKind: 'unknown' })).toBe('其他');
   });
 
   it('keeps group subtitles and labels in consumer language', () => {
-    expect(templateGroupLabel('我的钱')).toBe('我的钱');
-    expect(templateGroupLabel('我的东西')).toBe('我的物品');
-    expect(consumerPlanGroupSubtitle('我的钱')).toContain('账单');
-    expect(consumerPlanGroupSubtitle('我的生活')).toContain('生活');
-    expect(consumerPlanGroupSubtitle('我的物品')).toContain('车辆');
+    expect(templateGroupLabel('我的钱')).toBe('我的财物');
+    expect(templateGroupLabel('我的东西')).toBe('我的财物');
+    expect(consumerPlanGroupSubtitle('property')).toContain('财务');
+    expect(consumerPlanGroupSubtitle('life')).toContain('日常');
   });
 
-  it('uses the canonical domain catalog for plans without template metadata', () => {
-    expect(consumerPlanGroup({ domain: 'health' })).toBe('我的生活');
-    expect(consumerPlanGroup({ domain: 'identity_docs' })).toBe('我的事情');
-    expect(consumerPlanGroup({ domain: 'vehicle' })).toBe('我的物品');
-    expect(consumerPlanGroup({ domain: 'billing' })).toBe('我的钱');
+  it('uses the canonical domain catalog and splits legacy work into affairs/work', () => {
+    expect(consumerPlanGroup({ domain: 'health' })).toBe('life');
+    expect(consumerPlanGroup({ domain: 'identity_docs' })).toBe('affairs');
+    expect(consumerPlanGroup({ domain: 'work' })).toBe('work');
+    expect(consumerPlanGroup({ domain: 'vehicle' })).toBe('property');
+    expect(consumerPlanGroup({ domain: 'billing' })).toBe('property');
     expect(planDomainLabel('legal_contract')).toBe('合同与法律事务');
     expect(planDomainLabel('general')).toBe('日常事务');
   });

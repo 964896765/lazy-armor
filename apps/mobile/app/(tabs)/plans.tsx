@@ -9,6 +9,7 @@ import { useAuthStore } from '../../src/auth-store';
 import { AnimatedEntry, PlanRow, WorkspaceHeader, WorkspaceSection, workspaceColors as colors, radius, spacing, typography } from '../../src/design';
 import {
   consumerPlanGroup,
+  consumerPlanGroupLabel,
   consumerPlanGroupSubtitle,
   consumerPlanStatusLabel,
   consumerPlanStatusTone,
@@ -42,7 +43,7 @@ interface PlanSummary {
   } | null;
 }
 
-const consumerGroups: ConsumerPlanGroup[] = ['我的钱', '我的生活', '我的事情', '我的物品', '其他计划'];
+const consumerGroups: ConsumerPlanGroup[] = ['life', 'property', 'affairs', 'work', '其他'];
 
 export default function Plans() {
   const token = useAuthStore((store) => store.token);
@@ -54,7 +55,7 @@ export default function Plans() {
   const activeCount = (plans.data ?? []).filter((plan) => plan.status === 'active' || plan.status === 'ready').length;
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
+    <SafeAreaView style={styles.safeArea} edges={[]}>
       <ScrollView
         style={styles.page}
         contentContainerStyle={styles.content}
@@ -72,7 +73,7 @@ export default function Plans() {
 
         <Text style={styles.spaceHeading}>我的空间</Text>
         <View style={styles.spaceGrid}>
-          {consumerGroups.slice(0, 4).map((group, index) => <Pressable key={group} accessibilityRole="button" onPress={() => router.push(`/domains?group=${(['money', 'life', 'work', 'things'] as const)[index]}` as never)} style={({ pressed }) => [styles.spaceCard, pressed && styles.pressed]}><View style={[styles.spaceIcon, index === 1 && styles.spaceIconLife, index === 2 && styles.spaceIconWork, index === 3 && styles.spaceIconThings]}><Ionicons name={(['wallet-outline', 'home-outline', 'briefcase-outline', 'cube-outline'] as const)[index]} size={20} color={colors.primary} /></View><Text style={styles.spaceLabel}>{group}</Text><Text style={styles.spaceCount}>{plans.data ? `${plans.data.filter((plan) => consumerPlanGroup({ consumerGroup: plan.consumerGroup ?? null, domain: plan.domain, templateKey: plan.templateKey, planCenterKind: plan.planCenterSummary?.kind ?? null }) === group).length} 个计划` : '计划数待同步'}</Text></Pressable>)}
+          {consumerGroups.slice(0, 4).map((group, index) => <Pressable key={group} accessibilityRole="button" onPress={() => router.push(`/domains?group=${(['life', 'property', 'affairs', 'work'] as const)[index]}` as never)} style={({ pressed }) => [styles.spaceCard, pressed && styles.pressed]}><View style={[styles.spaceIcon, index === 1 && styles.spaceIconLife, index === 2 && styles.spaceIconWork, index === 3 && styles.spaceIconThings]}><Ionicons name={(['home-outline', 'wallet-outline', 'document-text-outline', 'briefcase-outline'] as const)[index]} size={20} color={colors.primary} /></View><Text style={styles.spaceLabel}>{consumerPlanGroupLabel(group)}</Text><Text style={styles.spaceCount}>{plans.data ? `${plans.data.filter((plan) => consumerPlanGroup({ consumerGroup: plan.consumerGroup ?? null, domain: plan.domain, templateKey: plan.templateKey, planCenterKind: plan.planCenterSummary?.kind ?? null }) === group).length} 个计划` : '计划数待同步'}</Text></Pressable>)}
         </View>
 
         <View style={styles.tools}>
@@ -106,7 +107,7 @@ export default function Plans() {
           if (items.length === 0) return null;
           return (
             <AnimatedEntry key={group} delay={groupIndex * 40}>
-              <WorkspaceSection title={group} count={items.length}>
+              <WorkspaceSection title={consumerPlanGroupLabel(group)} count={items.length}>
                 <Text style={styles.groupSubtitle}>{consumerPlanGroupSubtitle(group)}</Text>
                 <View style={styles.planGroup}>
                   {items.map((plan, index) => {
