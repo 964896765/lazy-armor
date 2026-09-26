@@ -17,6 +17,7 @@ import {
   notificationPreferenceLabel,
   planCenterStatusLabel,
   planEvidenceLine,
+  planNextStep,
   planStatusLabel,
   sourceTypeLabel,
   templateGroupLabel,
@@ -198,6 +199,11 @@ export default function PlanDetailPage() {
             <View style={local.hero}>
               <View style={local.heroIcon}><Ionicons name={planDetailIcon(summary.data.planCenterSummary?.kind)} size={25} color={colors.primary} /></View>
               <View style={local.heroCopy}><Text style={local.title}>{summary.data.name ?? version.data.name}</Text><Text style={local.eyebrow}>{planStatusLabel(summary.data.status)}</Text><Text style={local.subtitle}>{summary.data.description ?? version.data.description ?? '这件事会按你的安排持续运行。'}</Text></View>
+            </View>
+
+            <View style={local.nowRow}>
+              <View style={local.nowBlock}><Text style={local.nowLabel}>当前情况</Text><Text style={local.nowValue}>{summary.data.planCenterSummary ? planCenterStatusLabel(summary.data.planCenterSummary.kind, summary.data.planCenterSummary.currentStatus) : planStatusLabel(summary.data.status)}</Text></View>
+              <View style={local.nowBlock}><Text style={local.nowLabel}>下一步</Text><Text style={local.nowValue}>{planNextStep({ status: summary.data.status, hasMissingConnection: summary.data.hasMissingConnection, latestExecutionStatus: summary.data.latestExecution?.status, outcome: summary.data.latestExecution?.outcome?.outcome })}</Text></View>
             </View>
 
             <Text style={local.sectionTitle}>它正在帮你</Text>
@@ -404,6 +410,10 @@ const local = StyleSheet.create({
   eyebrow: { ...typography.label, color: colors.success, marginTop: 2 },
   title: { ...typography.title, color: colors.text },
   subtitle: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
+  nowRow: { flexDirection: 'row', gap: spacing.md, paddingVertical: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border },
+  nowBlock: { flex: 1, gap: 2 },
+  nowLabel: { ...typography.caption, color: colors.textMuted },
+  nowValue: { ...typography.bodyStrong, color: colors.text },
   sectionTitle: { ...typography.section, color: colors.text, marginTop: spacing.xl, marginBottom: spacing.sm },
   sectionTitleNoMargin: { ...typography.section, color: colors.text },
   sectionBody: { paddingBottom: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border },

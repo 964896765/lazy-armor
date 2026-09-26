@@ -77,6 +77,33 @@ export function consumerPlanStatusTone(input: ConsumerPlanStatusInput): 'success
   return 'warning';
 }
 
+export interface PlanNextStepInput {
+  status: string;
+  hasMissingConnection?: boolean;
+  hasMissingPermission?: boolean;
+  hasMissingData?: boolean;
+  needsConfirmation?: boolean;
+  latestExecutionStatus?: string | null;
+  outcome?: string | null;
+}
+
+/** 由服务端已有字段推导「下一步」说明，不新增权威状态、不凭空生成带权限的按钮。 */
+export function planNextStep(input: PlanNextStepInput): string {
+  if (input.status === 'archived') return '计划已经结束，需要时可以重新开启。';
+  if (input.status === 'paused') return '计划已暂停，需要时可以继续运行。';
+  if (input.status === 'draft') return '还差设置，补齐后即可启用。';
+  if (input.hasMissingConnection) return '还缺连接或授权，补好后计划就能继续。';
+  if (input.hasMissingPermission) return '授权已失效，需要重新授权。';
+  if (input.hasMissingData) return '还缺所需数据，补上后计划就能继续。';
+  if (input.needsConfirmation || input.latestExecutionStatus === 'waiting_approval') return '等待你确认或审批。';
+  if (input.outcome === 'PENDING_CONFIRMATION') return '等待确认这次执行结果。';
+  if (input.outcome === 'OUTCOME_UNKNOWN') return '上次结果待核实，可进入只读核对。';
+  if (input.latestExecutionStatus === 'running') return '正在执行中。';
+  if (input.status === 'blocked') return '计划受阻，需要你查看具体原因。';
+  if (input.status === 'degraded') return '数据或来源需要检查。';
+  return '持续跟进中，到点会按计划处理。';
+}
+
 export interface PlanExceptionInput {
   hasMissingConnection?: boolean;
   latestExecution?: { status: string; resultSummary: string | null } | null;

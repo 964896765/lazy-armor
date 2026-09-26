@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { consumerPlanGroup, consumerPlanGroupSubtitle, consumerPlanStatusLabel, consumerPlanStatusTone, isFailedPlanStatus, isManagingPlanStatus, isValidScenarioKey, planDomainLabel, planEvidenceLine, planExceptionReason, planNextRunLabel, planStatusLabel, planStatusTone, planVisualIcon, templateGroupLabel } from './plan-presenter';
+import { consumerPlanGroup, consumerPlanGroupSubtitle, consumerPlanStatusLabel, consumerPlanStatusTone, isFailedPlanStatus, isManagingPlanStatus, isValidScenarioKey, planDomainLabel, planEvidenceLine, planExceptionReason, planNextRunLabel, planNextStep, planStatusLabel, planStatusTone, planVisualIcon, templateGroupLabel } from './plan-presenter';
 
 describe('Plan presenter', () => {
   it('maps known templates into the four consumer spaces', () => {
@@ -109,5 +109,17 @@ describe('Plan presenter', () => {
     expect(isValidScenarioKey('../etc/passwd')).toBe(false);
     expect(isValidScenarioKey(null)).toBe(false);
     expect(isValidScenarioKey(undefined)).toBe(false);
+  });
+
+  it('derives an accurate next step from server fields without fabricating authority', () => {
+    expect(planNextStep({ status: 'archived' })).toContain('结束');
+    expect(planNextStep({ status: 'paused' })).toContain('暂停');
+    expect(planNextStep({ status: 'draft' })).toContain('设置');
+    expect(planNextStep({ status: 'active', hasMissingConnection: true })).toContain('连接');
+    expect(planNextStep({ status: 'active', latestExecutionStatus: 'waiting_approval' })).toContain('审批');
+    expect(planNextStep({ status: 'active', outcome: 'OUTCOME_UNKNOWN' })).toContain('核实');
+    expect(planNextStep({ status: 'active', latestExecutionStatus: 'running' })).toContain('执行');
+    expect(planNextStep({ status: 'blocked' })).toContain('受阻');
+    expect(planNextStep({ status: 'active' })).toContain('跟进');
   });
 });
