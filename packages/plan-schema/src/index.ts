@@ -114,6 +114,22 @@ export {
   SOURCE_SELECTION_KINDS, SOURCE_SELECTION_SCHEMA_VERSION, buildSourceSelection, isSourceSelection, sourceIdNamespace,
   type SourceSelection, type SourceSelectionKind,
 } from './source-selection';
+export {
+  CREATION_DRAFT_CONTRACT_VERSION,
+  CREATION_DRAFT_RESUME_STATES,
+  CREATION_DRAFT_STAGES,
+  CREATION_DRAFT_STATES,
+  creationDraftInputSchema,
+  creationDraftSourceChoiceSchema,
+  type CreationDraft,
+  type CreationDraftInput,
+  type CreationDraftResumeAssessment,
+  type CreationDraftResumeState,
+  type CreationDraftSourceChoice,
+  type CreationDraftSourceChoiceInput,
+  type CreationDraftStage,
+  type CreationDraftState,
+} from './creation-draft';
 
 export const SOURCE_TYPES = ['manual', 'email', 'calendar', 'notification', 'file', 'webhook', 'internal', 'commerce', 'device', 'vehicle', 'billing', 'content_platform'] as const;
 export const TRIGGER_TYPES = ['manual', 'schedule', 'event', 'webhook', 'threshold', 'date_before', 'date_after', 'data_changed'] as const;
