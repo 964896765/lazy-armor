@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -26,14 +26,15 @@ interface PlanSummary {
 type Filter = 'all' | 'running' | 'paused' | 'failed';
 const FILTERS: Array<{ key: Filter; label: string; icon?: 'play' | 'pause' | 'alert-circle' }> = [
   { key: 'all', label: '全部' },
-  { key: 'running', label: '进行中', icon: 'play' },
+  { key: 'running', label: '管理中', icon: 'play' },
   { key: 'paused', label: '已暂停', icon: 'pause' },
   { key: 'failed', label: '失败', icon: 'alert-circle' },
 ];
 
 export default function PlanCenter() {
   const token = useAuthStore((store) => store.token);
-  const [filter, setFilter] = useState<Filter>('all');
+  const params = useLocalSearchParams<{ filter?: string }>();
+  const [filter, setFilter] = useState<Filter>(params.filter === 'running' ? 'running' : 'all');
   const [query, setQuery] = useState('');
   const plans = useQuery({ queryKey: ['plans', token], queryFn: () => api<PlanSummary[]>('/plans', token), enabled: Boolean(token) });
   const all = plans.data ?? [];
@@ -74,8 +75,8 @@ export default function PlanCenter() {
   );
 }
 
-function isRunning(status: string) { return status === 'active' || status === 'ready'; }
-function isFailed(plan: PlanSummary) { return ['failed', 'error', 'blocked'].includes(plan.status) || ['failed', 'error', 'blocked'].includes(plan.latestExecution?.status ?? '') || plan.latestExecution?.outcome?.outcome === 'FAILED'; }
+function isRunning(status: string) { return status === 'active' || status === 'ready' || status === 'degraded' || status === 'blocked'; }
+function isFailed(plan: PlanSummary) { return ['failed', 'error'].includes(plan.status) || ['failed', 'error'].includes(plan.latestExecution?.status ?? '') || plan.latestExecution?.outcome?.outcome === 'FAILED'; }
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: '#FFFFFF' },
