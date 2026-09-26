@@ -6,6 +6,8 @@ import { AccessibilityInfo, ActivityIndicator, Pressable, RefreshControl, Scroll
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/api';
 import { useAuthStore } from '../../src/auth-store';
+import { listCreationDrafts } from '../../src/creation-draft-api';
+import { activeCreationDraftCount } from '../../src/creation-draft-presenter';
 import { EmptyState, workspaceColors as colors, radius, spacing, typography } from '../../src/design';
 import {
   HOME_DATA_BOUNDARY,
@@ -25,8 +27,10 @@ export default function HomePage() {
   const [space, setSpace] = useState<HomeSpaceKey>('life');
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
   const today = useQuery({ queryKey: ['today', token], queryFn: () => api<TodayData>('/today', token), enabled: Boolean(token), refetchInterval: 15_000 });
+  const drafts = useQuery({ queryKey: ['creation-drafts', token], queryFn: () => listCreationDrafts(token!), enabled: Boolean(token) });
   const cards = useMemo(() => selectRunningPlanCards(today.data?.recentPlans ?? []), [today.data?.recentPlans]);
   const domains = useMemo(() => homeDomainsForSpace(space), [space]);
+  const resumeDraftCount = activeCreationDraftCount(drafts.data ?? []);
 
   function selectSpace(next: HomeSpaceKey) { setSpace(next); setExpanded(new Set()); }
   function toggleDomain(key: string) {
@@ -55,6 +59,11 @@ export default function HomePage() {
 
         <View style={[styles.sectionHeading, styles.createHeading]}><Text style={styles.sectionTitle}>新建计划</Text></View>
         <Text style={styles.sectionDescription}>先从规范目录选择场景。是否能够创建，以场景详情中的服务端可用性证据为准。</Text>
+        {resumeDraftCount > 0 ? <Pressable accessibilityRole="button" accessibilityLabel={`继续创建 ${resumeDraftCount} 份草稿`} onPress={() => router.push('/create-wizard' as never)} style={({ pressed }) => [styles.resumeCard, pressed && styles.pressed]}>
+          <View style={styles.resumeIcon}><Ionicons name="construct-outline" size={19} color={colors.primary} /></View>
+          <View style={styles.resumeCopy}><Text style={styles.resumeTitle}>继续创建 {resumeDraftCount}</Text><Text style={styles.resumeDetail}>服务端记录了你进行中的创建草稿，恢复前会重新校验授权与方案有效期。</Text></View>
+          <Ionicons name="chevron-forward" size={17} color={colors.primary} />
+        </Pressable> : null}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.spaces}>
           {HOME_SPACES.map((item) => <Pressable key={item.key} accessibilityRole="tab" accessibilityState={{ selected: item.key === space }} onPress={() => selectSpace(item.key)} style={[styles.spacePill, item.key === space && styles.spacePillSelected]}><Text style={[styles.spaceText, item.key === space && styles.spaceTextSelected]}>{item.label}</Text></Pressable>)}
         </ScrollView>
@@ -118,7 +127,7 @@ const styles = StyleSheet.create({
   cardTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, planIcon: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 15, backgroundColor: colors.accentSoft }, statusPill: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: radius.pill, backgroundColor: colors.successSoft }, statusWarning: { backgroundColor: '#F7ECD9' }, statusMuted: { backgroundColor: '#EFEEEA' }, statusText: { fontSize: 10, lineHeight: 14, color: colors.primary, fontWeight: '800' }, statusTextWarning: { color: '#96622B' },
   planName: { ...typography.cardTitle, color: colors.text, marginTop: spacing.lg }, planSummary: { ...typography.body, color: colors.textSecondary, lineHeight: 21, marginTop: spacing.sm, flex: 1 }, cardFooter: { marginTop: spacing.lg, gap: 3 }, cardTime: { fontSize: 10, lineHeight: 14, color: colors.textMuted }, cardNext: { ...typography.caption, color: colors.primary, fontWeight: '700' },
   dots: { minHeight: 24, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 }, dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#D5D2CB' }, dotActive: { width: 16, backgroundColor: colors.primary }, boundary: { fontSize: 10, lineHeight: 15, color: colors.textMuted, marginTop: spacing.xs },
-  createHeading: { marginTop: spacing.xl }, sectionDescription: { ...typography.caption, color: colors.textSecondary, lineHeight: 19 }, spaces: { gap: spacing.sm, paddingVertical: spacing.md, paddingRight: spacing.lg }, spacePill: { minHeight: 44, justifyContent: 'center', paddingHorizontal: spacing.md, borderRadius: radius.pill, backgroundColor: '#EFEEEA', borderWidth: 1, borderColor: '#E5E2DB' }, spacePillSelected: { backgroundColor: colors.primary, borderColor: colors.primary }, spaceText: { ...typography.caption, color: colors.textSecondary, fontWeight: '700' }, spaceTextSelected: { color: '#FFFFFF' },
+  createHeading: { marginTop: spacing.xl }, sectionDescription: { ...typography.caption, color: colors.textSecondary, lineHeight: 19 }, resumeCard: { minHeight: 76, flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.md, paddingHorizontal: spacing.md, paddingVertical: spacing.md, borderRadius: radius.lg, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }, resumeIcon: { width: 40, height: 40, borderRadius: 13, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentSoft }, resumeCopy: { flex: 1, minWidth: 0 }, resumeTitle: { ...typography.bodyStrong, color: colors.text }, resumeDetail: { ...typography.caption, color: colors.textSecondary, marginTop: 3, lineHeight: 18 }, spaces: { gap: spacing.sm, paddingVertical: spacing.md, paddingRight: spacing.lg }, spacePill: { minHeight: 44, justifyContent: 'center', paddingHorizontal: spacing.md, borderRadius: radius.pill, backgroundColor: '#EFEEEA', borderWidth: 1, borderColor: '#E5E2DB' }, spacePillSelected: { backgroundColor: colors.primary, borderColor: colors.primary }, spaceText: { ...typography.caption, color: colors.textSecondary, fontWeight: '700' }, spaceTextSelected: { color: '#FFFFFF' },
   tree: { overflow: 'hidden', borderRadius: radius.lg, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }, domainDivider: { borderBottomWidth: 1, borderBottomColor: colors.border }, domainRow: { flexDirection: 'row', alignItems: 'center' }, domainToggle: { flex: 1, minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingLeft: spacing.md }, rowAdd: { width: 48, minHeight: 52, alignItems: 'center', justifyContent: 'center' }, domainName: { ...typography.bodyStrong, color: colors.text, flex: 1 }, domainCount: { ...typography.caption, color: colors.textMuted }, scenarioList: { paddingBottom: spacing.xs, backgroundColor: '#FCFBF8' }, scenarioRow: { flexDirection: 'row', alignItems: 'center' }, scenarioMain: { flex: 1, minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingLeft: 38 }, branch: { width: 8, height: 1, backgroundColor: '#CFCBC2' }, scenarioName: { ...typography.body, color: colors.text, flex: 1 }, scenarioBoundary: { fontSize: 9, lineHeight: 13, color: colors.textMuted }, rowPressed: { backgroundColor: colors.pressed }, catalogBoundary: { fontSize: 10, lineHeight: 15, color: colors.textMuted, marginTop: spacing.sm },
   inlineState: { minHeight: 92, flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border }, inlineCopy: { flex: 1 }, inlineAction: { minHeight: 44, justifyContent: 'center', paddingHorizontal: spacing.md, borderRadius: radius.md, backgroundColor: colors.primary }, inlineActionText: { ...typography.caption, color: '#FFFFFF', fontWeight: '800' },
 });

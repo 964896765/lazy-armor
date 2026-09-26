@@ -85,7 +85,7 @@ export default function Create() {
     <SafeAreaView style={styles.safeArea} edges={[]}>
       <ScrollView style={styles.page} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" refreshControl={token ? <RefreshControl tintColor={colors.primary} refreshing={templates.isFetching} onRefresh={() => templates.refetch()} /> : undefined}>
         <WorkspaceHeader title="创建计划" subtitle="用自然语言，创建属于你的自动化计划" action={<Pressable accessibilityRole="button" accessibilityLabel="关闭" onPress={() => router.back()} style={styles.closeButton}><Ionicons name="close" size={24} color={colors.text} /></Pressable>} />
-        {scenarioKey ? <View style={styles.scenarioContext}><Ionicons name="layers-outline" size={17} color={colors.primary} /><Text style={styles.scenarioContextText}>已选择场景 {scenarioKey}，创建后将绑定该场景上下文</Text></View> : null}
+        {scenarioKey ? <><View style={styles.scenarioContext}><Ionicons name="layers-outline" size={17} color={colors.primary} /><Text style={styles.scenarioContextText}>已选择场景 {scenarioKey}，创建后将绑定该场景上下文</Text></View><View style={styles.wizardEntry}><ActionButton label="进入五步创建向导" onPress={() => router.push(`/create-wizard?scenarioKey=${scenarioKey}` as never)} /></View></> : null}
         <View style={styles.steps}>{creationSteps.map((label, index) => <View key={label} style={styles.stepItem}><View style={styles.stepTop}><View style={[styles.stepCircle, index === 0 && styles.stepCircleActive]}><Text style={[styles.stepNumber, index === 0 && styles.stepNumberActive]}>{index + 1}</Text></View>{index < creationSteps.length - 1 ? <View style={styles.stepLine} /> : null}</View><Text style={[styles.stepLabel, index === 0 && styles.stepLabelActive]}>{label}</Text></View>)}</View>
 
         {!token ? <Surface style={styles.stateSurface}><EmptyState icon="sparkles-outline" title="登录后开始安排" description="告诉我一件麻烦事，我来帮你找办法。" action={{ label: '去登录', onPress: () => router.push('/connections') }} /></Surface> : (
@@ -184,6 +184,7 @@ const styles = StyleSheet.create({
   closeButton: { width: 36, height: 36, borderRadius: 12, backgroundColor: '#F2F4F7', alignItems: 'center', justifyContent: 'center' },
   scenarioContext: { minHeight: 40, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.md, paddingHorizontal: spacing.md, borderRadius: radius.md, backgroundColor: colors.accentSoft },
   scenarioContextText: { ...typography.caption, color: colors.primary, flex: 1 },
+  wizardEntry: { marginTop: spacing.sm },
   steps: { flexDirection: 'row', marginTop: spacing.md, paddingHorizontal: spacing.xs },
   stepItem: { flex: 1, alignItems: 'center' },
   stepTop: { width: '100%', flexDirection: 'row', alignItems: 'center' },
