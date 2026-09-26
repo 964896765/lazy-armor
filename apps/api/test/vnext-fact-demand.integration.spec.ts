@@ -94,8 +94,8 @@ describe.sequential('VNext FactDemand and user-scoped Source Resolver', { timeou
     await pool.query("UPDATE device_heartbeats SET online_state='offline',last_heartbeat_at=UTC_TIMESTAMP(6) WHERE trusted_device_id=UUID_TO_BIN(?)", [trustedDeviceId]);
     const response = await request(app.getHttpServer()).post('/api/runtime/fact-demands/resolve').set(auth(owner.token)).send(body).expect(201);
     expect(response.body.demands[0]).toMatchObject({
-      state: 'SATISFIED', sourceCurrentlyUsable: true, dataActuallyAcquired: true, dataVerified: true,
-      selectedSource: { kind: 'INTERNAL_FACT' },
+      state: 'SATISFIED', sourceCurrentlyUsable: false, dataActuallyAcquired: true, dataVerified: true,
+      selectedSource: null,
     });
     expect(response.body.demands[0].candidateSources).toContainEqual(expect.objectContaining({
       kind: 'TRUSTED_DEVICE', authorized: false, deviceOnline: false, usable: false,

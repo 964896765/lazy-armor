@@ -2,8 +2,13 @@
   "$schema": "https://turbo.build/schema.json",
   "globalEnv": [
     "DATABASE_URL",
+    "TEST_DATABASE_URL",
+    "TEST_DATABASE_NAME",
     "MYSQL_ADMIN_URL",
     "REDIS_URL",
+    "REDIS_KEY_PREFIX",
+    "TEST_REDIS_KEY_PREFIX",
+    "REQUIRE_EXACT_TEST_TARGET",
     "JWT_SECRET",
     "CREDENTIAL_MASTER_KEY",
     "APP_ENV",
