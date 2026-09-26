@@ -16,7 +16,7 @@ describe.sequential('B7 finance.accounting persistent offer loop', { timeout: 90
   let pipeline: RealityPipelineService;
   let worker: { processExecution(executionId: string): Promise<unknown> };
   const unique = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  const subjectKey = `finance.transaction:local_file:txn-${unique}`;
+  const subjectKey = `finance.transaction:local_file:account:household-cash:txn-${unique}`;
 
   beforeAll(async () => {
     const booted = await bootP2App(`b7-acct-offer-${unique}`);
@@ -41,7 +41,7 @@ describe.sequential('B7 finance.accounting persistent offer loop', { timeout: 90
     const ingested = await pipeline.ingest(owner.userId, {
       sourceMode: 'FILE', providerKey: 'local_file', externalEventKey: `event-${unique}`,
       parserKey: 'generic.transaction.v1', resourceHint: 'finance.transaction',
-      payload: { transactionId: `txn-${unique}`, amountMinor: 12850, currency: 'CNY', merchant: '测试商户', direction: 'DEBIT', transactionState: 'POSTED' },
+      payload: { accountKey: 'household-cash', transactionId: `txn-${unique}`, amountMinor: 12850, currency: 'CNY', merchant: '测试商户', direction: 'DEBIT', transactionState: 'POSTED' },
       evidenceHash: hash(`event-${unique}`), observedAt: new Date().toISOString(),
     });
     await pipeline.confirmCandidate(owner.userId, ingested.candidates[0]!.id, {

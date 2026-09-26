@@ -218,12 +218,19 @@ export function parseAndNormalizeObservation(input: SourceObservationInput): Nor
     const merchant = optionalText(input.payload.merchant, 160);
     const direction = optionalEnum(input.payload.direction, ['DEBIT', 'CREDIT'] as const);
     const transactionState = optionalEnum(input.payload.transactionState, ['POSTED', 'PENDING', 'REFUND', 'REVERSAL'] as const);
-    // Cross-source matching only follows a stable source-supplied transaction id.
+    // Cross-source matching only follows a stable, account-scoped source id.
     // Time/amount/merchant similarity must never silently merge transactions.
-    // The source provider (and account connection when present) namespaces the id
-    // so two sources cannot collide on the same external transaction id.
+    // A provider connection may contain many accounts, so an accountKey takes
+    // precedence when supplied. Without either a stable accountKey or a
+    // connection identity, transactionId alone is not enough to merge records:
+    // keep the source event as an independent candidate for later reconciliation.
     const sourceNamespace = input.connectionId ? `${input.providerKey}:${input.connectionId}` : input.providerKey;
-    const canonicalSubject = transactionId ? `finance.transaction:${sourceNamespace}:${transactionId}` : subjectKey;
+    const stableAccountNamespace = accountKey
+      ? `${sourceNamespace}:account:${accountKey}`
+      : input.connectionId ? sourceNamespace : null;
+    const canonicalSubject = transactionId && stableAccountNamespace
+      ? `finance.transaction:${stableAccountNamespace}:${transactionId}`
+      : subjectKey;
     const value: Record<string, JsonValue> = { amountMinor, currency };
     if (transactionId) value.transactionId = transactionId;
     if (relatedTransactionId) value.relatedTransactionId = relatedTransactionId;

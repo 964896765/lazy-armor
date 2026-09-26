@@ -26,8 +26,8 @@ describe.sequential('B7 transaction file import through Reality Pipeline', { tim
 
   it('ingests transaction rows as candidates, never as trusted billing_records', async () => {
     const content = JSON.stringify({ records: [
-      { transactionId: 'txn-001', amount: 128.6, currency: 'CNY', merchant: '测试商户', direction: 'DEBIT', transactionState: 'POSTED', occurredAt: '2026-09-01T08:00:00.000Z' },
-      { transactionId: 'txn-002', amount: 88, currency: 'CNY', merchant: '另一商户', direction: 'CREDIT', transactionState: 'REFUND', relatedTransactionId: 'txn-001', occurredAt: '2026-09-02T08:00:00.000Z' },
+      { accountKey: 'cash-account', transactionId: 'txn-001', amount: 128.6, currency: 'CNY', merchant: '测试商户', direction: 'DEBIT', transactionState: 'POSTED', occurredAt: '2026-09-01T08:00:00.000Z' },
+      { accountKey: 'cash-account', transactionId: 'txn-002', amount: 88, currency: 'CNY', merchant: '另一商户', direction: 'CREDIT', transactionState: 'REFUND', relatedTransactionId: 'txn-001', occurredAt: '2026-09-02T08:00:00.000Z' },
     ] });
     const imported = await importTx({
       fileName: 'transactions.json', mimeType: 'application/json',
@@ -47,7 +47,7 @@ describe.sequential('B7 transaction file import through Reality Pipeline', { tim
     for (const candidate of candidates) {
       expect(candidate.status).toBe('PENDING');
       expect(candidate.fact_key).toBe('finance.transaction.amount');
-      expect(candidate.subject_key).toMatch(/^finance\.transaction:local_file:txn-/);
+      expect(candidate.subject_key).toMatch(/^finance\.transaction:local_file:account:cash-account:txn-/);
     }
     // 未经确认的候选不得成为 Truth。
     const [truthCount] = await pool.query<RowDataPacket[]>('SELECT COUNT(*) count FROM truth_records WHERE user_id=UUID_TO_BIN(?)', [owner.userId]);
@@ -56,8 +56,8 @@ describe.sequential('B7 transaction file import through Reality Pipeline', { tim
 
   it('deduplicates the same source-namespaced transaction id', async () => {
     const content = JSON.stringify({ records: [
-      { transactionId: 'txn-dup', amount: 50, currency: 'CNY', occurredAt: '2026-09-03T08:00:00.000Z' },
-      { transactionId: 'txn-dup', amount: 50, currency: 'CNY', occurredAt: '2026-09-03T08:00:00.000Z' },
+      { accountKey: 'cash-account', transactionId: 'txn-dup', amount: 50, currency: 'CNY', occurredAt: '2026-09-03T08:00:00.000Z' },
+      { accountKey: 'cash-account', transactionId: 'txn-dup', amount: 50, currency: 'CNY', occurredAt: '2026-09-03T08:00:00.000Z' },
     ] });
     const imported = await importTx({
       fileName: 'dup.json', mimeType: 'application/json',
@@ -65,7 +65,7 @@ describe.sequential('B7 transaction file import through Reality Pipeline', { tim
     }).expect(201);
     expect(imported.body.status).toBe('completed');
     // 两行同名 transactionId → 归一化到同一 subjectKey，仅一条候选。
-    const [dupRows] = await pool.query<RowDataPacket[]>('SELECT COUNT(*) count FROM candidate_facts WHERE user_id=UUID_TO_BIN(?) AND subject_key=?', [owner.userId, 'finance.transaction:local_file:txn-dup']);
+    const [dupRows] = await pool.query<RowDataPacket[]>('SELECT COUNT(*) count FROM candidate_facts WHERE user_id=UUID_TO_BIN(?) AND subject_key=?', [owner.userId, 'finance.transaction:local_file:account:cash-account:txn-dup']);
     expect(Number(dupRows[0].count)).toBe(1);
   });
 
