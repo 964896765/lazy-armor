@@ -34,7 +34,7 @@ export default function CommerceSpace() {
   const prepared = (plans.data ?? []).filter((plan) => plan.templateKey === 'family-supply-reminder' || plan.latestExecution?.resultSummary?.includes('待购买'));
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
+    <SafeAreaView style={styles.safeArea} edges={[]}>
       <ScrollView style={styles.page} contentContainerStyle={styles.content}>
         <WorkspaceHeader title="懒人商城" subtitle="根据你的计划准备补给建议" />
 

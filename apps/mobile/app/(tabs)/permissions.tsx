@@ -43,7 +43,7 @@ export default function PermissionsPage() {
   }
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
+    <SafeAreaView style={styles.safeArea} edges={[]}>
       <ScrollView style={styles.page} contentContainerStyle={styles.content}>
         <WorkspaceHeader title="权限与安全" subtitle="查看每项信息为什么被使用" />
 

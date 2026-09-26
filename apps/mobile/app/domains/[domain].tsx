@@ -51,7 +51,7 @@ export default function DomainWorkspace() {
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <ScrollView style={styles.page} contentContainerStyle={styles.content}>
-        <WorkspaceHeader title={definition.label} onBack={() => router.back()} action={<Text style={styles.enabledBadge}>可创建计划</Text>} />
+        <WorkspaceHeader title={definition.label} onBack={() => router.back()} action={<Text style={styles.enabledBadge}>规范目录</Text>} />
         <DomainHero domain={definition.key} />
         <View style={styles.tabs}>{TABS.map((item) => <Pressable key={item} accessibilityRole="button" onPress={() => setTab(item)} style={[styles.tab, item === tab && styles.tabSelected]}><Text style={[styles.tabText, item === tab && styles.tabTextSelected]}>{item}</Text></Pressable>)}</View>
         {!token ? <Surface><EmptyState icon="grid-outline" title="登录后查看你的领域" description="只有你本人可查看与管理自己的计划和资料。" action={{ label: '去登录', onPress: () => router.push('/auth/login' as never) }} /></Surface> : null}
@@ -75,7 +75,6 @@ function DomainHero({ domain }: { domain: string }) {
 }
 
 function Overview({ domain, plans, activePlans, latest, connections }: { domain: string; plans: PlanSummary[]; activePlans: number; latest: PlanSummary['latestExecution']; connections: ConnectionSummary[] }) {
-  const scenarios = scenariosForDomain(domain);
   return (
     <>
       <SectionHeading title="连接的来源" action="添加连接" onPress={() => router.push('/connections/add' as never)} />
@@ -87,8 +86,6 @@ function Overview({ domain, plans, activePlans, latest, connections }: { domain:
       <SectionHeading title="最近事件" action="查看记录" onPress={() => router.push('/records' as never)} />
       <View style={styles.listCard}>{latest ? <View style={styles.eventRow}><View style={styles.eventIcon}><Ionicons name="checkmark" size={16} color="#FFFFFF" /></View><View style={styles.rowCopy}><Text style={styles.rowTitle}>{latest.resultSummary ?? planStatusLabel(latest.status)}</Text><Text style={styles.rowDetail}>最近一次运行结果已收进记录</Text></View><Ionicons name="chevron-forward" size={16} color={colors.textMuted} /></View> : <Text style={styles.cardEmpty}>该领域还没有运行记录。</Text>}</View>
 
-      <SectionHeading title="AI 建议" />
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.suggestionRow}>{scenarios.slice(0, 3).map((scenario) => <Pressable key={scenario.key} onPress={() => router.push(`/domains/${domain}/${scenario.key}` as never)} style={({ pressed }) => [styles.suggestionCard, pressed && styles.pressed]}><Ionicons name={scenarioIcon(scenario.key)} size={20} color={colors.primary} /><Text style={styles.suggestionTitle}>{scenario.label}计划</Text><Text style={styles.suggestionAction}>查看</Text></Pressable>)}</ScrollView>
       <Pressable accessibilityRole="button" onPress={() => router.push('/create' as never)} style={({ pressed }) => [styles.primaryCta, pressed && styles.pressed]}><Ionicons name="add" size={20} color="#FFFFFF" /><Text style={styles.primaryCtaText}>创建计划</Text></Pressable>
     </>
   );

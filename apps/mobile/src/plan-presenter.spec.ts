@@ -1,34 +1,35 @@
 import { describe, expect, it } from 'vitest';
-import { consumerPlanGroup, consumerPlanGroupSubtitle, consumerPlanStatusLabel, consumerPlanStatusTone, planDomainLabel, planEvidenceLine, planExceptionReason, planNextRunLabel, planStatusLabel, planStatusTone, planVisualIcon, templateGroupLabel } from './plan-presenter';
+import { consumerPlanGroup, consumerPlanGroupSubtitle, consumerPlanStatusLabel, consumerPlanStatusTone, isFailedPlanStatus, isManagingPlanStatus, isValidScenarioKey, planDomainLabel, planEvidenceLine, planExceptionReason, planNextRunLabel, planNextStep, planStatusLabel, planStatusTone, planVisualIcon, sourceHealthHint, templateGroupLabel } from './plan-presenter';
 
 describe('Plan presenter', () => {
-  it('maps known templates into the four consumer groups', () => {
-    expect(consumerPlanGroup({ templateKey: 'device-consumable-reminder' })).toBe('我的物品');
-    expect(consumerPlanGroup({ templateKey: 'daily-important-summary' })).toBe('我的事情');
-    expect(consumerPlanGroup({ templateKey: 'monthly-bill-summary' })).toBe('我的钱');
-    expect(consumerPlanGroup({ templateKey: 'quiet-delivery-guard' })).toBe('我的生活');
+  it('maps known templates into the four consumer spaces', () => {
+    expect(consumerPlanGroup({ templateKey: 'device-consumable-reminder' })).toBe('property');
+    expect(consumerPlanGroup({ templateKey: 'monthly-bill-summary' })).toBe('property');
+    expect(consumerPlanGroup({ templateKey: 'quiet-delivery-guard' })).toBe('life');
+    // 旧“我的事情”模板在缺少 domain 时不得猜测新空间，归入“其他”。
+    expect(consumerPlanGroup({ templateKey: 'daily-important-summary' })).toBe('其他');
   });
 
-  it('falls back to plan-center kind when template key is unavailable', () => {
-    expect(consumerPlanGroup({ planCenterKind: 'household' })).toBe('我的生活');
-    expect(consumerPlanGroup({ planCenterKind: 'device' })).toBe('我的物品');
-    expect(consumerPlanGroup({ planCenterKind: 'study' })).toBe('我的事情');
-    expect(consumerPlanGroup({ planCenterKind: 'unknown' })).toBe('其他计划');
+  it('does not guess a space from legacy plan-center kind without a domain', () => {
+    expect(consumerPlanGroup({ planCenterKind: 'household' })).toBe('其他');
+    expect(consumerPlanGroup({ planCenterKind: 'device' })).toBe('其他');
+    expect(consumerPlanGroup({ planCenterKind: 'study' })).toBe('其他');
+    expect(consumerPlanGroup({ planCenterKind: 'unknown' })).toBe('其他');
   });
 
   it('keeps group subtitles and labels in consumer language', () => {
-    expect(templateGroupLabel('我的钱')).toBe('我的钱');
-    expect(templateGroupLabel('我的东西')).toBe('我的物品');
-    expect(consumerPlanGroupSubtitle('我的钱')).toContain('账单');
-    expect(consumerPlanGroupSubtitle('我的生活')).toContain('生活');
-    expect(consumerPlanGroupSubtitle('我的物品')).toContain('车辆');
+    expect(templateGroupLabel('我的钱')).toBe('我的财物');
+    expect(templateGroupLabel('我的东西')).toBe('我的财物');
+    expect(consumerPlanGroupSubtitle('property')).toContain('财务');
+    expect(consumerPlanGroupSubtitle('life')).toContain('日常');
   });
 
-  it('uses the canonical domain catalog for plans without template metadata', () => {
-    expect(consumerPlanGroup({ domain: 'health' })).toBe('我的生活');
-    expect(consumerPlanGroup({ domain: 'identity_docs' })).toBe('我的事情');
-    expect(consumerPlanGroup({ domain: 'vehicle' })).toBe('我的物品');
-    expect(consumerPlanGroup({ domain: 'billing' })).toBe('我的钱');
+  it('uses the canonical domain catalog and splits legacy work into affairs/work', () => {
+    expect(consumerPlanGroup({ domain: 'health' })).toBe('life');
+    expect(consumerPlanGroup({ domain: 'identity_docs' })).toBe('affairs');
+    expect(consumerPlanGroup({ domain: 'work' })).toBe('work');
+    expect(consumerPlanGroup({ domain: 'vehicle' })).toBe('property');
+    expect(consumerPlanGroup({ domain: 'billing' })).toBe('property');
     expect(planDomainLabel('legal_contract')).toBe('合同与法律事务');
     expect(planDomainLabel('general')).toBe('日常事务');
   });
@@ -83,5 +84,48 @@ describe('Plan presenter', () => {
     expect(line).toContain('计划规则：剩余 ≤ 30 天时提醒');
     expect(line).not.toContain('device.consumable.remaining_days');
     expect(line).not.toContain('PREDICTIVE_PREPARE');
+  });
+
+  it('classifies managed plan statuses without claiming execution', () => {
+    for (const status of ['active', 'ready', 'degraded', 'blocked']) expect(isManagingPlanStatus(status)).toBe(true);
+    for (const status of ['paused', 'archived', 'failed', 'error', 'draft']) expect(isManagingPlanStatus(status)).toBe(false);
+  });
+
+  it('keeps blocked out of the failed bucket so the real block reason stays visible', () => {
+    expect(isFailedPlanStatus('blocked')).toBe(false);
+    expect(isFailedPlanStatus('failed')).toBe(true);
+    expect(isFailedPlanStatus('error')).toBe(true);
+    expect(isFailedPlanStatus('active', 'failed')).toBe(true);
+    expect(isFailedPlanStatus('active', null, 'FAILED')).toBe(true);
+    expect(isFailedPlanStatus('active', 'succeeded', 'SUCCESS')).toBe(false);
+  });
+
+  it('validates the scenario create entry param', () => {
+    expect(isValidScenarioKey('daily_life.delivery')).toBe(true);
+    expect(isValidScenarioKey('finance.bill')).toBe(true);
+    expect(isValidScenarioKey('')).toBe(false);
+    expect(isValidScenarioKey('daily_life')).toBe(false);
+    expect(isValidScenarioKey('daily_life.delivery.extra')).toBe(false);
+    expect(isValidScenarioKey('../etc/passwd')).toBe(false);
+    expect(isValidScenarioKey(null)).toBe(false);
+    expect(isValidScenarioKey(undefined)).toBe(false);
+  });
+
+  it('derives an accurate next step from server fields without fabricating authority', () => {
+    expect(planNextStep({ status: 'archived' })).toContain('结束');
+    expect(planNextStep({ status: 'paused' })).toContain('暂停');
+    expect(planNextStep({ status: 'draft' })).toContain('设置');
+    expect(planNextStep({ status: 'active', hasMissingConnection: true })).toContain('连接');
+    expect(planNextStep({ status: 'active', latestExecutionStatus: 'waiting_approval' })).toContain('审批');
+    expect(planNextStep({ status: 'active', outcome: 'OUTCOME_UNKNOWN' })).toContain('核实');
+    expect(planNextStep({ status: 'active', latestExecutionStatus: 'running' })).toContain('执行');
+    expect(planNextStep({ status: 'blocked' })).toContain('受阻');
+    expect(planNextStep({ status: 'active' })).toContain('跟进');
+  });
+
+  it('does not infer source health from a missing connection flag', () => {
+    expect(sourceHealthHint(false, [])).toContain('无可验证');
+    expect(sourceHealthHint(true, [])).toContain('连接');
+    expect(sourceHealthHint(true, ['Gmail'])).toContain('Gmail');
   });
 });

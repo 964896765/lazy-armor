@@ -1,22 +1,22 @@
-import { CANONICAL_DOMAIN_CATALOG, DOMAIN_GROUPS, scenariosForDomain, type DomainGroupKey } from '@lazy-armor/plan-schema/mobile';
+import { UI_SPACES, uiDomainsForSpace, type UiSpaceKey } from './ui-space';
 
 /** Space is presentation grouping only; scenario and plan identity stay on the server. */
-const SPACE_ORDER: readonly DomainGroupKey[] = ['money', 'life', 'work', 'things'];
-
 export interface SpaceDirectoryItem {
-  key: DomainGroupKey;
+  key: UiSpaceKey;
   label: string;
   description: string;
   domains: ReadonlyArray<{ key: string; label: string; scenarioCount: number }>;
 }
 
 export function buildSpaceDirectory(): readonly SpaceDirectoryItem[] {
-  return SPACE_ORDER.map((key) => ({
-    key,
-    label: DOMAIN_GROUPS[key].label,
-    description: DOMAIN_GROUPS[key].description,
-    domains: CANONICAL_DOMAIN_CATALOG
-      .filter((domain) => domain.group === key)
-      .map((domain) => ({ key: domain.key, label: domain.label, scenarioCount: scenariosForDomain(domain.key).length })),
+  return UI_SPACES.map((space) => ({
+    key: space.key,
+    label: space.label,
+    description: space.description,
+    domains: uiDomainsForSpace(space.key).map((domain) => ({
+      key: domain.key,
+      label: domain.label,
+      scenarioCount: domain.scenarios.length,
+    })),
   }));
 }

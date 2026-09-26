@@ -11,7 +11,7 @@ describe('scenario canvas presenter', () => {
 
   it('derives scenario state labels from plan counts', () => {
     const row = { key: 'delivery', label: '快递', productDomain: 'daily_life' };
-    expect(scenarioStateLabel(row, 0)).toBe('可创建');
+    expect(scenarioStateLabel(row, 0)).toBe('查看状态');
     expect(scenarioStateLabel(row, 1)).toBe('1 个计划');
     expect(scenarioStateLabel(row, 3)).toBe('3 个计划');
   });
@@ -25,8 +25,8 @@ describe('scenario canvas presenter', () => {
   });
 
   it('filters by space', () => {
-    const sections = buildScenarioSections({ space: 'money', query: '' });
-    expect(sections.map((section) => section.domainKey)).toEqual(['finance']);
+    const sections = buildScenarioSections({ space: 'property', query: '' });
+    expect(sections.map((section) => section.domainKey)).toEqual(['finance', 'housing', 'vehicle', 'device', 'digital_account']);
   });
 
   it('filters by query across domains', () => {

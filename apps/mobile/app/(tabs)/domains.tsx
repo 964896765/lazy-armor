@@ -25,7 +25,7 @@ export default function DomainsDirectory() {
   const countFor = (domain: string) => (plans.data ?? []).filter((plan) => canonicalPlanDomain(plan.domain) === domain).length;
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
+    <SafeAreaView style={styles.safeArea} edges={[]}>
       <ScrollView style={styles.page} contentContainerStyle={styles.content}>
         <WorkspaceHeader title={selectedGroup ? DOMAIN_GROUPS[selectedGroup].label : '我的空间'} subtitle="从领域找到要管理的场景；目录不代表已开通" action={selectedGroup ? <Pressable accessibilityRole="button" onPress={() => router.replace('/domains' as never)}><Text style={styles.allSpaces}>全部空间</Text></Pressable> : undefined} />
         {plans.isLoading ? <View style={styles.loading}><ActivityIndicator color={colors.primary} /><Text style={styles.loadingText}>正在整理领域…</Text></View> : null}

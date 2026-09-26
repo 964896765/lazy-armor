@@ -1,7 +1,8 @@
 export type PlanListStatus = '运行中' | '需要设置' | '已暂停';
-import { domainDefinition, domainGroupFor } from '@lazy-armor/plan-schema/mobile';
+import { canonicalPlanDomain, domainDefinition } from '@lazy-armor/plan-schema/mobile';
+import { uiSpaceDefinition, uiSpaceForDomain, type UiSpaceKey } from './ui-space';
 
-export type ConsumerPlanGroup = '我的生活' | '我的钱' | '我的事情' | '我的物品' | '其他计划';
+export type ConsumerPlanGroup = UiSpaceKey | '其他';
 
 export function planGroup(status: string): PlanListStatus {
   if (status === 'active' || status === 'ready') return '运行中';
@@ -76,6 +77,42 @@ export function consumerPlanStatusTone(input: ConsumerPlanStatusInput): 'success
   return 'warning';
 }
 
+export interface PlanNextStepInput {
+  status: string;
+  hasMissingConnection?: boolean;
+  hasMissingPermission?: boolean;
+  hasMissingData?: boolean;
+  needsConfirmation?: boolean;
+  latestExecutionStatus?: string | null;
+  outcome?: string | null;
+}
+
+/** 由服务端已有字段推导「下一步」说明，不新增权威状态、不凭空生成带权限的按钮。 */
+export function planNextStep(input: PlanNextStepInput): string {
+  if (input.status === 'archived') return '计划已经结束，需要时可以重新开启。';
+  if (input.status === 'paused') return '计划已暂停，需要时可以继续运行。';
+  if (input.status === 'draft') return '还差设置，补齐后即可启用。';
+  if (input.hasMissingConnection) return '还缺连接或授权，补好后计划就能继续。';
+  if (input.hasMissingPermission) return '授权已失效，需要重新授权。';
+  if (input.hasMissingData) return '还缺所需数据，补上后计划就能继续。';
+  if (input.needsConfirmation || input.latestExecutionStatus === 'waiting_approval') return '等待你确认或审批。';
+  if (input.outcome === 'PENDING_CONFIRMATION') return '等待确认这次执行结果。';
+  if (input.outcome === 'OUTCOME_UNKNOWN') return '上次结果待核实，可进入只读核对。';
+  if (input.latestExecutionStatus === 'running') return '正在执行中。';
+  if (input.status === 'blocked') return '计划受阻，需要你查看具体原因。';
+  if (input.status === 'degraded') return '数据或来源需要检查。';
+  return '持续跟进中，到点会按计划处理。';
+}
+
+/** 数据来源可用性说明：只陈述确凿的「缺连接」，不据此反向推断来源健康/在线。 */
+export function sourceHealthHint(hasMissingConnection: boolean, missingProviderNames: string[]): string {
+  if (hasMissingConnection) {
+    const names = missingProviderNames.length > 0 ? missingProviderNames.join('、') : '相关服务';
+    return `还缺 ${names} 的连接或授权，补好后才能继续获取数据。`;
+  }
+  return '来源是否在线、数据是否新鲜，暂无可验证信息。';
+}
+
 export interface PlanExceptionInput {
   hasMissingConnection?: boolean;
   latestExecution?: { status: string; resultSummary: string | null } | null;
@@ -124,15 +161,16 @@ export function automationLevelLabel(level: string): string {
   }
 }
 
-function normalizeConsumerGroup(group: string | null | undefined): ConsumerPlanGroup | null {
+// 只做历史格式解析：旧存储分组（我的钱/我的生活/我的事情/我的物品/我的东西）
+// 归一化，不承担新版空间猜测。
+function normalizeConsumerGroup(group: string | null | undefined): '我的钱' | '我的生活' | '我的事情' | '我的物品' | null {
   switch (group) {
     case '我的钱':
     case '我的生活':
     case '我的事情':
     case '我的物品':
-    case '其他计划':
       return group;
-    // 历史模板使用“我的东西”；仅在展示层兼容为新信息架构名称。
+    // 历史模板使用“我的东西”；仅兼容归一化为“我的物品”。
     case '我的东西':
       return '我的物品';
     default:
@@ -140,12 +178,33 @@ function normalizeConsumerGroup(group: string | null | undefined): ConsumerPlanG
   }
 }
 
-export function templateGroupLabel(group: string): string {
-  return normalizeConsumerGroup(group) ?? '其他计划';
+// 旧分组 → 新空间，仅无歧义映射。旧“我的事情”会拆成 affairs/work，
+// 必须依据 domain 决定，故返回 null（不得猜测）。
+function legacyGroupToSpace(legacy: '我的钱' | '我的生活' | '我的事情' | '我的物品'): UiSpaceKey | null {
+  switch (legacy) {
+    case '我的钱':
+      return 'property';
+    case '我的生活':
+      return 'life';
+    case '我的物品':
+      return 'property';
+    case '我的事情':
+      return null;
+  }
 }
 
-const TEMPLATE_GROUP_ORDER = ['我的钱', '我的生活', '我的事情', '我的物品'] as const;
-const TEMPLATE_GROUP_BY_KEY: Record<string, Exclude<ConsumerPlanGroup, '其他计划'>> = {
+export function consumerPlanGroupLabel(group: ConsumerPlanGroup): string {
+  return group === '其他' ? '其他计划' : uiSpaceDefinition(group).label;
+}
+
+export function templateGroupLabel(group: string): string {
+  const legacy = normalizeConsumerGroup(group);
+  if (!legacy) return '其他计划';
+  const space = legacyGroupToSpace(legacy);
+  return space ? consumerPlanGroupLabel(space) : '其他计划';
+}
+
+const TEMPLATE_GROUP_BY_KEY: Record<string, '我的钱' | '我的生活' | '我的事情' | '我的物品'> = {
   'monthly-bill-summary': '我的钱',
   'mobile-bill-guard': '我的钱',
   'utility-bill-guard': '我的钱',
@@ -165,40 +224,25 @@ const TEMPLATE_GROUP_BY_KEY: Record<string, Exclude<ConsumerPlanGroup, '其他�
   'digital-subscription-reminder': '我的物品',
 };
 
-export function groupPlanTemplates<T extends { group: string }>(templates: readonly T[]) {
-  const groupedTemplates = templates.map((template) => ({ template, group: normalizeConsumerGroup(template.group) }));
-  const groups: Array<{ group: ConsumerPlanGroup; label: string; items: readonly T[] }> = TEMPLATE_GROUP_ORDER.map((group) => ({
-    group,
-    label: templateGroupLabel(group),
-    items: groupedTemplates.filter((item) => item.group === group).map((item) => item.template),
-  })).filter((group) => group.items.length > 0);
-  const other = groupedTemplates.filter((item) => item.group === null).map((item) => item.template);
-  if (other.length > 0) groups.push({ group: '其他计划', label: '其他计划', items: other });
-  return groups;
-}
-
 export function consumerPlanGroup(input: { templateKey?: string | null; planCenterKind?: string | null; consumerGroup?: string | null; domain?: string | null }): ConsumerPlanGroup {
-  const storedGroup = normalizeConsumerGroup(input.consumerGroup);
-  if (storedGroup) return storedGroup;
-  if (input.templateKey && TEMPLATE_GROUP_BY_KEY[input.templateKey]) return TEMPLATE_GROUP_BY_KEY[input.templateKey];
-  const domainGroup = domainGroupFor(input.domain);
-  if (domainGroup === 'money') return '我的钱';
-  if (domainGroup === 'life') return '我的生活';
-  if (domainGroup === 'work') return '我的事情';
-  if (domainGroup === 'things') return '我的物品';
-  switch (input.planCenterKind) {
-    case 'logistics':
-    case 'household':
-      return '我的生活';
-    case 'daily_summary':
-    case 'content':
-    case 'study':
-      return '我的事情';
-    case 'device':
-      return '我的物品';
-    default:
-      return '其他计划';
+  // Primary：canonical domainKey → UiSpaceKey（正确拆分 work → affairs/work）。
+  const canonical = canonicalPlanDomain(input.domain);
+  if (canonical) {
+    const space = uiSpaceForDomain(canonical);
+    if (space) return space;
   }
+  // Historical compat：旧存储分组 → 新空间（仅无歧义映射）。
+  const legacy = normalizeConsumerGroup(input.consumerGroup);
+  if (legacy) {
+    const space = legacyGroupToSpace(legacy);
+    if (space) return space;
+  }
+  // Template fallback：无 domain 时按模板旧分组映射（无歧义才生效）。
+  if (input.templateKey && TEMPLATE_GROUP_BY_KEY[input.templateKey]) {
+    const space = legacyGroupToSpace(TEMPLATE_GROUP_BY_KEY[input.templateKey]);
+    if (space) return space;
+  }
+  return '其他';
 }
 
 export function planDomainLabel(domain: string | null | undefined): string {
@@ -206,18 +250,22 @@ export function planDomainLabel(domain: string | null | undefined): string {
 }
 
 export function consumerPlanGroupSubtitle(group: ConsumerPlanGroup): string {
-  switch (group) {
-    case '我的生活':
-      return '生活、家庭、住房、出行和日常安排';
-    case '我的钱':
-      return '账单、消费、订阅和需要留意的金额变化';
-    case '我的事情':
-      return '工作、学习、内容与每天要推进的事情';
-    case '我的物品':
-      return '车辆、设备、数字账号和需要维护的资产';
-    default:
-      return '其他暂未归类的计划';
-  }
+  return group === '其他' ? '其他暂未归类的计划' : uiSpaceDefinition(group).description;
+}
+
+/** 计划中心「管理中」筛选：仍由计划引擎照看的计划，不等于正在执行。 */
+export function isManagingPlanStatus(status: string): boolean {
+  return status === 'active' || status === 'ready' || status === 'degraded' || status === 'blocked';
+}
+
+/** 计划中心「失败」判定：计划或最近执行失败/错误，或 Consumer Outcome 为 FAILED。 */
+export function isFailedPlanStatus(status: string, latestExecutionStatus?: string | null, outcome?: string | null): boolean {
+  return ['failed', 'error'].includes(status) || ['failed', 'error'].includes(latestExecutionStatus ?? '') || outcome === 'FAILED';
+}
+
+/** 创建入口场景上下文参数校验：合法格式为 `domain.key`。 */
+export function isValidScenarioKey(value: string | null | undefined): value is string {
+  return typeof value === 'string' && /^[a-z0-9_]+\.[a-z0-9_]+$/.test(value);
 }
 
 export function sourceTypeLabel(sourceType: string): string {
