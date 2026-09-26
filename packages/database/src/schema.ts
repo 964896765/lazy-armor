@@ -1113,6 +1113,25 @@ export const planCreationContracts = mysqlTable('plan_creation_contracts', {
   index('plan_contract_user_plan_idx').on(table.userId, table.planId),
 ]);
 
+export const creationDrafts = mysqlTable('creation_drafts', {
+  draftId: uuidBinary('draft_id').primaryKey(),
+  userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  scenarioKey: varchar('scenario_key', { length: 120 }).notNull(),
+  scenarioRevision: int('scenario_revision').notNull(),
+  stage: int('stage').notNull(),
+  goalJson: json('goal_json').$type<Record<string, unknown>>().notNull(),
+  subjectJson: json('subject_json').$type<Record<string, unknown> | null>(),
+  sourceChoicesJson: json('source_choices_json').$type<Record<string, unknown>[]>().notNull(),
+  selectedOfferKey: varchar('selected_offer_key', { length: 160 }),
+  version: int('version').notNull(),
+  state: varchar('state', { length: 32 }).notNull(),
+  ...timestamps,
+  expiresAt: datetime('expires_at', { mode: 'date', fsp: 6 }).notNull(),
+}, (table) => [
+  uniqueIndex('creation_drafts_user_scenario_uq').on(table.userId, table.scenarioKey),
+  index('creation_drafts_user_state_idx').on(table.userId, table.state, table.expiresAt),
+]);
+
 export const capabilityResolutionDecisions = mysqlTable('capability_resolution_decisions', {
   id: uuidBinary('id').primaryKey(),
   userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
@@ -1647,6 +1666,7 @@ export const schema = {
   planTriggers,
   planConditions,
   planActions,
+  creationDrafts,
   executions,
   actionIntents,
   actionAdapterBindings,
