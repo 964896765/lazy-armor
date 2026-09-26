@@ -22,6 +22,8 @@
 | 家庭补给 | 复用 FactDemand、SourceResolver、Plan Engine 和低风险 notify/record | 从已验证消费/库存事实生成待确认清单 | 不自动下单或支付；需要合法来源和用户确认 |
 | 每日重要事项 | 复用 Truth、现有 Plan/Today 聚合、ActionResolver 和 in-app notification | 聚合已验证计划、异常与提醒并解释优先级 | 不能凭 AI 猜测事实；不能伪装成新的执行引擎 |
 
-## 下一小批
+## 已发现的可复用运行证据投影
 
-先建立五条路径共用的“运行证据状态”投影：分别显示已实现、确定性已测、真机已验、真实 Provider 已验和未接入，供移动端只呈现后端已经兑现的能力。该投影必须读取服务端权威证据，不接受客户端声明。
+`ReadinessEvidenceService` 已经是五条路径可复用的只读权威投影：它分别计算 capability 的 declared / implemented / authorized / healthy / executable / verifiable 六个维度，并以当前 Truth、AppRead 心跳、可信设备和成功执行记录生成用户级 readiness。`/scenario-coverage-ledger/:key/runtime-evidence` 已有 MySQL 集成覆盖。
+
+下一代码批应当复用该投影，补充“确定性、真机、真实 Provider、同 SHA CI”这四类**发布验收**证据的服务端登记与只读展示；不能以客户端标志或 Contract 中的静态布尔值冒充真实验收。
