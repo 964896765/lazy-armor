@@ -51,6 +51,12 @@ describe('Scenario Coverage Ledger contract', () => {
     expect(scenarioByRevision('daily_life.delivery', 1)).toBeUndefined();
     expect(() => compileScenarioPlan({ scenarioKey: 'daily_life.delivery', scenarioRevision: 1 })).toThrow(/Unknown scenario/);
   });
+  it('resolves a reviewed V2-only scenario only at its pinned revision', () => {
+    expect(scenarioByRevision('finance.accounting', 1)).toMatchObject({
+      key: 'finance.accounting', revision: 1, defaultRiskFloor: 'R1',
+    });
+    expect(scenarioByRevision('finance.accounting', 2)).toBeUndefined();
+  });
   it('covers exactly 96/96 immutable canonical Scenarios with every required field', () => {
     expect(SCENARIO_DEFINITIONS).toHaveLength(96);
     expect(SCENARIO_COVERAGE_LEDGER).toHaveLength(96);

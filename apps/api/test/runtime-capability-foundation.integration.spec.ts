@@ -1,8 +1,15 @@
 import type { INestApplication } from '@nestjs/common';
 import type { Pool, RowDataPacket } from 'mysql2/promise';
 import request from 'supertest';
+import { PROVIDER_REGISTRY } from '@lazy-armor/connector-sdk';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { dingtalkManifest } from '../src/providers/dingtalk/dingtalk-manifest';
+import { feishuManifest } from '../src/providers/feishu/feishu-manifest';
+import { wecomManifest } from '../src/providers/wecom/wecom-manifest';
 import { auth, bootP2App, register, type Session } from './p2-test-helpers';
+
+const expectedProviderKeys = [...PROVIDER_REGISTRY, feishuManifest, dingtalkManifest, wecomManifest]
+  .map((manifest) => manifest.providerKey).sort();
 
 describe.sequential('runtime productization batch 1 capability foundation', () => {
   let app: INestApplication;
@@ -25,12 +32,12 @@ describe.sequential('runtime productization batch 1 capability foundation', () =
     await app?.close();
   });
 
-  it('persists exactly 18 immutable active provider manifest revisions', async () => {
+  it('persists exactly the current immutable active provider manifest revisions', async () => {
     const [rows] = await pool.query<RowDataPacket[]>(
       "SELECT provider_key, revision, manifest_hash, status FROM provider_capability_manifests WHERE status='ACTIVE' ORDER BY provider_key",
     );
-    expect(rows).toHaveLength(18);
-    expect(new Set(rows.map((row) => row.provider_key)).size).toBe(18);
+    expect(rows.map((row) => row.provider_key)).toEqual(expectedProviderKeys);
+    expect(new Set(rows.map((row) => row.provider_key)).size).toBe(expectedProviderKeys.length);
     expect(rows.every((row) => row.revision === 1 && /^[a-f0-9]{64}$/.test(row.manifest_hash))).toBe(true);
   });
 
@@ -39,7 +46,7 @@ describe.sequential('runtime productization batch 1 capability foundation', () =
     await request(app.getHttpServer()).get('/api/provider-capabilities').set(auth(owner.token)).expect(403);
     await pool.query('UPDATE users SET role=? WHERE id=UUID_TO_BIN(?)', ['operations_readonly', owner.userId]);
     const response = await request(app.getHttpServer()).get('/api/provider-capabilities').set(auth(owner.token)).expect(200);
-    expect(response.body).toHaveLength(18);
+    expect(response.body.map((item: { providerKey: string }) => item.providerKey).sort()).toEqual(expectedProviderKeys);
     expect(response.body.find((item: { providerKey: string }) => item.providerKey === 'gmail')).toMatchObject({
       revision: 1,
       providerReview: 'TO_VERIFY_OFFICIAL',

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { canonicalStringify } from './index';
-import { scenarioByKey, type ScenarioDefinition, type StrategyKey } from './runtime-catalog';
+import { scenarioByKey, scenarioDefinitionByKey, type ScenarioDefinition, type StrategyKey } from './runtime-catalog';
 import { buildStrategyRuntime, type CompiledStrategyRuntime } from './strategy-runtime';
 
 export type TerminalHandoffTargetKind = 'NOTION_UPDATE' | 'CALENDAR_EVENT';
@@ -78,7 +78,9 @@ export function terminalFollowUpRule(scenarioKey: string, revision: number): Ter
 }
 
 export function scenarioByRevision(key: string, revision: number): ScenarioDefinition | undefined {
-  const canonical = scenarioByKey(key);
+  // Resolve reviewed V2-only definitions through the same immutable revision
+  // gate as the original catalog. Terminal overlays remain an explicit fallback.
+  const canonical = scenarioDefinitionByKey(key);
   if (canonical?.revision === revision) return canonical;
   const rule = terminalFollowUpRule(key, revision);
   return rule ? terminalFollowUpScenario(rule) : undefined;
