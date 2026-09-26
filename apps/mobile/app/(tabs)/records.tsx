@@ -39,7 +39,7 @@ export default function Records() {
   const groups = groupByDay(shown);
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
+    <SafeAreaView style={styles.safeArea} edges={[]}>
       <ScrollView style={styles.page} contentContainerStyle={styles.content} refreshControl={token ? <RefreshControl tintColor={colors.primary} refreshing={executions.isFetching} onRefresh={() => executions.refetch()} /> : undefined}>
         <WorkspaceHeader title="最近做了什么" subtitle="计划触发、审批、执行和结果都记录在这里" />
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters}>{FILTERS.map((item) => <Pressable key={item.key} onPress={() => setFilter(item.key)} style={[styles.filter, filter === item.key && styles.filterSelected]}><Ionicons name={item.icon} size={14} color={filter === item.key ? colors.primary : item.key === 'failed' ? colors.danger : item.key === 'exception' || item.key === 'outcome' ? colors.warning : colors.textSecondary} /><Text style={[styles.filterText, filter === item.key && styles.filterTextSelected]}>{item.label}</Text></Pressable>)}</ScrollView>

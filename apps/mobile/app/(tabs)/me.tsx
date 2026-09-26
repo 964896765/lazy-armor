@@ -33,7 +33,7 @@ export default function Me() {
   }
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
+    <SafeAreaView style={styles.safeArea} edges={[]}>
       <ScrollView style={styles.page} contentContainerStyle={styles.content}>
         <WorkspaceHeader title="我的" subtitle="账号、连接与隐私设置" />
         <View style={styles.profile}>

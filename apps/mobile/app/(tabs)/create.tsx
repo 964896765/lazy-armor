@@ -80,7 +80,7 @@ export default function Create() {
   }
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
+    <SafeAreaView style={styles.safeArea} edges={[]}>
       <ScrollView style={styles.page} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" refreshControl={token ? <RefreshControl tintColor={colors.primary} refreshing={templates.isFetching} onRefresh={() => templates.refetch()} /> : undefined}>
         <WorkspaceHeader title="创建计划" subtitle="用自然语言，创建属于你的自动化计划" action={<Pressable accessibilityRole="button" accessibilityLabel="关闭" onPress={() => router.back()} style={styles.closeButton}><Ionicons name="close" size={24} color={colors.text} /></Pressable>} />
         <View style={styles.steps}>{creationSteps.map((label, index) => <View key={label} style={styles.stepItem}><View style={styles.stepTop}><View style={[styles.stepCircle, index === 0 && styles.stepCircleActive]}><Text style={[styles.stepNumber, index === 0 && styles.stepNumberActive]}>{index + 1}</Text></View>{index < creationSteps.length - 1 ? <View style={styles.stepLine} /> : null}</View><Text style={[styles.stepLabel, index === 0 && styles.stepLabelActive]}>{label}</Text></View>)}</View>

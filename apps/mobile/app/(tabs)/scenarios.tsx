@@ -32,7 +32,7 @@ export default function ScenarioCanvas() {
   }, [planCounts.data]);
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
+    <SafeAreaView style={styles.safeArea} edges={[]}>
       <View style={styles.header}>
         <View style={styles.titleRow}>
           <Text style={styles.title}>全部场景</Text>

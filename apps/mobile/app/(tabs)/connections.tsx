@@ -282,7 +282,7 @@ export default function ConnectionsPage() {
   const hasAny = (connections.data?.length ?? 0) + (deviceApps.data?.length ?? 0) + (trustedDevices.data?.length ?? 0) > 0;
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
+    <SafeAreaView style={styles.safeArea} edges={[]}>
       <ScrollView style={styles.page} contentContainerStyle={styles.content} refreshControl={token ? <RefreshControl tintColor={colors.primary} refreshing={connections.isFetching} onRefresh={() => connections.refetch()} /> : undefined}>
         <WorkspaceHeader title="连接" subtitle="让计划安全地使用你的服务与手机来源" action={<Pressable accessibilityRole="button" accessibilityLabel="添加连接" onPress={() => router.push('/connections/add' as Href)} style={({ pressed }) => [styles.headerAction, pressed && styles.rowPressed]}><Ionicons name="add" size={22} color={colors.primary} /></Pressable>} />
         {!token ? (

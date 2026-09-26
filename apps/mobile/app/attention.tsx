@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
-import { router } from 'expo-router';
+import { router, usePathname } from 'expo-router';
 import { useMemo } from 'react';
 import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -14,6 +14,7 @@ import {
 import { EmptyState, MessageRow, Surface, WorkspaceHeader, WorkspaceSection, workspaceColors as colors, radius, spacing, typography } from '../src/design';
 
 export default function AttentionPage() {
+  const pathname = usePathname();
   const token = useAuthStore((store) => store.token);
   const today = useQuery({
     queryKey: ['attention-today', token],
@@ -39,7 +40,7 @@ export default function AttentionPage() {
         contentContainerStyle={styles.content}
         refreshControl={token ? <RefreshControl tintColor={colors.primary} refreshing={today.isFetching || reconciliation.isFetching} onRefresh={() => { void today.refetch(); void reconciliation.refetch(); }} /> : undefined}
       >
-        <WorkspaceHeader title="需要你留意" subtitle="审批、异常、授权失效和结果待确认都收在这里" onBack={() => router.back()} />
+        <WorkspaceHeader title="待办" subtitle="审批、异常、授权失效和结果待确认都收在这里" onBack={pathname === '/todo' ? undefined : () => router.back()} />
 
         {!token ? (
           <Surface style={styles.stateSurface}><EmptyState icon="notifications-outline" title="登录后查看需要你处理的事" action={{ label: '去登录', onPress: () => router.push('/auth/login' as never) }} /></Surface>
