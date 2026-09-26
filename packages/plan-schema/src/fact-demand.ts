@@ -97,6 +97,15 @@ export interface FactDemandProjection {
 
 const REALITY_RANK: Record<RealityLevel, number> = { CLAIMED: 0, OBSERVED: 1, CORROBORATED: 2, VERIFIED: 3 };
 
+/**
+ * 只有这些「独立来源」才允许把已验证 Truth 投影成可被选择的来源候选。
+ * 它们不依赖设备/Provider 连接持续在线：文件导入、手动登记、内部事实一旦验证，
+ * 其来源即始终可用。设备/Provider 背书的来源（NOTIFICATION / OFFICIAL_API /
+ * WEBHOOK / SHARE / APP_READ_SESSION）必须由真实的 device/provider 候选来表达，
+ * 保留的已验证 Truth 只能作为证据（truthEvidence），不能冒充一个仍然在线的来源。
+ */
+const STANDALONE_TRUTH_SOURCE_MODES: ReadonlySet<string> = new Set(['FILE', 'MANUAL', 'INTERNAL']);
+
 export function buildFactDemandProjections(input: {
   request: FactDemandRequest;
   contract: ScenarioContractV2;
@@ -121,6 +130,7 @@ export function buildFactDemandProjections(input: {
     // so a notification can only appear here after it has gone through candidate
     // confirmation; receipt text never becomes a transaction fact by itself.
     const truthSources: SourceCandidateEvidence[] = relevantTruths
+      .filter((truth) => STANDALONE_TRUTH_SOURCE_MODES.has(truth.sourceMode))
       .map((truth) => ({
         sourceId: `${truth.sourceMode === 'MANUAL' ? 'manual' : 'internal'}:${truth.truthRecordId}:${truth.truthVersionId}`,
         kind: truth.sourceMode === 'MANUAL' ? 'MANUAL_INPUT' : 'INTERNAL_FACT',

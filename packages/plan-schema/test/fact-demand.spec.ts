@@ -70,8 +70,8 @@ describe('FactDemand contract and deterministic Source Resolution', () => {
       state: 'SATISFIED', capabilityDiscovered: true, userOwnsSource: true,
       sourceCurrentlyUsable: true, dataActuallyAcquired: true, dataVerified: true,
     });
-    expect(result.selectedSourceId).toBe('internal:truth-1:truth-version-1');
-    expect(result.selectedSource).toMatchObject({ kind: 'INTERNAL_FACT', truthRecordId: 'truth-1' });
+    expect(result.selectedSourceId).toBe('connection:connection-1:READ_SHIPMENT');
+    expect(result.selectedSource).toMatchObject({ kind: 'PROVIDER_CONNECTION', connectionId: 'connection-1' });
   });
 
   it('marks old data stale, fresh unverified data pending verification, and identical duplicates non-conflicting', () => {
@@ -107,5 +107,22 @@ describe('FactDemand contract and deterministic Source Resolution', () => {
     })], evaluatedAt: now })[0]!;
     expect(result).toMatchObject({ state: 'SATISFIED', sourceCurrentlyUsable: true,
       selectedSource: { kind: 'INTERNAL_FACT', truthRecordId: 'truth-1', truthVersionId: 'truth-version-1' } });
+  });
+
+  it('judges device offline independently from a retained NOTIFICATION Truth', () => {
+    // 设备背书的 NOTIFICATION Truth 即使已确认，也不能被投影成一个仍在线的
+    // INTERNAL_FACT 来源；设备离线时 sourceCurrentlyUsable 必须为 false。
+    const deviceSource = source({
+      sourceId: 'device-app:app-1', kind: 'TRUSTED_DEVICE', providerKey: 'com.cainiao.wireless', connectionId: null,
+      sourceMode: 'NOTIFICATION', capabilityKey: 'READ_SHIPMENT', trustedDeviceId: 'device-1', deviceAppConnectionId: 'app-1',
+      deviceOnline: false,
+    });
+    const result = project([deviceSource], [truth({ sourceMode: 'NOTIFICATION', sourceProviderKey: 'com.cainiao.wireless' })]);
+    expect(result.state).toBe('SATISFIED');
+    expect(result.dataVerified).toBe(true);
+    expect(result.sourceCurrentlyUsable).toBe(false);
+    expect(result.selectedSource).toBeNull();
+    expect(result.candidateSources[0]).toMatchObject({ kind: 'TRUSTED_DEVICE', deviceOnline: false, usable: false });
+    expect(result.candidateSources.some((candidate) => candidate.kind === 'INTERNAL_FACT')).toBe(false);
   });
 });
