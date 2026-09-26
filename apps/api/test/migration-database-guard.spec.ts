@@ -6,6 +6,17 @@ describe('migration replay database boundary', () => {
     const url = `mysql://fixture:fixture@127.0.0.1:3307/${name}`;
     expect(assertMigrationTestDatabase(url)).toBe(url);
   });
+  it('accepts an exact worktree database only through the controlled environment contract', () => {
+    process.env.TEST_DATABASE_NAME = 'lazy_armor_github_gate_test';
+    const url = 'mysql://fixture:fixture@127.0.0.1:3307/lazy_armor_github_gate_test';
+    try { expect(assertMigrationTestDatabase(url)).toBe(url); }
+    finally { delete process.env.TEST_DATABASE_NAME; }
+  });
+  it('rejects an unsafe worktree database override', () => {
+    process.env.TEST_DATABASE_NAME = 'lazy_armor';
+    try { expect(() => assertMigrationTestDatabase('mysql://localhost/lazy_armor')).toThrow(/not an approved isolated/); }
+    finally { delete process.env.TEST_DATABASE_NAME; }
+  });
   it.each([
     undefined, '', 'not-a-url', 'mysql://localhost/lazy_armor',
     'mysql://localhost/lazy_armor_production', 'mysql://localhost/lazy_armor_test_backup',
