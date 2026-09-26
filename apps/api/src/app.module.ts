@@ -60,6 +60,7 @@ import { PlanningOffersModule } from './planning-offers/planning-offers.module';
 import { FactDemandsModule } from './fact-demands/fact-demands.module';
 import { CreationDraftsModule } from './creation-drafts/creation-drafts.module';
 import { TodosModule } from './todos/todos.module';
+import { SearchModule } from './search/search.module';
 
 @Module({
   imports: [
@@ -127,6 +128,7 @@ import { TodosModule } from './todos/todos.module';
     FactDemandsModule,
     CreationDraftsModule,
     TodosModule,
+    SearchModule,
   ],
   controllers: [TerminalHandoffController],
   providers: [
