@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import { connectorCapabilities, strategyRuntimeBindings } from '@lazy-armor/database';
-import { ACTION_DEFINITIONS, canonicalStringify, scenarioDefinitionByKey, type NormalizedAction, type RiskLevel } from '@lazy-armor/plan-schema';
+import { ACTION_DEFINITIONS, canonicalStringify, scenarioByRevision, type NormalizedAction, type RiskLevel } from '@lazy-armor/plan-schema';
 import { and, eq } from 'drizzle-orm';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
 import { higherRisk, MINIMUM_APPROVAL_REQUIREMENT, RISK_POLICY_VERSION, SIDE_EFFECT_CLASS, type RiskSnapshot } from './risk.types';
@@ -32,9 +32,10 @@ export class RiskEngine {
       : undefined;
     const factors: string[] = [];
     const binding = planVersionId ? (await executor.select().from(strategyRuntimeBindings).where(eq(strategyRuntimeBindings.planVersionId, planVersionId)).limit(1))[0] : undefined;
-    // V2-only scenarios have no immutable-96 row, but they are still a
-    // registered scenario definition with a pinned revision and risk floor.
-    const scenario = binding ? scenarioDefinitionByKey(binding.scenarioKey) : null;
+    // V2-only scenarios and terminal follow-up rules have no immutable-96 row
+    // at every revision; resolve by key + revision so a dedicated (non-canonical)
+    // revision still yields its pinned risk floor instead of being rejected.
+    const scenario = binding ? scenarioByRevision(binding.scenarioKey, binding.scenarioRevision) : undefined;
     if (binding && (!scenario || scenario.revision !== binding.scenarioRevision)) throw new Error('Scenario risk policy revision unavailable');
     const scenarioRisk: RiskLevel = scenario?.defaultRiskFloor ?? 'R0';
     let dynamicRisk: RiskLevel = 'R0';
