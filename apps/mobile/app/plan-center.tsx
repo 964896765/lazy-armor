@@ -7,7 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../src/api';
 import { useAuthStore } from '../src/auth-store';
 import { EmptyState, PlanRow, WorkspaceHeader, colors, radius, spacing, typography } from '../src/design';
-import { isFailedPlanStatus, isManagingPlanStatus, planCenterStatusLabel, planDomainLabel, planNextRunLabel, planStatusLabel, planStatusTone, planVisualIcon } from '../src/plan-presenter';
+import { isManagingPlanStatus, planCenterStatusLabel, planDomainLabel, planNextRunLabel, planStatusLabel, planStatusTone, planVisualIcon } from '../src/plan-presenter';
 import { consumerOutcomeLabel, type ConsumerOutcome } from '../src/outcome-presenter';
 
 interface PlanSummary {
@@ -23,12 +23,13 @@ interface PlanSummary {
   planCenterSummary: { kind: 'logistics' | 'household' | 'content' | 'daily_summary' | 'study' | 'device'; currentStatus: string } | null;
 }
 
-type Filter = 'all' | 'running' | 'paused' | 'failed';
-const FILTERS: Array<{ key: Filter; label: string; icon?: 'play' | 'pause' | 'alert-circle' }> = [
+type Filter = 'all' | 'running' | 'waiting' | 'paused' | 'ended';
+const FILTERS: Array<{ key: Filter; label: string; icon?: 'play' | 'time' | 'pause' | 'checkmark-done' }> = [
   { key: 'all', label: '全部' },
   { key: 'running', label: '管理中', icon: 'play' },
+  { key: 'waiting', label: '等待中', icon: 'time' },
   { key: 'paused', label: '已暂停', icon: 'pause' },
-  { key: 'failed', label: '失败', icon: 'alert-circle' },
+  { key: 'ended', label: '已结束', icon: 'checkmark-done' },
 ];
 
 export default function PlanCenter() {
@@ -41,13 +42,14 @@ export default function PlanCenter() {
   const counts = useMemo(() => ({
     all: all.length,
     running: all.filter((item) => isManagingPlanStatus(item.status)).length,
+    waiting: all.filter((item) => item.status === 'draft').length,
     paused: all.filter((item) => item.status === 'paused').length,
-    failed: all.filter((item) => isFailedPlanStatus(item.status, item.latestExecution?.status, item.latestExecution?.outcome?.outcome)).length,
+    ended: all.filter((item) => item.status === 'archived').length,
   }), [all]);
   const shown = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return all.filter((item) => {
-      const matchesFilter = filter === 'all' || (filter === 'running' && isManagingPlanStatus(item.status)) || (filter === 'paused' && item.status === 'paused') || (filter === 'failed' && isFailedPlanStatus(item.status, item.latestExecution?.status, item.latestExecution?.outcome?.outcome));
+      const matchesFilter = filter === 'all' || (filter === 'running' && isManagingPlanStatus(item.status)) || (filter === 'waiting' && item.status === 'draft') || (filter === 'paused' && item.status === 'paused') || (filter === 'ended' && item.status === 'archived');
       const haystack = `${item.name ?? ''} ${item.currentVersion?.name ?? ''} ${item.description ?? ''} ${planDomainLabel(item.domain)}`.toLowerCase();
       return matchesFilter && (!needle || haystack.includes(needle));
     });
@@ -57,7 +59,7 @@ export default function PlanCenter() {
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <ScrollView style={styles.page} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" refreshControl={token ? <RefreshControl tintColor={colors.primary} refreshing={plans.isFetching} onRefresh={() => plans.refetch()} /> : undefined}>
         <WorkspaceHeader title="计划中心" subtitle="查看和管理所有计划" onBack={() => router.back()} action={<Pressable accessibilityRole="button" accessibilityLabel="创建计划" onPress={() => router.push('/create' as never)} style={styles.add}><Ionicons name="add" size={22} color={colors.primary} /></Pressable>} />
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters}>{FILTERS.map((item) => <Pressable key={item.key} onPress={() => setFilter(item.key)} style={[styles.filter, filter === item.key && styles.filterSelected]}>{item.icon ? <Ionicons name={item.icon} size={14} color={filter === item.key ? '#FFFFFF' : item.key === 'failed' ? colors.danger : colors.textSecondary} /> : null}<Text style={[styles.filterText, filter === item.key && styles.filterTextSelected]}>{item.label}</Text><Text style={[styles.filterCount, filter === item.key && styles.filterCountSelected]}>{counts[item.key]}</Text></Pressable>)}</ScrollView>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters}>{FILTERS.map((item) => <Pressable key={item.key} onPress={() => setFilter(item.key)} style={[styles.filter, filter === item.key && styles.filterSelected]}>{item.icon ? <Ionicons name={item.icon} size={14} color={filter === item.key ? '#FFFFFF' : colors.textSecondary} /> : null}<Text style={[styles.filterText, filter === item.key && styles.filterTextSelected]}>{item.label}</Text><Text style={[styles.filterCount, filter === item.key && styles.filterCountSelected]}>{counts[item.key]}</Text></Pressable>)}</ScrollView>
         <View style={styles.search}><Ionicons name="search-outline" size={19} color={colors.textMuted} /><TextInput value={query} onChangeText={setQuery} placeholder="搜索计划" placeholderTextColor={colors.textMuted} style={styles.searchInput} />{query ? <Pressable accessibilityLabel="清空搜索" onPress={() => setQuery('')}><Ionicons name="close-circle" size={18} color={colors.textMuted} /></Pressable> : null}</View>
         <View style={styles.filterLine}><Text style={styles.resultText}>{shown.length} 个计划</Text><Pressable onPress={() => router.push('/domains' as never)} style={styles.domainFilter}><Text style={styles.domainFilterText}>全部空间</Text><Ionicons name="chevron-down" size={14} color={colors.textSecondary} /></Pressable></View>
 
