@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { consumerPlanGroup, consumerPlanGroupSubtitle, consumerPlanStatusLabel, consumerPlanStatusTone, isFailedPlanStatus, isManagingPlanStatus, isValidScenarioKey, planDomainLabel, planEvidenceLine, planExceptionReason, planNextRunLabel, planNextStep, planStatusLabel, planStatusTone, planVisualIcon, templateGroupLabel } from './plan-presenter';
+import { consumerPlanGroup, consumerPlanGroupSubtitle, consumerPlanStatusLabel, consumerPlanStatusTone, isFailedPlanStatus, isManagingPlanStatus, isValidScenarioKey, planDomainLabel, planEvidenceLine, planExceptionReason, planNextRunLabel, planNextStep, planStatusLabel, planStatusTone, planVisualIcon, sourceHealthHint, templateGroupLabel } from './plan-presenter';
 
 describe('Plan presenter', () => {
   it('maps known templates into the four consumer spaces', () => {
@@ -121,5 +121,11 @@ describe('Plan presenter', () => {
     expect(planNextStep({ status: 'active', latestExecutionStatus: 'running' })).toContain('执行');
     expect(planNextStep({ status: 'blocked' })).toContain('受阻');
     expect(planNextStep({ status: 'active' })).toContain('跟进');
+  });
+
+  it('does not infer source health from a missing connection flag', () => {
+    expect(sourceHealthHint(false, [])).toContain('无可验证');
+    expect(sourceHealthHint(true, [])).toContain('连接');
+    expect(sourceHealthHint(true, ['Gmail'])).toContain('Gmail');
   });
 });

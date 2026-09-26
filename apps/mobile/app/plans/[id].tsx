@@ -19,6 +19,7 @@ import {
   planEvidenceLine,
   planNextStep,
   planStatusLabel,
+  sourceHealthHint,
   sourceTypeLabel,
   templateGroupLabel,
   triggerSummary,
@@ -222,7 +223,7 @@ export default function PlanDetailPage() {
                   <View style={local.sourceChip} key={`${source.sourceType}-${index}`}><Text style={local.sourceText}>{sourceTypeLabel(source.sourceType)}</Text></View>
                 ))}
               </View>
-              <Text style={local.permissionText}>{summary.data.hasMissingConnection ? '还差一个连接，补好后就能继续。' : '只使用完成这条计划所需的信息。'}</Text>
+              <Text style={local.permissionText}>{sourceHealthHint(summary.data.hasMissingConnection, summary.data.missingConnections.map((item) => item.providerName))}</Text>
             </View>
 
             <Text style={local.sectionTitle}>最近结果</Text>

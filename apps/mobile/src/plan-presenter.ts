@@ -104,6 +104,15 @@ export function planNextStep(input: PlanNextStepInput): string {
   return '持续跟进中，到点会按计划处理。';
 }
 
+/** 数据来源可用性说明：只陈述确凿的「缺连接」，不据此反向推断来源健康/在线。 */
+export function sourceHealthHint(hasMissingConnection: boolean, missingProviderNames: string[]): string {
+  if (hasMissingConnection) {
+    const names = missingProviderNames.length > 0 ? missingProviderNames.join('、') : '相关服务';
+    return `还缺 ${names} 的连接或授权，补好后才能继续获取数据。`;
+  }
+  return '来源是否在线、数据是否新鲜，暂无可验证信息。';
+}
+
 export interface PlanExceptionInput {
   hasMissingConnection?: boolean;
   latestExecution?: { status: string; resultSummary: string | null } | null;
