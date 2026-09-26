@@ -27,6 +27,23 @@ export interface ActionRecipe {
 const step = (actionType: ActionType, config: Record<string, JsonValue> = {}): ActionRecipeStep => ({ actionType, config });
 
 export const ACTION_RECIPES: readonly ActionRecipe[] = Object.freeze([
+  // V2-only accounting still compiles through the same Plan / Action /
+  // Verification chain as catalog scenarios.  These steps are read-only:
+  // they classify verified facts, produce a scoped report, compare it and
+  // notify; no financial operation is ever emitted.
+  Object.freeze({
+    key: 'finance.accounting.periodic',
+    scenarioKey: 'finance.accounting',
+    scenarioRevision: 1,
+    strategy: 'PERIODIC_SUMMARY',
+    steps: Object.freeze([
+      step('classify', { taxonomy: 'finance' }),
+      step('summarize', { domain: 'finance' }),
+      step('compare', { baseline: 'finance_reconciliation', enabled: true, anomalyThresholdPercent: 50 }),
+      step('notify', { channel: 'in_app', priority: 'P2', eventType: 'accounting_report_ready', templateKey: 'finance.accounting' }),
+      step('record', { recordType: 'finance.accounting' }),
+    ]),
+  }),
   Object.freeze({
     key: 'finance.abnormal_transaction.anomaly',
     scenarioKey: 'finance.abnormal_transaction',

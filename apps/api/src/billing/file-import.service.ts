@@ -19,6 +19,7 @@ interface ParsedBillingRow {
 }
 
 interface ParsedTransactionRow {
+  accountKey: string | null;
   transactionId: string | null;
   relatedTransactionId: string | null;
   amountMinor: number;
@@ -132,6 +133,7 @@ export class FileImportService {
           parserKey: 'generic.transaction.v1',
           resourceHint: 'finance.transaction',
           payload: {
+            ...(row.accountKey ? { accountKey: row.accountKey } : {}),
             ...(row.transactionId ? { transactionId: row.transactionId } : {}),
             ...(row.relatedTransactionId ? { relatedTransactionId: row.relatedTransactionId } : {}),
             amountMinor: row.amountMinor,
@@ -202,6 +204,7 @@ export class FileImportService {
     const occurredAt = new Date(occurredAtText);
     if (Number.isNaN(occurredAt.getTime())) throw new BadRequestException(`Row ${rowNumber}: occurredAt is invalid`);
     return {
+      accountKey: this.optionalIdentityField(row.accountKey, 'accountKey', rowNumber),
       transactionId: this.optionalIdentityField(row.transactionId, 'transactionId', rowNumber),
       relatedTransactionId: this.optionalIdentityField(row.relatedTransactionId, 'relatedTransactionId', rowNumber),
       amountMinor: Math.round(amount * 100),

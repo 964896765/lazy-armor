@@ -211,6 +211,10 @@ export function parseAndNormalizeObservation(input: SourceObservationInput): Nor
     if (Math.abs(amountMinor) > 2_147_483_647) throw new Error('Parser requires an in-range minor amount');
     const transactionId = optionalIdentity(input.payload.transactionId);
     const relatedTransactionId = optionalIdentity(input.payload.relatedTransactionId);
+    // A provider connection can expose more than one financial account.  Keep
+    // the source supplied account identity with the fact so downstream
+    // bookkeeping never treats a provider-wide transaction id as universal.
+    const accountKey = optionalIdentity(input.payload.accountKey);
     const merchant = optionalText(input.payload.merchant, 160);
     const direction = optionalEnum(input.payload.direction, ['DEBIT', 'CREDIT'] as const);
     const transactionState = optionalEnum(input.payload.transactionState, ['POSTED', 'PENDING', 'REFUND', 'REVERSAL'] as const);
@@ -223,6 +227,7 @@ export function parseAndNormalizeObservation(input: SourceObservationInput): Nor
     const value: Record<string, JsonValue> = { amountMinor, currency };
     if (transactionId) value.transactionId = transactionId;
     if (relatedTransactionId) value.relatedTransactionId = relatedTransactionId;
+    if (accountKey) value.accountKey = accountKey;
     if (merchant) value.merchant = merchant;
     if (direction) value.direction = direction;
     if (transactionState) value.transactionState = transactionState;

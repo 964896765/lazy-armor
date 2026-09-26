@@ -85,6 +85,7 @@ export class TruthStoreService {
         subjectKey: row.subjectKey,
         amountMinor: typeof inner.amountMinor === 'number' ? inner.amountMinor : null,
         currency: typeof inner.currency === 'string' ? inner.currency : null,
+        accountKey: typeof inner.accountKey === 'string' ? inner.accountKey : null,
         transactionId: typeof inner.transactionId === 'string' ? inner.transactionId : null,
         relatedTransactionId: typeof inner.relatedTransactionId === 'string' ? inner.relatedTransactionId : null,
         merchant: typeof inner.merchant === 'string' ? inner.merchant : null,
@@ -94,7 +95,14 @@ export class TruthStoreService {
         verifiedAt: row.verifiedAt.toISOString(),
       }];
     }).filter((tx) => tx.amountMinor !== null && tx.currency !== null);
-    return { ...context, financeTransactions: transactions, financeTransactionCount: transactions.length };
+    return {
+      ...context,
+      financeTransactions: transactions,
+      financeTransactionCount: transactions.length,
+      // This is explicitly the scope actually available to this execution,
+      // not a claim that every user account has been reconciled.
+      financeAccountKeys: [...new Set(transactions.map((tx) => tx.accountKey).filter((key): key is string => Boolean(key)))],
+    };
   }
 
   async get(userId: string, id: string) {

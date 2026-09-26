@@ -83,4 +83,28 @@ describe.sequential('B7 finance.accounting strategy loop', { timeout: 90000 }, (
     expect(execution.body.resultSummary).toContain('1 笔');
     expect(execution.body.resultSummary).toContain('128.50');
   });
+
+  it('keeps accounts and currencies separate in the verified report', async () => {
+    const ingested = await pipeline.ingest(owner.userId, {
+      sourceMode: 'FILE', providerKey: 'local_file', externalEventKey: `usd-${unique}`,
+      parserKey: 'generic.transaction.v1', resourceHint: 'finance.transaction',
+      payload: { accountKey: 'checking-usd', transactionId: 'txn-usd-001', amountMinor: 1000, currency: 'USD', merchant: '美元账户', direction: 'DEBIT', transactionState: 'POSTED' },
+      evidenceHash: hash(`usd-${unique}`), observedAt: new Date().toISOString(),
+    });
+    await pipeline.confirmCandidate(owner.userId, ingested.candidates[0]!.id, {
+      verifiedBy: 'deterministic_test', verificationMethod: 'source_evidence',
+    });
+
+    const installed = await request(app.getHttpServer())
+      .post('/api/templates/account-book-keeping/install')
+      .set(auth(owner.token))
+      .send({ config: { planName: '分币种账目', summaryDay: 3, showCategories: true, notificationPreference: 'summary' } })
+      .expect(201);
+    await activatePlan(app, owner.token, installed.body.id);
+    const execution = await dispatchPlan(app, worker, owner.token, installed.body.id, {});
+    expect(execution.body.status).toBe('succeeded');
+    expect(execution.body.resultSummary).toContain('CNY 128.50');
+    expect(execution.body.resultSummary).toContain('USD 10.00');
+    expect(execution.body.resultSummary).not.toContain('138.50');
+  });
 });

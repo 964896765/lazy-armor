@@ -4,7 +4,7 @@ import type { Pool } from 'mysql2/promise';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { RealityPipelineService } from '../src/reality-pipeline/reality-pipeline.service';
-import { auth, bootP2App, register, type Session } from './p2-test-helpers';
+import { activatePlan, auth, bootP2App, register, type Session } from './p2-test-helpers';
 
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 
@@ -14,6 +14,7 @@ describe.sequential('B7 finance.accounting persistent offer loop', { timeout: 90
   let owner: Session;
   let stranger: Session;
   let pipeline: RealityPipelineService;
+  let worker: { processExecution(executionId: string): Promise<unknown> };
   const unique = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   const subjectKey = `finance.transaction:local_file:txn-${unique}`;
 
@@ -21,6 +22,7 @@ describe.sequential('B7 finance.accounting persistent offer loop', { timeout: 90
     const booted = await bootP2App(`b7-acct-offer-${unique}`);
     app = booted.app;
     pool = booted.pool;
+    worker = booted.worker;
     owner = await register(app, `b7-acct-offer-${unique}@example.com`, 'B7 Acct Offer');
     stranger = await register(app, `b7-acct-offer-stranger-${unique}@example.com`, 'B7 Acct Stranger');
     pipeline = app.get(RealityPipelineService);
@@ -52,6 +54,17 @@ describe.sequential('B7 finance.accounting persistent offer loop', { timeout: 90
     const chosen = await request(app.getHttpServer()).post(`/api/planning/offers/${offer.body.id}/choose`).set(auth(owner.token)).send({ idempotencyKey: `choose-${unique}` }).expect(201);
     expect(chosen.body.planId).toBeTruthy();
     expect(chosen.body.planVersionId).toBeTruthy();
+
+    // A persistent Offer must compile into the existing finance execution
+    // chain, not only create a metadata-only PlanVersion.
+    await activatePlan(app, owner.token, chosen.body.planId);
+    const dispatched = await request(app.getHttpServer()).post(`/api/plans/${chosen.body.planId}/executions`)
+      .set(auth(owner.token)).send({ requestId: `offer-exec-${unique}`, triggerPayload: {} });
+    expect(dispatched.status, JSON.stringify(dispatched.body)).toBe(201);
+    await worker.processExecution(dispatched.body.id);
+    const execution = await request(app.getHttpServer()).get(`/api/executions/${dispatched.body.id}`).set(auth(owner.token)).expect(200);
+    expect(execution.body.status).toBe('succeeded');
+    expect(execution.body.resultSummary).toContain('账目核对');
 
     const availability = await request(app.getHttpServer()).get(`/api/planning/offers/plans/${chosen.body.planId}/availability`).set(auth(owner.token)).expect(200);
     expect(availability.body.assessment.state).toBe('CURRENT');

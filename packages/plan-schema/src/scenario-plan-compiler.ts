@@ -49,7 +49,10 @@ export function compileScenarioPlan(input: ScenarioCompileInput): CompiledScenar
     approvalPolicy: approvalFor(runtime.approvalPolicy, scenario.defaultRiskFloor),
     sources: [{ sourceType: 'manual', config: {}, sortOrder: 0 }],
     triggers: [triggerFor(runtime, scenario.requiredFacts[0])],
-    conditions: [{ groupId: 'root', logicalOperator: 'AND', fieldPath: scenario.requiredFacts[0], operator: 'EXISTS', sortOrder: 0 }],
+    // Periodic summaries read their scoped Truth through SourceResolver at
+    // execution time.  They must not require a client trigger payload to
+    // duplicate that fact before the source is resolved.
+    conditions: strategy === 'PERIODIC_SUMMARY' ? [] : [{ groupId: 'root', logicalOperator: 'AND', fieldPath: scenario.requiredFacts[0], operator: 'EXISTS', sortOrder: 0 }],
     actions: [actionFor(runtime.actionMode, scenario.key, productDomain.storageKey)],
   };
   if (terminalRule) {
@@ -70,6 +73,12 @@ export function compileScenarioPlan(input: ScenarioCompileInput): CompiledScenar
   const recipe = terminalRule ? null : resolveActionRecipe(input.scenarioKey, revision, strategy);
   if (recipe) {
     definitionInput.actions = compileActionRecipe(recipe);
+    if (input.scenarioKey === 'finance.accounting') {
+      // Accounting reports can only consume server-side verified Truth.
+      // This keeps a V2 Offer-created plan on the shared SourceResolver path
+      // and prevents a client-side transaction payload from becoming input.
+      definitionInput.sources = [{ sourceType: 'internal', config: { resource: 'finance.transaction' }, sortOrder: 0 }];
+    }
     if (recipe.steps.some((step) => step.actionType === 'summarize' && step.config.domain === 'daily_summary')) {
       definitionInput.sources = [...definitionInput.sources, { sourceType: 'internal', config: { resource: 'important_item_candidates' }, sortOrder: definitionInput.sources.length }];
     }
