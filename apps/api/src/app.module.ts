@@ -58,6 +58,7 @@ import { PortableSkillsModule } from './portable-skills/portable-skills.module';
 import { McpModule } from './mcp/mcp.module';
 import { PlanningOffersModule } from './planning-offers/planning-offers.module';
 import { FactDemandsModule } from './fact-demands/fact-demands.module';
+import { CreationDraftsModule } from './creation-drafts/creation-drafts.module';
 
 @Module({
   imports: [
@@ -123,6 +124,7 @@ import { FactDemandsModule } from './fact-demands/fact-demands.module';
     McpModule,
     PlanningOffersModule,
     FactDemandsModule,
+    CreationDraftsModule,
   ],
   controllers: [TerminalHandoffController],
   providers: [
