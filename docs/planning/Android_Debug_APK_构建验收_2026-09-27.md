@@ -128,3 +128,37 @@ Gradle 9 输出了来自 Expo/React Native 依赖及 Groovy DSL 的弃用警告�
 - 本次只交付 Debug APK，未执行 release 签名构建。
 
 以上项目保持 `EXTERNAL_ACCEPTANCE_PENDING`。
+
+## 9. 安装后运行修正与离线交付
+
+首次交付的标准 `assembleDebug` APK 是 React Native 的 Metro 联调变体，不内置 JS Bundle。它虽然满足 Gradle 构建、签名和静态权限门禁，但直接安装后会显示 `Unable to load script`，必须同时运行 Metro 并配置 `adb reverse tcp:8081 tcp:8081`。因此标准 Debug APK 不再作为可独立启动的真机交付物。
+
+进一步验证发现 `assembleDebugOptimized` 同样属于不打包 JS 的可调试变体；虽然构建退出码为 `0`，但 APK 中不存在 `index.android.bundle`，因此也不得冒充离线通过。
+
+最终复用现有 release signing 安全控制，在明确的 development 环境中设置 `LAZY_ARMOR_ANDROID_ALLOW_DEBUG_RELEASE=true`，生成 release 模式、Android Debug 证书签名的离线测试 APK。staging/production 仍禁止使用 debug signing。
+
+离线测试 APK：
+
+- 文件：`C:\la\android-artifacts\lazy-armor-0fc5d2a-offline-debug-signed.apk`
+- 大小：`100601556` bytes
+- SHA-256：`964CD88C0A72AD5C0A557240F77B85B2DCB0CBF4C5988FBA5229269F532DBB16`
+- Bundle：已确认包含 `assets/index.android.bundle`
+- JS 构建：1525 modules，49 个资源文件
+- 签名：Android Debug 证书，APK Signature Scheme v2 验证通过
+- 禁止权限：五项均未出现在最终 APK
+- 构建：`BUILD SUCCESSFUL in 18m 51s`，退出码 `0`
+- 日志：`C:\la\lazy-armor-android-gate\.codex-runtime\android-gate\assemble-offline-debug-signed.log`
+
+真实设备冷启动验证：
+
+- 设备：Xiaomi Redmi `23049RAD8C`
+- Android：13
+- ADB serial：`2c696fe`
+- 覆盖安装：成功，`adb install -r` 退出码 `0`
+- Metro：已停止，PC 端口 8081 未监听
+- ADB reverse：已删除
+- 冷启动：成功，`com.lazyarmor.app/.MainActivity` 为前台 resumed activity
+- 运行日志：未出现 `Unable to load script`、React Native JS 加载异常或致命崩溃
+- UI 层级：已到达“欢迎回来”登录页面
+
+以上只将“APK 安装及无 Metro 冷启动”记为真实 Android 证据。通知监听、Usage Stats、分享接收、前台读取和 Provider 业务闭环仍保持 `EXTERNAL_ACCEPTANCE_PENDING`。
