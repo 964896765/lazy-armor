@@ -28,14 +28,12 @@ export default function SearchAiPage() {
   const [voiceOpen, setVoiceOpen] = useState(false);
   const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
   const [attachment, setAttachment] = useState<LocalAttachment | null>(null);
-  const [composerExpanded, setComposerExpanded] = useState(true);
   const [composerInputHeight, setComposerInputHeight] = useState(COMPOSER_INPUT_MIN_HEIGHT);
   const [keyboardOverlap, setKeyboardOverlap] = useState(0);
   const voiceCancelled = useRef(false);
   const inputRef = useRef<TextInput>(null);
 
   useFocusEffect(useCallback(() => {
-    setComposerExpanded(true);
     const focusTimer = setTimeout(() => inputRef.current?.focus(), 180);
     return () => clearTimeout(focusTimer);
   }, []));
@@ -45,11 +43,9 @@ export default function SearchAiPage() {
     const shown = Keyboard.addListener('keyboardDidShow', (event) => {
       const overlap = Dimensions.get('window').height - event.endCoordinates.screenY;
       setKeyboardOverlap(Math.max(0, Math.min(overlap, 480)));
-      setComposerExpanded(true);
     });
     const hidden = Keyboard.addListener('keyboardDidHide', () => {
       setKeyboardOverlap(0);
-      setComposerExpanded(false);
     });
     return () => { shown.remove(); hidden.remove(); };
   }, []);
@@ -83,7 +79,6 @@ export default function SearchAiPage() {
   async function startVoiceInput() {
     if (voicePending) return;
     Keyboard.dismiss();
-    setComposerExpanded(true);
     voiceCancelled.current = false;
     setVoicePending(true);
     setVoiceOpen(true);
@@ -139,11 +134,11 @@ export default function SearchAiPage() {
       {ask.isError ? <View style={styles.aiCard}><Text style={styles.cardTitle}>AI 暂不可用</Text><Text style={styles.body}>当前没有取得服务端结果，请稍后再试。</Text></View> : null}
       {ask.data && !ask.isError ? <AiResultCard response={aiResponse} onJumpToWizard={canJumpToWizard ? () => router.push(`/create-wizard?scenarioKey=${encodeURIComponent(aiResponse.scenarioKey!)}` as never) : undefined} /> : null}
     </ScrollView></Pressable>
-    <SafeAreaView edges={['bottom']} style={[styles.bottomSafe, Platform.OS === 'android' && keyboardOverlap > 0 ? { marginBottom: keyboardOverlap } : null]}>{voiceError ? <Text style={styles.voiceError}>{voiceError}</Text> : null}{attachment ? <View style={styles.attachmentChip}><Ionicons name="document-text-outline" size={15} color={colors.primary} /><Text numberOfLines={1} style={styles.attachmentName}>{attachment.name}</Text><Pressable accessibilityRole="button" accessibilityLabel="移除资料" onPress={() => setAttachment(null)} hitSlop={8}><Ionicons name="close" size={17} color={colors.textSecondary} /></Pressable></View> : null}<View style={[styles.bottomRow, composerExpanded && styles.bottomRowExpanded]}>
-      <View style={[styles.composer, composerExpanded && styles.composerExpanded]}>
-        <View style={styles.composerInputRow}>{!composerExpanded ? <Pressable accessibilityRole="button" accessibilityLabel="添加资料" onPress={() => setAttachmentMenuOpen(true)} style={({ pressed }) => [styles.addButton, pressed && styles.pressed]}><Ionicons name="add" size={23} color={colors.textSecondary} /></Pressable> : null}<TextInput ref={inputRef} value={aiQuery} onFocus={() => setComposerExpanded(true)} onChangeText={(value) => { setAiQuery(value); setVoiceError(null); }} onContentSizeChange={(event) => setComposerInputHeight(Math.max(COMPOSER_INPUT_MIN_HEIGHT, Math.min(event.nativeEvent.contentSize.height, COMPOSER_INPUT_MAX_HEIGHT)))} placeholder={submittedQuestion ? '继续问点什么' : '随便问点什么'} placeholderTextColor={colors.textMuted} style={[styles.input, { height: composerInputHeight }]} multiline scrollEnabled={composerInputHeight >= COMPOSER_INPUT_MAX_HEIGHT} textAlignVertical="top" maxLength={500} />{!composerExpanded ? <Pressable accessibilityRole="button" accessibilityLabel="发送" disabled={!aiQuery.trim() || ask.isPending || !token} onPress={submit} style={[styles.send, (!aiQuery.trim() || ask.isPending || !token) && styles.sendDisabled]}><Ionicons name="arrow-up" size={22} color="#FFFFFF" /></Pressable> : null}
+    <SafeAreaView edges={['bottom']} style={[styles.bottomSafe, Platform.OS === 'android' && keyboardOverlap > 0 ? { marginBottom: keyboardOverlap } : null]}>{voiceError ? <Text style={styles.voiceError}>{voiceError}</Text> : null}{attachment ? <View style={styles.attachmentChip}><Ionicons name="document-text-outline" size={15} color={colors.primary} /><Text numberOfLines={1} style={styles.attachmentName}>{attachment.name}</Text><Pressable accessibilityRole="button" accessibilityLabel="移除资料" onPress={() => setAttachment(null)} hitSlop={8}><Ionicons name="close" size={17} color={colors.textSecondary} /></Pressable></View> : null}<View style={[styles.bottomRow, styles.bottomRowExpanded]}>
+      <View style={[styles.composer, styles.composerExpanded]}>
+        <View style={styles.composerInputRow}><TextInput ref={inputRef} value={aiQuery} onChangeText={(value) => { setAiQuery(value); setVoiceError(null); }} onContentSizeChange={(event) => setComposerInputHeight(Math.max(COMPOSER_INPUT_MIN_HEIGHT, Math.min(event.nativeEvent.contentSize.height, COMPOSER_INPUT_MAX_HEIGHT)))} placeholder={submittedQuestion ? '继续问点什么' : '随便问点什么'} placeholderTextColor={colors.textMuted} style={[styles.input, { height: composerInputHeight }]} multiline scrollEnabled={composerInputHeight >= COMPOSER_INPUT_MAX_HEIGHT} textAlignVertical="top" maxLength={500} />
         </View>
-        {composerExpanded ? <View style={styles.composerToolsRow}><Pressable accessibilityRole="button" accessibilityLabel="添加资料" onPress={() => { Keyboard.dismiss(); setAttachmentMenuOpen(true); }} style={({ pressed }) => [styles.addButton, pressed && styles.pressed]}><Ionicons name="add" size={23} color={colors.textSecondary} /></Pressable><ComposerActions voicePending={voicePending} canSend={Boolean(aiQuery.trim() && !ask.isPending && token)} onVoice={startVoiceInput} onSend={submit} /></View> : null}
+        <View style={styles.composerToolsRow}><Pressable accessibilityRole="button" accessibilityLabel="添加资料" onPress={() => { Keyboard.dismiss(); setAttachmentMenuOpen(true); }} style={({ pressed }) => [styles.addButton, pressed && styles.pressed]}><Ionicons name="add" size={23} color={colors.textSecondary} /></Pressable><ComposerActions voicePending={voicePending} canSend={Boolean(aiQuery.trim() && !ask.isPending && token)} onVoice={startVoiceInput} onSend={submit} /></View>
       </View>
     </View></SafeAreaView>
     <AttachmentSheet open={attachmentMenuOpen} onClose={() => setAttachmentMenuOpen(false)} onPickFile={() => void pickLocalFile()} />
