@@ -13,7 +13,7 @@ export const TOP_DESTINATIONS: readonly V6Destination[] = [
 
 export const BOTTOM_ACTIONS = [
   { label: '消息', path: '/messages', icon: 'notifications-outline' },
-  { label: '搜索或问万事问', path: '/search-ai', icon: 'sparkles-outline' },
+  { label: '随便问点什么', path: '/search-ai', icon: 'sparkles-outline' },
   { label: '待办', path: '/todo', icon: 'checkbox-outline' },
 ] as const;
 
