@@ -106,6 +106,8 @@ interface NativeDeviceBridge {
   drainAppReadSessionEventsJson(): Promise<string>;
   acknowledgeAppReadSessionEvents(eventKeys: string[]): Promise<boolean>;
   captureAppReadUiNodes(targetPackage: string, allowedSelectors: string[]): Promise<string>;
+  startSpeechRecognition(locale: string): Promise<string>;
+  cancelSpeechRecognition(): Promise<boolean>;
 }
 
 export type DeviceDiscoveryStatus = 'available' | 'unavailable';
@@ -181,6 +183,28 @@ export async function createTrustedDeviceRequestId(): Promise<string | null> {
 
 export function deviceDiscoveryStatus(): DeviceDiscoveryStatus {
   return bridge() ? 'available' : 'unavailable';
+}
+
+export async function startSystemSpeechRecognition(locale = 'zh-CN'): Promise<string | null> {
+  const native = bridge();
+  if (!native || typeof native.startSpeechRecognition !== 'function') return null;
+  try {
+    const transcript = await native.startSpeechRecognition(locale);
+    const normalized = transcript.trim().slice(0, 1000);
+    return normalized || null;
+  } catch {
+    return null;
+  }
+}
+
+export async function cancelSystemSpeechRecognition(): Promise<boolean> {
+  const native = bridge();
+  if (!native || typeof native.cancelSpeechRecognition !== 'function') return false;
+  try {
+    return await native.cancelSpeechRecognition();
+  } catch {
+    return false;
+  }
 }
 
 export async function discoverLaunchableApps(): Promise<DiscoveredDeviceApp[]> {

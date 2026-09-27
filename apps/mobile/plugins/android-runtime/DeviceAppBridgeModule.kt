@@ -1,11 +1,19 @@
 package com.lazyarmor.app
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.drawable.Drawable
 import android.os.Build
+import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
+import android.speech.RecognizerIntent
+import android.speech.RecognitionListener
+import android.speech.SpeechRecognizer
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
@@ -15,6 +23,7 @@ import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.ReadableArray
+import com.facebook.react.modules.core.PermissionAwareActivity
 import androidx.core.content.ContextCompat
 import java.io.ByteArrayOutputStream
 import java.security.KeyPair
@@ -38,8 +47,103 @@ class DeviceAppBridgeModule(reactContext: ReactApplicationContext) : ReactContex
   private val iconSizePx = 48
   private val maxIconBytes = 24_000
   private val trustedDeviceKeyAlias = "lazy_armor_trusted_device_key_v1"
+  private val speechPermissionRequestCode = 7104
+  private var speechPromise: Promise? = null
+  private var speechRecognizer: SpeechRecognizer? = null
 
   override fun getName(): String = "LazyArmorDeviceBridge"
+
+  @ReactMethod
+  fun startSpeechRecognition(locale: String, promise: Promise) {
+    if (speechPromise != null) {
+      promise.reject("E_SPEECH_BUSY", "已有语音输入正在进行。")
+      return
+    }
+    val activity = reactApplicationContext.currentActivity
+    if (activity !is PermissionAwareActivity) {
+      promise.reject("E_SPEECH_ACTIVITY_UNAVAILABLE", "当前无法启动系统语音输入。")
+      return
+    }
+    speechPromise = promise
+    if (activity.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+      beginSpeechRecognition(locale)
+      return
+    }
+    activity.requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), speechPermissionRequestCode) { requestCode, _, grantResults ->
+      if (requestCode != speechPermissionRequestCode) return@requestPermissions false
+      if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) beginSpeechRecognition(locale)
+      else finishSpeechWithError("E_SPEECH_PERMISSION_DENIED", "需要麦克风权限才能使用语音输入。")
+      true
+    }
+  }
+
+  private fun beginSpeechRecognition(locale: String) {
+    Handler(Looper.getMainLooper()).post {
+      if (!SpeechRecognizer.isRecognitionAvailable(reactApplicationContext)) {
+        finishSpeechWithError("E_SPEECH_UNAVAILABLE", "此设备没有可用的系统语音识别服务。")
+        return@post
+      }
+      try {
+        speechRecognizer?.destroy()
+        speechRecognizer = SpeechRecognizer.createSpeechRecognizer(reactApplicationContext).also { recognizer ->
+          recognizer.setRecognitionListener(object : RecognitionListener {
+            override fun onReadyForSpeech(params: Bundle?) = Unit
+            override fun onBeginningOfSpeech() = Unit
+            override fun onRmsChanged(rmsdB: Float) = Unit
+            override fun onBufferReceived(buffer: ByteArray?) = Unit
+            override fun onEndOfSpeech() = Unit
+            override fun onPartialResults(partialResults: Bundle?) = Unit
+            override fun onEvent(eventType: Int, params: Bundle?) = Unit
+            override fun onError(error: Int) {
+              val cancelled = error == SpeechRecognizer.ERROR_CLIENT
+              finishSpeechWithError(if (cancelled) "E_SPEECH_CANCELLED" else "E_SPEECH_RECOGNITION_FAILED", if (cancelled) "语音输入已取消。" else "没有识别到语音内容，请重试。")
+            }
+            override fun onResults(results: Bundle?) {
+              val transcript = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull { it.isNotBlank() }?.trim()
+              if (transcript.isNullOrBlank()) finishSpeechWithError("E_SPEECH_EMPTY", "没有识别到语音内容。") else finishSpeechWithResult(transcript.take(1000))
+            }
+          })
+          recognizer.startListening(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, locale.take(20).ifBlank { "zh-CN" })
+            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
+          })
+        }
+      } catch (error: Exception) {
+        val pending = speechPromise
+        speechPromise = null
+        speechRecognizer?.destroy()
+        speechRecognizer = null
+        pending?.reject("E_SPEECH_START_FAILED", "无法启动系统语音输入。", error)
+      }
+    }
+  }
+
+  @ReactMethod
+  fun cancelSpeechRecognition(promise: Promise) {
+    Handler(Looper.getMainLooper()).post {
+      speechRecognizer?.cancel()
+      finishSpeechWithError("E_SPEECH_CANCELLED", "语音输入已取消。")
+      promise.resolve(true)
+    }
+  }
+
+  private fun finishSpeechWithResult(transcript: String) {
+    val pending = speechPromise
+    speechPromise = null
+    speechRecognizer?.destroy()
+    speechRecognizer = null
+    pending?.resolve(transcript)
+  }
+
+  private fun finishSpeechWithError(code: String, message: String) {
+    val pending = speechPromise
+    speechPromise = null
+    speechRecognizer?.destroy()
+    speechRecognizer = null
+    pending?.reject(code, message)
+  }
 
   @ReactMethod
   fun getTrustedDeviceIdentity(promise: Promise) {

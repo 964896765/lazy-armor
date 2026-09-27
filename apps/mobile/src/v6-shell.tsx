@@ -72,6 +72,7 @@ export function GlobalActionBar() {
   const todoCount = (attention.data?.pendingApprovals.length ?? 0)
     + (attention.data?.connectionIssues.length ?? 0)
     + (attention.data?.alerts.length ?? 0);
+  if (pathname === '/search-ai') return null;
   return (
     <SafeAreaView edges={['bottom']} style={styles.bottomSafeArea}>
       <View style={styles.bottomBar}>

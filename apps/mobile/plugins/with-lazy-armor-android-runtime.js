@@ -32,12 +32,23 @@ function withRuntimeManifest(config) {
       ['android.permission.FOREGROUND_SERVICE'],
       ['android.permission.FOREGROUND_SERVICE_DATA_SYNC'],
       ['android.permission.POST_NOTIFICATIONS'],
+      ['android.permission.RECORD_AUDIO'],
     ];
     for (const [name, extra = {}] of permissions) {
       manifest['uses-permission'] = upsertByAndroidName(manifest['uses-permission'], {
         $: { 'android:name': name, ...extra },
       });
     }
+
+    const queries = manifest.queries ?? [{}];
+    const queryRoot = queries[0] ?? {};
+    const queryIntents = queryRoot.intent ?? [];
+    if (!queryIntents.some((intent) => intent?.action?.some((action) => action?.$?.['android:name'] === 'android.speech.action.RECOGNIZE_SPEECH'))) {
+      queryIntents.push({ action: [{ $: { 'android:name': 'android.speech.action.RECOGNIZE_SPEECH' } }] });
+    }
+    queryRoot.intent = queryIntents;
+    queries[0] = queryRoot;
+    manifest.queries = queries;
 
     const application = manifest.application?.[0];
     if (!application) throw new Error('Lazy Armor Android runtime requires one application manifest node');
