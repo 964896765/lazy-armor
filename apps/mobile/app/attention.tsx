@@ -1,143 +1,47 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
 import { router, usePathname } from 'expo-router';
+import type { ComponentProps } from 'react';
 import { useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../src/api';
 import { useAuthStore } from '../src/auth-store';
-import {
-  filterTodos,
-  TODO_FILTERS,
-  todoFilterLabel,
-  todoIcon,
-  todoRoute,
-  todoSource,
-  todoStatusLabel,
-  todoTone,
-  todoTypeLabel,
-  type TodoFilter,
-  type TodoItem,
-  type TodoTab,
-} from '../src/todo-presenter';
-import { EmptyState, MessageRow, Surface, WorkspaceHeader, workspaceColors as colors, radius, spacing, typography } from '../src/design';
+import { filterTodos, TODO_FILTERS, todoFilterLabel, todoIcon, todoRoute, todoSource, todoTypeLabel, type TodoFilter, type TodoItem, type TodoTab } from '../src/todo-presenter';
+import { EmptyState, workspaceColors as colors, radius, spacing, typography } from '../src/design';
 
-const MAIN_TABS: Array<{ key: TodoTab; label: string }> = [
-  { key: 'OPEN', label: '待处理' },
-  { key: 'COMPLETED', label: '已完成' },
-  { key: 'ALL', label: '全部' },
-];
+type IconName = ComponentProps<typeof Ionicons>['name'];
+const MAIN_TABS: Array<{ key: TodoTab; label: string }> = [{ key: 'OPEN', label: '待处理' }, { key: 'COMPLETED', label: '已完成' }, { key: 'ALL', label: '全部' }];
 
 export default function AttentionPage() {
   const pathname = usePathname();
   const token = useAuthStore((store) => store.token);
   const [tab, setTab] = useState<TodoTab>('OPEN');
   const [filter, setFilter] = useState<TodoFilter>('ALL');
-  const todos = useQuery({
-    queryKey: ['todos', token],
-    queryFn: () => api<TodoItem[]>('/todos', token),
-    enabled: Boolean(token),
-    refetchInterval: 10_000,
-  });
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const todos = useQuery({ queryKey: ['todos', token], queryFn: () => api<TodoItem[]>('/todos', token), enabled: Boolean(token), refetchInterval: 10_000 });
   const items = todos.data ?? [];
-  const visible = useMemo(
-    () => filterTodos(items, tab, tab === 'OPEN' ? filter : 'ALL'),
-    [items, tab, filter],
-  );
-  const openCount = items.filter((item) => item.status === 'OPEN').length;
-  const completedCount = items.filter((item) => item.status === 'COMPLETED').length;
-  const loading = todos.isLoading;
-  const error = todos.isError;
+  const visible = useMemo(() => { const normalized = query.trim().toLocaleLowerCase('zh-CN'); return filterTodos(items, tab, tab === 'OPEN' ? filter : 'ALL').filter((item) => !normalized || `${todoSource(item)} ${item.summary} ${todoTypeLabel(item.type)}`.toLocaleLowerCase('zh-CN').includes(normalized)); }, [items, tab, filter, query]);
 
-  return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
-      <ScrollView
-        style={styles.page}
-        contentContainerStyle={styles.content}
-        refreshControl={token ? <RefreshControl tintColor={colors.primary} refreshing={todos.isFetching} onRefresh={() => todos.refetch()} /> : undefined}
-      >
-        <WorkspaceHeader title="待办" subtitle="审批、确认、异常和结果核实统一收在这里" onBack={pathname === '/todo' ? undefined : () => router.back()} />
-
-        {!token ? (
-          <Surface style={styles.stateSurface}><EmptyState icon="notifications-outline" title="登录后查看需要你处理的事" action={{ label: '去登录', onPress: () => router.push('/auth/login' as never) }} /></Surface>
-        ) : null}
-
-        {token ? <View style={styles.tabs}>
-          {MAIN_TABS.map((item) => <Chip key={item.key} label={item.label} count={item.key === 'OPEN' ? openCount : item.key === 'COMPLETED' ? completedCount : items.length} active={tab === item.key} onPress={() => { setTab(item.key); setFilter('ALL'); }} />)}
-        </View> : null}
-
-        {token && tab === 'OPEN' ? <View style={styles.filters}>
-          {TODO_FILTERS.map((item) => <Chip key={item} label={todoFilterLabel(item)} active={filter === item} onPress={() => setFilter(item)} />)}
-        </View> : null}
-
-        {token && loading ? (
-          <View style={styles.loading}><ActivityIndicator color={colors.primary} /><Text style={styles.loadingText}>正在核对需要你处理的事…</Text></View>
-        ) : null}
-
-        {token && !loading && error ? (
-          <Surface style={styles.stateSurface}><EmptyState icon="cloud-offline-outline" title="暂时没有加载出来" description="请稍后再试，不会影响已有计划。" action={{ label: '重新加载', onPress: () => todos.refetch() }} /></Surface>
-        ) : null}
-
-        {token && !loading && !error && visible.length === 0 ? (
-          <View style={styles.emptyState}><View style={styles.emptyIcon}><Ionicons name="checkmark" size={18} color={colors.success} /></View><View style={styles.emptyCopy}><Text style={styles.emptyTitle}>{tab === 'OPEN' ? '没有需要你处理的事' : '这里还没有记录'}</Text><Text style={styles.emptyDescription}>计划会继续运行，只有真正需要你决定或处理的事才会出现。</Text></View></View>
-        ) : null}
-
-        {token && !loading && !error && visible.length > 0 ? (
-          <View style={styles.group}>
-            {visible.map((item, index) => (
-              <MessageRow
-                key={item.id}
-                icon={todoIcon(item.type)}
-                title={todoSource(item)}
-                description={`${item.summary} · ${tab === 'OPEN' ? todoTypeLabel(item.type) : todoStatusLabel(item.status)}`}
-                meta={formatTodoTime(item.createdAt)}
-                tone={item.status === 'COMPLETED' ? 'brand' : todoTone(item.type)}
-                last={index === visible.length - 1}
-                onPress={() => { const route = todoRoute(item); if (route) router.push(route as never); }}
-              />
-            ))}
-          </View>
-        ) : null}
-      </ScrollView>
-    </SafeAreaView>
-  );
+  function go(item: TodoItem) { const route = todoRoute(item); if (route) router.push(route as never); }
+  return <SafeAreaView edges={pathname === '/todo' ? [] : ['top']} style={styles.safeArea}><ScrollView contentContainerStyle={styles.content} refreshControl={token ? <RefreshControl tintColor={colors.primary} refreshing={todos.isFetching} onRefresh={() => todos.refetch()} /> : undefined}>
+    <View style={styles.header}>{pathname !== '/todo' ? <Pressable onPress={() => router.back()} style={styles.back}><Ionicons name="chevron-back" size={23} color={colors.text} /></Pressable> : null}<Text style={styles.title}>待办</Text><Pressable accessibilityRole="button" onPress={() => setSearchOpen((value) => !value)} style={({ pressed }) => [styles.searchAction, pressed && styles.pressed]}><Ionicons name="search-outline" size={23} color={colors.text} /><Text style={styles.searchActionText}>搜索</Text></Pressable></View>
+    {searchOpen ? <View style={styles.searchBox}><Ionicons name="search-outline" size={19} color={colors.textMuted} /><TextInput autoFocus value={query} onChangeText={setQuery} placeholder="搜索待办" placeholderTextColor={colors.textMuted} style={styles.searchInput} />{query ? <Pressable onPress={() => setQuery('')}><Ionicons name="close-circle" size={19} color={colors.textMuted} /></Pressable> : null}</View> : null}
+    {token ? <View style={styles.tabs}>{MAIN_TABS.map((item) => <Pressable key={item.key} accessibilityRole="tab" accessibilityState={{ selected: tab === item.key }} onPress={() => { setTab(item.key); setFilter('ALL'); }} style={[styles.tab, tab === item.key && styles.tabActive]}><Text style={[styles.tabText, tab === item.key && styles.tabTextActive]}>{item.label}</Text></Pressable>)}</View> : null}
+    {token && tab === 'OPEN' ? <View style={styles.filters}>{TODO_FILTERS.filter((item) => item !== 'ALL').map((item) => <Pressable key={item} accessibilityRole="button" onPress={() => setFilter(filter === item ? 'ALL' : item)} style={[styles.filter, filter === item && styles.filterActive]}><Text style={[styles.filterText, filter === item && styles.filterTextActive]}>{todoFilterLabel(item)}</Text></Pressable>)}</View> : null}
+    {!token ? <EmptyState icon="notifications-outline" title="登录后查看需要你处理的事" action={{ label: '去登录', onPress: () => router.push('/auth/login' as never) }} /> : null}
+    {token && todos.isLoading ? <View style={styles.loading}><ActivityIndicator color={colors.primary} /><Text style={styles.loadingText}>正在核对需要你处理的事…</Text></View> : null}
+    {token && todos.isError ? <EmptyState icon="cloud-offline-outline" title="暂时没有加载出来" action={{ label: '重新加载', onPress: () => todos.refetch() }} /> : null}
+    {token && !todos.isLoading && !todos.isError && visible.length === 0 ? <View style={styles.empty}><View style={styles.emptyIcon}><Ionicons name="checkmark" size={19} color={colors.success} /></View><View style={styles.emptyCopy}><Text style={styles.emptyTitle}>{query ? '没有匹配的待办' : tab === 'OPEN' ? '没有需要你处理的事' : '这里还没有记录'}</Text><Text style={styles.emptyText}>只有服务端确认需要你决定或处理的事项才会出现。</Text></View></View> : null}
+    {token && !todos.isLoading && !todos.isError ? <View style={styles.cards}>{visible.map((item) => <TodoCard key={item.id} item={item} onPress={() => go(item)} />)}</View> : null}
+  </ScrollView></SafeAreaView>;
 }
 
-function Chip({ label, count, active, onPress }: { label: string; count?: number; active: boolean; onPress: () => void }) {
-  return (
-    <Pressable accessibilityRole="button" onPress={onPress} style={({ pressed }) => [styles.chip, active && styles.chipActive, pressed && styles.chipPressed]}>
-      <Text style={[styles.chipText, active && styles.chipTextActive]}>{label}</Text>
-      {typeof count === 'number' && count > 0 ? <Text style={[styles.chipCount, active && styles.chipCountActive]}>{count > 99 ? '99+' : String(count)}</Text> : null}
-    </Pressable>
-  );
-}
-
-function formatTodoTime(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '';
-  return date.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' });
-}
+function TodoCard({ item, onPress }: { item: TodoItem; onPress: () => void }) { const visual = todoVisual(item); return <View style={styles.card}><View style={[styles.cardIcon, { backgroundColor: visual.background }]}><Ionicons name={visual.icon} size={27} color={visual.color} /></View><View style={styles.cardMain}><View style={styles.cardTitleRow}><Text numberOfLines={2} style={styles.cardTitle}>{todoSource(item)}：{item.summary}</Text><View style={[styles.status, { backgroundColor: visual.badgeBackground }]}><Text style={[styles.statusText, { color: visual.color }]}>{item.status === 'COMPLETED' ? '已完成' : todoTypeLabel(item.type)}</Text></View></View><View style={styles.cardFooter}><View style={styles.timeRow}><Ionicons name="time-outline" size={15} color={colors.textSecondary} /><Text style={styles.time}>{formatTodoTime(item.createdAt)}</Text></View><View style={styles.actions}><Pressable accessibilityRole="button" onPress={onPress} style={styles.secondaryButton}><Text style={styles.secondaryText}>查看</Text></Pressable>{item.status === 'OPEN' ? <Pressable accessibilityRole="button" onPress={onPress} style={styles.primaryButton}><Text style={styles.primaryText}>去处理</Text></Pressable> : null}</View></View></View></View>; }
+function todoVisual(item: TodoItem): { icon: IconName; color: string; background: string; badgeBackground: string } { const icon = todoIcon(item.type) as IconName; if (item.type === 'EXCEPTION') return { icon, color: '#C54B4B', background: '#FCEAEA', badgeBackground: '#FCEAEA' }; if (item.type === 'VERIFICATION') return { icon, color: '#7754B8', background: '#F0EBFA', badgeBackground: '#F0EBFA' }; if (item.type === 'CONFIRMATION') return { icon, color: '#C97917', background: '#FFF2DE', badgeBackground: '#FFF0D8' }; return { icon, color: '#3474C8', background: '#EAF2FD', badgeBackground: '#EAF2FD' }; }
+function formatTodoTime(value: string) { const date = new Date(value); if (Number.isNaN(date.getTime())) return ''; const today = new Date(); const sameDay = date.toDateString() === today.toDateString(); const yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1); const prefix = sameDay ? '今天' : date.toDateString() === yesterday.toDateString() ? '昨天' : date.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }); return `${prefix} ${date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`; }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: colors.background },
-  page: { flex: 1, backgroundColor: colors.background },
-  content: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: 80 },
-  stateSurface: { marginTop: spacing.xl },
-  tabs: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.lg },
-  filters: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.sm },
-  chip: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: spacing.md, paddingVertical: 8, borderRadius: radius.pill, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
-  chipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-  chipPressed: { opacity: 0.75 },
-  chipText: { ...typography.caption, fontWeight: '600', color: colors.textSecondary },
-  chipTextActive: { color: '#FFFFFF' },
-  chipCount: { fontSize: 10, lineHeight: 14, fontWeight: '800', color: colors.textMuted },
-  chipCountActive: { color: '#FFFFFF' },
-  loading: { alignItems: 'center', paddingVertical: 64, gap: spacing.md },
-  loadingText: { ...typography.caption, color: colors.textSecondary },
-  emptyState: { minHeight: 100, flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.lg, paddingHorizontal: spacing.lg, backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border },
-  emptyIcon: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.successSoft },
-  emptyCopy: { flex: 1 },
-  emptyTitle: { ...typography.bodyStrong, color: colors.text },
-  emptyDescription: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
-  group: { marginTop: spacing.lg, backgroundColor: colors.surface, paddingHorizontal: spacing.sm, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border },
+  safeArea: { flex: 1, backgroundColor: colors.background }, content: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: 92 }, pressed: { opacity: 0.68 }, header: { minHeight: 58, flexDirection: 'row', alignItems: 'center' }, back: { width: 38, height: 44, justifyContent: 'center' }, title: { ...typography.display, color: colors.text, fontSize: 28, lineHeight: 36, flex: 1 }, searchAction: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 6 }, searchActionText: { ...typography.caption, color: colors.text, fontWeight: '700' }, searchBox: { minHeight: 46, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.sm, paddingHorizontal: spacing.md, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface }, searchInput: { flex: 1, ...typography.body, color: colors.text, paddingVertical: 8 }, tabs: { minHeight: 54, flexDirection: 'row', marginTop: spacing.sm, padding: 4, borderRadius: radius.pill, backgroundColor: '#EFEEEA' }, tab: { flex: 1, alignItems: 'center', justifyContent: 'center', borderRadius: radius.pill }, tabActive: { backgroundColor: colors.surface, elevation: 1 }, tabText: { ...typography.caption, color: colors.textSecondary, fontWeight: '700' }, tabTextActive: { color: colors.text }, filters: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm }, filter: { flex: 1, minHeight: 43, alignItems: 'center', justifyContent: 'center', borderRadius: radius.pill, backgroundColor: '#EFEEEA' }, filterActive: { backgroundColor: colors.accentSoft }, filterText: { fontSize: 10, color: colors.textSecondary, fontWeight: '700' }, filterTextActive: { color: colors.primary }, loading: { minHeight: 180, alignItems: 'center', justifyContent: 'center', gap: spacing.sm }, loadingText: { ...typography.caption, color: colors.textSecondary }, empty: { minHeight: 100, flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.lg, padding: spacing.lg, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface }, emptyIcon: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.successSoft }, emptyCopy: { flex: 1 }, emptyTitle: { ...typography.bodyStrong, color: colors.text }, emptyText: { ...typography.caption, color: colors.textSecondary, marginTop: 3 }, cards: { gap: spacing.sm, marginTop: spacing.md }, card: { minHeight: 132, flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.md, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, shadowColor: '#625A50', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 7, elevation: 1 }, cardIcon: { width: 58, height: 58, alignItems: 'center', justifyContent: 'center', borderRadius: 22 }, cardMain: { flex: 1, minWidth: 0 }, cardTitleRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm }, cardTitle: { ...typography.bodyStrong, color: colors.text, lineHeight: 21, flex: 1 }, status: { paddingHorizontal: 9, paddingVertical: 5, borderRadius: radius.pill }, statusText: { fontSize: 9, fontWeight: '800' }, cardFooter: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', marginTop: spacing.md }, timeRow: { flexDirection: 'row', alignItems: 'center', gap: 4 }, time: { fontSize: 10, color: colors.textSecondary }, actions: { flexDirection: 'row', gap: 7 }, secondaryButton: { minWidth: 62, minHeight: 34, alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing.sm, borderRadius: radius.pill, backgroundColor: '#EFEEEA' }, secondaryText: { fontSize: 10, color: colors.text, fontWeight: '800' }, primaryButton: { minWidth: 72, minHeight: 34, alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing.sm, borderRadius: radius.pill, backgroundColor: colors.primary }, primaryText: { fontSize: 10, color: '#FFFFFF', fontWeight: '800' },
 });

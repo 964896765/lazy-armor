@@ -1,17 +1,18 @@
-import { useQuery } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
+import { useQuery } from '@tanstack/react-query';
 import { router, type Href } from 'expo-router';
 import type { ComponentProps } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/api';
 import { useAuthStore } from '../../src/auth-store';
-import { WorkspaceHeader, workspaceColors as colors, radius, spacing, typography } from '../../src/design';
+import { workspaceColors as colors, radius, spacing, typography } from '../../src/design';
 
+type IconName = ComponentProps<typeof Ionicons>['name'];
 interface Connection { id: string; status: string }
 interface DeviceProfile { id: string }
 interface VehicleProfile { id: string }
-interface UnreadCount { count: number }
+interface Plan { id: string; status: string }
 interface Profile { displayName: string; status: string }
 
 export default function Me() {
@@ -21,90 +22,31 @@ export default function Me() {
   const connections = useQuery({ queryKey: ['connections', token], queryFn: () => api<Connection[]>('/connections', token), enabled: Boolean(token) });
   const devices = useQuery({ queryKey: ['device-profiles', token], queryFn: () => api<DeviceProfile[]>('/device-profiles', token), enabled: Boolean(token) });
   const vehicles = useQuery({ queryKey: ['vehicle-profiles', token], queryFn: () => api<VehicleProfile[]>('/vehicle-profiles', token), enabled: Boolean(token) });
-  const unread = useQuery({ queryKey: ['notifications-unread', token], queryFn: () => api<UnreadCount>('/notifications/unread-count', token), enabled: Boolean(token) });
-  const loading = profile.isLoading || connections.isLoading || devices.isLoading || vehicles.isLoading || unread.isLoading;
+  const plans = useQuery({ queryKey: ['plans', token], queryFn: () => api<Plan[]>('/plans', token), enabled: Boolean(token) });
+  const unread = useQuery({ queryKey: ['notifications-unread', token], queryFn: () => api<{ count: number }>('/notifications/unread-count', token), enabled: Boolean(token) });
   const name = profile.data?.displayName ?? (token ? '我的账号' : '还没有登录');
+  const activeConnections = (connections.data ?? []).filter((item) => item.status !== 'revoked').length;
+  const activePlans = (plans.data ?? []).filter((item) => ['active', 'ready', 'degraded', 'blocked'].includes(item.status)).length;
+  const loading = [profile, connections, devices, vehicles, plans, unread].some((query) => query.isLoading);
 
-  function confirmLogout() {
-    Alert.alert('退出当前账号？', '这只会清除本机登录状态，不会删除你的计划、事实或记录。', [
-      { text: '取消', style: 'cancel' },
-      { text: '退出登录', style: 'destructive', onPress: async () => { await clearSession(); router.replace('/auth/login' as Href); } },
-    ]);
-  }
+  function confirmLogout() { Alert.alert('退出当前账号？', '这只会清除本机登录状态，不会删除计划、事实或记录。', [{ text: '取消', style: 'cancel' }, { text: '退出登录', style: 'destructive', onPress: async () => { await clearSession(); router.replace('/auth/login' as Href); } }]); }
 
-  return (
-    <SafeAreaView style={styles.safeArea} edges={[]}>
-      <ScrollView style={styles.page} contentContainerStyle={styles.content}>
-        <WorkspaceHeader title="我的" subtitle="账号、连接与隐私设置" />
-        <View style={styles.profile}>
-          <View style={styles.avatar}><Ionicons name="person" size={24} color={colors.surface} /></View>
-          <View style={styles.profileCopy}><Text style={styles.profileName}>{name}</Text>{!token ? <Text style={styles.profileMeta}>登录后开始使用</Text> : null}</View>
-          {loading ? <ActivityIndicator color={colors.primary} /> : null}
-        </View>
+  return <SafeAreaView edges={[]} style={styles.safeArea}><ScrollView contentContainerStyle={styles.content}>
+    <Text style={styles.title}>我的</Text>
+    <View style={styles.profileCard}><View style={styles.profileTop}><View style={styles.avatar}><Text style={styles.avatarText}>{name.trim().charAt(0).toUpperCase() || '我'}</Text></View><View style={styles.profileCopy}><Text style={styles.profileName}>{name}</Text><Text style={styles.profileMeta}>{token ? '懒人装甲账号' : '登录后开始使用'}</Text><Text style={styles.profileSummary}>{token ? `已连接 ${activeConnections} 项能力 · 运行中 ${activePlans} 个计划` : '尚未连接服务'}</Text></View>{loading ? <ActivityIndicator color={colors.primary} /> : <View style={styles.profileState}><Text style={styles.profileStateText}>{profile.data?.status === 'active' ? '已验证' : '账号资料'}</Text><Ionicons name="chevron-forward" size={16} color={colors.textMuted} /></View>}</View><View style={styles.metrics}><Metric value={activePlans} icon="layers-outline" label="计划" detail={`运行中 ${activePlans} 个`} /><Metric value={devices.data?.length ?? 0} icon="phone-portrait-outline" label="设备" detail="已登记" /><Metric value={activeConnections} icon="link-outline" label="连接" detail={`已授权 ${activeConnections} 项`} /><Metric value={unread.data?.count ?? 0} icon="notifications-outline" label="消息" detail="当前未读" last /></View></View>
 
-        <Text style={styles.sectionLabel}>我的生活</Text>
-        <View style={styles.menu}>
-          <MenuRow icon="link-outline" title="我的连接" detail={token ? `已添加 ${(connections.data ?? []).filter((item) => item.status !== 'revoked').length} 个服务` : '登录与连接服务'} onPress={() => router.push('/connections')} />
-          <Divider />
-          <MenuRow icon="phone-portrait-outline" title="我的设备" detail={`已记录 ${devices.data?.length ?? 0} 台`} onPress={() => router.push('/devices' as Href)} />
-          <Divider />
-          <MenuRow icon="car-outline" title="我的车辆" detail={`已记录 ${vehicles.data?.length ?? 0} 台`} onPress={() => router.push('/vehicles' as Href)} />
-        </View>
-
-        <Text style={styles.sectionLabel}>提醒与控制</Text>
-        <View style={styles.menu}>
-          <MenuRow icon="notifications-outline" title="通知" detail={(unread.data?.count ?? 0) > 0 ? `${unread.data?.count} 条未读` : '按你的偏好提醒'} onPress={() => router.push('/notification-settings' as Href)} />
-          <Divider />
-          <MenuRow icon="key-outline" title="权限" detail="管理信息使用范围" onPress={() => router.push('/permissions' as Href)} />
-          <Divider />
-          <MenuRow icon="shield-checkmark-outline" title="安全中心" detail="授权、审批、设备与审计" onPress={() => router.push('/security-center' as Href)} />
-          <Divider />
-          <MenuRow icon="receipt-outline" title="安全记录" detail="查看重要操作" onPress={() => router.push('/security-activity' as Href)} />
-        </View>
-
-        <Text style={styles.sectionLabel}>数据</Text>
-        <View style={styles.menu}>
-          <MenuRow icon="shield-half-outline" title="隐私中心" detail="数据、授权、设备权限与 AI 边界" onPress={() => router.push('/privacy-center' as Href)} />
-          <Divider />
-          <MenuRow icon="server-outline" title="数据管理" detail="查看与管理你的数据" onPress={() => router.push('/data-management' as Href)} />
-        </View>
-
-        {token ? <Pressable accessibilityRole="button" accessibilityLabel="退出登录" onPress={confirmLogout} style={({ pressed }) => [styles.logout, pressed && styles.pressed]}><Text style={styles.logoutText}>退出登录</Text></Pressable> : null}
-      </ScrollView>
-    </SafeAreaView>
-  );
+    <Section title="我的空间"><MenuRow icon="home-outline" tone="green" title="我的生活" detail="家庭、健康、出行、休闲娱乐等" onPress={() => router.push('/domains' as never)} /><MenuRow icon="briefcase-outline" tone="orange" title="我的财物" detail="收支、资产、购物与重要物品" onPress={() => router.push('/domains' as never)} /><MenuRow icon="checkbox-outline" tone="blue" title="我的事务" detail="工作、学习、证件与其他事务" onPress={() => router.push('/domains' as never)} last /></Section>
+    <Section title="账户与安全"><MenuRow icon="person-outline" tone="green" title="登录与验证" detail="账号登录状态与验证方式" status={token ? '已登录' : '未登录'} onPress={() => router.push('/security-center' as never)} /><MenuRow icon="desktop-outline" tone="blue" title="设备与授权" detail="管理已登录设备与应用授权" status={`${devices.data?.length ?? 0} 台设备`} onPress={() => router.push('/devices' as never)} /><MenuRow icon="shield-outline" tone="orange" title="隐私与安全" detail="数据隐私、内容安全与风险管理" status="查看边界" onPress={() => router.push('/privacy-center' as never)} last /></Section>
+    <Section title="服务与支持"><MenuRow icon="link-outline" tone="green" title="我的连接" detail="查看与管理已连接的服务能力" status={`${activeConnections} 项已连接`} onPress={() => router.push('/connections' as never)} /><MenuRow icon="notifications-outline" tone="orange" title="通知设置" detail="计划提醒、服务通知与系统消息" onPress={() => router.push('/notification-settings' as never)} /><MenuRow icon="shield-checkmark-outline" tone="blue" title="安全记录" detail="授权、审批与重要操作记录" onPress={() => router.push('/security-activity' as never)} /><MenuRow icon="information-circle-outline" tone="purple" title="关于懒人装甲" detail="版本信息、服务协议与隐私政策" status="开发版" last /></Section>
+    {token ? <Pressable accessibilityRole="button" onPress={confirmLogout} style={({ pressed }) => [styles.logout, pressed && styles.pressed]}><Ionicons name="log-out-outline" size={18} color={colors.textSecondary} /><Text style={styles.logoutText}>退出登录</Text></Pressable> : null}
+  </ScrollView></SafeAreaView>;
 }
 
-function MenuRow({ icon, title, detail, onPress }: { icon: ComponentProps<typeof Ionicons>['name']; title: string; detail: string; onPress: () => void }) {
-  return (
-    <Pressable accessibilityRole="button" onPress={onPress} style={({ pressed }) => [styles.row, pressed && styles.pressed]}>
-      <View style={styles.rowIcon}><Ionicons name={icon} size={20} color={colors.primary} /></View>
-      <View style={styles.rowCopy}><Text style={styles.rowTitle}>{title}</Text><Text style={styles.rowDetail}>{detail}</Text></View>
-      <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-    </Pressable>
-  );
-}
-
-function Divider() { return <View style={styles.divider} />; }
+function Metric({ value, icon, label, detail, last = false }: { value: number; icon: IconName; label: string; detail: string; last?: boolean }) { return <View style={[styles.metric, !last && styles.metricDivider]}><View style={styles.metricValueRow}><Text style={styles.metricValue}>{value}</Text><Ionicons name={icon} size={15} color={colors.primary} /></View><Text style={styles.metricLabel}>{label}</Text><Text style={styles.metricDetail}>{detail}</Text></View>; }
+function Section({ title, children }: { title: string; children: React.ReactNode }) { return <><Text style={styles.sectionTitle}>{title}</Text><View style={styles.menu}>{children}</View></>; }
+function MenuRow({ icon, tone, title, detail, status, onPress, last = false }: { icon: IconName; tone: 'green' | 'orange' | 'blue' | 'purple'; title: string; detail: string; status?: string; onPress?: () => void; last?: boolean }) { return <Pressable accessibilityRole={onPress ? 'button' : undefined} disabled={!onPress} onPress={onPress} style={({ pressed }) => [styles.row, !last && styles.rowDivider, pressed && styles.pressed]}><View style={[styles.rowIcon, styles[`icon_${tone}`]]}><Ionicons name={icon} size={21} color={tone === 'orange' ? '#C97917' : tone === 'blue' ? '#3474C8' : tone === 'purple' ? '#7754B8' : colors.primary} /></View><View style={styles.rowCopy}><Text style={styles.rowTitle}>{title}</Text><Text numberOfLines={1} style={styles.rowDetail}>{detail}</Text></View>{status ? <Text style={styles.rowStatus}>{status}</Text> : null}{onPress ? <Ionicons name="chevron-forward" size={17} color={colors.textMuted} /> : null}</Pressable>; }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: colors.background },
-  page: { flex: 1, backgroundColor: colors.background },
-  content: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: 80 },
-  profile: { minHeight: 82, flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginBottom: spacing.sm, paddingHorizontal: spacing.xs, borderBottomWidth: 1, borderBottomColor: colors.border },
-  avatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
-  profileCopy: { flex: 1 },
-  profileName: { ...typography.cardTitle, color: colors.text },
-  profileMeta: { ...typography.caption, color: colors.textSecondary, marginTop: spacing.xs },
-  sectionLabel: { ...typography.label, color: colors.textMuted, marginTop: spacing.lg, marginBottom: spacing.xs, paddingLeft: spacing.xs },
-  menu: { paddingHorizontal: spacing.sm, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg },
-  row: { minHeight: 64, flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
-  pressed: { backgroundColor: '#F7F8FA' },
-  rowIcon: { width: 34, height: 34, borderRadius: radius.md, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' },
-  rowCopy: { flex: 1, marginLeft: spacing.md },
-  rowTitle: { ...typography.bodyStrong, color: colors.text },
-  rowDetail: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
-  divider: { height: 1, backgroundColor: colors.border, marginLeft: 64 },
-  logout: { minHeight: 48, marginTop: spacing.xl, borderRadius: radius.md, borderWidth: 1, borderColor: colors.danger, alignItems: 'center', justifyContent: 'center' },
-  logoutText: { ...typography.bodyStrong, color: colors.danger },
+  safeArea: { flex: 1, backgroundColor: colors.background }, content: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: 92 }, pressed: { opacity: 0.68 }, title: { ...typography.display, fontSize: 28, lineHeight: 36, color: colors.text, marginBottom: spacing.sm }, profileCard: { overflow: 'hidden', borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface }, profileTop: { minHeight: 92, flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.lg }, avatar: { width: 62, height: 62, alignItems: 'center', justifyContent: 'center', borderRadius: 31, backgroundColor: '#79A897' }, avatarText: { color: '#FFFFFF', fontSize: 25, fontWeight: '800' }, profileCopy: { flex: 1, minWidth: 0 }, profileName: { ...typography.title, color: colors.text, fontSize: 20 }, profileMeta: { ...typography.caption, color: colors.textSecondary, marginTop: 2 }, profileSummary: { fontSize: 10, lineHeight: 15, color: colors.textSecondary, marginTop: 3 }, profileState: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: spacing.sm, paddingVertical: 8, borderRadius: radius.pill, backgroundColor: '#F2F1ED' }, profileStateText: { fontSize: 10, color: colors.text }, metrics: { minHeight: 78, flexDirection: 'row', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }, metric: { flex: 1, alignItems: 'center', justifyContent: 'center' }, metricDivider: { borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: colors.border }, metricValueRow: { flexDirection: 'row', alignItems: 'center', gap: 5 }, metricValue: { fontSize: 19, fontWeight: '800', color: colors.text }, metricLabel: { fontSize: 10, fontWeight: '800', color: colors.text, marginTop: 2 }, metricDetail: { fontSize: 8, color: colors.textMuted, marginTop: 2 },
+  sectionTitle: { ...typography.section, fontSize: 18, lineHeight: 24, color: colors.text, marginTop: spacing.md, marginBottom: 6 }, menu: { overflow: 'hidden', borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface }, row: { minHeight: 64, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.md, paddingVertical: 7 }, rowDivider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }, rowIcon: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 14 }, icon_green: { backgroundColor: colors.accentSoft }, icon_orange: { backgroundColor: '#FFF2DE' }, icon_blue: { backgroundColor: '#EAF2FD' }, icon_purple: { backgroundColor: '#F0EBFA' }, rowCopy: { flex: 1, minWidth: 0 }, rowTitle: { ...typography.bodyStrong, color: colors.text }, rowDetail: { fontSize: 10, lineHeight: 15, color: colors.textSecondary, marginTop: 2 }, rowStatus: { fontSize: 10, color: colors.textSecondary }, logout: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, marginTop: spacing.md, borderRadius: radius.pill, backgroundColor: '#EFEEEA' }, logoutText: { ...typography.caption, color: colors.textSecondary, fontWeight: '700' },
 });
