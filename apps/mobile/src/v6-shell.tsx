@@ -75,7 +75,7 @@ export function GlobalActionBar() {
   return (
     <SafeAreaView edges={['bottom']} style={styles.bottomSafeArea}>
       <View style={styles.bottomBar}>
-        <BottomButton label="消息" icon="notifications-outline" badge={unread.data?.count ?? 0} selected={pathname === '/messages'} onPress={() => router.replace('/messages' as never)} />
+        <BottomButton label="消息" icon="chatbubble-outline" badge={unread.data?.count ?? 0} selected={pathname === '/messages'} onPress={() => router.replace('/messages' as never)} />
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="随便问点什么"
@@ -83,10 +83,10 @@ export function GlobalActionBar() {
           onPress={() => router.replace('/search-ai' as never)}
           style={({ pressed }) => [styles.searchEntry, pathname === '/search-ai' && styles.searchEntrySelected, pressed && styles.pressed]}
         >
-          <Ionicons name="sparkles-outline" size={18} color={colors.primary} />
+          <Ionicons name="color-wand-outline" size={19} color={colors.text} />
           <Text numberOfLines={1} style={styles.searchEntryText}>随便问点什么</Text>
         </Pressable>
-        <BottomButton label="待办" icon="checkbox-outline" badge={todoCount} selected={pathname === '/todo'} onPress={() => router.replace('/todo' as never)} />
+        <BottomButton label="待办" icon="create-outline" badge={todoCount} selected={pathname === '/todo'} onPress={() => router.replace('/todo' as never)} />
       </View>
     </SafeAreaView>
   );
@@ -115,9 +115,9 @@ const styles = StyleSheet.create({
   topPillText: { ...typography.caption, color: colors.textSecondary, fontWeight: '700' },
   topPillTextSelected: { color: '#FFFFFF' },
   pressed: { opacity: 0.7 },
-  bottomSafeArea: { backgroundColor: colors.surface, borderTopWidth: 1, borderTopColor: colors.border },
+  bottomSafeArea: { backgroundColor: colors.surface },
   bottomBar: { minHeight: 64, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.md, paddingVertical: 7 },
-  bottomButton: { width: 58, minHeight: 50, alignItems: 'center', justifyContent: 'center', gap: 2, borderRadius: radius.md },
+  bottomButton: { width: 58, minHeight: 50, alignItems: 'center', justifyContent: 'center', gap: 2, borderRadius: 25, backgroundColor: colors.surface, shadowColor: '#5E574F', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 1 },
   bottomButtonSelected: { backgroundColor: colors.successSoft },
   bottomLabel: { fontSize: 10, lineHeight: 14, color: colors.textSecondary, fontWeight: '700' },
   bottomLabelSelected: { color: colors.primary },

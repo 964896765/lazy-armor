@@ -12,9 +12,9 @@ export const TOP_DESTINATIONS: readonly V6Destination[] = [
 ];
 
 export const BOTTOM_ACTIONS = [
-  { label: '消息', path: '/messages', icon: 'notifications-outline' },
-  { label: '随便问点什么', path: '/search-ai', icon: 'sparkles-outline' },
-  { label: '待办', path: '/todo', icon: 'checkbox-outline' },
+  { label: '消息', path: '/messages', icon: 'chatbubble-outline' },
+  { label: '随便问点什么', path: '/search-ai', icon: 'color-wand-outline' },
+  { label: '待办', path: '/todo', icon: 'create-outline' },
 ] as const;
 
 /** 顶层入口选中态：首页严格匹配，其余入口匹配自身及子路由。 */
