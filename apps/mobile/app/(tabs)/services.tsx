@@ -155,7 +155,7 @@ const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: colors.background },
   content: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.xxl },
   headingRow: { minHeight: 46, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  heading: { ...typography.display, color: colors.text, fontSize: 25, lineHeight: 32 },
+  heading: { ...typography.pageTitle, color: colors.text },
   headingActions: { flexDirection: 'row', alignItems: 'center' },
   headingAction: { minHeight: 42, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: spacing.sm },
   headingActionText: { ...typography.caption, color: colors.text, fontWeight: '700' },

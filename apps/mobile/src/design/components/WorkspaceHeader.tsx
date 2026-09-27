@@ -14,5 +14,5 @@ const styles = StyleSheet.create({
   copy: { flex: 1, minWidth: 0 },
   back: { width: 34, height: 34, marginLeft: -4, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
   pressed: { backgroundColor: colors.pressed },
-  title: { ...typography.title, fontSize: 17, lineHeight: 23, fontWeight: '700', letterSpacing: 0, color: colors.text },
+  title: { ...typography.navigationTitle, color: colors.text },
 });

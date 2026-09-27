@@ -4,7 +4,7 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuthStore } from '../../src/auth-store';
 import { heartbeatDevice, listDeviceTasks } from '../../src/device-task-client';
-import { ActionButton, Surface, colors, spacing, typography } from '../../src/design';
+import { ActionButton, Surface, WorkspaceHeader, colors, spacing, typography } from '../../src/design';
 
 export default function DeviceTasksPage() {
   const router = useRouter();
@@ -12,7 +12,7 @@ export default function DeviceTasksPage() {
   const tasks = useQuery({ queryKey: ['device-tasks', token], queryFn: () => listDeviceTasks(token!), enabled: Boolean(token), staleTime: 0 });
   const heartbeat = useMutation({ mutationFn: () => heartbeatDevice(token!), onSuccess: () => tasks.refetch() });
   return <SafeAreaView style={styles.safe} edges={['top']}><ScrollView contentContainerStyle={styles.content}>
-    <View style={styles.row}><ActionButton label="返回" tone="quiet" onPress={() => router.back()} /><Text style={styles.title}>手机任务</Text></View>
+    <WorkspaceHeader title="手机任务" onBack={() => router.back()} />
     <Surface>
       <Text style={styles.heading}>可信设备心跳</Text>
       <Text style={styles.body}>向当前隔离环境报告这台手机在线；没有设备签名时不会发送。</Text>
@@ -36,7 +36,6 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   content: { padding: spacing.page, gap: spacing.md },
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md },
-  title: { ...typography.display, color: colors.text },
   heading: { ...typography.cardTitle, color: colors.text },
   body: { ...typography.body, color: colors.textSecondary, marginVertical: spacing.sm },
   note: { ...typography.caption, color: colors.textMuted, marginTop: spacing.sm },
