@@ -7,7 +7,7 @@ describe('resolveAuthDestination', () => {
   });
 
   it('sends unauthenticated users to login but permits all recovery routes', () => {
-    expect(resolveAuthDestination({ hydrated: true, onboardingRequired: false, segment: '(tabs)' })).toBe('/auth/login');
+    expect(resolveAuthDestination({ hydrated: true, onboardingRequired: false, segment: '(tabs)' })).toBe('/auth/welcome');
     expect(resolveAuthDestination({ hydrated: true, onboardingRequired: false, segment: 'auth' })).toBeNull();
   });
 

@@ -24,7 +24,7 @@ export function ActionButton({ label, onPress, tone = 'primary', disabled = fals
 }
 
 const buttonStyles = StyleSheet.create({
-  base: { minHeight: 48, paddingHorizontal: spacing.lg, paddingVertical: 12, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
+  base: { minHeight: 52, paddingHorizontal: spacing.lg, paddingVertical: 13, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center' },
   primary: { backgroundColor: colors.primary },
   quiet: { backgroundColor: colors.accentSoft },
   danger: { backgroundColor: colors.danger },

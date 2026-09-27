@@ -9,7 +9,7 @@ export function resolveAuthDestination({ hydrated, token, onboardingRequired, se
   const inAuth = segment === 'auth';
   const inOnboarding = segment === 'onboarding';
   if (!hydrated) return null;
-  if (!token && !inAuth) return '/auth/login';
+  if (!token && !inAuth) return '/auth/welcome';
   if (token && onboardingRequired && !inOnboarding) return '/onboarding';
   if (token && !onboardingRequired && (inAuth || inOnboarding)) return '/';
   return null;

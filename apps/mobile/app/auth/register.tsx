@@ -31,10 +31,14 @@ export default function RegisterPage() {
     },
   });
 
-  return <AuthPage title="创建你的装甲" subtitle="先建立账号；自动化始终由你授权、可查看、可停止。">
+  return <AuthPage title="创建账号" subtitle="完成基本资料后，即可进入首次使用引导。">
+    <Text style={styles.fieldLabel}>你的称呼</Text>
     <TextInput style={styles.input} accessibilityLabel="称呼" autoComplete="name" placeholder="怎么称呼你" placeholderTextColor={colors.textMuted} value={displayName} onChangeText={setDisplayName} maxLength={120} />
+    <Text style={styles.fieldLabel}>邮箱</Text>
     <TextInput style={styles.input} accessibilityLabel="邮箱" autoCapitalize="none" autoComplete="email" keyboardType="email-address" placeholder="邮箱" placeholderTextColor={colors.textMuted} value={email} onChangeText={setEmail} />
+    <Text style={styles.fieldLabel}>设置密码</Text>
     <TextInput style={styles.input} accessibilityLabel="密码" autoComplete="new-password" secureTextEntry placeholder="至少 10 位密码" placeholderTextColor={colors.textMuted} value={password} onChangeText={setPassword} />
+    <Text style={styles.fieldLabel}>确认密码</Text>
     <TextInput style={styles.input} accessibilityLabel="确认密码" autoComplete="new-password" secureTextEntry placeholder="再次输入密码" placeholderTextColor={colors.textMuted} value={confirmPassword} onChangeText={setConfirmPassword} />
     {password.length > 0 && !passwordValid ? <Text style={styles.error}>密码至少需要 10 位。</Text> : null}
     {confirmPassword.length > 0 && !passwordsMatch ? <Text style={styles.error}>两次输入的密码不一致。</Text> : null}
