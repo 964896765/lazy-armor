@@ -11,6 +11,7 @@ export default function TabsLayout() {
           <Tabs.Screen name="index" options={{ title: '首页' }} />
           <Tabs.Screen name="plans" options={{ title: '计划' }} />
           <Tabs.Screen name="private" options={{ href: null }} />
+          <Tabs.Screen name="services" options={{ href: null }} />
           <Tabs.Screen name="commerce" options={{ href: null }} />
           <Tabs.Screen name="messages" options={{ href: null }} />
           <Tabs.Screen name="search-ai" options={{ href: null }} />

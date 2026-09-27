@@ -3,8 +3,8 @@ import { BOTTOM_ACTIONS, isSelected, TOP_DESTINATIONS } from './v6-navigation';
 
 describe('V6 global navigation shell', () => {
   it('exposes exactly four top destinations beside the fixed avatar', () => {
-    expect(TOP_DESTINATIONS.map((item) => item.label)).toEqual(['首页', '计划', '私密', '商城']);
-    expect(TOP_DESTINATIONS.map((item) => item.path)).toEqual(['/', '/plans', '/private', '/commerce']);
+    expect(TOP_DESTINATIONS.map((item) => item.label)).toEqual(['首页', '计划', '私密', '服务']);
+    expect(TOP_DESTINATIONS.map((item) => item.path)).toEqual(['/', '/plans', '/private', '/services']);
   });
 
   it('exposes exactly three bottom global actions', () => {
@@ -22,7 +22,8 @@ describe('V6 global navigation shell', () => {
     expect(isSelected('/plans/some-id', '/plans')).toBe(true);
     expect(isSelected('/plans/some-id/lifecycle', '/plans')).toBe(true);
     expect(isSelected('/private', '/private')).toBe(true);
-    expect(isSelected('/commerce', '/commerce')).toBe(true);
+    expect(isSelected('/services', '/services')).toBe(true);
+    expect(isSelected('/services/active', '/services')).toBe(true);
   });
 
   it('does not select a destination on a lookalike prefix', () => {
