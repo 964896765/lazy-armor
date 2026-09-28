@@ -24,7 +24,8 @@ export function TopWorkspaceNav() {
           onPress={() => router.replace('/me' as never)}
           style={({ pressed }) => [styles.avatar, avatarSelected && styles.avatarSelected, pressed && styles.pressed]}
         >
-          <Ionicons name="person-outline" size={20} color={avatarSelected ? '#FFFFFF' : colors.primary} />
+          <Ionicons name={avatarSelected ? 'person' : 'person-outline'} size={20} color={avatarSelected ? '#FFFFFF' : colors.primary} />
+          {avatarSelected ? <Text style={styles.avatarLabel}>我</Text> : null}
         </Pressable>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.topDestinations}>
           {TOP_DESTINATIONS.map((item) => {
@@ -108,8 +109,9 @@ function BottomButton({ label, icon, badge, selected, onPress }: { label: string
 const styles = StyleSheet.create({
   topSafeArea: { backgroundColor: colors.background },
   topBar: { minHeight: 60, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.border },
-  avatar: { width: 44, height: 44, flexShrink: 0, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
-  avatarSelected: { backgroundColor: colors.primary, borderColor: colors.primary },
+  avatar: { width: 44, height: 44, flexShrink: 0, flexDirection: 'row', gap: 5, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
+  avatarSelected: { width: 78, backgroundColor: colors.primary, borderColor: colors.primary },
+  avatarLabel: { ...typography.caption, color: '#FFFFFF', fontWeight: '700' },
   topDestinations: { alignItems: 'center', gap: spacing.sm, paddingRight: spacing.lg },
   topPill: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: spacing.md, borderRadius: radius.pill, backgroundColor: '#F0EFEB' },
   topPillSelected: { backgroundColor: colors.primary },

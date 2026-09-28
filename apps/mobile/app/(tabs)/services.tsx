@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import type { ComponentProps } from 'react';
 import { useMemo, useState } from 'react';
 import { ActivityIndicator, Image, type ImageSourcePropType, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
@@ -55,7 +55,9 @@ const EDITORIAL_CARDS: readonly EditorialServiceCard[] = [
 
 export default function ServicesSpace() {
   const token = useAuthStore((store) => store.token);
-  const [section, setSection] = useState<ServiceSection>('recommended');
+  const params = useLocalSearchParams<{ section?: string }>();
+  const initialSection: ServiceSection = ['recommended', 'following', 'nearby', 'active', 'publish'].includes(params.section ?? '') ? params.section as ServiceSection : 'recommended';
+  const [section, setSection] = useState<ServiceSection>(initialSection);
   const [kind, setKind] = useState<ServiceKind>('all');
   const [query, setQuery] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
