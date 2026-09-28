@@ -17,6 +17,7 @@ const SECTIONS: readonly { key: ServiceSection; label: string }[] = [
   { key: 'following', label: '关注' },
   { key: 'nearby', label: '附近' },
   { key: 'active', label: '服务中' },
+  { key: 'publish', label: '发布' },
 ];
 
 const KINDS: readonly { key: ServiceKind; label: string }[] = [
@@ -101,16 +102,27 @@ export default function ServicesSpace() {
         <View accessibilityRole="tablist" style={styles.sectionTabs}>{SECTIONS.map((item) => <Pressable key={item.key} accessibilityRole="tab" accessibilityState={{ selected: section === item.key }} onPress={() => setSection(item.key)} style={[styles.sectionTab, section === item.key && styles.sectionTabSelected]}><Text style={[styles.sectionTabText, section === item.key && styles.sectionTabTextSelected]}>{item.label}</Text></Pressable>)}</View>
 
         {!token ? <Surface style={styles.stateSurface}><EmptyState icon="briefcase-outline" title="登录后查看服务" description="这里只展示属于你的真实计划、执行结果与可用服务状态。" action={{ label: '去登录', onPress: () => router.push('/auth/login' as never) }} /></Surface> : null}
-        {token && plans.isLoading ? <View style={styles.loading}><ActivityIndicator color={colors.primary} /><Text style={styles.muted}>正在读取服务端计划…</Text></View> : null}
-        {token && plans.isError ? <Surface style={styles.stateSurface}><EmptyState icon="cloud-offline-outline" title="暂时无法读取服务" description="不会用本地示例替代服务端结果。" action={{ label: '重试', onPress: () => plans.refetch() }} /></Surface> : null}
-        {token && !plans.isLoading && !plans.isError && cards.length > 0 ? <><Text style={styles.groupTitle}>你的服务计划</Text><View style={styles.grid}>{cards.map((card, index) => <ServiceCard key={card.id} card={card} image={EDITORIAL_CARDS[index % EDITORIAL_CARDS.length].image} />)}</View></> : null}
-        {token && !plans.isLoading && !plans.isError && editorialCards.length > 0 ? <><Text style={[styles.groupTitle, cards.length > 0 && styles.groupTitleSpaced]}>服务与方案</Text><View style={styles.grid}>{editorialCards.map((card) => <EditorialCard key={card.key} card={card} />)}</View></> : null}
-        {token && !plans.isLoading && !plans.isError && cards.length === 0 && editorialCards.length === 0 ? <SectionEmpty section={section} searching={Boolean(query.trim())} /> : null}
+        {token && section === 'publish' ? <PublishPanel /> : null}
+        {token && section !== 'publish' && plans.isLoading ? <View style={styles.loading}><ActivityIndicator color={colors.primary} /><Text style={styles.muted}>正在读取服务端计划…</Text></View> : null}
+        {token && section !== 'publish' && plans.isError ? <Surface style={styles.stateSurface}><EmptyState icon="cloud-offline-outline" title="暂时无法读取服务" description="不会用本地示例替代服务端结果。" action={{ label: '重试', onPress: () => plans.refetch() }} /></Surface> : null}
+        {token && section !== 'publish' && !plans.isLoading && !plans.isError && cards.length > 0 ? <><Text style={styles.groupTitle}>你的服务计划</Text><View style={styles.grid}>{cards.map((card, index) => <ServiceCard key={card.id} card={card} image={EDITORIAL_CARDS[index % EDITORIAL_CARDS.length].image} />)}</View></> : null}
+        {token && section !== 'publish' && !plans.isLoading && !plans.isError && editorialCards.length > 0 ? <><Text style={[styles.groupTitle, cards.length > 0 && styles.groupTitleSpaced]}>服务与方案</Text><View style={styles.grid}>{editorialCards.map((card) => <EditorialCard key={card.key} card={card} />)}</View></> : null}
+        {token && section !== 'publish' && !plans.isLoading && !plans.isError && cards.length === 0 && editorialCards.length === 0 ? <SectionEmpty section={section} searching={Boolean(query.trim())} /> : null}
 
         {token ? <View style={styles.boundary}><Ionicons name="shield-checkmark-outline" size={16} color={colors.primary} /><Text style={styles.boundaryText}>方案、状态和结果来自服务端真实投影。价格、商家、距离、下单和支付在可信接口接入前不会展示或推断。</Text></View> : null}
       </ScrollView>
     </SafeAreaView>
   );
+}
+
+function PublishPanel() {
+  const items: readonly { icon: IconName; title: string; detail: string }[] = [
+    { icon: 'construct-outline', title: '发布服务', detail: '提供可被他人预约的服务' },
+    { icon: 'megaphone-outline', title: '发布需求', detail: '说明需要协助完成的事情' },
+    { icon: 'cube-outline', title: '发布产品', detail: '发布有真实履约能力的产品' },
+    { icon: 'layers-outline', title: '发布方案', detail: '分享可加入计划的方案' },
+  ];
+  return <View><Text style={styles.groupTitle}>用户发布</Text><View style={styles.publishGrid}>{items.map((item) => <Pressable key={item.title} onPress={() => router.push('/todo' as never)} style={({ pressed }) => [styles.publishItem, pressed && styles.pressed]}><View style={styles.publishIcon}><Ionicons name={item.icon} size={24} color={colors.primary} /></View><View style={styles.publishCopy}><Text style={styles.publishTitle}>{item.title}</Text><Text style={styles.publishDetail}>{item.detail}</Text></View><Ionicons name="chevron-forward" size={17} color={colors.textMuted} /></Pressable>)}</View><View style={styles.publishNote}><Ionicons name="information-circle-outline" size={17} color={colors.primary} /><Text style={styles.boundaryText}>发布接口尚未接入，入口会进入待办留存需求，不会伪造已发布或已审核状态。</Text></View></View>;
 }
 
 function ServiceCard({ card, image }: { card: PresentedServicePlan; image: ImageSourcePropType }) {
@@ -147,6 +159,7 @@ function SectionEmpty({ section, searching }: { section: ServiceSection; searchi
   if (section === 'following') return <Surface style={styles.stateSurface}><EmptyState icon="heart-outline" title="还没有关注的服务" description="服务关注能力尚未接入服务端；不会在本地伪造关注状态。" /></Surface>;
   if (section === 'nearby') return <Surface style={styles.stateSurface}><EmptyState icon="location-outline" title="附近服务尚未接入" description="需要经过授权的位置来源和真实服务商接口后才能展示距离与可预约状态。" action={{ label: '查看连接', onPress: () => router.push('/connections' as never) }} /></Surface>;
   if (section === 'active') return <Surface style={styles.stateSurface}><EmptyState icon="time-outline" title="当前没有服务中的计划" description="服务端没有返回进行中、已暂停或等待处理的计划。" action={{ label: '查看全部计划', onPress: () => router.push('/plans' as never) }} /></Surface>;
+  if (section === 'publish') return null;
   return <Surface style={styles.stateSurface}><EmptyState icon="sparkles-outline" title="还没有可展示的服务方案" description="先从真实场景创建计划，服务页会同步展示服务端状态。" action={{ label: '选择场景', onPress: () => router.push('/' as never) }} /></Surface>;
 }
 
@@ -201,6 +214,11 @@ const styles = StyleSheet.create({
   cardAction: { minHeight: 34, flexDirection: 'row', alignItems: 'center', gap: 1, paddingHorizontal: 9, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.border },
   cardActionText: { color: colors.text, fontSize: 11, lineHeight: 16, fontWeight: '700' },
   roundAction: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center', borderRadius: 17, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface },
+  publishGrid: { overflow: 'hidden', borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, backgroundColor: colors.surface },
+  publishItem: { minHeight: 72, flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.md, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
+  publishIcon: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center', borderRadius: 15, backgroundColor: colors.accentSoft },
+  publishCopy: { flex: 1 }, publishTitle: { ...typography.bodyStrong, color: colors.text }, publishDetail: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
+  publishNote: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, marginTop: spacing.md, padding: spacing.md, borderRadius: radius.md, backgroundColor: colors.successSoft },
   boundary: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, marginTop: spacing.xl, padding: spacing.md, borderRadius: radius.md, backgroundColor: colors.successSoft },
   boundaryText: { ...typography.caption, color: colors.textSecondary, lineHeight: 19, flex: 1 },
   pressed: { opacity: 0.72 },

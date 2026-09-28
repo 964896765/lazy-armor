@@ -9,6 +9,7 @@ import { useAuthStore } from '../../src/auth-store';
 import { ActionButton, AnimatedEntry, EmptyState, MessageRow, Surface, WorkspaceHeader, WorkspaceSection, workspaceColors as colors, radius, spacing, typography } from '../../src/design';
 import { isValidScenarioKey, planVisualIcon } from '../../src/plan-presenter';
 import { clarificationQuestion, presentAgentPlanProposal } from '../../src/privacy-presenter';
+import { GoalResourceSelector } from '../../src/goal-resource-selector';
 
 interface PlanTemplateSummary {
   key: string;
@@ -80,6 +81,8 @@ export default function Create() {
       if (!popularTemplates.some((item) => item.key === template.key)) popularTemplates.push(template);
     }
   }
+
+  if (scenarioKey) return <GoalResourceSelector scenarioKey={scenarioKey} />;
 
   return (
     <SafeAreaView style={styles.safeArea} edges={[]}>

@@ -1,4 +1,4 @@
-export type ServiceSection = 'recommended' | 'following' | 'nearby' | 'active';
+export type ServiceSection = 'recommended' | 'following' | 'nearby' | 'active' | 'publish';
 export type ServiceKind = 'all' | 'plan' | 'service' | 'supply';
 
 export interface ServicePlanProjection {
@@ -51,7 +51,7 @@ export function filterServicePlans(
   query: string,
   kind: ServiceKind,
 ): PresentedServicePlan[] {
-  if (section === 'following' || section === 'nearby') return [];
+  if (section === 'following' || section === 'nearby' || section === 'publish') return [];
   const normalized = query.trim().toLocaleLowerCase('zh-CN');
   return plans
     .filter((plan) => section !== 'active' || isActive(plan))

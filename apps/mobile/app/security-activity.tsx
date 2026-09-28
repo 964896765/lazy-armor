@@ -18,7 +18,7 @@ export default function SecurityActivityPage() {
   const activity = useQuery({ queryKey: ['security-activity', token], queryFn: () => api<SecurityActivity[]>('/security-activity', token), enabled: Boolean(token) });
   return (
     <ScrollView style={local.page} contentContainerStyle={local.content}>
-      <ShellPage title="安全记录" subtitle="这里只展示对你有意义的重要安全事实，不直接暴露底层审计 JSON。">
+      <ShellPage title="登录记录" subtitle="这里只展示登录与账号保护相关的重要事件，不直接暴露底层审计数据。">
         {activity.isLoading && <ActivityIndicator />}
         {activity.data?.map((item) => (
           <View key={item.id} style={styles.card}>

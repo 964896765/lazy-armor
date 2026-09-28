@@ -7,7 +7,7 @@ export interface V6Destination {
 export const TOP_DESTINATIONS: readonly V6Destination[] = [
   { label: '首页', path: '/', icon: 'home-outline' },
   { label: '计划', path: '/plans', icon: 'layers-outline' },
-  { label: '私密', path: '/private', icon: 'lock-closed-outline' },
+  { label: '资源', path: '/private', icon: 'cube-outline' },
   { label: '服务', path: '/services', icon: 'briefcase-outline' },
 ];
 

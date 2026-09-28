@@ -3,7 +3,7 @@ import { BOTTOM_ACTIONS, isSelected, TOP_DESTINATIONS } from './v6-navigation';
 
 describe('V6 global navigation shell', () => {
   it('exposes exactly four top destinations beside the fixed avatar', () => {
-    expect(TOP_DESTINATIONS.map((item) => item.label)).toEqual(['首页', '计划', '私密', '服务']);
+    expect(TOP_DESTINATIONS.map((item) => item.label)).toEqual(['首页', '计划', '资源', '服务']);
     expect(TOP_DESTINATIONS.map((item) => item.path)).toEqual(['/', '/plans', '/private', '/services']);
   });
 

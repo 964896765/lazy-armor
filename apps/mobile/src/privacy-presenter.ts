@@ -1,22 +1,3 @@
-export interface PrivacyCenterSection {
-  key: string;
-  title: string;
-  description: string;
-  icon: string;
-  route: string;
-}
-
-export function privacyCenterSections(): PrivacyCenterSection[] {
-  return [
-    { key: 'data', title: '我的数据', description: '按财务、生活、设备等领域查看装甲掌握的事实与来源', icon: 'server-outline', route: '/privacy-center/data' },
-    { key: 'connections', title: '连接与授权', description: '管理在线服务、手机应用与设备的授权范围', icon: 'link-outline', route: '/connections' },
-    { key: 'permissions', title: '设备权限', description: '通知、分享、屏幕读取等系统权限的使用方式', icon: 'key-outline', route: '/privacy-center/permissions' },
-    { key: 'retention', title: '数据保留', description: '哪些数据可以删除，哪些必须保留用于审计', icon: 'archive-outline', route: '/data-management' },
-    { key: 'ai', title: 'AI 与模型', description: 'AI 能做什么、不能做什么，以及视觉读取策略', icon: 'sparkles-outline', route: '/privacy-center/ai' },
-    { key: 'security', title: '安全记录', description: '查看确认、授权与重要操作记录', icon: 'shield-checkmark-outline', route: '/security-activity' },
-  ];
-}
-
 export type ConsumerDataDomain = '财务' | '生活' | '快递' | '设备' | '工作' | '学习' | '车辆' | '家庭' | '其他';
 
 const DOMAIN_BY_RESOURCE: Record<string, ConsumerDataDomain> = {

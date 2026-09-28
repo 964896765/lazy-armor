@@ -75,6 +75,7 @@ export default function DomainScenarioPage() {
         <Text numberOfLines={2} style={styles.reason}>{evidence.product.reason}</Text>
         {!destination ? <Text style={styles.nextText}>{evidence.product.nextAction}</Text> : null}
         {destination ? <Pressable accessibilityRole="button" onPress={() => router.push(destination as never)} style={styles.primaryAction}><Text style={styles.primaryActionText}>{evidence.product.nextAction}</Text><Ionicons name="arrow-forward" size={17} color="#FFFFFF" /></Pressable> : null}
+        <Pressable accessibilityRole="button" onPress={() => router.push(`/create?scenarioKey=${encodeURIComponent(scenarioKey)}` as never)} style={styles.createAction}><Ionicons name="add" size={18} color={colors.primary} /><Text style={styles.createActionText}>按此场景新建计划</Text><Ionicons name="chevron-forward" size={17} color={colors.primary} /></Pressable>
       </View>
       <RuntimeSection title="所需事实"><RuntimeCard>
         <View style={styles.metricRow}><View style={styles.metric}><Text style={styles.metricValue}>{evidence.availableFacts.length}</Text><Text style={styles.metricLabel}>已具备事实类型</Text></View><View style={styles.metric}><Text style={styles.metricValue}>{evidence.missingFacts.length}</Text><Text style={styles.metricLabel}>待补充事实类型</Text></View></View>
@@ -117,6 +118,7 @@ const styles = StyleSheet.create({
   reason: { ...typography.caption, color: colors.textSecondary, lineHeight: 18, marginTop: spacing.xs },
   nextText: { ...typography.bodyStrong, color: colors.text, marginTop: spacing.sm },
   primaryAction: { marginTop: spacing.md, minHeight: 44, borderRadius: radius.md, backgroundColor: colors.primary, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, paddingHorizontal: spacing.md }, primaryActionText: { ...typography.bodyStrong, color: '#FFFFFF' },
+  createAction: { marginTop: spacing.sm, minHeight: 44, borderRadius: radius.md, backgroundColor: colors.accentSoft, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, paddingHorizontal: spacing.md }, createActionText: { ...typography.bodyStrong, color: colors.primary, flex: 1, textAlign: 'center' },
   metricRow: { flexDirection: 'row' }, metric: { flex: 1 }, metricValue: { ...typography.section, color: colors.primary }, metricLabel: { ...typography.caption, color: colors.textSecondary },
   reasonLine: { ...typography.caption, color: colors.textSecondary, lineHeight: 18, marginTop: spacing.sm },
   strategyRow: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.border }, strategyName: { ...typography.bodyStrong, color: colors.text, flex: 1 }, defaultLabel: { ...typography.caption, color: colors.primary },

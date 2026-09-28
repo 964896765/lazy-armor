@@ -9,23 +9,12 @@ import {
   disconnectSteps,
   presentAgentPlanProposal,
   presentTruthDataRow,
-  privacyCenterSections,
   truthDeletionBoundaryCopy,
   truthDeletionBoundaryLabel,
   visionPrivacyCopy,
 } from './privacy-presenter';
 
 describe('Privacy presenter', () => {
-  it('defines the six privacy center sections without exposing internal systems', () => {
-    const sections = privacyCenterSections();
-    expect(sections.map((section) => section.title)).toEqual(['我的数据', '连接与授权', '设备权限', '数据保留', 'AI 与模型', '安全记录']);
-    const joined = sections.map((section) => `${section.title} ${section.description}`).join(' ');
-    expect(joined).not.toContain('Truth Store');
-    expect(joined).not.toContain('MCP');
-    expect(joined).not.toContain('Agent Planner');
-    expect(joined).not.toContain('Capability Resolver');
-  });
-
   it('maps truth resources to consumer domains, never database tables', () => {
     expect(consumerDataDomain('Bill')).toBe('财务');
     expect(consumerDataDomain('Shipment')).toBe('快递');

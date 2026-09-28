@@ -11,7 +11,7 @@ type IconName = ComponentProps<typeof Ionicons>['name'];
 const SETUP_ITEMS: readonly { step: string; icon: IconName; tone: 'green' | 'orange'; title: string; detail: string; route: string }[] = [
   { step: '1 / 3', icon: 'notifications-outline', tone: 'green', title: '通知与提醒', detail: '接收计划提醒与重要结果', route: '/notification-settings' },
   { step: '2 / 3', icon: 'server-outline', tone: 'orange', title: '连接数据来源', detail: '让账目、快递、设备等信息自动进入', route: '/connections' },
-  { step: '3 / 3', icon: 'shield-checkmark-outline', tone: 'green', title: '隐私与保护', detail: '搜索隔离、AI 读取边界与授权控制', route: '/privacy-center' },
+  { step: '3 / 3', icon: 'shield-checkmark-outline', tone: 'green', title: '安全与保护', detail: '登录验证、可信设备与访问记录', route: '/security-center' },
 ];
 
 export default function OnboardingPage() {

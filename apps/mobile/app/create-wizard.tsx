@@ -56,7 +56,7 @@ interface ChooseResult {
 export default function CreateWizard() {
   const token = useAuthStore((store) => store.token);
   const client = useQueryClient();
-  const params = useLocalSearchParams<{ scenarioKey?: string; draftId?: string }>();
+  const params = useLocalSearchParams<{ scenarioKey?: string; draftId?: string; capabilities?: string }>();
   const scenarioKeyParam = isValidScenarioKey(params.scenarioKey) ? params.scenarioKey : null;
   const draftIdParam = typeof params.draftId === 'string' && params.draftId.trim() ? params.draftId : null;
 
@@ -225,6 +225,7 @@ export default function CreateWizard() {
       error={contract.isError}
       onRetry={() => contract.refetch()}
       goal={goal}
+      selectedCapabilities={typeof params.capabilities === 'string' ? params.capabilities : ''}
       onNext={(nextGoal) => { setGoal(nextGoal); setStage(2); }}
     /> : null}
     {stage === 2 ? <StageSubject
@@ -286,12 +287,13 @@ function WizardProgress({ stage }: { stage: CreationDraftStage }) {
   return <View style={styles.steps}>{([1, 2, 3, 4, 5] as const).map((step) => <View key={step} style={styles.stepItem}><View style={styles.stepTop}><View style={[styles.stepCircle, step <= stage && styles.stepCircleActive]}><Text style={[styles.stepNumber, step <= stage && styles.stepNumberActive]}>{step}</Text></View>{step < 5 ? <View style={[styles.stepLine, step < stage && styles.stepLineActive]} /> : null}</View><Text style={[styles.stepLabel, step === stage && styles.stepLabelActive]}>{creationWizardStageLabel(step)}</Text></View>)}</View>;
 }
 
-function StageGoal({ contract, loading, error, onRetry, goal, onNext }: {
+function StageGoal({ contract, loading, error, onRetry, goal, selectedCapabilities, onNext }: {
   contract: ScenarioCreationContext | undefined;
   loading: boolean;
   error: boolean;
   onRetry: () => void;
   goal: ScenarioGoalSpec | null;
+  selectedCapabilities: string;
   onNext: (goal: ScenarioGoalSpec) => void;
 }) {
   const [intent, setIntent] = useState(goal?.intent ?? '');
@@ -301,6 +303,7 @@ function StageGoal({ contract, loading, error, onRetry, goal, onNext }: {
   return <Surface style={styles.stageSurface}>
     <Text style={styles.stageTitle}>第 1 步 · 选择目标</Text>
     <Text style={styles.stageHint}>场景与目标来自服务端场景合同；下面只会列出服务端支持的目标意图。</Text>
+    {selectedCapabilities ? <View style={styles.catalogSelection}><Ionicons name="checkmark-circle-outline" size={18} color={colors.primary} /><Text style={styles.catalogSelectionText}>目标能力目录：{selectedCapabilities}。仍需映射到服务端支持的目标意图后才能创建。</Text></View> : null}
     {loading ? <LoadingState text="正在读取场景合同…" /> : null}
     {error ? <InlineError title="场景合同暂时无法读取" detail="无法继续，请稍后重试。" action="重试" onPress={onRetry} /> : null}
     {contract && !loading && !error ? <>
@@ -474,6 +477,8 @@ const styles = StyleSheet.create({
   stepLabelActive: { color: colors.primary, fontWeight: '800' },
   resumeNotice: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.md, padding: spacing.md, borderRadius: radius.md, backgroundColor: '#F7ECD9' },
   resumeNoticeText: { ...typography.caption, color: '#96622B', flex: 1 },
+  catalogSelection: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, marginBottom: spacing.md, padding: spacing.md, borderRadius: radius.md, backgroundColor: colors.successSoft },
+  catalogSelectionText: { ...typography.caption, color: colors.textSecondary, lineHeight: 19, flex: 1 },
   stageSurface: { marginTop: spacing.lg },
   stageTitle: { ...typography.section, color: colors.text },
   stageHint: { ...typography.caption, color: colors.textSecondary, marginTop: spacing.xs, marginBottom: spacing.md },

@@ -4,7 +4,7 @@ import { Alert, ActivityIndicator, ScrollView, StyleSheet, Text, View } from 're
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/api';
 import { useAuthStore } from '../../src/auth-store';
-import { ActionButton, EmptyState, Surface, colors, radius, spacing, typography } from '../../src/design';
+import { ActionButton, EmptyState, Surface, WorkspaceHeader, colors, radius, spacing, typography } from '../../src/design';
 
 interface TrustedDevice {
   id: string;
@@ -38,7 +38,7 @@ export default function TrustedDevicesPage() {
     ]);
   }
   return <SafeAreaView style={styles.safeArea} edges={['top']}><ScrollView style={styles.page} contentContainerStyle={styles.content}>
-    <View style={styles.header}><Text style={styles.title}>可信设备</Text><Text style={styles.subtitle}>设备使用本机安全密钥完成证明。我们只显示校验摘要，不读取设备序列号或其他硬件标识。</Text></View>
+    <WorkspaceHeader title="可信设备" onBack={() => router.back()} /><Text style={styles.subtitle}>设备使用本机安全密钥完成证明。我们只显示校验摘要，不读取设备序列号或其他硬件标识。</Text>
     {!token ? <Surface><EmptyState icon="log-in-outline" title="请先登录" description="登录后才能管理与你账号绑定的可信设备。" action={{ label: '去登录', onPress: () => router.push('/auth/login' as never) }} /></Surface> : null}
     {token && devices.isLoading ? <ActivityIndicator color={colors.primary} /> : null}
     {token && devices.isError ? <Surface><EmptyState icon="alert-circle-outline" title="暂时无法读取设备" description="没有修改任何设备或连接。请稍后再试。" action={{ label: '返回连接', onPress: () => router.replace('/connections') }} /></Surface> : null}
@@ -58,7 +58,7 @@ function formatTime(value: string) { const parsed = new Date(value); return Numb
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors.background }, page: { flex: 1, backgroundColor: colors.background }, content: { padding: spacing.page, paddingBottom: 72 },
-  header: { marginBottom: spacing.xxl }, title: { ...typography.display, color: colors.text }, subtitle: { ...typography.body, color: colors.textSecondary, marginTop: spacing.sm },
+  subtitle: { ...typography.body, color: colors.textSecondary, marginTop: spacing.xs, marginBottom: spacing.xxl },
   list: { gap: spacing.md }, row: { flexDirection: 'row', justifyContent: 'space-between' }, copy: { gap: 2 }, name: { ...typography.cardTitle, color: colors.text }, status: { ...typography.caption }, active: { color: colors.success }, revoked: { color: colors.textMuted },
   detail: { ...typography.caption, color: colors.textSecondary, marginTop: spacing.sm }, action: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, alignItems: 'flex-start', marginTop: spacing.lg },
 });

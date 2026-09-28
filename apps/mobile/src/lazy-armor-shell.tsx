@@ -157,7 +157,7 @@ function AccountMenu({ visible, onClose, selectTab }: { visible: boolean; onClos
           <MenuItem icon="link-outline" label="连接中心" onPress={() => go(() => selectTab('connections'))} />
           <MenuItem icon="time-outline" label="记录" onPress={() => go(() => selectTab('records'))} />
           <MenuItem icon="shield-checkmark-outline" label="安全中心" onPress={() => go(() => router.push('/security-center' as never))} />
-          <MenuItem icon="lock-closed-outline" label="隐私中心" onPress={() => go(() => router.push('/privacy-center' as never))} />
+          <MenuItem icon="cube-outline" label="资源中心" onPress={() => go(() => router.push('/private' as never))} />
         </ScrollView>
       </View>
     </View>

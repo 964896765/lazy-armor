@@ -38,7 +38,7 @@ export default function RootLayout() {
           <Stack.Screen name="approvals/[id]" options={{ headerShown: false }} />
           <Stack.Screen name="attention" options={{ headerShown: false }} />
           <Stack.Screen name="plan-center" options={{ headerShown: false }} />
-          <Stack.Screen name="connections/trusted-devices" options={{ title: '可信设备' }} />
+          <Stack.Screen name="connections/trusted-devices" options={{ headerShown: false }} />
           <Stack.Screen name="connections/notification-sources" options={{ title: '通知来源' }} />
           <Stack.Screen name="truth-store" options={{ title: '已验证事实' }} />
           <Stack.Screen name="domains/[domain]" options={{ headerShown: false }} />
@@ -56,6 +56,7 @@ export default function RootLayout() {
           <Stack.Screen name="privacy-center/data" options={{ headerShown: false }} />
           <Stack.Screen name="privacy-center/permissions" options={{ headerShown: false }} />
           <Stack.Screen name="profile" options={{ headerShown: false }} />
+          <Stack.Screen name="change-password" options={{ headerShown: false }} />
           <Stack.Screen name="oauth/callback" options={{ title: '连接服务' }} />
           <Stack.Screen name="file-import" options={{ title: '导入账单文件' }} />
           <Stack.Screen name="executions/[id]" options={{ headerShown: false }} />
