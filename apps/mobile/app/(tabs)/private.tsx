@@ -18,6 +18,7 @@ const DATA_ITEMS: readonly ResourceItem[] = [
   { icon: 'heart-outline', title: '健康数据', detail: '仅在明确授权后读取', route: '/privacy-center/data', tone: 'red' },
   { icon: 'folder-outline', title: '文件与图片', detail: '用于保存、导入与归档', route: '/privacy-center/data', tone: 'orange' },
   { icon: 'library-outline', title: '知识库', detail: '规则与参考资料', route: '/privacy-center/data', tone: 'purple' },
+  { icon: 'lock-closed-outline', title: '私密空间', detail: '敏感资料独立保护，当前为受限入口', route: '/private-space', tone: 'purple', status: '受限' },
 ];
 const EXECUTION_ITEMS: readonly ResourceItem[] = [
   { icon: 'notifications-outline', title: '通知提醒', detail: '按系统权限显示可用状态', route: '/notification-settings', tone: 'orange' },

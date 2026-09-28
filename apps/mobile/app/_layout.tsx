@@ -76,6 +76,8 @@ export default function RootLayout() {
           <Stack.Screen name="connections/app-read-session" options={{ headerShown: false }} />
           <Stack.Screen name="connections/device-tasks/[id]" options={{ headerShown: false }} />
           <Stack.Screen name="create-wizard" options={{ headerShown: false }} />
+          <Stack.Screen name="feature-placeholder" options={{ headerShown: false }} />
+          <Stack.Screen name="private-space" options={{ headerShown: false }} />
         </Stack>
       </AuthGate>
     </QueryClientProvider>

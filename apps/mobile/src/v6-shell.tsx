@@ -80,13 +80,13 @@ export function GlobalActionBar() {
         <BottomButton label="消息" icon="chatbubble-outline" badge={unread.data?.count ?? 0} selected={pathname === '/messages'} onPress={() => router.replace('/messages' as never)} />
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="随便问点什么"
+          accessibilityLabel="问一问"
           accessibilityState={{ selected: pathname === '/search-ai' }}
           onPress={() => router.replace('/search-ai' as never)}
           style={({ pressed }) => [styles.searchEntry, pathname === '/search-ai' && styles.searchEntrySelected, pressed && styles.pressed]}
         >
           <Ionicons name="color-wand-outline" size={19} color={colors.text} />
-          <Text numberOfLines={1} style={styles.searchEntryText}>随便问点什么</Text>
+          <Text numberOfLines={1} style={styles.searchEntryText}>问一问</Text>
         </Pressable>
         <BottomButton label="待办" icon="create-outline" badge={todoCount} selected={pathname === '/todo'} onPress={() => router.replace('/todo' as never)} />
       </View>

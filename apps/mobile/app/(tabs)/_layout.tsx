@@ -1,10 +1,11 @@
 import { Tabs, usePathname } from 'expo-router';
 import { StyleSheet, View } from 'react-native';
 import { GlobalActionBar, TopWorkspaceNav } from '../../src/v6-shell';
+import { isSecondaryWorkspacePath } from '../../src/information-architecture';
 
 export default function TabsLayout() {
   const pathname = usePathname();
-  const secondaryPage = pathname === '/create';
+  const secondaryPage = isSecondaryWorkspacePath(pathname);
   return (
     <View style={styles.container}>
       {!secondaryPage ? <TopWorkspaceNav /> : null}

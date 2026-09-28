@@ -8,7 +8,7 @@ describe('V6 global navigation shell', () => {
   });
 
   it('exposes exactly three bottom global actions', () => {
-    expect(BOTTOM_ACTIONS.map((item) => item.label)).toEqual(['消息', '随便问点什么', '待办']);
+    expect(BOTTOM_ACTIONS.map((item) => item.label)).toEqual(['消息', '问一问', '待办']);
     expect(BOTTOM_ACTIONS.map((item) => item.path)).toEqual(['/messages', '/search-ai', '/todo']);
   });
 

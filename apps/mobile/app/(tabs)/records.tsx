@@ -41,11 +41,12 @@ export default function Records() {
   return (
     <SafeAreaView style={styles.safeArea} edges={[]}>
       <ScrollView style={styles.page} contentContainerStyle={styles.content} refreshControl={token ? <RefreshControl tintColor={colors.primary} refreshing={executions.isFetching} onRefresh={() => executions.refetch()} /> : undefined}>
-        <WorkspaceHeader title="最近做了什么" subtitle="计划触发、审批、执行和结果都记录在这里" />
+        <WorkspaceHeader title="完整记录" onBack={() => router.back()} />
+        <Text style={styles.intro}>统一查看计划的执行、结果、资源、异常与人工操作记录。</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters}>{FILTERS.map((item) => <Pressable key={item.key} onPress={() => setFilter(item.key)} style={[styles.filter, filter === item.key && styles.filterSelected]}><Ionicons name={item.icon} size={14} color={filter === item.key ? colors.primary : item.key === 'failed' ? colors.danger : item.key === 'exception' || item.key === 'outcome' ? colors.warning : colors.textSecondary} /><Text style={[styles.filterText, filter === item.key && styles.filterTextSelected]}>{item.label}</Text></Pressable>)}</ScrollView>
         {filter === 'outcome' ? <Pressable accessibilityRole="button" onPress={() => router.push('/reconciliation' as never)} style={styles.reconciliationLink}><Text style={styles.reconciliationLinkText}>打开结果回查中心</Text><Ionicons name="arrow-forward" size={15} color={colors.primary} /></Pressable> : null}
 
-        {!token ? <Surface style={styles.stateSurface}><EmptyState icon="time-outline" title="登录后查看完成记录" action={{ label: '去登录', onPress: () => router.push('/connections') }} /></Surface> : null}
+        {!token ? <Surface style={styles.stateSurface}><EmptyState icon="time-outline" title="登录后查看计划记录" action={{ label: '去登录', onPress: () => router.push('/auth/login' as never) }} /></Surface> : null}
         {state === 'loading' ? <View style={styles.loading}><ActivityIndicator color={colors.primary} /><Text style={styles.loadingText}>正在同步记录…</Text></View> : null}
         {state === 'error' ? <Surface style={styles.stateSurface}><EmptyState icon="cloud-offline-outline" title="记录暂时没有加载出来" description="请稍后再试。" action={{ label: '重新加载', onPress: () => executions.refetch() }} /></Surface> : null}
         {state === 'empty' ? (
@@ -111,6 +112,7 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors.background },
   page: { flex: 1, backgroundColor: colors.background },
   content: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: 80 },
+  intro: { ...typography.body, color: colors.textSecondary, lineHeight: 22, marginTop: spacing.xs },
   reconciliationLink: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: spacing.sm, paddingHorizontal: spacing.md, paddingVertical: 8, borderRadius: radius.pill, backgroundColor: colors.accentSoft },
   reconciliationLinkText: { ...typography.label, color: colors.primary },
   filters: { minHeight: 42, alignItems: 'center', gap: spacing.xs, marginTop: spacing.sm, padding: 3, paddingRight: spacing.md, borderRadius: radius.md, backgroundColor: '#F3F6F8' },
