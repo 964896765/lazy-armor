@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import { Text, TextInput, View } from 'react-native';
 import { api } from '../../src/api';
 import { useAuthStore } from '../../src/auth-store';
-import { ActionButton, colors } from '../../src/design';
+import { ActionButton, workspaceColors as colors } from '../../src/design';
 import type { SessionTokens } from '../../src/secure-token-store';
 import { AuthPage, styles } from './login';
 

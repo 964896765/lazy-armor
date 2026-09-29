@@ -85,7 +85,6 @@ export default function ServicesSpace() {
         refreshControl={token ? <RefreshControl tintColor={colors.primary} refreshing={plans.isFetching} onRefresh={() => plans.refetch()} /> : undefined}
       >
         <View style={styles.headingRow}>
-          <Text style={styles.heading}>服务</Text>
           <View style={styles.headingActions}>
             <Pressable accessibilityRole="button" accessibilityLabel="搜索服务" onPress={() => setSearchOpen((value) => !value)} style={({ pressed }) => [styles.headingAction, pressed && styles.pressed]}><Ionicons name="search-outline" size={20} color={colors.text} /><Text style={styles.headingActionText}>搜索</Text></Pressable>
             <View style={styles.headingDivider} />
@@ -169,7 +168,7 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors.background },
   page: { flex: 1, backgroundColor: colors.background },
   content: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.xxl },
-  headingRow: { minHeight: 46, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  headingRow: { minHeight: 46, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end' },
   heading: { ...typography.pageTitle, color: colors.text },
   headingActions: { flexDirection: 'row', alignItems: 'center' },
   headingAction: { minHeight: 42, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: spacing.sm },
@@ -195,17 +194,17 @@ const styles = StyleSheet.create({
   stateSurface: { marginTop: spacing.sm },
   groupTitle: { ...typography.section, color: colors.text, fontSize: 17, lineHeight: 23, marginBottom: spacing.sm },
   groupTitleSpaced: { marginTop: spacing.xl },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start', justifyContent: 'space-between', rowGap: spacing.md },
-  card: { width: '48.4%', overflow: 'hidden', borderRadius: radius.lg, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, shadowColor: '#625A50', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.08, shadowRadius: 7, elevation: 2 },
+  grid: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
+  card: { width: '100%', minHeight: 110, flexDirection: 'row', overflow: 'hidden', backgroundColor: colors.surface, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
   compactCard: { minHeight: 0 },
   cardPressed: { opacity: 0.75, transform: [{ scale: 0.99 }] },
-  cardVisual: { height: 112, backgroundColor: '#DEDCD6' },
-  compactVisual: { height: 82 },
+  cardVisual: { width: 112, height: 92, marginVertical: 9, borderRadius: 10, overflow: 'hidden', backgroundColor: '#DEDCD6' },
+  compactVisual: { width: 112, height: 82 },
   cardImage: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, width: '100%', height: '100%' },
   cardBadge: { position: 'absolute', top: spacing.sm, left: spacing.sm, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 9, paddingVertical: 6, borderRadius: radius.md, backgroundColor: 'rgba(25,27,26,0.82)' },
   cardBadgeText: { color: '#FFFFFF', fontSize: 12, lineHeight: 17, fontWeight: '800' },
-  cardBody: { minHeight: 174, padding: spacing.md },
-  compactBody: { minHeight: 132 },
+  cardBody: { flex: 1, minHeight: 108, padding: spacing.md },
+  compactBody: { minHeight: 108 },
   cardTitle: { ...typography.bodyStrong, color: colors.text },
   cardSummary: { ...typography.caption, color: colors.textSecondary, lineHeight: 18, marginTop: 4, minHeight: 36 },
   tags: { minHeight: 24, flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: spacing.xs },

@@ -1,15 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { BOTTOM_ACTIONS, isSelected, TOP_DESTINATIONS } from './v6-navigation';
+import { isSelected, PRIMARY_DESTINATIONS, UTILITY_DESTINATIONS } from './v6-navigation';
 
 describe('V6 global navigation shell', () => {
-  it('exposes exactly four top destinations beside the fixed avatar', () => {
-    expect(TOP_DESTINATIONS.map((item) => item.label)).toEqual(['首页', '计划', '资源', '服务']);
-    expect(TOP_DESTINATIONS.map((item) => item.path)).toEqual(['/', '/plans', '/private', '/services']);
+  it('exposes exactly five primary bottom destinations', () => {
+    expect(PRIMARY_DESTINATIONS.map((item) => item.label)).toEqual(['首页', '计划', '问一问', '资源', '服务']);
+    expect(PRIMARY_DESTINATIONS.map((item) => item.path)).toEqual(['/', '/plans', '/search-ai', '/private', '/services']);
   });
 
-  it('exposes exactly three bottom global actions', () => {
-    expect(BOTTOM_ACTIONS.map((item) => item.label)).toEqual(['消息', '问一问', '待办']);
-    expect(BOTTOM_ACTIONS.map((item) => item.path)).toEqual(['/messages', '/search-ai', '/todo']);
+  it('keeps messages and todo as header utilities', () => {
+    expect(UTILITY_DESTINATIONS.map((item) => item.label)).toEqual(['消息', '待办']);
+    expect(UTILITY_DESTINATIONS.map((item) => item.path)).toEqual(['/messages', '/todo']);
   });
 
   it('selects the home tab only on the exact root path', () => {
@@ -33,7 +33,7 @@ describe('V6 global navigation shell', () => {
 
   it('keeps the four UiSpace mapping untouched by navigation', () => {
     // 导航只是展示层；19 领域与四大空间的映射已在 ui-space 中单一维护。
-    expect(TOP_DESTINATIONS).toHaveLength(4);
-    expect(BOTTOM_ACTIONS).toHaveLength(3);
+    expect(PRIMARY_DESTINATIONS).toHaveLength(5);
+    expect(UTILITY_DESTINATIONS).toHaveLength(2);
   });
 });

@@ -56,14 +56,14 @@ function scenarioIcon(label: string, fallback: IconName): IconName {
 export default function HomePage() {
   const token = useAuthStore((store) => store.token);
   const [space, setSpace] = useState<HomeSpaceKey>('life');
-  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set(homeDomainsForSpace('life').map((item) => item.key)));
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
   const today = useQuery({ queryKey: ['today', token], queryFn: () => api<TodayData>('/today', token), enabled: Boolean(token), refetchInterval: 15_000 });
   const drafts = useQuery({ queryKey: ['creation-drafts', token], queryFn: () => listCreationDrafts(token!), enabled: Boolean(token) });
   const cards = useMemo(() => selectRunningPlanCards(today.data?.recentPlans ?? []), [today.data?.recentPlans]);
   const domains = useMemo(() => homeDomainsForSpace(space), [space]);
   const resumeDraftCount = activeCreationDraftCount(drafts.data ?? []);
 
-  function selectSpace(next: HomeSpaceKey) { setSpace(next); setExpanded(new Set(homeDomainsForSpace(next).map((item) => item.key))); }
+  function selectSpace(next: HomeSpaceKey) { setSpace(next); setExpanded(new Set()); }
   function toggleDomain(key: string) {
     setExpanded((current) => {
       const next = new Set(current);
@@ -75,6 +75,14 @@ export default function HomePage() {
   return (
     <SafeAreaView edges={[]} style={styles.safeArea}>
       <ScrollView style={styles.page} contentContainerStyle={styles.content} refreshControl={token ? <RefreshControl tintColor={colors.primary} refreshing={today.isFetching} onRefresh={() => today.refetch()} /> : undefined}>
+        <View style={styles.hero}><Text style={styles.greeting}>Hi，</Text><Text style={styles.heroTitle}>今天想做什么？</Text><Text style={styles.heroSubtitle}>让复杂的事，变得简单</Text></View>
+        <Pressable accessibilityRole="button" accessibilityLabel="去问一问" onPress={() => router.push('/search-ai' as never)} style={({ pressed }) => [styles.askEntry, pressed && styles.pressed]}><Ionicons name="search-outline" size={19} color={colors.textMuted} /><Text style={styles.askPlaceholder}>告诉我你想做的事…</Text><Ionicons name="mic-outline" size={20} color={colors.text} /></Pressable>
+        <View style={styles.quickGrid}>
+          <QuickEntry icon="home-outline" label="日常生活" detail="居家 · 出行" path="/domains/life" />
+          <QuickEntry icon="cash-outline" label="财务管理" detail="记账 · 投资" path="/domains/finance" />
+          <QuickEntry icon="heart-outline" label="健康护理" detail="运动 · 饮食" path="/domains/health" />
+          <QuickEntry icon="briefcase-outline" label="工作学习" detail="创作 · 研究" path="/domains/work" />
+        </View>
         <View style={styles.sectionHeading}>
           <Text style={styles.sectionTitle}>正在进行</Text>
           <Pressable accessibilityRole="button" onPress={() => router.push('/plan-center?filter=running' as never)} style={({ pressed }) => [styles.textAction, pressed && styles.pressed]}>
@@ -99,6 +107,10 @@ export default function HomePage() {
       </ScrollView>
     </SafeAreaView>
   );
+}
+
+function QuickEntry({ icon, label, detail, path }: { icon: IconName; label: string; detail: string; path: string }) {
+  return <Pressable accessibilityRole="button" onPress={() => router.push(path as never)} style={({ pressed }) => [styles.quickEntry, pressed && styles.rowPressed]}><View style={styles.quickIcon}><Ionicons name={icon} size={19} color={colors.text} /></View><Text style={styles.quickLabel}>{label}</Text><Text style={styles.quickDetail}>{detail}</Text></Pressable>;
 }
 
 function RunningPlanCarousel({ plans }: { plans: readonly HomeRecentPlan[] }) {
@@ -149,7 +161,8 @@ function InlineState({ title, detail, action, onPress }: { title: string; detail
 function formatActivity(value: string | null) { if (!value) return '暂无活动时间'; const date = new Date(value); return Number.isNaN(date.getTime()) ? '活动时间不可用' : `最近活动 ${date.toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`; }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: colors.background }, page: { flex: 1, backgroundColor: colors.background }, content: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.xxl },
+  safeArea: { flex: 1, backgroundColor: colors.background }, page: { flex: 1, backgroundColor: colors.background }, content: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.xxl },
+  hero: { paddingTop: spacing.sm, paddingBottom: spacing.md }, greeting: { ...typography.title, color: colors.text }, heroTitle: { fontSize: 25, lineHeight: 31, fontWeight: '700', color: colors.text }, heroSubtitle: { ...typography.caption, color: colors.textSecondary, marginTop: 3 }, askEntry: { minHeight: 46, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.md, borderRadius: 14, backgroundColor: colors.accentSoft }, askPlaceholder: { ...typography.caption, color: colors.textMuted, flex: 1 }, quickGrid: { flexDirection: 'row', gap: spacing.sm, paddingVertical: spacing.md }, quickEntry: { flex: 1, minWidth: 0, alignItems: 'center', paddingVertical: spacing.sm, borderRadius: 12, backgroundColor: colors.accentSoft }, quickIcon: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center' }, quickLabel: { fontSize: 11, lineHeight: 16, fontWeight: '600', color: colors.text, marginTop: 2 }, quickDetail: { fontSize: 8, lineHeight: 12, color: colors.textMuted },
   sectionHeading: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md }, sectionTitle: { ...typography.section, color: colors.text, fontSize: 18, lineHeight: 25 },
   textAction: { minHeight: 44, flexDirection: 'row', alignItems: 'center', paddingLeft: spacing.md }, textActionLabel: { ...typography.caption, color: colors.primary, fontWeight: '700' }, pressed: { opacity: 0.72 },
   loading: { minHeight: 160, alignItems: 'center', justifyContent: 'center', gap: spacing.md }, muted: { ...typography.caption, color: colors.textSecondary, lineHeight: 18 },

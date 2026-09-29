@@ -3,7 +3,7 @@ import { Link, router, useLocalSearchParams } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { Text, TextInput, View } from 'react-native';
 import { api } from '../../src/api';
-import { ActionButton, colors } from '../../src/design';
+import { ActionButton, workspaceColors as colors } from '../../src/design';
 import { AuthPage, styles } from './login';
 
 export default function ResetPasswordPage() {
