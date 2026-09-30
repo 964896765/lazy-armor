@@ -9,6 +9,9 @@ const {
 } = require('@expo/config-plugins');
 
 const PACKAGE_NAME = 'com.lazyarmor.app';
+const BLOCKED_DEBUG_PERMISSIONS = [
+  'android.permission.SYSTEM_ALERT_WINDOW',
+];
 const KOTLIN_FILES = [
   'AppReadForegroundService.kt',
   'AppReadSessionStore.kt',
@@ -114,6 +117,30 @@ function withRuntimeSources(config) {
     fs.mkdirSync(targetDir, { recursive: true });
     for (const file of KOTLIN_FILES) {
       fs.copyFileSync(path.join(sourceDir, file), path.join(targetDir, file));
+    }
+
+    // Expo's debug overlays add SYSTEM_ALERT_WINDOW after the main manifest mod
+    // runs. Keep app.json blockedPermissions authoritative for every build type.
+    for (const sourceSet of ['debug', 'debugOptimized']) {
+      const manifestPath = path.join(
+        current.modRequest.platformProjectRoot,
+        'app', 'src', sourceSet, 'AndroidManifest.xml',
+      );
+      if (!fs.existsSync(manifestPath)) continue;
+
+      let contents = fs.readFileSync(manifestPath, 'utf8');
+      for (const permission of BLOCKED_DEBUG_PERMISSIONS) {
+        const escapedPermission = permission.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const declaration = new RegExp(
+          `^[\\t ]*<uses-permission\\b(?=[^>]*\\bandroid:name=["']${escapedPermission}["'])[^>]*\\/>[\\t ]*\\r?\\n?`,
+          'gm',
+        );
+        contents = contents.replace(declaration, '');
+        if (contents.includes(`android:name="${permission}"`) || contents.includes(`android:name='${permission}'`)) {
+          throw new Error(`Unable to remove blocked debug permission ${permission} from ${manifestPath}`);
+        }
+      }
+      fs.writeFileSync(manifestPath, contents);
     }
     return current;
   }]);
