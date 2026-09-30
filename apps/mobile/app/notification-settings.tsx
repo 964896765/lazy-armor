@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, Button, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { api } from '../src/api';
 import { useAuthStore } from '../src/auth-store';
+import { colors } from '../src/design';
 import { ShellPage, styles } from '../src/shell';
 
 interface Settings {
@@ -61,9 +62,9 @@ function Row({ label, value, setValue }: { label: string; value: boolean; setVal
 }
 
 const local = StyleSheet.create({
-  page: { flex: 1, backgroundColor: '#F5F4EF' },
+  page: { flex: 1, backgroundColor: colors.background },
   content: { paddingBottom: 20 },
   row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
-  label: { color: '#24342C', fontWeight: '600', marginBottom: 8 },
-  input: { borderWidth: 1, borderColor: '#D9DEDA', borderRadius: 10, padding: 12, marginBottom: 12, backgroundColor: '#FAFBFA' },
+  label: { color: colors.textSecondary, fontWeight: '600', marginBottom: 8 },
+  input: { borderWidth: 1, borderColor: colors.border, borderRadius: 10, padding: 12, marginBottom: 12, backgroundColor: colors.accentSoft },
 });

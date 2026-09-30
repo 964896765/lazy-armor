@@ -198,7 +198,6 @@ export default function PlanDetailPage() {
         {summary.data && version.data ? (
           <>
             <View style={local.hero}>
-              <View style={local.heroIcon}><Ionicons name={planDetailIcon(summary.data.planCenterSummary?.kind)} size={25} color={colors.primary} /></View>
               <View style={local.heroCopy}><Text style={local.title}>{summary.data.name ?? version.data.name}</Text><Text style={local.eyebrow}>{planStatusLabel(summary.data.status)}</Text><Text style={local.subtitle}>{summary.data.description ?? version.data.description ?? '这件事会按你的安排持续运行。'}</Text></View>
             </View>
 
@@ -329,10 +328,6 @@ function planEvidenceLines(summary: PlanSummary, version: PlanVersionDetail): st
   return [`计划规则：${rule}`, `最近状态：${center ? planCenterStatusLabel(center.kind, center.currentStatus) : '等待第一次运行'}`];
 }
 
-function planDetailIcon(kind?: string | null): ComponentProps<typeof Ionicons>['name'] {
-  return ({ logistics: 'cube-outline', household: 'home-outline', content: 'create-outline', daily_summary: 'mail-outline', study: 'school-outline', device: 'hardware-chip-outline' } as Record<string, ComponentProps<typeof Ionicons>['name']>)[kind ?? ''] ?? 'shield-checkmark-outline';
-}
-
 function normalizeDateInput(value: string) {
   const trimmed = value.trim();
   if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return `${trimmed}T00:00:00.000Z`;
@@ -406,7 +401,6 @@ const local = StyleSheet.create({
   content: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: 72 },
   loading: { alignItems: 'center', gap: spacing.md, paddingVertical: 64 },
   hero: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: spacing.lg, borderBottomWidth: 1, borderBottomColor: colors.border },
-  heroIcon: { width: 52, height: 52, borderRadius: 18, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' },
   heroCopy: { flex: 1, minWidth: 0 },
   eyebrow: { ...typography.label, color: colors.success, marginTop: 2 },
   title: { ...typography.title, color: colors.text },

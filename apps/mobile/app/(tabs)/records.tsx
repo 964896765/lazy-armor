@@ -62,7 +62,7 @@ export default function Records() {
                 const statusText = item.outcome ? consumerOutcomeLabel(item.outcome.outcome) : (category === 'outcome' ? '结果待确认' : executionAttentionLabel(item.status));
                 return (
                   <Pressable key={item.id} accessibilityRole="button" onPress={() => router.push(`/executions/${item.id}` as never)} style={({ pressed }) => [styles.timelineRow, index < records.length - 1 && styles.divider, pressed && styles.pressedRow]}>
-                    <View style={styles.markerColumn}><View style={[styles.marker, category === 'success' ? styles.markerSuccess : category === 'processing' ? styles.markerProcessing : styles.markerWarning]}><Ionicons name={category === 'success' ? 'checkmark' : category === 'processing' ? 'time' : category === 'outcome' ? 'help-circle' : 'warning'} size={12} color={category === 'success' ? '#16834A' : category === 'processing' ? colors.primary : '#B54708'} /></View></View>
+                    <View style={styles.markerColumn}><View style={[styles.marker, category === 'success' ? styles.markerSuccess : category === 'processing' ? styles.markerProcessing : styles.markerWarning]}><Ionicons name={category === 'success' ? 'checkmark' : category === 'processing' ? 'time' : category === 'outcome' ? 'help-circle' : 'warning'} size={12} color={category === 'success' ? colors.success : category === 'processing' ? colors.primary : colors.warning} /></View></View>
                     <View style={styles.recordCopy}>
                       <View style={styles.recordHeader}><Text numberOfLines={1} style={styles.recordTitle}>{item.planName}</Text><Text style={styles.time}>{formatTime(item.createdAt)}</Text></View>
                       <Text numberOfLines={2} style={styles.summary}>{item.resultSummary ?? executionStatusLabel(item.status)}</Text>
@@ -115,7 +115,7 @@ const styles = StyleSheet.create({
   intro: { ...typography.body, color: colors.textSecondary, lineHeight: 22, marginTop: spacing.xs },
   reconciliationLink: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: spacing.sm, paddingHorizontal: spacing.md, paddingVertical: 8, borderRadius: radius.pill, backgroundColor: colors.accentSoft },
   reconciliationLinkText: { ...typography.label, color: colors.primary },
-  filters: { minHeight: 42, alignItems: 'center', gap: spacing.xs, marginTop: spacing.sm, padding: 3, paddingRight: spacing.md, borderRadius: radius.md, backgroundColor: '#F3F6F8' },
+  filters: { minHeight: 42, alignItems: 'center', gap: spacing.xs, marginTop: spacing.sm, padding: 3, paddingRight: spacing.md, borderRadius: radius.md, backgroundColor: colors.accentSoft },
   filter: { minHeight: 36, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, paddingHorizontal: 10, borderRadius: radius.sm },
   filterSelected: { backgroundColor: colors.surface },
   filterText: { ...typography.caption, color: colors.textSecondary, fontWeight: '600' },
@@ -124,7 +124,7 @@ const styles = StyleSheet.create({
   loading: { alignItems: 'center', paddingVertical: 64, gap: spacing.md },
   loadingText: { ...typography.caption, color: colors.textSecondary },
   emptyState: { minHeight: 86, flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.xl, paddingHorizontal: spacing.xs },
-  emptyIcon: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#E8F7EF', alignItems: 'center', justifyContent: 'center' },
+  emptyIcon: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.successSoft, alignItems: 'center', justifyContent: 'center' },
   emptyCopy: { flex: 1, minWidth: 0 },
   emptyTitle: { ...typography.bodyStrong, color: colors.text },
   emptyDescription: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
@@ -133,18 +133,18 @@ const styles = StyleSheet.create({
   pressed: { opacity: 0.7 },
   timelineGroup: { backgroundColor: colors.surface, paddingHorizontal: spacing.sm, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg },
   timelineRow: { minHeight: 82, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.sm, paddingHorizontal: spacing.xs },
-  divider: { borderBottomWidth: 1, borderBottomColor: '#EAECF0' },
-  pressedRow: { backgroundColor: '#F7F8FA' },
+  divider: { borderBottomWidth: 1, borderBottomColor: colors.border },
+  pressedRow: { backgroundColor: colors.accentSoft },
   markerColumn: { width: 30, alignItems: 'center' },
   marker: { width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  markerSuccess: { backgroundColor: '#E8F7EF' },
+  markerSuccess: { backgroundColor: colors.successSoft },
   markerProcessing: { backgroundColor: colors.accentSoft },
-  markerWarning: { backgroundColor: '#FFF4E5' },
+  markerWarning: { backgroundColor: colors.warningSoft },
   recordCopy: { flex: 1, minWidth: 0 },
   recordHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   recordTitle: { ...typography.bodyStrong, color: colors.text, flex: 1 },
   time: { ...typography.caption, color: colors.textMuted },
   summary: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
-  status: { color: '#16834A', fontSize: 10, lineHeight: 15, marginTop: 2 },
-  statusWarning: { color: '#B54708' },
+  status: { color: colors.success, fontSize: 10, lineHeight: 15, marginTop: 2 },
+  statusWarning: { color: colors.warning },
 });

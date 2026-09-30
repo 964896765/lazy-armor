@@ -13,6 +13,7 @@ const FEATURES = {
   about: { title: '关于懒人装甲', detail: '版本、服务协议、隐私政策与产品信息将在这里展示。' },
   'service-publishing': { title: '发布管理', detail: '服务、商品、方案和需求的发布管理将在这里建设，不会转入待办冒充已发布。' },
   'service-following': { title: '关注与收藏', detail: '关注的发布者、服务和收藏内容将在这里统一管理。' },
+  'service-settings': { title: '服务设置', detail: '服务通知、接单规则与展示偏好将在这里设置。' },
 } as const;
 
 export default function FeaturePlaceholder() {

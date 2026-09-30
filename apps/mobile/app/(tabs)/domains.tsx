@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { CANONICAL_DOMAIN_CATALOG, CANONICAL_SCENARIOS, DOMAIN_GROUPS, PLAN_STRATEGIES, type DomainGroupKey, canonicalPlanDomain, scenariosForDomain } from '@lazy-armor/plan-schema/mobile';
+import { CANONICAL_DOMAIN_CATALOG, DOMAIN_GROUPS, type DomainGroupKey, canonicalPlanDomain, scenariosForDomain } from '@lazy-armor/plan-schema/mobile';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import type { ComponentProps } from 'react';
@@ -7,7 +7,7 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/api';
 import { useAuthStore } from '../../src/auth-store';
-import { WorkspaceHeader, workspaceColors as colors, radius, spacing, typography } from '../../src/design';
+import { workspaceColors as colors, radius, spacing, typography } from '../../src/design';
 
 interface PlanDomainSummary { id: string; domain: string | null }
 
@@ -27,7 +27,10 @@ export default function DomainsDirectory() {
   return (
     <SafeAreaView style={styles.safeArea} edges={[]}>
       <ScrollView style={styles.page} contentContainerStyle={styles.content}>
-        <WorkspaceHeader title={selectedGroup ? DOMAIN_GROUPS[selectedGroup].label : '我的空间'} subtitle="从领域找到要管理的场景；目录不代表已开通" action={selectedGroup ? <Pressable accessibilityRole="button" onPress={() => router.replace('/domains' as never)}><Text style={styles.allSpaces}>全部空间</Text></Pressable> : undefined} />
+        <View style={styles.header}>
+          <Text style={styles.title}>{selectedGroup ? DOMAIN_GROUPS[selectedGroup].label : '领域'}</Text>
+          {selectedGroup ? <Pressable accessibilityRole="button" onPress={() => router.replace('/domains' as never)} style={({ pressed }) => [styles.headerAction, pressed && styles.pressed]}><Text style={styles.headerActionText}>全部</Text></Pressable> : null}
+        </View>
         {plans.isLoading ? <View style={styles.loading}><ActivityIndicator color={colors.primary} /><Text style={styles.loadingText}>正在整理领域…</Text></View> : null}
         {!token ? <InlineState title="目录可以浏览" description="登录后才会读取你的计划、授权与场景可用状态。" action="去登录" onPress={() => router.push('/auth/login' as never)} /> : null}
         {GROUP_ORDER.filter((item) => !selectedGroup || item === selectedGroup).map((group) => {
@@ -35,20 +38,13 @@ export default function DomainsDirectory() {
           const domains = CANONICAL_DOMAIN_CATALOG.filter((domain) => domain.group === group);
           return (
             <View key={group} style={styles.group}>
-              <Text style={styles.groupTitle}>{definition.label}</Text>
-              <Text style={styles.groupDescription}>{definition.description}</Text>
-              <View style={styles.domainList}>
+              <Text style={styles.sectionHeader}>{definition.label}</Text>
+              <View style={styles.list}>
                 {domains.map((domain, index) => <DomainRow key={domain.key} domain={domain} count={countFor(domain.key)} last={index === domains.length - 1} />)}
               </View>
             </View>
           );
         })}
-        <Text style={styles.catalogLabel}>了解产品目录</Text>
-        <View style={styles.summary}>
-          <SummaryStat icon="grid-outline" value={CANONICAL_DOMAIN_CATALOG.length} label="目录领域" tone="orange" />
-          <SummaryStat icon="layers-outline" value={CANONICAL_SCENARIOS.length} label="目录场景" tone="green" />
-          <SummaryStat icon="options-outline" value={PLAN_STRATEGIES.length} label="运行方式" tone="violet" />
-        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -58,17 +54,13 @@ function InlineState({ title, description, action, onPress }: { title: string; d
   return <View style={styles.inlineState}><View style={styles.inlineCopy}><Text style={styles.inlineTitle}>{title}</Text><Text style={styles.inlineDescription}>{description}</Text></View><Pressable onPress={onPress} style={({ pressed }) => [styles.inlineAction, pressed && styles.pressed]}><Text style={styles.inlineActionText}>{action}</Text></Pressable></View>;
 }
 
-function SummaryStat({ icon, value, label, tone }: { icon: ComponentProps<typeof Ionicons>['name']; value: number; label: string; tone: 'orange' | 'green' | 'violet' }) {
-  return <View style={styles.summaryItem}><View style={[styles.summaryIcon, styles[`${tone}Icon`]]}><Ionicons name={icon} size={17} color={styles[`${tone}Text`].color} /></View><View><Text style={styles.summaryValue}>{value}</Text><Text style={styles.summaryLabel}>{label}</Text></View></View>;
-}
-
-function DomainRow({ domain, count }: { domain: typeof CANONICAL_DOMAIN_CATALOG[number]; count: number; last: boolean }) {
+function DomainRow({ domain, count, last }: { domain: typeof CANONICAL_DOMAIN_CATALOG[number]; count: number; last: boolean }) {
   const scenarios = scenariosForDomain(domain.key);
   return (
-    <Pressable accessibilityRole="button" onPress={() => router.push(`/domains/${domain.key}` as never)} style={({ pressed }) => [styles.domainRow, pressed && styles.pressed]}>
-      <View style={[styles.domainIcon, groupIconStyle(domain.group)]}><Ionicons name={domainIcon(domain.key)} size={18} color={colors.primary} /></View>
-      <View style={styles.domainCopy}><Text style={styles.domainLabel}>{domain.label}</Text><Text style={styles.domainMeta}>{scenarios.length} 个场景{count > 0 ? ` · ${count} 个计划` : ''}</Text></View>
-      <Ionicons name="chevron-forward" size={15} color={colors.textMuted} />
+    <Pressable accessibilityRole="button" onPress={() => router.push(`/domains/${domain.key}` as never)} style={({ pressed }) => [styles.row, !last && styles.rowDivider, pressed && styles.pressed]}>
+      <View style={styles.icon}><Ionicons name={domainIcon(domain.key)} size={20} color={colors.text} /></View>
+      <View style={styles.copy}><Text style={styles.label}>{domain.label}</Text><Text numberOfLines={1} style={styles.meta}>{scenarios.length} 个场景{count > 0 ? ` · ${count} 个计划` : ''}</Text></View>
+      <Ionicons name="chevron-forward" size={17} color={colors.textMuted} />
     </Pressable>
   );
 }
@@ -80,23 +72,14 @@ function domainIcon(key: string): ComponentProps<typeof Ionicons>['name'] {
   return icons[key] ?? 'ellipse-outline';
 }
 
-function groupIconStyle(group: DomainGroupKey) {
-  if (group === 'money') return styles.iconMoney;
-  if (group === 'work') return styles.iconWork;
-  if (group === 'things') return styles.iconThings;
-  return styles.iconLife;
-}
-
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors.background },
   page: { flex: 1, backgroundColor: colors.background },
   content: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: 32 },
-  summary: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: spacing.sm, padding: spacing.md, borderRadius: radius.lg, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
-  summaryItem: { flexDirection: 'row', alignItems: 'center', gap: 7 },
-  summaryIcon: { width: 30, height: 30, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
-  orangeIcon: { backgroundColor: '#FFF0E7' }, greenIcon: { backgroundColor: colors.successSoft }, violetIcon: { backgroundColor: '#F0EBFF' },
-  orangeText: { color: '#F47B32' }, greenText: { color: colors.primary }, violetText: { color: '#7A5AF8' },
-  summaryValue: { ...typography.bodyStrong, color: colors.text, lineHeight: 16 }, summaryLabel: { fontSize: 8, lineHeight: 10, color: colors.textMuted },
+  header: { minHeight: 54, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  title: { ...typography.pageTitle, color: colors.text },
+  headerAction: { minHeight: 34, alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing.md, borderRadius: 12, backgroundColor: colors.accentSoft },
+  headerActionText: { ...typography.caption, color: colors.text, fontWeight: '700' },
   loading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: spacing.xl, gap: spacing.sm },
   loadingText: { ...typography.caption, color: colors.textSecondary },
   inlineState: { minHeight: 72, flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.lg, paddingVertical: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border },
@@ -106,17 +89,13 @@ const styles = StyleSheet.create({
   inlineAction: { paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: radius.md, backgroundColor: colors.primary },
   inlineActionText: { ...typography.label, color: colors.surface },
   group: { marginTop: spacing.lg },
-  catalogLabel: { ...typography.label, color: colors.textSecondary, marginTop: spacing.xl },
-  allSpaces: { ...typography.caption, color: colors.primary, fontWeight: '700' },
-  groupTitle: { ...typography.section, color: colors.text },
-  groupDescription: { ...typography.caption, color: colors.textSecondary, marginTop: 2, marginBottom: spacing.sm },
-  domainList: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-  domainRow: { width: '48.5%', minHeight: 66, flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.sm, gap: spacing.sm, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, backgroundColor: colors.surface },
-  domainIcon: { width: 30, height: 30, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
-  iconMoney: { backgroundColor: colors.accentSoft },
-  iconLife: { backgroundColor: colors.successSoft },
-  iconWork: { backgroundColor: '#E8EEF2' },
-  iconThings: { backgroundColor: colors.warningSoft },
-  domainCopy: { flex: 1, minWidth: 0 }, domainLabel: { ...typography.bodyStrong, color: colors.text }, domainMeta: { fontSize: 8, lineHeight: 11, color: colors.textMuted, marginTop: 2 },
-  pressed: { backgroundColor: colors.pressed },
+  sectionHeader: { ...typography.caption, color: colors.textSecondary, fontWeight: '600', marginBottom: spacing.sm },
+  list: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
+  row: { minHeight: 66, flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: spacing.sm },
+  rowDivider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
+  icon: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentSoft },
+  copy: { flex: 1, minWidth: 0 },
+  label: { ...typography.bodyStrong, color: colors.text },
+  meta: { ...typography.caption, color: colors.textSecondary, marginTop: 1 },
+  pressed: { opacity: 0.58 },
 });

@@ -166,7 +166,7 @@ export default function ExecutionDetail() {
             ) : null}
 
             {data.notifications.length > 0 ? (
-              <Section title="相关提醒" accent="#2F80ED">
+              <Section title="相关提醒" accent={colors.brand}>
                 {data.notifications.map((item, index) => (
                   <View key={item.id} style={[styles.detailRow, index > 0 && styles.divider]}>
                     <View style={styles.notificationDot} />
@@ -284,7 +284,7 @@ const styles = StyleSheet.create({
   rowTime: { ...typography.caption, color: colors.textMuted },
   compactStatus: { backgroundColor: colors.warningSoft, paddingHorizontal: 9, paddingVertical: 4, borderRadius: 999 },
   compactStatusText: { fontSize: 9, lineHeight: 12, fontWeight: '800', color: colors.warning },
-  notificationDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#2F80ED' },
+  notificationDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.brand },
   timeline: { paddingTop: spacing.xs },
   stepRow: { flexDirection: 'row', alignItems: 'stretch' },
   stepTrack: { width: 24, alignItems: 'center' },
@@ -292,7 +292,7 @@ const styles = StyleSheet.create({
   stepDotSuccess: { backgroundColor: colors.success },
   stepDotDanger: { backgroundColor: colors.danger },
   stepDotWarning: { backgroundColor: colors.warning },
-  stepDotNeutral: { backgroundColor: '#2F80ED' },
+  stepDotNeutral: { backgroundColor: colors.brand },
   stepLine: { position: 'absolute', top: 27, bottom: -18, width: 2, backgroundColor: colors.border },
   stepCopy: { flex: 1, minWidth: 0, paddingVertical: spacing.md, marginLeft: spacing.sm },
   stepDivider: { borderBottomWidth: 1, borderBottomColor: colors.border },

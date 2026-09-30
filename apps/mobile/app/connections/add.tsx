@@ -14,17 +14,21 @@ import { deviceBoundApi, ensureTrustedDevice } from '../../src/trusted-device-ap
 import { ActionButton, EmptyState, Surface, WorkspaceHeader, colors, radius, spacing, typography } from '../../src/design';
 
 interface DeviceAppConnection { id: string; packageName: string; displayName: string; enabled: boolean; modes: DeviceAppConnectionMode[] }
-type ConnectionKind = 'mobile_app' | 'online_service' | 'device';
+type ConnectionKind = '全部' | '应用' | '设备' | '数据' | '能力';
+interface Connector { key: string; name: string; description: string; connectable: boolean }
 
 export default function AddConnectionPage() {
   const token = useAuthStore((store) => store.token);
   const client = useQueryClient();
-  const [kind, setKind] = useState<ConnectionKind>('mobile_app');
+  const [kind, setKind] = useState<ConnectionKind>('全部');
   const [selectedPackage, setSelectedPackage] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const discovery = useQuery({ queryKey: ['rail-discovered-device-apps'], queryFn: discoverLaunchableApps, enabled: Boolean(token), staleTime: 5 * 60_000 });
   const existing = useQuery({ queryKey: ['device-app-connections', token], queryFn: () => api<DeviceAppConnection[]>('/device-app-connections', token), enabled: Boolean(token) });
+  const connectors = useQuery({ queryKey: ['connectors'], queryFn: () => api<Connector[]>('/connectors'), enabled: Boolean(token) });
   const selected = useMemo(() => (discovery.data ?? []).find((app) => app.packageName === selectedPackage) ?? null, [discovery.data, selectedPackage]);
+  const matchingApps = (discovery.data ?? []).filter((item) => `${item.displayName} ${item.packageName}`.toLocaleLowerCase('zh-CN').includes(search.trim().toLocaleLowerCase('zh-CN')));
+  const matchingConnectors = (connectors.data ?? []).filter((item) => item.connectable && `${item.name} ${item.description}`.toLocaleLowerCase('zh-CN').includes(search.trim().toLocaleLowerCase('zh-CN')));
   const alreadyAdded = selected ? (existing.data ?? []).some((item) => item.packageName === selected.packageName) : false;
   const add = useMutation({
     mutationFn: async (app: DiscoveredDeviceApp) => {
@@ -47,13 +51,25 @@ export default function AddConnectionPage() {
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <View style={styles.content}>
-        <WorkspaceHeader title="添加连接" subtitle="选择要交给懒人装甲的来源" onBack={() => router.back()} />
+        <WorkspaceHeader title="添加资源" subtitle="选择真实可连接的应用、设备、数据或能力" onBack={() => router.back()} />
         {!token ? <Surface><EmptyState icon="log-in-outline" title="请先登录" description="添加连接前需要确认这是你的账号与设备。" action={{ label: '去登录', onPress: () => router.push('/auth/login' as never) }} /></Surface> : null}
         {token ? <>
-          <View style={styles.kindTabs}>{([['mobile_app', '手机应用'], ['online_service', '在线服务'], ['device', '设备与资料']] as const).map(([value, label]) => <Pressable key={value} accessibilityRole="button" onPress={() => setKind(value)} style={[styles.kindTab, kind === value && styles.kindTabSelected]}><Text style={[styles.kindText, kind === value && styles.kindTextSelected]}>{label}</Text></Pressable>)}</View>
-          {kind === 'mobile_app' ? <MobileAppDiscovery selected={selected} search={search} onSearch={setSearch} apps={discovery.data ?? []} discoveryLoading={discovery.isLoading} discoveryError={discovery.isError} onSelect={setSelectedPackage} /> : null}
-          {kind === 'online_service' ? <ScrollView contentContainerStyle={styles.secondaryContent}><ConnectionTypePlaceholder title="在线服务" description="Google 邮箱、日历与文件服务通过正式授权页面连接。" actionLabel="选择在线服务" onPress={() => router.replace('/connections' as never)} /></ScrollView> : null}
-          {kind === 'device' ? <ScrollView contentContainerStyle={styles.secondaryContent}><ConnectionTypePlaceholder title="设备与资料" description="设备、车辆和家庭资料由你主动添加；每项读取和操作都会单独说明。" actionLabel="管理我的资料" onPress={() => router.push('/devices' as never)} /></ScrollView> : null}
+          <View style={styles.searchBox}><Ionicons name="search-outline" size={19} color={colors.textMuted} /><TextInput value={search} onChangeText={setSearch} placeholder="搜索应用、设备或能力…" placeholderTextColor={colors.textMuted} style={styles.searchInput} /></View>
+          <View style={styles.kindTabs}>{(['全部', '应用', '设备', '数据', '能力'] as const).map((value) => <Pressable key={value} accessibilityRole="tab" accessibilityState={{ selected: kind === value }} onPress={() => setKind(value)} style={[styles.kindTab, kind === value && styles.kindTabSelected]}><Text style={[styles.kindText, kind === value && styles.kindTextSelected]}>{value}</Text></Pressable>)}</View>
+          {kind === '全部' || kind === '应用' ? <ScrollView contentContainerStyle={styles.secondaryContent} keyboardShouldPersistTaps="handled">
+            <Text style={styles.sectionTitle}>热门推荐</Text>
+            <View style={styles.recommendGrid}>{matchingApps.slice(0, 8).map((item) => <Pressable key={item.packageName} onPress={() => setSelectedPackage(item.packageName)} style={styles.recommendTile}><View style={styles.recommendIcon}>{item.iconDataUri ? <Image source={{ uri: item.iconDataUri }} style={styles.recommendImage} /> : <Ionicons name="apps-outline" size={26} color={colors.brand} />}</View><Text numberOfLines={1} style={styles.recommendLabel}>{item.displayName}</Text></Pressable>)}</View>
+            {matchingConnectors.length > 0 ? <Text style={styles.sectionTitle}>在线服务</Text> : null}
+            {matchingConnectors.map((item) => <Pressable key={item.key} onPress={() => router.replace('/connections' as never)} style={styles.appRow}><View style={styles.appIcon}><Ionicons name="link-outline" size={19} color={colors.primary} /></View><View style={styles.appCopy}><Text style={styles.appName}>{item.name}</Text><Text numberOfLines={1} style={styles.appMeta}>{item.description}</Text></View><Text style={styles.connectLabel}>连接</Text></Pressable>)}
+            {matchingApps.length > 8 ? <Text style={styles.sectionTitle}>更多应用</Text> : null}
+            {matchingApps.slice(8, kind === '全部' ? 16 : undefined).map((item) => <AppRow key={item.packageName} app={item} selected={selected?.packageName === item.packageName} last={false} onPress={() => setSelectedPackage(item.packageName)} />)}
+            {matchingApps.length === 0 && matchingConnectors.length === 0 && !discovery.isLoading && !discovery.isError ? <Text style={styles.resultMeta}>没有匹配的可连接资源。</Text> : null}
+            {discovery.isLoading ? <ActivityIndicator color={colors.primary} /> : null}{discovery.isError ? <Text style={styles.resultMeta}>暂时无法读取这台手机上的应用。</Text> : null}
+            {kind === '全部' && matchingApps.length > 16 ? <Pressable onPress={() => setKind('应用')} style={styles.viewMore}><Text style={styles.appName}>查看全部本机应用</Text><Ionicons name="chevron-forward" size={17} color={colors.textMuted} /></Pressable> : null}
+          </ScrollView> : null}
+          {kind === '设备' ? <ScrollView contentContainerStyle={styles.secondaryContent}><ConnectionTypePlaceholder title="设备" description="查看已证明的设备；添加手机应用时会完成本机安全证明。" actionLabel="管理设备" onPress={() => router.push('/connections/trusted-devices' as never)} /></ScrollView> : null}
+          {kind === '数据' ? <ScrollView contentContainerStyle={styles.secondaryContent}><ConnectionTypePlaceholder title="数据与文件" description="上传文件或查看现有的已验证数据。" actionLabel="上传文件" onPress={() => router.push('/file-import' as never)} /></ScrollView> : null}
+          {kind === '能力' ? <ScrollView contentContainerStyle={styles.secondaryContent}><ConnectionTypePlaceholder title="能力与扩展" description="已连接资源提供的能力会在核实后显示。" actionLabel="查看能力" onPress={() => router.push('/capabilities' as never)} /></ScrollView> : null}
         </> : null}
       </View>
       <Modal visible={Boolean(selected)} transparent animationType="slide" onRequestClose={() => setSelectedPackage(null)}>
@@ -112,19 +128,20 @@ function OperationRow({ operation, last }: { operation: AppIntegrationCapability
 function ConnectionTypePlaceholder({ title, description, actionLabel, onPress }: { title: string; description: string; actionLabel: string; onPress: () => void }) { return <Surface style={styles.placeholder}><Text style={styles.placeholderTitle}>{title}</Text><Text style={styles.placeholderCopy}>{description}</Text><View style={styles.previewAction}><ActionButton label={actionLabel} onPress={onPress} /></View></Surface>; }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#FFFFFF' },
-  page: { flex: 1, backgroundColor: '#FFFFFF' },
+  safeArea: { flex: 1, backgroundColor: colors.background },
+  page: { flex: 1, backgroundColor: colors.background },
   content: { flex: 1, paddingHorizontal: spacing.lg, paddingTop: spacing.md },
-  kindTabs: { flexDirection: 'row', backgroundColor: '#EEF1F5', padding: 3, borderRadius: radius.md, marginTop: spacing.md, marginBottom: spacing.md },
+  kindTabs: { flexDirection: 'row', gap: 5, marginTop: spacing.md, marginBottom: spacing.md },
   kindTab: { flex: 1, minHeight: 36, justifyContent: 'center', alignItems: 'center', borderRadius: radius.sm, paddingHorizontal: 3 },
-  kindTabSelected: { backgroundColor: colors.surface, shadowColor: '#101828', shadowOpacity: 0.06, shadowRadius: 4, elevation: 1 },
+  kindTabSelected: { backgroundColor: colors.text },
   kindText: { fontSize: 10, lineHeight: 14, color: colors.textMuted, fontWeight: '600', textAlign: 'center' },
-  kindTextSelected: { color: colors.primary, fontWeight: '800' },
+  kindTextSelected: { color: '#FFFFFF', fontWeight: '800' },
   discovery: { flex: 1 },
-  searchBox: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.md, backgroundColor: '#F2F3F5', borderRadius: 14 },
+  searchBox: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.md, backgroundColor: colors.surface, borderRadius: radius.pill },
   searchInput: { ...typography.body, color: colors.text, flex: 1, paddingVertical: spacing.sm },
   resultMeta: { ...typography.caption, color: colors.textMuted, marginVertical: spacing.sm, paddingHorizontal: spacing.xs },
-  secondaryContent: { paddingBottom: 48 },
+  secondaryContent: { paddingBottom: 48 }, connectLabel: { ...typography.caption, color: colors.primary, backgroundColor: colors.accentSoft, paddingHorizontal: spacing.sm, paddingVertical: 5, borderRadius: radius.pill },
+  recommendGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }, recommendTile: { width: '23%', minHeight: 80, backgroundColor: colors.surface, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', padding: spacing.xs }, recommendIcon: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 10, backgroundColor: colors.accentSoft }, recommendImage: { width: 34, height: 34, borderRadius: 8 }, recommendLabel: { ...typography.caption, color: colors.text, marginTop: 4, textAlign: 'center' }, viewMore: { minHeight: 44, backgroundColor: colors.surface, borderRadius: radius.md, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: spacing.md, marginTop: spacing.sm },
   sectionTitle: { ...typography.section, color: colors.text, marginTop: spacing.md, marginBottom: spacing.sm },
   loading: { alignItems: 'center', paddingVertical: spacing.xl, gap: spacing.md },
   loadingText: { ...typography.caption, color: colors.textSecondary },
@@ -132,7 +149,7 @@ const styles = StyleSheet.create({
   catalogContent: { paddingBottom: spacing.md },
   appRow: { minHeight: 62, flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.md },
   appRowSelected: { backgroundColor: colors.accentSoft },
-  rowDivider: { borderBottomWidth: 1, borderBottomColor: '#EAECF0' },
+  rowDivider: { borderBottomWidth: 1, borderBottomColor: colors.border },
   appIcon: { width: 36, height: 36, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentSoft, overflow: 'hidden' },
   appImage: { width: 36, height: 36 },
   appCopy: { flex: 1 },
@@ -140,7 +157,7 @@ const styles = StyleSheet.create({
   appMeta: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
   modalBackdrop: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundColor: 'rgba(16, 24, 40, 0.34)' },
   sheet: { position: 'absolute', left: 0, right: 0, bottom: 0, maxHeight: '78%', backgroundColor: colors.background, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: spacing.sm },
-  sheetHandle: { width: 38, height: 4, borderRadius: 2, backgroundColor: '#D0D5DD', alignSelf: 'center' },
+  sheetHandle: { width: 38, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center' },
   sheetContent: { paddingHorizontal: spacing.lg, paddingBottom: 36 },
   preview: { marginTop: spacing.sm },
   previewIntro: { ...typography.body, color: colors.textSecondary },
@@ -158,5 +175,5 @@ const styles = StyleSheet.create({
   placeholder: { marginTop: spacing.md },
   placeholderTitle: { ...typography.cardTitle, color: colors.text },
   placeholderCopy: { ...typography.body, color: colors.textSecondary, marginTop: spacing.sm, lineHeight: 21 },
-  pressed: { backgroundColor: '#F7F8FA' },
+  pressed: { backgroundColor: colors.accentSoft },
 });

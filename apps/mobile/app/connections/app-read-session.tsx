@@ -159,7 +159,7 @@ const styles = StyleSheet.create({
   modeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.md },
   mode: { ...typography.caption, color: colors.primary, backgroundColor: colors.accentSoft, paddingHorizontal: spacing.sm, paddingVertical: spacing.xs, borderRadius: radius.pill },
   metricRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.lg },
-  metric: { flex: 1, backgroundColor: colors.pressed, padding: spacing.md, borderRadius: radius.md },
+  metric: { flex: 1 },
   metricValue: { ...typography.bodyStrong, color: colors.text }, metricLabel: { ...typography.caption, color: colors.textMuted, marginTop: spacing.xs },
   sectionTitle: { ...typography.section, color: colors.text, marginTop: spacing.md },
   eventRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: spacing.md },

@@ -255,6 +255,7 @@ export default function ConnectionsPage() {
   const router = useRouter();
   const token = useAuthStore((store) => store.token);
   const [search, setSearch] = useState('');
+  const [category, setCategory] = useState<'全部' | '应用' | '系统' | '设备'>('全部');
   const [expandedAppFolder, setExpandedAppFolder] = useState(false);
   const connectors = useQuery({ queryKey: ['connectors'], queryFn: () => api<Connector[]>('/connectors') });
   const connections = useQuery({ queryKey: ['connections', token], queryFn: () => api<Connection[]>('/connections', token), enabled: Boolean(token) });
@@ -280,23 +281,29 @@ export default function ConnectionsPage() {
   const configuredCount = (connections.data?.filter((item) => item.status !== 'revoked').length ?? 0) + (deviceApps.data?.filter((item) => item.enabled).length ?? 0);
   const attentionCount = (connections.data?.filter((item) => Boolean(connectionRecoveryAction(item.status))).length ?? 0) + (deviceApps.data?.filter((item) => !item.enabled).length ?? 0);
   const hasAny = (connections.data?.length ?? 0) + (deviceApps.data?.length ?? 0) + (trustedDevices.data?.length ?? 0) > 0;
+  const categoryCounts = {
+    '全部': onlineConnections.length + developerConnections.length + (deviceApps.data?.length ?? 0) + (trustedDevices.data?.length ?? 0) + available.length + unconnectedApps.length,
+    '应用': onlineConnections.length + (deviceApps.data?.length ?? 0) + available.length + unconnectedApps.length,
+    '系统': developerConnections.length,
+    '设备': trustedDevices.data?.length ?? 0,
+  };
 
   return (
     <SafeAreaView style={styles.safeArea} edges={[]}>
       <ScrollView style={styles.page} contentContainerStyle={styles.content} refreshControl={token ? <RefreshControl tintColor={colors.primary} refreshing={connections.isFetching} onRefresh={() => connections.refetch()} /> : undefined}>
-        <WorkspaceHeader title="连接" subtitle="让计划安全地使用你的服务与手机来源" action={<Pressable accessibilityRole="button" accessibilityLabel="添加连接" onPress={() => router.push('/connections/add' as Href)} style={({ pressed }) => [styles.headerAction, pressed && styles.rowPressed]}><Ionicons name="add" size={22} color={colors.primary} /></Pressable>} />
+        <WorkspaceHeader title="应用与连接" subtitle="连接应用、系统能力与设备，让我更好地执行计划。" action={<Pressable accessibilityRole="button" accessibilityLabel="添加资源" onPress={() => router.push('/connections/add' as Href)} style={({ pressed }) => [styles.headerAction, pressed && styles.rowPressed]}><Ionicons name="add" size={22} color={colors.primary} /></Pressable>} />
         {!token ? (
           <Surface style={styles.stateSurface}><EmptyState icon="link-outline" title="登录后管理连接" description="登录和账号安全在“我的”中管理。" action={{ label: '去登录', onPress: () => router.push('/auth/login' as Href) }} /></Surface>
         ) : (
           <>
             <View style={styles.searchBox}><Ionicons name="search-outline" size={19} color={colors.textMuted} /><TextInput value={search} onChangeText={setSearch} placeholder="搜索已连接服务或可用来源" placeholderTextColor={colors.textMuted} style={styles.searchInput} />{search ? <Pressable accessibilityLabel="清空搜索" onPress={() => setSearch('')}><Ionicons name="close-circle" size={18} color={colors.textMuted} /></Pressable> : null}</View>
-            <View style={styles.realityHint}><Ionicons name="shield-checkmark-outline" size={20} color={colors.primary} /><Text style={styles.realityHintText}>每项能力分别核对官方开放、已实现、你的授权与当前健康；已安装不等于可用。</Text></View>
-            <View style={styles.summaryStrip}><ConnectionStat icon="link-outline" value={configuredCount} label="已添加" tone="success" /><View style={styles.statDivider} /><ConnectionStat icon="alert-circle-outline" value={attentionCount} label="需关注" tone={attentionCount > 0 ? 'warning' : 'muted'} /><View style={styles.statDivider} /><ConnectionStat icon="apps-outline" value={deviceApps.data?.length ?? 0} label="手机应用" tone="brand" /></View>
+            <View style={styles.categoryTabs}>{(['全部', '应用', '系统', '设备'] as const).map((item) => <Pressable key={item} accessibilityRole="tab" accessibilityState={{ selected: category === item }} onPress={() => setCategory(item)} style={[styles.categoryTab, category === item && styles.categoryTabSelected]}><Text style={[styles.categoryTabText, category === item && styles.categoryTabTextSelected]}>{item} {categoryCounts[item]}</Text></Pressable>)}</View>
+            {attentionCount > 0 ? <Text style={styles.attentionHint}>{attentionCount} 项连接需要检查</Text> : null}
             {connections.isLoading ? <ActivityIndicator color={colors.primary} /> : null}
             {!hasAny ? <View style={styles.emptyConnection}><Text style={styles.emptyConnectionTitle}>还没有连接服务</Text><Text style={styles.emptyConnectionCopy}>添加在线服务或这台手机上的应用</Text><ActionButton label="添加连接" onPress={() => router.push('/connections/add' as Href)} /></View> : null}
 
-            {(visibleApps.length > 0 || visibleUnconnectedApps.length > 0) ? (
-              <WorkspaceSection title={connectionBucketLabel('PHONE_APPS')} count={visibleApps.length + visibleUnconnectedApps.length}>
+            {(category === '全部' || category === '应用') && (visibleApps.length > 0 || visibleUnconnectedApps.length > 0) ? (
+              <WorkspaceSection title="手机应用" count={visibleApps.length + visibleUnconnectedApps.length}>
                 {visibleApps.length > 0 ? <View style={styles.connectionList}>{visibleApps.map((item) => <DeviceAppService key={item.id} item={item} token={token} trustedDeviceStatus={trustedDevices.data?.find((device) => device.id === item.trustedDeviceId)?.status} iconUri={iconByPackage.get(item.packageName) ?? undefined} />)}</View> : null}
                 {visibleUnconnectedApps.length > 0 ? (expandedAppFolder
                   ? <View style={styles.unconnectedList}>{visibleUnconnectedApps.map((app) => <UnconnectedAppRow key={app.packageName} app={app} />)}</View>
@@ -304,21 +311,21 @@ export default function ConnectionsPage() {
               </WorkspaceSection>
             ) : null}
 
-            {(visibleOnlineConnections.length > 0 || visibleAvailable.length > 0) ? (
-              <WorkspaceSection title={connectionBucketLabel('ONLINE_SERVICES')} count={visibleOnlineConnections.length + visibleAvailable.length}>
+            {(category === '全部' || category === '应用') && (visibleOnlineConnections.length > 0 || visibleAvailable.length > 0) ? (
+              <WorkspaceSection title="在线服务" count={visibleOnlineConnections.length + visibleAvailable.length}>
                 {visibleOnlineConnections.length > 0 ? <View style={styles.connectionList}>{visibleOnlineConnections.map((item) => <ConnectedService key={item.id} item={item} connector={connectorByKey.get(item.connectorId)} token={token} />)}</View> : null}
                 {visibleAvailable.length > 0 ? <View style={styles.availableList}>{visibleAvailable.map((connector) => <AvailableService key={connector.key} connector={connector} token={token} />)}</View> : null}
               </WorkspaceSection>
             ) : null}
 
-            {(trustedDevices.data?.length ?? 0) > 0 ? (
+            {(category === '全部' || category === '设备') && (trustedDevices.data?.length ?? 0) > 0 ? (
               <WorkspaceSection title={connectionBucketLabel('DEVICES')} count={trustedDevices.data!.length}>
                 <View style={styles.deviceActions}><ActionButton label="查看手机任务与心跳" tone="quiet" onPress={() => router.push('/connections/device-tasks' as Href)} /></View>
                 <View style={styles.connectionList}>{trustedDevices.data!.map((device) => <TrustedDeviceRow key={device.id} device={device} />)}</View>
               </WorkspaceSection>
             ) : null}
 
-            {visibleDeveloperConnections.length > 0 ? (
+            {(category === '全部' || category === '系统') && visibleDeveloperConnections.length > 0 ? (
               <WorkspaceSection title={connectionBucketLabel('DEVELOPER')} count={visibleDeveloperConnections.length}>
                 <View style={styles.connectionList}>{visibleDeveloperConnections.map((item) => <ConnectedService key={item.id} item={item} connector={connectorByKey.get(item.connectorId)} token={token} />)}</View>
               </WorkspaceSection>
@@ -395,9 +402,15 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors.background },
   page: { flex: 1, backgroundColor: colors.background },
   content: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: 72 },
-  headerAction: { width: 36, height: 36, borderRadius: 12, backgroundColor: colors.accentSoft, borderWidth: 1, borderColor: '#FFDFBE', alignItems: 'center', justifyContent: 'center' },
-  searchBox: { minHeight: 46, marginTop: spacing.sm, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.md, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md },
+  headerAction: { width: 38, height: 38, borderRadius: 19, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' },
+  searchBox: { minHeight: 44, marginTop: spacing.sm, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.md, backgroundColor: colors.surface, borderRadius: radius.pill },
   searchInput: { ...typography.body, color: colors.text, flex: 1, paddingVertical: 0 },
+  categoryTabs: { flexDirection: 'row', gap: spacing.xs, marginTop: spacing.md },
+  categoryTab: { flex: 1, minHeight: 34, alignItems: 'center', justifyContent: 'center', borderRadius: radius.pill, backgroundColor: colors.accentSoft },
+  categoryTabSelected: { backgroundColor: colors.text },
+  categoryTabText: { ...typography.caption, color: colors.textSecondary, fontWeight: '700' },
+  categoryTabTextSelected: { color: colors.surface },
+  attentionHint: { ...typography.caption, color: colors.warning, marginTop: spacing.sm },
   realityHint: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, marginTop: spacing.md, padding: spacing.md, backgroundColor: colors.accentSoft, borderRadius: radius.md },
   realityHintText: { ...typography.caption, flex: 1, color: colors.textSecondary, lineHeight: 18 },
   summaryStrip: { minHeight: 70, flexDirection: 'row', alignItems: 'center', marginTop: spacing.md, paddingHorizontal: spacing.sm, backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border },
@@ -414,8 +427,8 @@ const styles = StyleSheet.create({
   loginAction: { marginTop: spacing.lg },
   error: { ...typography.caption, color: colors.danger, marginTop: spacing.md },
   sectionTitle: { ...typography.section, color: colors.text, marginTop: spacing.xl, marginBottom: spacing.md },
-  connectionList: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, overflow: 'hidden' },
-  availableList: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, overflow: 'hidden' },
+  connectionList: { backgroundColor: colors.surface, borderRadius: radius.lg, overflow: 'hidden' },
+  availableList: { backgroundColor: colors.surface, borderRadius: radius.lg, overflow: 'hidden' },
   availableBlock: { paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.border },
   availableRow: { minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   connectButton: { minWidth: 52, minHeight: 32, borderRadius: 11, backgroundColor: colors.successSoft, alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing.sm },
@@ -426,20 +439,20 @@ const styles = StyleSheet.create({
   capabilityChipText: { color: colors.primary, fontSize: 8, lineHeight: 11, flexShrink: 1 },
   noResults: { minHeight: 120, alignItems: 'center', justifyContent: 'center', gap: spacing.sm },
   appFolderWrap: { paddingVertical: spacing.sm, paddingHorizontal: spacing.md },
-  unconnectedList: { borderTopWidth: 1, borderTopColor: '#EAECF0' },
-  unconnectedRow: { minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderBottomWidth: 1, borderBottomColor: '#EAECF0' },
-  connectionBlock: { borderBottomWidth: 1, borderBottomColor: '#EAECF0' },
-  connectionRow: { minHeight: 70, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
+  unconnectedList: { borderTopWidth: 1, borderTopColor: colors.border },
+  unconnectedRow: { minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.border },
+  connectionBlock: { borderBottomWidth: 1, borderBottomColor: colors.border },
+  connectionRow: { minHeight: 60, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.sm, paddingVertical: spacing.xs },
   rowPressed: { opacity: 0.68 },
   compactIcon: { width: 38, height: 38, borderRadius: 12, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' },
   appIcon: { width: 30, height: 30, borderRadius: 9 },
   compactCopy: { flex: 1, minWidth: 0 },
   compactTitleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   compactTitle: { ...typography.bodyStrong, color: colors.text, flex: 1 },
-  compactStatus: { color: '#16834A', fontSize: 9, lineHeight: 13, fontWeight: '700' },
-  compactStatusWarning: { color: '#B54708' },
+  compactStatus: { color: colors.success, fontSize: 9, lineHeight: 13, fontWeight: '700' },
+  compactStatusWarning: { color: colors.warning },
   compactDetail: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
-  management: { marginLeft: 50, padding: spacing.md, backgroundColor: '#F2F3F5', borderRadius: radius.sm },
+  management: { marginLeft: 50, padding: spacing.md, backgroundColor: colors.accentSoft, borderRadius: radius.sm },
   detailLink: { minHeight: 48, marginBottom: spacing.md, paddingBottom: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border, flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   detailLinkCopy: { flex: 1 },
   detailLinkTitle: { ...typography.bodyStrong, color: colors.primary },

@@ -5,7 +5,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useAuthStore } from '../../../src/auth-store';
 import { getDeviceTaskEvidence } from '../../../src/device-task-client';
 import { deviceTaskStages, deviceTaskStatusLabel, leaseState } from '../../../src/device-task-presenter';
-import { ActionButton, colors, radius, spacing, typography } from '../../../src/design';
+import { ActionButton, colors, spacing, typography } from '../../../src/design';
 import { shortEvidenceHash } from '../../../src/evidence-presenter';
 import { displayTime } from '../../../src/runtime-details-presenter';
 import { LoginRequired, RuntimeCard, RuntimeDetailScreen, RuntimeKeyValue, RuntimeLoadState, RuntimeSection, RuntimeText } from '../../../src/runtime-details-ui';
@@ -59,7 +59,7 @@ export default function DeviceTaskDetailPage() {
 }
 
 const styles = StyleSheet.create({
-  hero: { marginTop: spacing.lg, padding: spacing.lg, borderRadius: radius.lg, backgroundColor: colors.accentSoft },
+  hero: { paddingVertical: spacing.lg, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
   eyebrow: { ...typography.caption, color: colors.primary, fontWeight: '800' }, heroTitle: { ...typography.display, color: colors.text, marginTop: spacing.xs }, heroDetail: { ...typography.caption, color: colors.textSecondary, marginTop: spacing.xs },
   stage: { minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: spacing.md }, divider: { borderBottomWidth: 1, borderBottomColor: colors.border },
   dot: { width: 12, height: 12, borderRadius: 6 }, done: { backgroundColor: colors.success }, current: { backgroundColor: colors.primary }, failed: { backgroundColor: colors.danger }, waiting: { backgroundColor: colors.border },

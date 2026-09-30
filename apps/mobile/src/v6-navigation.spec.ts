@@ -3,7 +3,7 @@ import { isSelected, PRIMARY_DESTINATIONS, UTILITY_DESTINATIONS } from './v6-nav
 
 describe('V6 global navigation shell', () => {
   it('exposes exactly five primary bottom destinations', () => {
-    expect(PRIMARY_DESTINATIONS.map((item) => item.label)).toEqual(['首页', '计划', '问一问', '资源', '服务']);
+    expect(PRIMARY_DESTINATIONS.map((item) => item.label)).toEqual(['首页', '计划', '聊天', '资源', '服务']);
     expect(PRIMARY_DESTINATIONS.map((item) => item.path)).toEqual(['/', '/plans', '/search-ai', '/private', '/services']);
   });
 

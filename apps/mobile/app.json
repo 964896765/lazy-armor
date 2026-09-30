@@ -4,6 +4,11 @@
     "slug": "lazy-armor",
     "version": "0.1.0",
     "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/launch-space-v7.png",
+      "resizeMode": "cover",
+      "backgroundColor": "#050505"
+    },
     "orientation": "portrait",
     "scheme": "lazyarmor",
     "userInterfaceStyle": "light",
@@ -28,6 +33,19 @@
     },
     "plugins": [
       "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#050505",
+          "image": "./assets/launch-space-v7.png",
+          "imageWidth": 320,
+          "resizeMode": "contain",
+          "dark": {
+            "backgroundColor": "#050505",
+            "image": "./assets/launch-space-v7.png"
+          }
+        }
+      ],
       [
         "expo-secure-store",
         {

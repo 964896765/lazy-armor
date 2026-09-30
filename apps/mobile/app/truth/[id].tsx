@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { api } from '../../src/api';
 import { useAuthStore } from '../../src/auth-store';
-import { colors, radius, spacing, typography } from '../../src/design';
+import { colors, spacing, typography } from '../../src/design';
 import { displayTime, provenanceMethodLabel, shortHash } from '../../src/runtime-details-presenter';
 import { LoginRequired, RuntimeCard, RuntimeDetailScreen, RuntimeKeyValue, RuntimeLoadState, RuntimeSection, RuntimeText } from '../../src/runtime-details-ui';
 
@@ -30,7 +30,7 @@ export default function TruthDetailPage() {
     {!token ? <LoginRequired /> : null}
     {token ? <RuntimeLoadState loading={detail.isLoading} error={detail.isError} onRetry={() => detail.refetch()} loadingText="正在读取事实来源…" /> : null}
     {fact ? <>
-      <View style={styles.hero}><View style={styles.heroIcon}><Ionicons name="shield-checkmark-outline" size={25} color={colors.primary} /></View><View style={styles.heroCopy}><Text style={styles.heroTitle}>{fact.provenance.length > 0 ? '这条信息有可追溯来源' : '这条信息有确认记录'}</Text><Text style={styles.heroDescription}>由 {provenanceMethodLabel(fact.verifiedBy)} 确认 · {displayTime(fact.verifiedAt)}</Text></View></View>
+      <View style={styles.hero}><View style={styles.heroCopy}><Text style={styles.heroTitle}>{fact.provenance.length > 0 ? '这条信息有可追溯来源' : '这条信息有确认记录'}</Text><Text style={styles.heroDescription}>由 {provenanceMethodLabel(fact.verifiedBy)} 确认 · {displayTime(fact.verifiedAt)}</Text></View></View>
       <RuntimeSection title="信息从哪里来"><RuntimeCard>{fact.provenance.length === 0 ? <RuntimeText>尚无可安全展示的来源链；不会把缺失来源补成已验证。</RuntimeText> : fact.provenance.map((item) => {
         const evidence = evidenceRows.data?.find((row) => row.evidenceHash === item.evidenceHash);
         return <View key={`${item.truthRecordVersionId}-${item.evidenceHash}`} style={styles.source}><Ionicons name="layers-outline" size={19} color={colors.primary} /><View style={styles.sourceCopy}><Text style={styles.sourceTitle}>{item.providerKey}</Text><Text style={styles.sourceMeta}>{item.sourceMode} · {displayTime(item.observedAt)}</Text></View>{evidence ? <Pressable accessibilityRole="button" onPress={() => router.push(`/evidence/${evidence.id}` as never)}><Text style={styles.sourceAction}>查看证据</Text></Pressable> : null}</View>;
@@ -42,8 +42,7 @@ export default function TruthDetailPage() {
 }
 
 const styles = StyleSheet.create({
-  hero: { marginTop: spacing.lg, padding: spacing.lg, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.background, flexDirection: 'row', gap: spacing.md },
-  heroIcon: { width: 44, height: 44, borderRadius: radius.md, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' },
+  hero: { paddingVertical: spacing.lg, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
   heroCopy: { flex: 1 }, heroTitle: { ...typography.section, color: colors.text }, heroDescription: { ...typography.caption, color: colors.textSecondary, marginTop: spacing.xs },
   source: { minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border }, sourceCopy: { flex: 1 }, sourceTitle: { ...typography.bodyStrong, color: colors.text }, sourceMeta: { ...typography.caption, color: colors.textSecondary, marginTop: 3 }, sourceAction: { ...typography.caption, color: colors.primary, fontWeight: '800' },
   disclosure: { minHeight: 42, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, disclosureText: { ...typography.bodyStrong, color: colors.primary },

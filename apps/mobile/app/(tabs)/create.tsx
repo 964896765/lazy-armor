@@ -54,9 +54,9 @@ const quickIntents = ['帮我盯住快递变化', '每月整理账单', '车辆�
 export default function Create() {
   const token = useAuthStore((store) => store.token);
   const client = useQueryClient();
-  const params = useLocalSearchParams<{ scenarioKey?: string }>();
+  const params = useLocalSearchParams<{ scenarioKey?: string; intent?: string }>();
   const scenarioKey = isValidScenarioKey(params.scenarioKey) ? params.scenarioKey : null;
-  const [intent, setIntent] = useState('');
+  const [intent, setIntent] = useState(typeof params.intent === 'string' ? params.intent : '');
   const templates = useQuery({ queryKey: ['templates', token], queryFn: () => api<PlanTemplateSummary[]>('/templates', token), enabled: Boolean(token) });
   const agentPlan = useMutation({
     mutationFn: () => api<AgentPlannerResult>('/templates/natural-language/agent', token, { method: 'POST', body: JSON.stringify({ query: intent.trim() }) }),
@@ -181,28 +181,28 @@ function DraftRow({ icon, label, value, last = false }: { icon: 'server-outline'
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#FFFFFF' },
-  page: { flex: 1, backgroundColor: '#FFFFFF' },
+  safeArea: { flex: 1, backgroundColor: colors.background },
+  page: { flex: 1, backgroundColor: colors.background },
   content: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: 80 },
-  closeButton: { width: 36, height: 36, borderRadius: 12, backgroundColor: '#F2F4F7', alignItems: 'center', justifyContent: 'center' },
+  closeButton: { width: 36, height: 36, borderRadius: 12, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' },
   scenarioContext: { minHeight: 40, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.md, paddingHorizontal: spacing.md, borderRadius: radius.md, backgroundColor: colors.accentSoft },
   scenarioContextText: { ...typography.caption, color: colors.primary, flex: 1 },
   wizardEntry: { marginTop: spacing.sm },
   steps: { flexDirection: 'row', marginTop: spacing.md, paddingHorizontal: spacing.xs },
   stepItem: { flex: 1, alignItems: 'center' },
   stepTop: { width: '100%', flexDirection: 'row', alignItems: 'center' },
-  stepCircle: { width: 28, height: 28, marginLeft: 'auto', borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: '#E9EDF2' },
+  stepCircle: { width: 28, height: 28, marginLeft: 'auto', borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentSoft },
   stepCircleActive: { backgroundColor: colors.primary },
   stepNumber: { ...typography.caption, color: colors.textSecondary, fontWeight: '700' },
   stepNumberActive: { color: '#FFFFFF' },
-  stepLine: { height: 1, flex: 1, backgroundColor: '#D8DEE7', marginRight: -1 },
+  stepLine: { height: 1, flex: 1, backgroundColor: colors.border, marginRight: -1 },
   stepLabel: { ...typography.caption, color: colors.textMuted, marginTop: 4 },
   stepLabelActive: { color: colors.primary, fontWeight: '800' },
   stateSurface: { marginTop: spacing.xl },
   promptBlock: { marginTop: spacing.xl, padding: spacing.md, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, backgroundColor: '#FFFFFF' },
   promptHeading: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.sm },
   promptTitle: { ...typography.section, color: colors.text },
-  composer: { minHeight: 112, flexDirection: 'row', alignItems: 'flex-end', gap: spacing.sm, padding: spacing.md, backgroundColor: '#F5F7FA', borderRadius: radius.md },
+  composer: { minHeight: 112, flexDirection: 'row', alignItems: 'flex-end', gap: spacing.sm, padding: spacing.md, backgroundColor: colors.accentSoft, borderRadius: radius.md },
   input: { ...typography.body, color: colors.text, flex: 1, minHeight: 84, maxHeight: 124, textAlignVertical: 'top', paddingVertical: 0 },
   sendButton: { width: 38, height: 38, borderRadius: 19, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
   quickLabel: { ...typography.caption, color: colors.textMuted, marginTop: spacing.md },
@@ -212,7 +212,7 @@ const styles = StyleSheet.create({
   pressed: { opacity: 0.7 },
   disabled: { opacity: 0.4 },
   error: { ...typography.caption, color: colors.danger, marginTop: spacing.sm },
-  suggestion: { marginTop: spacing.lg, borderColor: '#C7D7FE', padding: spacing.lg },
+  suggestion: { marginTop: spacing.lg, borderColor: colors.brandSoft, padding: spacing.lg },
   suggestionLabel: { ...typography.label, color: colors.primary },
   suggestionHeader: { flexDirection: 'row', gap: spacing.md, marginTop: spacing.md },
   templateIcon: { width: 42, height: 42, borderRadius: radius.md, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' },
@@ -221,7 +221,7 @@ const styles = StyleSheet.create({
   templateDescription: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
   agentCopy: { ...typography.body, color: colors.textSecondary, marginTop: spacing.sm },
   agentMeta: { ...typography.caption, color: colors.textMuted, marginTop: spacing.xs },
-  missing: { ...typography.caption, color: '#B54708', backgroundColor: '#FFF4E5', borderRadius: radius.md, padding: spacing.sm, marginTop: spacing.md },
+  missing: { ...typography.caption, color: colors.warning, backgroundColor: colors.warningSoft, borderRadius: radius.md, padding: spacing.sm, marginTop: spacing.md },
   draftRows: { marginTop: spacing.md, borderTopWidth: 1, borderTopColor: colors.border },
   draftRow: { minHeight: 46, flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   draftDivider: { borderBottomWidth: 1, borderBottomColor: colors.border },

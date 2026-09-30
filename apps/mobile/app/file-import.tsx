@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { ActivityIndicator, Button, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { api } from '../src/api';
 import { useAuthStore } from '../src/auth-store';
+import { colors } from '../src/design';
 import { styles } from '../src/shell';
 
 interface FileImportResult {
@@ -67,6 +68,6 @@ export default function FileImportPage() {
 }
 
 const local = StyleSheet.create({
-  page: { flex: 1, backgroundColor: '#F5F4EF' }, content: { padding: 20 }, action: { marginTop: 16 },
-  message: { color: '#5E6A63', marginTop: 14, lineHeight: 20 },
+  page: { flex: 1, backgroundColor: colors.background }, content: { padding: 20 }, action: { marginTop: 16 },
+  message: { color: colors.textSecondary, marginTop: 14, lineHeight: 20 },
 });

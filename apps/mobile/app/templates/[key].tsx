@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Button, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { api } from '../../src/api';
 import { useAuthStore } from '../../src/auth-store';
+import { workspaceColors as colors } from '../../src/design';
 import { automationLevelLabel, templateGroupLabel } from '../../src/plan-presenter';
 import {
   buildInitialTemplateConfig,
@@ -388,21 +389,21 @@ function formatShortDate(value: string | null | undefined) {
 }
 
 const local = StyleSheet.create({
-  page: { flex: 1, backgroundColor: '#F5F4EF' },
+  page: { flex: 1, backgroundColor: colors.background },
   content: { padding: 24, paddingTop: 52 },
-  eyebrow: { color: '#287052', fontSize: 13, fontWeight: '700', letterSpacing: 1 },
-  title: { color: '#17251F', fontSize: 18, lineHeight: 25, fontWeight: '700', marginTop: 6 },
-  subtitle: { color: '#69756F', fontSize: 16, lineHeight: 24, marginTop: 8, marginBottom: 24 },
-  card: { backgroundColor: '#FFFFFF', borderRadius: 16, padding: 18, marginBottom: 12, borderWidth: 1, borderColor: '#E3E7E4' },
-  cardTitle: { fontWeight: '700', fontSize: 16, color: '#24342C', marginTop: 10, marginBottom: 4 },
-  text: { color: '#6B7770', lineHeight: 21 },
-  input: { borderWidth: 1, borderColor: '#D9DEDA', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 11, backgroundColor: '#FAFBFA', marginTop: 10 },
+  eyebrow: { color: colors.success, fontSize: 13, fontWeight: '700', letterSpacing: 1 },
+  title: { color: colors.text, fontSize: 18, lineHeight: 25, fontWeight: '700', marginTop: 6 },
+  subtitle: { color: colors.textSecondary, fontSize: 16, lineHeight: 24, marginTop: 8, marginBottom: 24 },
+  card: { backgroundColor: colors.surface, borderRadius: 16, padding: 18, marginBottom: 12, borderWidth: 1, borderColor: colors.border },
+  cardTitle: { fontWeight: '700', fontSize: 16, color: colors.textSecondary, marginTop: 10, marginBottom: 4 },
+  text: { color: colors.textSecondary, lineHeight: 21 },
+  input: { borderWidth: 1, borderColor: colors.border, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 11, backgroundColor: colors.accentSoft, marginTop: 10 },
   optionWrap: { gap: 8, marginTop: 12 },
-  pickCard: { borderWidth: 1, borderColor: '#D9DEDA', borderRadius: 14, padding: 12, backgroundColor: '#FAFBFA' },
-  pickCardActive: { borderColor: '#287052', backgroundColor: '#EAF5EF' },
-  pickTitle: { color: '#24342C', fontWeight: '700' },
-  pickTitleActive: { color: '#287052' },
-  pickText: { color: '#6B7770', marginTop: 4, lineHeight: 18 },
-  selection: { color: '#287052', marginTop: 10, fontWeight: '600' },
-  error: { color: '#A63D3D', marginTop: 10 },
+  pickCard: { borderWidth: 1, borderColor: colors.border, borderRadius: 14, padding: 12, backgroundColor: colors.accentSoft },
+  pickCardActive: { borderColor: colors.success, backgroundColor: colors.successSoft },
+  pickTitle: { color: colors.textSecondary, fontWeight: '700' },
+  pickTitleActive: { color: colors.success },
+  pickText: { color: colors.textSecondary, marginTop: 4, lineHeight: 18 },
+  selection: { color: colors.success, marginTop: 10, fontWeight: '600' },
+  error: { color: colors.danger, marginTop: 10 },
 });

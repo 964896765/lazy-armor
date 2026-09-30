@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Stack } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { StatusBar } from 'react-native';
+import { ImageBackground, StatusBar, StyleSheet, View } from 'react-native';
 import { AuthGate } from '../src/auth-gate';
 import { useAuthStore } from '../src/auth-store';
 import { useAuthSessionRefresh } from '../src/auth-session-refresh';
@@ -24,14 +24,17 @@ export default function RootLayout() {
 
   return (
     <QueryClientProvider client={client}>
-      <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
+      <ImageBackground source={require('../assets/space-bg-dark.png')} resizeMode="cover" style={styles.background}>
+      <View pointerEvents="none" style={styles.backgroundTone} />
+      <StatusBar barStyle="dark-content" translucent backgroundColor="transparent" />
       <AuthGate>
-        <Stack screenOptions={{ contentStyle: { backgroundColor: colors.background }, headerStyle: { backgroundColor: colors.background }, headerShadowVisible: false, headerTintColor: colors.primary, headerTitleStyle: { color: colors.text, ...typography.navigationTitle } }}>
+        <Stack screenOptions={{ contentStyle: { backgroundColor: 'transparent' }, headerStyle: { backgroundColor: 'rgba(255,255,255,0.78)' }, headerShadowVisible: false, headerTintColor: colors.primary, headerTitleStyle: { color: colors.text, ...typography.navigationTitle } }}>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen name="auth" options={{ headerShown: false }} />
           <Stack.Screen name="onboarding" options={{ headerShown: false }} />
           <Stack.Screen name="membership" options={{ headerShown: false }} />
           <Stack.Screen name="connections/add" options={{ headerShown: false }} />
+          <Stack.Screen name="capabilities" options={{ headerShown: false }} />
           <Stack.Screen name="connections/[id]" options={{ headerShown: false }} />
           <Stack.Screen name="apps/[id]" options={{ headerShown: false }} />
           <Stack.Screen name="approvals" options={{ headerShown: false }} />
@@ -78,8 +81,15 @@ export default function RootLayout() {
           <Stack.Screen name="create-wizard" options={{ headerShown: false }} />
           <Stack.Screen name="feature-placeholder" options={{ headerShown: false }} />
           <Stack.Screen name="private-space" options={{ headerShown: false }} />
+          <Stack.Screen name="services/[slug]" options={{ headerShown: false }} />
         </Stack>
       </AuthGate>
+      </ImageBackground>
     </QueryClientProvider>
   );
 }
+
+const styles = StyleSheet.create({
+  background: { flex: 1 },
+  backgroundTone: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: 'rgba(30, 58, 92, 0.14)' },
+});

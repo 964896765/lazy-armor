@@ -10,9 +10,9 @@ export function WorkspaceHeader({ title, action, onBack }: { title: string; subt
 }
 
 const styles = StyleSheet.create({
-  header: { minHeight: 60, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm, paddingTop: spacing.sm, paddingBottom: spacing.sm },
+  header: { minHeight: 54, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
   copy: { flex: 1, minWidth: 0 },
-  back: { width: 40, height: 40, marginLeft: -6, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  back: { width: 40, height: 40, marginLeft: -8, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   pressed: { backgroundColor: colors.pressed },
-  title: { ...typography.navigationTitle, color: colors.text },
+  title: { ...typography.navigationTitle, color: colors.text, fontWeight: '600' },
 });

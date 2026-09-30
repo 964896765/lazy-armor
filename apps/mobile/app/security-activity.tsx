@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { api } from '../src/api';
 import { useAuthStore } from '../src/auth-store';
+import { colors } from '../src/design';
 import { ShellPage, styles } from '../src/shell';
 
 interface SecurityActivity {
@@ -32,6 +33,6 @@ export default function SecurityActivityPage() {
 }
 
 const local = StyleSheet.create({
-  page: { flex: 1, backgroundColor: '#F5F4EF' },
+  page: { flex: 1, backgroundColor: colors.background },
   content: { paddingBottom: 20 },
 });

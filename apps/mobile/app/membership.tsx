@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { ActivityIndicator, Button, ScrollView, StyleSheet, Text, View, type DimensionValue } from 'react-native';
 import { api } from '../src/api';
 import { useAuthStore } from '../src/auth-store';
+import { colors } from '../src/design';
 import {
   MEMBERSHIP_CAPABILITY_LABELS,
   activePlanUsageLabel,
@@ -39,7 +40,7 @@ export default function MembershipPage() {
         )}
         {membership.data && (
           <>
-            <View style={[styles.card, local.hero]}>
+            <View style={styles.card}>
               <Text style={local.planName}>{membership.data.membership.name}</Text>
               <Text style={styles.cardText}>{activePlanUsageLabel(membership.data)}</Text>
               <View style={local.progress}>
@@ -121,20 +122,19 @@ function usageWidth(summary: MembershipSummary): DimensionValue {
 }
 
 const local = StyleSheet.create({
-  page: { flex: 1, backgroundColor: '#F5F4EF' },
+  page: { flex: 1, backgroundColor: colors.background },
   content: { paddingBottom: 20 },
-  hero: { borderColor: '#B9D8C9', backgroundColor: '#F8FFFB' },
-  planName: { color: '#174E38', fontSize: 27, fontWeight: '800' },
-  progress: { height: 8, backgroundColor: '#DFE8E3', borderRadius: 999, overflow: 'hidden', marginTop: 14 },
-  progressValue: { height: 8, backgroundColor: '#287052', borderRadius: 999 },
-  quiet: { color: '#7A8780', fontSize: 12, marginTop: 8 },
-  row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#EEF1EF' },
-  rowLabel: { color: '#34463D' },
-  enabled: { color: '#287052', fontWeight: '700' },
-  disabled: { color: '#89948E' },
-  usageValue: { color: '#174E38', fontWeight: '700' },
+  planName: { color: colors.text, fontSize: 27, fontWeight: '800' },
+  progress: { height: 8, backgroundColor: colors.successSoft, borderRadius: 999, overflow: 'hidden', marginTop: 14 },
+  progressValue: { height: 8, backgroundColor: colors.success, borderRadius: 999 },
+  quiet: { color: colors.textSecondary, fontSize: 12, marginTop: 8 },
+  row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border },
+  rowLabel: { color: colors.textSecondary },
+  enabled: { color: colors.success, fontWeight: '700' },
+  disabled: { color: colors.textSecondary },
+  usageValue: { color: colors.text, fontWeight: '700' },
   action: { marginTop: 12 },
-  safety: { backgroundColor: '#EAF5EF', borderRadius: 14, padding: 16, marginBottom: 20 },
-  safetyTitle: { color: '#174E38', fontWeight: '800' },
-  safetyText: { color: '#476157', lineHeight: 20, marginTop: 5 },
+  safety: { backgroundColor: colors.successSoft, borderRadius: 14, padding: 16, marginBottom: 20 },
+  safetyTitle: { color: colors.text, fontWeight: '800' },
+  safetyText: { color: colors.textSecondary, lineHeight: 20, marginTop: 5 },
 });

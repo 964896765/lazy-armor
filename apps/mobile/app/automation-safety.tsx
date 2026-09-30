@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ActivityIndicator, Button, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { api } from '../src/api';
 import { useAuthStore } from '../src/auth-store';
+import { colors } from '../src/design';
 import { ShellPage, styles } from '../src/shell';
 
 interface Settings {
@@ -49,8 +50,8 @@ export default function AutomationSafetyPage() {
 }
 
 const local = StyleSheet.create({
-  page: { flex: 1, backgroundColor: '#F5F4EF' },
+  page: { flex: 1, backgroundColor: colors.background },
   content: { paddingBottom: 20 },
-  active: { borderColor: '#287052', borderWidth: 2 },
+  active: { borderColor: colors.success, borderWidth: 2 },
   action: { marginTop: 12 },
 });

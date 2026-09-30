@@ -7,7 +7,7 @@ export interface V6Destination {
 export const PRIMARY_DESTINATIONS: readonly V6Destination[] = [
   { label: '首页', path: '/', icon: 'home-outline' },
   { label: '计划', path: '/plans', icon: 'calendar-outline' },
-  { label: '问一问', path: '/search-ai', icon: 'chatbubble-ellipses-outline' },
+  { label: '聊天', path: '/search-ai', icon: 'chatbubble-ellipses-outline' },
   { label: '资源', path: '/private', icon: 'extension-puzzle-outline' },
   { label: '服务', path: '/services', icon: 'person-outline' },
 ];

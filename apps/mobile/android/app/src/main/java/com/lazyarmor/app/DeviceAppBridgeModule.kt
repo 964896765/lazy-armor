@@ -129,6 +129,19 @@ class DeviceAppBridgeModule(reactContext: ReactApplicationContext) : ReactContex
     }
   }
 
+  @ReactMethod
+  fun finishSpeechRecognition(promise: Promise) {
+    Handler(Looper.getMainLooper()).post {
+      val recognizer = speechRecognizer
+      if (recognizer == null || speechPromise == null) {
+        promise.resolve(false)
+      } else {
+        recognizer.stopListening()
+        promise.resolve(true)
+      }
+    }
+  }
+
   private fun finishSpeechWithResult(transcript: String) {
     val pending = speechPromise
     speechPromise = null

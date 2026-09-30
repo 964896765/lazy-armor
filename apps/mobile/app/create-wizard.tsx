@@ -218,7 +218,7 @@ export default function CreateWizard() {
 
   return <Screen header="创建计划" onBack={() => router.back()}>
     <WizardProgress stage={stage} />
-    {resumeNotice ? <View style={styles.resumeNotice}><Ionicons name="alert-circle-outline" size={17} color="#96622B" /><Text style={styles.resumeNoticeText}>{resumeNotice}</Text></View> : null}
+    {resumeNotice ? <View style={styles.resumeNotice}><Ionicons name="alert-circle-outline" size={17} color={colors.warning} /><Text style={styles.resumeNoticeText}>{resumeNotice}</Text></View> : null}
     {stage === 1 ? <StageGoal
       contract={contract.data}
       loading={contract.isLoading}
@@ -467,16 +467,16 @@ const styles = StyleSheet.create({
   steps: { flexDirection: 'row', marginTop: spacing.md, paddingHorizontal: spacing.xs },
   stepItem: { flex: 1, alignItems: 'center' },
   stepTop: { width: '100%', flexDirection: 'row', alignItems: 'center' },
-  stepCircle: { width: 28, height: 28, marginLeft: 'auto', borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: '#E9EDF2' },
+  stepCircle: { width: 28, height: 28, marginLeft: 'auto', borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentSoft },
   stepCircleActive: { backgroundColor: colors.primary },
   stepNumber: { ...typography.caption, color: colors.textSecondary, fontWeight: '700' },
   stepNumberActive: { color: '#FFFFFF' },
-  stepLine: { height: 1, flex: 1, backgroundColor: '#D8DEE7', marginRight: -1 },
+  stepLine: { height: 1, flex: 1, backgroundColor: colors.border, marginRight: -1 },
   stepLineActive: { backgroundColor: colors.primary },
   stepLabel: { ...typography.caption, color: colors.textMuted, marginTop: 4 },
   stepLabelActive: { color: colors.primary, fontWeight: '800' },
-  resumeNotice: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.md, padding: spacing.md, borderRadius: radius.md, backgroundColor: '#F7ECD9' },
-  resumeNoticeText: { ...typography.caption, color: '#96622B', flex: 1 },
+  resumeNotice: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.md, padding: spacing.md, borderRadius: radius.md, backgroundColor: colors.warningSoft },
+  resumeNoticeText: { ...typography.caption, color: colors.warning, flex: 1 },
   catalogSelection: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, marginBottom: spacing.md, padding: spacing.md, borderRadius: radius.md, backgroundColor: colors.successSoft },
   catalogSelectionText: { ...typography.caption, color: colors.textSecondary, lineHeight: 19, flex: 1 },
   stageSurface: { marginTop: spacing.lg },
@@ -495,7 +495,7 @@ const styles = StyleSheet.create({
   demandBlock: { marginTop: spacing.md, paddingTop: spacing.md, borderTopWidth: 1, borderTopColor: colors.border },
   demandHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   demandFact: { ...typography.bodyStrong, color: colors.text, flex: 1 },
-  requiredBadge: { ...typography.caption, color: '#A35B15', backgroundColor: colors.warningSoft, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10, overflow: 'hidden' },
+  requiredBadge: { ...typography.caption, color: colors.warning, backgroundColor: colors.warningSoft, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10, overflow: 'hidden' },
   demandState: { ...typography.caption, color: colors.textMuted, marginTop: spacing.xs },
   candidate: { minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.sm, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.background },
   candidateSelected: { borderColor: colors.primary, backgroundColor: colors.accentSoft },
@@ -505,13 +505,13 @@ const styles = StyleSheet.create({
   candidateMeta: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   candidateBadge: { ...typography.caption, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10, overflow: 'hidden', fontWeight: '700' },
   badgeOk: { color: colors.primary, backgroundColor: colors.successSoft },
-  badgeWait: { color: '#A35B15', backgroundColor: colors.warningSoft },
+  badgeWait: { color: colors.warning, backgroundColor: colors.warningSoft },
   offerRow: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: 1, borderBottomColor: colors.border },
   offerLabel: { ...typography.caption, color: colors.textSecondary },
   offerValue: { ...typography.bodyStrong, color: colors.text },
   offerBadge: { ...typography.caption, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10, overflow: 'hidden', fontWeight: '700' },
   offerReasons: { ...typography.caption, color: colors.textSecondary, marginTop: spacing.md },
-  offerWarning: { ...typography.caption, color: '#A35B15', backgroundColor: colors.warningSoft, borderRadius: radius.md, padding: spacing.sm, marginTop: spacing.md },
+  offerWarning: { ...typography.caption, color: colors.warning, backgroundColor: colors.warningSoft, borderRadius: radius.md, padding: spacing.sm, marginTop: spacing.md },
   summaryRow: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: spacing.sm },
   summaryDivider: { borderBottomWidth: 1, borderBottomColor: colors.border },
   summaryLabel: { ...typography.caption, color: colors.textSecondary, width: 52 },

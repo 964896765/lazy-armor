@@ -100,7 +100,7 @@ const styles = StyleSheet.create({
   list: { paddingBottom: 48 },
   sectionHeader: { minHeight: 34, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.lg, backgroundColor: colors.background, borderBottomWidth: 1, borderBottomColor: colors.border },
   sectionTitle: { ...typography.caption, color: colors.textSecondary, fontWeight: '700', letterSpacing: 0.4 },
-  sectionCount: { ...typography.label, color: colors.textMuted, backgroundColor: '#F1F4F3', borderRadius: radius.pill, paddingHorizontal: 7, paddingVertical: 2 },
+  sectionCount: { ...typography.label, color: colors.textMuted, backgroundColor: colors.accentSoft, borderRadius: radius.pill, paddingHorizontal: 7, paddingVertical: 2 },
   row: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.lg, backgroundColor: colors.surface },
   pressed: { backgroundColor: colors.pressed },
   rowIcon: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentSoft },

@@ -78,18 +78,18 @@ export default function PlanCenter() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#FFFFFF' },
-  page: { flex: 1, backgroundColor: '#FFFFFF' },
+  safeArea: { flex: 1, backgroundColor: colors.background },
+  page: { flex: 1, backgroundColor: colors.background },
   content: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: 48 },
   add: { width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentSoft },
   filters: { gap: spacing.sm, paddingTop: spacing.lg, paddingBottom: spacing.md },
-  filter: { minHeight: 34, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: spacing.md, borderRadius: radius.pill, backgroundColor: '#F2F4F7' },
+  filter: { minHeight: 34, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: spacing.md, borderRadius: radius.pill, backgroundColor: colors.accentSoft },
   filterSelected: { backgroundColor: colors.primary },
   filterText: { ...typography.caption, color: colors.textSecondary, fontWeight: '700' },
   filterTextSelected: { color: '#FFFFFF' },
   filterCount: { ...typography.label, color: colors.textMuted },
-  filterCountSelected: { color: '#D8F4EB' },
-  search: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.md, backgroundColor: '#F3F6F8', borderRadius: radius.md },
+  filterCountSelected: { color: colors.successSoft },
+  search: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.md, backgroundColor: colors.accentSoft, borderRadius: radius.md },
   searchInput: { ...typography.body, color: colors.text, flex: 1, paddingVertical: 0 },
   filterLine: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   resultText: { ...typography.caption, color: colors.textMuted },

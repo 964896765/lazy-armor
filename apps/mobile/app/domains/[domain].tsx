@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { canonicalPlanDomain, domainDefinition, scenariosForDomain } from '@lazy-armor/plan-schema/mobile';
+import { canonicalPlanDomain, domainDefinition } from '@lazy-armor/plan-schema/mobile';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, router } from 'expo-router';
 import type { ComponentProps } from 'react';
@@ -51,8 +51,7 @@ export default function DomainWorkspace() {
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <ScrollView style={styles.page} contentContainerStyle={styles.content}>
-        <WorkspaceHeader title={definition.label} onBack={() => router.back()} action={<Text style={styles.enabledBadge}>规范目录</Text>} />
-        <DomainHero domain={definition.key} />
+        <WorkspaceHeader title={definition.label} onBack={() => router.back()} />
         <View style={styles.tabs}>{TABS.map((item) => <Pressable key={item} accessibilityRole="button" onPress={() => setTab(item)} style={[styles.tab, item === tab && styles.tabSelected]}><Text style={[styles.tabText, item === tab && styles.tabTextSelected]}>{item}</Text></Pressable>)}</View>
         {!token ? <Surface><EmptyState icon="grid-outline" title="登录后查看你的领域" description="只有你本人可查看与管理自己的计划和资料。" action={{ label: '去登录', onPress: () => router.push('/auth/login' as never) }} /></Surface> : null}
         {token && plans.isLoading ? <View style={styles.loading}><ActivityIndicator color={colors.primary} /><Text style={styles.loadingText}>正在读取{definition.label}…</Text></View> : null}
@@ -62,15 +61,6 @@ export default function DomainWorkspace() {
         {token && !plans.isLoading && tab === '动态' ? <ActivitySection plans={domainPlans} /> : null}
       </ScrollView>
     </SafeAreaView>
-  );
-}
-
-function DomainHero({ domain }: { domain: string }) {
-  const scenarios = scenariosForDomain(domain);
-  return (
-    <View style={styles.domainHero}>
-      <View style={styles.heroScenarioGrid}>{scenarios.map((scenario) => <Pressable key={scenario.key} accessibilityRole="button" onPress={() => router.push(`/domains/${domain}/${scenario.key}` as never)} style={({ pressed }) => [styles.heroScenario, pressed && styles.pressed]}><Ionicons name={scenarioIcon(scenario.key)} size={17} color={colors.primary} /><Text numberOfLines={1} style={styles.heroScenarioLabel}>{scenario.label}</Text></Pressable>)}</View>
-    </View>
   );
 }
 
@@ -126,13 +116,6 @@ function ActivitySection({ plans }: { plans: PlanSummary[] }) {
 
 type IconName = ComponentProps<typeof Ionicons>['name'];
 
-function scenarioIcon(scenario: string): IconName {
-  return ({
-    bill: 'receipt-outline', budget: 'pie-chart-outline', balance: 'layers-outline', subscription: 'calendar-outline', refund: 'refresh-outline', abnormal_transaction: 'warning-outline',
-    maintenance: 'construct-outline', insurance: 'shield-checkmark-outline', inspection: 'search-outline', energy: 'flash-outline', abnormal: 'warning-outline', daily: 'calendar-outline',
-  } as Record<string, IconName>)[scenario] ?? 'checkmark-circle-outline';
-}
-
 function connectionIcon(connectorId: string): IconName {
   return ({ gmail: 'mail-outline', google_calendar: 'calendar-outline', calendar: 'calendar-outline', github: 'logo-github', file_provider: 'document-text-outline' } as Record<string, IconName>)[connectorId] ?? 'link-outline';
 }
@@ -142,24 +125,19 @@ const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: colors.surface },
   content: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: 48 },
   invalid: { flex: 1, padding: spacing.page, justifyContent: 'center' },
-  tabs: { flexDirection: 'row', backgroundColor: '#F2F3F5', padding: 3, borderRadius: radius.md, marginTop: spacing.md, marginBottom: spacing.lg },
+  tabs: { flexDirection: 'row', backgroundColor: colors.accentSoft, padding: 3, borderRadius: radius.md, marginTop: spacing.md, marginBottom: spacing.lg },
   tab: { flex: 1, minHeight: 34, alignItems: 'center', justifyContent: 'center', borderRadius: radius.sm },
   tabSelected: { backgroundColor: colors.surface },
   tabText: { ...typography.caption, color: colors.textMuted, fontWeight: '600' },
   tabTextSelected: { color: colors.primary, fontWeight: '800' },
   loading: { alignItems: 'center', paddingVertical: 56, gap: spacing.md },
   loadingText: { ...typography.body, color: colors.textSecondary },
-  domainHero: { paddingTop: spacing.sm },
-  enabledBadge: { ...typography.label, color: colors.primary, backgroundColor: colors.successSoft, borderRadius: radius.pill, paddingHorizontal: spacing.sm, paddingVertical: 3 },
-  heroScenarioGrid: { flexDirection: 'row', flexWrap: 'wrap', marginTop: spacing.md, backgroundColor: colors.accentSoft, borderRadius: radius.md, overflow: 'hidden' },
-  heroScenario: { width: '33.333%', minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 6 },
-  heroScenarioLabel: { ...typography.caption, color: colors.text, fontWeight: '700', flexShrink: 1 },
   sectionHeading: { minHeight: 38, marginTop: spacing.lg, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   sectionHeadingTitle: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   sectionTitleInline: { ...typography.section, color: colors.text },
-  countBadge: { ...typography.label, color: colors.textSecondary, backgroundColor: '#F1F4F3', borderRadius: radius.pill, paddingHorizontal: 7, paddingVertical: 2 },
+  countBadge: { ...typography.label, color: colors.textSecondary, backgroundColor: colors.accentSoft, borderRadius: radius.pill, paddingHorizontal: 7, paddingVertical: 2 },
   sectionAction: { ...typography.caption, color: colors.textSecondary, fontWeight: '600' },
-  listCard: { backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, overflow: 'hidden' },
+  listCard: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
   sourceRow: { minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.md },
   sourceIcon: { width: 34, height: 34, borderRadius: 11, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' },
   rowCopy: { flex: 1, minWidth: 0 },
@@ -178,7 +156,7 @@ const styles = StyleSheet.create({
   eventRow: { minHeight: 62, flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.md },
   eventIcon: { width: 30, height: 30, borderRadius: 10, backgroundColor: colors.success, alignItems: 'center', justifyContent: 'center' },
   suggestionRow: { gap: spacing.sm, paddingRight: spacing.lg },
-  suggestionCard: { width: 132, minHeight: 92, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, backgroundColor: '#FFFFFF', padding: spacing.md },
+  suggestionCard: { width: 132, minHeight: 92, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, backgroundColor: colors.surface, padding: spacing.md },
   suggestionTitle: { ...typography.bodyStrong, color: colors.text, marginTop: spacing.sm },
   suggestionAction: { ...typography.label, color: colors.primary, marginTop: 'auto', paddingTop: spacing.sm },
   primaryCta: { minHeight: 48, marginTop: spacing.xl, borderRadius: radius.md, backgroundColor: colors.primary, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm },

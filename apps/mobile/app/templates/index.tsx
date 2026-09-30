@@ -5,7 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { api } from '../../src/api';
 import { useAuthStore } from '../../src/auth-store';
-import { workspaceColors as colors, typography } from '../../src/design';
+import { workspaceColors as colors, spacing, typography } from '../../src/design';
 import { planVisualIcon } from '../../src/plan-presenter';
 import { LoginRequired, RuntimeDetailScreen, RuntimeLoadState } from '../../src/runtime-details-ui';
 
@@ -33,7 +33,7 @@ export default function TemplatesIndexPage() {
     {!token ? <LoginRequired /> : null}
     {token ? <><View style={styles.search}><Ionicons name="search-outline" size={20} color={colors.textSecondary} /><TextInput accessibilityLabel="搜索计划方案" placeholder="搜索计划方案" placeholderTextColor={colors.textMuted} value={search} onChangeText={setSearch} style={styles.input} /></View><View style={styles.filters}>{[null, ...domains].map((key) => <Pressable key={key ?? 'all'} accessibilityRole="button" accessibilityState={{ selected: domain === key }} onPress={() => setDomain(key)} style={[styles.filter, domain === key && styles.selected]}><Text style={[styles.filterText, domain === key && styles.selectedText]}>{key ? domainLabel(key) : '全部'}</Text></Pressable>)}</View></> : null}
     {token ? <RuntimeLoadState loading={templates.isLoading} error={templates.isError} empty={!templates.isLoading && !templates.isError && (templates.data?.length ?? 0) === 0} onRetry={() => templates.refetch()} loadingText="正在读取计划方案…" emptyTitle="还没有可用方案" /> : null}
-    {token && !templates.isError && !templates.isLoading ? <><Text style={styles.heading}>可选方案 · {shown.length}</Text><View style={styles.grid}>{shown.map((template) => <Pressable key={template.key} accessibilityRole="button" accessibilityLabel={`查看${template.name}`} onPress={() => router.push(`/templates/${template.key}` as never)} style={({ pressed }) => [styles.card, pressed && { opacity: 0.75 }]}><View style={styles.top}><View style={styles.icon}><Ionicons name={planVisualIcon(template.name)} size={21} color={colors.primary} /></View><View style={styles.cardCopy}><Text style={styles.name}>{template.name}</Text><Text style={styles.tag}>{domainLabel(template.domain)}</Text></View><Ionicons name="chevron-forward" size={18} color={colors.primary} /></View></Pressable>)}</View>{shown.length === 0 && (templates.data?.length ?? 0) > 0 ? <Text style={styles.description}>没有符合当前条件的方案。</Text> : null}</> : null}
+    {token && !templates.isError && !templates.isLoading ? <><Text style={styles.heading}>可选方案 · {shown.length}</Text><View style={styles.list}>{shown.map((template) => <Pressable key={template.key} accessibilityRole="button" accessibilityLabel={`查看${template.name}`} onPress={() => router.push(`/templates/${template.key}` as never)} style={({ pressed }) => [styles.row, pressed && { opacity: 0.75 }]}><View style={styles.icon}><Ionicons name={planVisualIcon(template.name)} size={21} color={colors.primary} /></View><View style={styles.cardCopy}><Text style={styles.name}>{template.name}</Text><Text style={styles.tag}>{domainLabel(template.domain)}</Text></View><Ionicons name="chevron-forward" size={18} color={colors.textMuted} /></Pressable>)}</View>{shown.length === 0 && (templates.data?.length ?? 0) > 0 ? <Text style={styles.description}>没有符合当前条件的方案。</Text> : null}</> : null}
   </RuntimeDetailScreen>;
 }
 
@@ -50,12 +50,11 @@ const styles = StyleSheet.create({
   selected: { backgroundColor: colors.primary, borderColor: colors.primary },
   filterText: { ...typography.caption, color: colors.textSecondary }, selectedText: { color: '#FFFFFF' },
   heading: { ...typography.section, color: colors.text, marginBottom: 12 },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
-  card: { flexGrow: 1, flexBasis: 220, borderRadius: 16, padding: 14, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface },
-  top: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  icon: { width: 42, height: 42, borderRadius: 13, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' },
+  list: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
+  row: { minHeight: 66, flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: spacing.sm, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
+  icon: { width: 40, height: 40, borderRadius: 12, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' },
   cardCopy: { flex: 1, minWidth: 0 },
-  tag: { ...typography.caption, color: colors.primary, flexShrink: 1, marginTop: 1 },
+  tag: { ...typography.caption, color: colors.textSecondary, flexShrink: 1, marginTop: 1 },
   name: { ...typography.bodyStrong, color: colors.text },
   description: { ...typography.body, color: colors.textSecondary, marginTop: 8 },
   footer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 18, paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.border },

@@ -38,16 +38,16 @@ function permissionIcon(key: string) {
 }
 
 const local = StyleSheet.create({
-  page: { flex: 1, backgroundColor: '#F5F4EF' },
+  page: { flex: 1, backgroundColor: colors.background },
   content: { paddingBottom: 20 },
-  list: { backgroundColor: '#FFFFFF', borderRadius: 16, borderWidth: 1, borderColor: '#E3E7E4', overflow: 'hidden' },
+  list: { backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1, borderColor: colors.border, overflow: 'hidden' },
   row: { minHeight: 76, flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md, paddingHorizontal: spacing.md, paddingVertical: spacing.md },
-  divider: { borderBottomWidth: 1, borderBottomColor: '#EAECF0' },
+  divider: { borderBottomWidth: 1, borderBottomColor: colors.border },
   icon: { width: 36, height: 36, borderRadius: radius.md, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' },
   copy: { flex: 1 },
   title: { ...typography.bodyStrong, color: colors.text },
   description: { ...typography.caption, color: colors.textSecondary, marginTop: 4, lineHeight: 18 },
-  vision: { marginTop: spacing.lg, backgroundColor: '#FFFFFF', borderRadius: 16, borderWidth: 1, borderColor: '#E3E7E4', padding: spacing.md },
+  vision: { marginTop: spacing.lg, backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1, borderColor: colors.border, padding: spacing.md },
   visionTitle: { ...typography.bodyStrong, color: colors.text },
   visionDescription: { ...typography.caption, color: colors.textSecondary, marginTop: 4, lineHeight: 18 },
 });

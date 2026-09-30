@@ -1,7 +1,7 @@
 import type { TextStyle } from 'react-native';
 
 export const typography = {
-  pageTitle: { fontSize: 26, lineHeight: 34, fontWeight: '400', letterSpacing: -0.2 } satisfies TextStyle,
+  pageTitle: { fontSize: 30, lineHeight: 40, fontWeight: '500', letterSpacing: -0.4 } satisfies TextStyle,
   navigationTitle: { fontSize: 20, lineHeight: 28, fontWeight: '400', letterSpacing: 0 } satisfies TextStyle,
   display: { fontSize: 26, lineHeight: 33, fontWeight: '700', letterSpacing: -0.4 } satisfies TextStyle,
   title: { fontSize: 18, lineHeight: 25, fontWeight: '700', letterSpacing: -0.1 } satisfies TextStyle,

@@ -3,11 +3,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { router, useLocalSearchParams, type Href } from 'expo-router';
 import type { ComponentProps } from 'react';
 import { useState } from 'react';
-import { ActivityIndicator, Alert, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/api';
 import { useAuthStore } from '../../src/auth-store';
-import { discoverLaunchableApps, openDeviceApp, setNotificationSourceEnabled } from '../../src/device-app-bridge';
+import { openDeviceApp, setNotificationSourceEnabled } from '../../src/device-app-bridge';
 import { ActionButton, EmptyState, WorkspaceHeader, colors, radius, spacing, typography } from '../../src/design';
 import { ensureTrustedDevice } from '../../src/trusted-device-api';
 
@@ -21,10 +21,8 @@ export default function AppWorkspace() {
   const [feedback, setFeedback] = useState<string | null>(null);
   const deviceApps = useQuery({ queryKey: ['device-app-connections', token], queryFn: () => api<DeviceAppConnection[]>('/device-app-connections', token), enabled: Boolean(token) });
   const trustedDevices = useQuery({ queryKey: ['trusted-devices', token], queryFn: () => api<TrustedDeviceSummary[]>('/trusted-devices', token), enabled: Boolean(token) });
-  const discoveredApps = useQuery({ queryKey: ['app-workspace-discovered-apps'], queryFn: discoverLaunchableApps, enabled: Boolean(token && (deviceApps.data?.length ?? 0) > 0), staleTime: 5 * 60_000 });
   const app = deviceApps.data?.find((item) => item.id === id);
   const trustedDeviceStatus = trustedDevices.data?.find((device) => device.id === app?.trustedDeviceId)?.status;
-  const iconUri = discoveredApps.data?.find((item) => item.packageName === app?.packageName)?.iconDataUri;
 
   const update = useMutation({
     mutationFn: async () => {
@@ -66,7 +64,6 @@ export default function AppWorkspace() {
       <ScrollView style={styles.page} contentContainerStyle={styles.content}>
         <WorkspaceHeader title="应用" subtitle="这台手机上可交给懒人装甲使用的应用" onBack={() => router.back()} />
         <View style={styles.hero}>
-          <View style={styles.heroIcon}>{iconUri ? <Image source={{ uri: iconUri }} style={styles.appIcon} /> : <Ionicons name="apps-outline" size={26} color={colors.primary} />}</View>
           <View style={styles.heroCopy}><View style={styles.heroTitleRow}><Text style={styles.heroTitle}>{app.displayName}</Text><Text style={[styles.status, !app.enabled && styles.statusWarning]}>{app.enabled ? '已连接' : '已停用'}</Text></View><Text style={styles.heroDetail}>{app.packageName}</Text></View>
         </View>
 
@@ -126,9 +123,7 @@ const styles = StyleSheet.create({
   content: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: 48 },
   loading: { minHeight: 180, alignItems: 'center', justifyContent: 'center', gap: spacing.md },
   muted: { ...typography.caption, color: colors.textSecondary },
-  hero: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: spacing.lg },
-  heroIcon: { width: 58, height: 58, borderRadius: 18, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' },
-  appIcon: { width: 46, height: 46, borderRadius: 14 },
+  hero: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: spacing.lg, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
   heroCopy: { flex: 1, minWidth: 0 },
   heroTitleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   heroTitle: { ...typography.title, color: colors.text, fontSize: 21 },
