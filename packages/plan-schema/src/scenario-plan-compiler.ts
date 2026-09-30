@@ -1,5 +1,5 @@
 import { compileActionRecipe, normalizePlanDefinition, resolveActionRecipe, type PlanDefinition, type PlanDefinitionInput } from './index';
-import { evaluateScenarioReadiness, scenarioByKey, type ScenarioReadinessInput, type StrategyKey } from './runtime-catalog';
+import { evaluateScenarioReadiness, scenarioDefinitionByKey, type ScenarioReadinessInput, type StrategyKey } from './runtime-catalog';
 import { productDomainFromStorageKey } from './product-model';
 import { buildStrategyRuntime, type CompiledStrategyRuntime } from './strategy-runtime';
 import { buildTerminalFollowUpRuntime, terminalFollowUpRule, terminalFollowUpScenario, terminalTargetConfig, validateTerminalTarget, type TerminalHandoffTarget } from './terminal-follow-up';
@@ -28,9 +28,10 @@ export interface CompiledScenarioPlan {
 
 /** Compiles a catalog scenario and strategy into the existing Plan Engine schema. */
 export function compileScenarioPlan(input: ScenarioCompileInput): CompiledScenarioPlan {
-  const revision = input.scenarioRevision ?? 1;
+  const canonical = scenarioDefinitionByKey(input.scenarioKey);
+  const revision = input.scenarioRevision ?? canonical?.revision ?? 1;
   const terminalRule = terminalFollowUpRule(input.scenarioKey, revision);
-  const scenario = terminalRule ? terminalFollowUpScenario(terminalRule) : revision === 1 ? scenarioByKey(input.scenarioKey) : undefined;
+  const scenario = terminalRule ? terminalFollowUpScenario(terminalRule) : canonical?.revision === revision ? canonical : undefined;
   if (!scenario) throw new Error(`Unknown scenario: ${input.scenarioKey}`);
   const strategy = input.strategy ?? scenario.defaultStrategy;
   if (!scenario.supportedStrategies.includes(strategy)) throw new Error(`Strategy ${strategy} is not supported by ${scenario.key}`);
@@ -48,7 +49,10 @@ export function compileScenarioPlan(input: ScenarioCompileInput): CompiledScenar
     approvalPolicy: approvalFor(runtime.approvalPolicy, scenario.defaultRiskFloor),
     sources: [{ sourceType: 'manual', config: {}, sortOrder: 0 }],
     triggers: [triggerFor(runtime, scenario.requiredFacts[0])],
-    conditions: [{ groupId: 'root', logicalOperator: 'AND', fieldPath: scenario.requiredFacts[0], operator: 'EXISTS', sortOrder: 0 }],
+    // Periodic summaries read their scoped Truth through SourceResolver at
+    // execution time.  They must not require a client trigger payload to
+    // duplicate that fact before the source is resolved.
+    conditions: strategy === 'PERIODIC_SUMMARY' ? [] : [{ groupId: 'root', logicalOperator: 'AND', fieldPath: scenario.requiredFacts[0], operator: 'EXISTS', sortOrder: 0 }],
     actions: [actionFor(runtime.actionMode, scenario.key, productDomain.storageKey)],
   };
   if (terminalRule) {
@@ -69,6 +73,12 @@ export function compileScenarioPlan(input: ScenarioCompileInput): CompiledScenar
   const recipe = terminalRule ? null : resolveActionRecipe(input.scenarioKey, revision, strategy);
   if (recipe) {
     definitionInput.actions = compileActionRecipe(recipe);
+    if (input.scenarioKey === 'finance.accounting') {
+      // Accounting reports can only consume server-side verified Truth.
+      // This keeps a V2 Offer-created plan on the shared SourceResolver path
+      // and prevents a client-side transaction payload from becoming input.
+      definitionInput.sources = [{ sourceType: 'internal', config: { resource: 'finance.transaction' }, sortOrder: 0 }];
+    }
     if (recipe.steps.some((step) => step.actionType === 'summarize' && step.config.domain === 'daily_summary')) {
       definitionInput.sources = [...definitionInput.sources, { sourceType: 'internal', config: { resource: 'important_item_candidates' }, sortOrder: definitionInput.sources.length }];
     }

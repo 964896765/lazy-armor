@@ -1,14 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/api';
 import { useAuthStore } from '../../src/auth-store';
-import { ActionButton, AnimatedEntry, EmptyState, MessageRow, Surface, WorkspaceHeader, WorkspaceSection, colors, radius, spacing, typography } from '../../src/design';
-import { planVisualIcon } from '../../src/plan-presenter';
+import { ActionButton, AnimatedEntry, EmptyState, MessageRow, Surface, WorkspaceHeader, WorkspaceSection, workspaceColors as colors, radius, spacing, typography } from '../../src/design';
+import { isValidScenarioKey, planVisualIcon } from '../../src/plan-presenter';
 import { clarificationQuestion, presentAgentPlanProposal } from '../../src/privacy-presenter';
+import { GoalResourceSelector } from '../../src/goal-resource-selector';
 
 interface PlanTemplateSummary {
   key: string;
@@ -53,6 +54,8 @@ const quickIntents = ['帮我盯住快递变化', '每月整理账单', '车辆�
 export default function Create() {
   const token = useAuthStore((store) => store.token);
   const client = useQueryClient();
+  const params = useLocalSearchParams<{ scenarioKey?: string }>();
+  const scenarioKey = isValidScenarioKey(params.scenarioKey) ? params.scenarioKey : null;
   const [intent, setIntent] = useState('');
   const templates = useQuery({ queryKey: ['templates', token], queryFn: () => api<PlanTemplateSummary[]>('/templates', token), enabled: Boolean(token) });
   const agentPlan = useMutation({
@@ -79,10 +82,13 @@ export default function Create() {
     }
   }
 
+  if (scenarioKey) return <GoalResourceSelector scenarioKey={scenarioKey} />;
+
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
+    <SafeAreaView style={styles.safeArea} edges={[]}>
       <ScrollView style={styles.page} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" refreshControl={token ? <RefreshControl tintColor={colors.primary} refreshing={templates.isFetching} onRefresh={() => templates.refetch()} /> : undefined}>
         <WorkspaceHeader title="创建计划" subtitle="用自然语言，创建属于你的自动化计划" action={<Pressable accessibilityRole="button" accessibilityLabel="关闭" onPress={() => router.back()} style={styles.closeButton}><Ionicons name="close" size={24} color={colors.text} /></Pressable>} />
+        {scenarioKey ? <><View style={styles.scenarioContext}><Ionicons name="layers-outline" size={17} color={colors.primary} /><Text style={styles.scenarioContextText}>已选择场景 {scenarioKey}，创建后将绑定该场景上下文</Text></View><View style={styles.wizardEntry}><ActionButton label="进入五步创建向导" onPress={() => router.push(`/create-wizard?scenarioKey=${scenarioKey}` as never)} /></View></> : null}
         <View style={styles.steps}>{creationSteps.map((label, index) => <View key={label} style={styles.stepItem}><View style={styles.stepTop}><View style={[styles.stepCircle, index === 0 && styles.stepCircleActive]}><Text style={[styles.stepNumber, index === 0 && styles.stepNumberActive]}>{index + 1}</Text></View>{index < creationSteps.length - 1 ? <View style={styles.stepLine} /> : null}</View><Text style={[styles.stepLabel, index === 0 && styles.stepLabelActive]}>{label}</Text></View>)}</View>
 
         {!token ? <Surface style={styles.stateSurface}><EmptyState icon="sparkles-outline" title="登录后开始安排" description="告诉我一件麻烦事，我来帮你找办法。" action={{ label: '去登录', onPress: () => router.push('/connections') }} /></Surface> : (
@@ -140,7 +146,7 @@ export default function Create() {
 
             <WorkspaceSection title="热门计划">
               <Text style={styles.sectionSubtitle}>没有灵感时，从真实可用的计划中选一个</Text>
-              <View style={styles.catalogAction}><ActionButton label="查看全部模板" tone="quiet" onPress={() => router.push('/templates' as never)} /></View>
+              <View style={styles.catalogAction}><ActionButton label="查看计划方案" tone="quiet" onPress={() => router.push('/templates' as never)} /></View>
               {templates.isLoading ? <ActivityIndicator color={colors.primary} style={styles.loader} /> : null}
               {templates.isError ? <Text style={styles.error}>热门计划暂时没有加载出来，请稍后再试。</Text> : null}
               {popularTemplates.length > 0 ? <View style={styles.templateList}>{popularTemplates.map((template, index) => <MessageRow key={template.key} icon={planVisualIcon(template.name)} title={template.name} description={template.description} tone="brand" onPress={() => router.push(`/templates/${template.key}` as never)} last={index === popularTemplates.length - 1} />)}</View> : null}
@@ -179,6 +185,9 @@ const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: '#FFFFFF' },
   content: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: 80 },
   closeButton: { width: 36, height: 36, borderRadius: 12, backgroundColor: '#F2F4F7', alignItems: 'center', justifyContent: 'center' },
+  scenarioContext: { minHeight: 40, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.md, paddingHorizontal: spacing.md, borderRadius: radius.md, backgroundColor: colors.accentSoft },
+  scenarioContextText: { ...typography.caption, color: colors.primary, flex: 1 },
+  wizardEntry: { marginTop: spacing.sm },
   steps: { flexDirection: 'row', marginTop: spacing.md, paddingHorizontal: spacing.xs },
   stepItem: { flex: 1, alignItems: 'center' },
   stepTop: { width: '100%', flexDirection: 'row', alignItems: 'center' },

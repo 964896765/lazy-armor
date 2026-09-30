@@ -59,6 +59,17 @@ export class ActionExecutor {
     }
     const local = this.enrichLocalContext(context);
     if (action.actionType === 'classify' && !action.connectionId) {
+      if (action.config.taxonomy === 'finance') {
+        const finance = this.enrichFinanceContext(local);
+        return {
+          // `amount` stays only as a legacy single-currency convenience field.
+          // Consumers must use currencyTotals for a trustworthy report.
+          amount: finance.amount,
+          categoryTotals: finance.categoryTotals,
+          transactionCount: finance.transactionCount,
+          financeSummary: finance,
+        };
+      }
       const enriched = this.billing.enrichContext(local);
       const totalAmount = enriched.amount ?? 0;
       const categoryTotals = enriched.categoryTotals ?? {};
@@ -89,6 +100,23 @@ export class ActionExecutor {
       };
     }
     if (action.actionType === 'compare' && !action.connectionId) {
+      if (action.config.baseline === 'finance_reconciliation') {
+        const finance = this.enrichFinanceContext(local);
+        // A comparison reports reconciliation evidence, not a fraud verdict.
+        // Cross-currency values remain separate because no exchange-rate fact
+        // is part of this accounting contract.
+        return {
+          compared: true,
+          comparisonKind: 'accounting_reconciliation',
+          currencyTotals: finance.currencyTotals,
+          accountKeys: finance.accountKeys,
+          reconciliation: finance.verification.reconciliation,
+          discrepancyFollowUp: finance.verification.discrepancyFollowUp,
+          resultSummary: finance.verification.reconciliation.unreconciledDifferenceCount === 0
+            ? '已完成当前已验证交易的账目核对；未发现待跟进差异。'
+            : `发现 ${finance.verification.reconciliation.unreconciledDifferenceCount} 项待核对差异，等待用户跟进。`,
+        };
+      }
       const enriched = this.billing.enrichContext(local);
       const previous = typeof enriched.previousPeriodTotal === 'number' ? enriched.previousPeriodTotal : 0;
       const current = typeof enriched.currentPeriodTotal === 'number' ? enriched.currentPeriodTotal : typeof enriched.amount === 'number' ? enriched.amount : 0;
@@ -176,6 +204,22 @@ export class ActionExecutor {
       const logistics = this.logistics.enrichContext(local, action.config);
       const household = this.household.enrichContext(local);
       const study = this.study.enrichContext(local);
+      if (action.config.domain === 'finance') {
+        const finance = this.enrichFinanceContext(local);
+        const humanSummary = finance.transactionCount === 0
+          ? '当前没有已确认的交易。'
+          : `账目已整理，共 ${finance.transactionCount} 笔；${finance.currencySummary}。`;
+        return {
+          financeSummary: finance,
+          accountingVerification: finance.verification,
+          humanSummary,
+          resultSummary: humanSummary,
+          shouldNotify: finance.transactionCount > 0,
+          notificationPriority: 'P2',
+          notificationEventType: 'accounting_report_ready',
+          notificationDedupeKey: `accounting:${executionId}`,
+        };
+      }
       if (action.config.domain === 'billing' && action.config.summaryType === 'daily_account') {
         const totalAmount = typeof billing.amount === 'number' ? billing.amount : 0;
         const transactionCount = Array.isArray(billing.billingRecords) ? billing.billingRecords.length : 0;
@@ -587,6 +631,50 @@ export class ActionExecutor {
 
   private enrichLocalContext(context: Record<string, unknown>) {
     return this.study.enrichContext(this.device.enrichContext(this.dailySummary.enrichContext(this.household.enrichContext(this.logistics.enrichContext(this.content.enrichContext(this.billing.enrichContext(context)))))));
+  }
+
+  /** 把已确认的 finance.transaction 事实归一化为账目汇总（仅 verified Truth，不读候选）。 */
+  private enrichFinanceContext(context: Record<string, unknown>) {
+    const transactions = Array.isArray(context.financeTransactions)
+      ? (context.financeTransactions as Array<Record<string, unknown>>)
+      : [];
+    const currencyTotalsMinor = transactions.reduce<Record<string, number>>((acc, tx) => {
+      const currency = typeof tx.currency === 'string' && /^[A-Z]{3}$/.test(tx.currency) ? tx.currency : 'UNKNOWN';
+      acc[currency] = (acc[currency] ?? 0) + (typeof tx.amountMinor === 'number' ? tx.amountMinor : 0);
+      return acc;
+    }, {});
+    const currencyTotals = Object.fromEntries(Object.entries(currencyTotalsMinor)
+      .map(([currency, minor]) => [currency, Number((minor / 100).toFixed(2))]));
+    const currencies = Object.keys(currencyTotals);
+    // Never add values from different currencies.  `amount` remains populated
+    // only for an unambiguous single-currency legacy presentation.
+    const amount = currencies.length === 1 ? currencyTotals[currencies[0]!]! : null;
+    const categoryTotals = transactions.reduce<Record<string, number>>((acc, tx) => {
+      const key = typeof tx.merchant === 'string' && tx.merchant ? tx.merchant : typeof tx.direction === 'string' && tx.direction ? tx.direction : '其他';
+      acc[key] = Number(((acc[key] ?? 0) + (typeof tx.amountMinor === 'number' ? tx.amountMinor / 100 : 0)).toFixed(2));
+      return acc;
+    }, {});
+    const accountKeys = [...new Set(transactions.map((tx) => typeof tx.accountKey === 'string' ? tx.accountKey : null).filter((key): key is string => key !== null))];
+    const unconfirmedCount = typeof context.financeUnconfirmedTransactionCount === 'number' ? context.financeUnconfirmedTransactionCount : 0;
+    const unreconciledDifferenceCount = transactions.filter((tx) => tx.transactionState === 'PENDING').length;
+    const currencySummary = currencies.length === 0
+      ? '没有可统计金额'
+      : Object.entries(currencyTotals).map(([currency, total]) => `${currency} ${total!.toFixed(2)}`).join('；');
+    return {
+      amount,
+      currencyTotals,
+      currencySummary,
+      categoryTotals,
+      transactionCount: transactions.length,
+      accountKeys,
+      verification: {
+        categorization: { state: 'COMPLETED', verifiedTransactionCount: transactions.length },
+        periodicSummary: { state: 'COMPLETED', scope: { currencies, accountKeys } },
+        reconciliation: { state: unreconciledDifferenceCount === 0 ? 'NO_OPEN_DIFFERENCE' : 'DIFFERENCES_OPEN', unreconciledDifferenceCount },
+        discrepancyFollowUp: { state: unreconciledDifferenceCount === 0 ? 'NOT_REQUIRED' : 'PENDING_USER_REVIEW' },
+        report: { state: 'GENERATED', complete: unconfirmedCount === 0 && unreconciledDifferenceCount === 0, unconfirmedTransactionCount: unconfirmedCount },
+      },
+    };
   }
 
   private normalizeGeneratedVariants(value: unknown) {

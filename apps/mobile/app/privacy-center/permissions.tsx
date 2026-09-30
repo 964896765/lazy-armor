@@ -8,7 +8,7 @@ export default function PrivacyPermissionsPage() {
   const permissions = devicePermissionCopy();
   return (
     <ScrollView style={local.page} contentContainerStyle={local.content}>
-      <ShellPage title="设备权限" subtitle="这些权限只在计划需要时按需使用，不会后台持续监控。">
+      <ShellPage title="设备权限" subtitle="通知监听可在系统授权后后台接收通知；受控应用读取必须满足会话与前台限制。">
         <View style={local.list}>
           {permissions.map((permission, index) => (
             <View key={permission.key} style={[local.row, index < permissions.length - 1 && local.divider]}>

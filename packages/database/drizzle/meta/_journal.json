@@ -372,6 +372,27 @@
       "when": 1790294400000,
       "tag": "0052_notification_connection_ref",
       "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1790380800000,
+      "tag": "0053_vnext_plan_offer_persistence",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1790470800000,
+      "tag": "0054_action_verification_contract",
+      "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1790474400000,
+      "tag": "0055_creation_drafts",
+      "breakpoints": true
     }
   ]
 }

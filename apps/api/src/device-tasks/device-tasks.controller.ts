@@ -22,6 +22,13 @@ export class DeviceTasksController {
     return this.deviceTasks.get(user.id, signed.trustedDeviceId, signed.deviceId, id);
   }
 
+  @Get(':id/evidence')
+  async evidence(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Headers() headers: IncomingHttpHeaders) {
+    const requestPath = `/device-tasks/${id}/evidence`;
+    const signed = await this.trustedDevices.assertSignedRequest(user.id, deviceEnvelope(headers), 'GET', requestPath, {});
+    return this.deviceTasks.evidence(user.id, signed.trustedDeviceId, signed.deviceId, id);
+  }
+
   @Post('heartbeat')
   async heartbeatDevice(@CurrentUser() user: AuthenticatedUser, @Body() input: HeartbeatDeviceDto, @Headers() headers: IncomingHttpHeaders) {
     const signed = await this.trustedDevices.assertSignedRequest(user.id, deviceEnvelope(headers), 'POST', '/device-tasks/heartbeat', input);

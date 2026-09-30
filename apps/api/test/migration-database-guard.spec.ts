@@ -6,6 +6,19 @@ describe('migration replay database boundary', () => {
     const url = `mysql://fixture:fixture@127.0.0.1:3307/${name}`;
     expect(assertMigrationTestDatabase(url)).toBe(url);
   });
+  it('accepts an exact worktree database only through the controlled environment contract', () => {
+    const original = process.env.TEST_DATABASE_NAME;
+    process.env.TEST_DATABASE_NAME = 'lazy_armor_github_gate_test';
+    const url = 'mysql://fixture:fixture@127.0.0.1:3307/lazy_armor_github_gate_test';
+    try { expect(assertMigrationTestDatabase(url)).toBe(url); }
+    finally { restoreTestDatabaseName(original); }
+  });
+  it('rejects an unsafe worktree database override', () => {
+    const original = process.env.TEST_DATABASE_NAME;
+    process.env.TEST_DATABASE_NAME = 'lazy_armor';
+    try { expect(() => assertMigrationTestDatabase('mysql://localhost/lazy_armor')).toThrow(/not an approved isolated/); }
+    finally { restoreTestDatabaseName(original); }
+  });
   it.each([
     undefined, '', 'not-a-url', 'mysql://localhost/lazy_armor',
     'mysql://localhost/lazy_armor_production', 'mysql://localhost/lazy_armor_test_backup',
@@ -20,3 +33,8 @@ describe('migration replay database boundary', () => {
     catch (error) { expect(String(error)).not.toContain('private-'); }
   });
 });
+
+function restoreTestDatabaseName(original: string | undefined) {
+  if (original === undefined) delete process.env.TEST_DATABASE_NAME;
+  else process.env.TEST_DATABASE_NAME = original;
+}

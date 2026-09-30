@@ -195,6 +195,25 @@ describe.sequential('9D signed HTTP webhook / actual adapter TCP / MySQL leased 
     await Promise.all(claims.map((r) => worker.process(r))); expect((await view(a)).body.status).toBe('READ_BACK_COMPLETE'); expect((await view(b)).body.status).toBe('READ_BACK_COMPLETE');
     expect((await counts()).versions).toBe(before.versions); expect(mutations).toBe(0);
   });
+  it('creates exactly one execution for a single terminal handoff', async () => {
+    const plan = await readyTerminal();
+    try {
+      const result = await handoff(plan.wakeupId).expect(201);
+      expect(result.body.executionId).toEqual(expect.any(String));
+      const [executions] = await pool.query<RowDataPacket[]>('SELECT COUNT(*) total FROM executions WHERE plan_id=UUID_TO_BIN(?)', [plan.id]);
+      expect(executions[0].total).toBe(1);
+    } finally { await pauseTerminal(plan.id); }
+  });
+  it('replays sequential duplicate terminal handoffs without another execution', async () => {
+    const plan = await readyTerminal();
+    try {
+      const first = await handoff(plan.wakeupId).expect(201);
+      const replay = await handoff(plan.wakeupId).expect(201);
+      expect(replay.body.executionId).toBe(first.body.executionId);
+      const [executions] = await pool.query<RowDataPacket[]>('SELECT COUNT(*) total FROM executions WHERE plan_id=UUID_TO_BIN(?)', [plan.id]);
+      expect(executions[0].total).toBe(1);
+    } finally { await pauseTerminal(plan.id); }
+  });
   it('hands off actual PR Truth through the formal Dependency Index once under concurrent replay, then runs Notification/Record', async () => {
     const plan = await readyTerminal();
     try {
@@ -220,6 +239,16 @@ describe.sequential('9D signed HTTP webhook / actual adapter TCP / MySQL leased 
       expect((await handoff(await terminalWakeup(plan.bindingId)).expect(201)).body.status).toBe('QUIET'); pullRequest = terminalSnapshot;
       await request(app.getHttpServer()).post(`/api/plans/${plan.id}/executions`).set(auth(owner.token))
         .send({ requestId: `strategy:${plan.wakeupId}`, triggerPayload: { forged: true } }).expect(409);
+    } finally { await pauseTerminal(plan.id); }
+  });
+  it('collapses high duplicate terminal handoff concurrency into one execution', async () => {
+    const plan = await readyTerminal();
+    try {
+      const replies = await Promise.all(Array.from({ length: 16 }, () => handoff(plan.wakeupId)));
+      replies.forEach((reply) => expect(reply.status, JSON.stringify(reply.body)).toBe(201));
+      expect(new Set(replies.map((reply) => reply.body.executionId)).size).toBe(1);
+      const [executions] = await pool.query<RowDataPacket[]>('SELECT COUNT(*) total FROM executions WHERE plan_id=UUID_TO_BIN(?)', [plan.id]);
+      expect(executions[0].total).toBe(1);
     } finally { await pauseTerminal(plan.id); }
   });
   it('uses actual Workflow completed/failure Truth, remains quiet while running, and records the terminal result', async () => {

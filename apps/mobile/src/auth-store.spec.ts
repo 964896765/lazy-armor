@@ -79,6 +79,31 @@ describe('native session restart and rotation', () => {
     expect(useAuthStore.getState()).toMatchObject({ token: 'cached-access', refreshToken: 'cached-refresh', hydrated: true });
   });
 
+  it('rotates an active session once when foreground checks overlap', async () => {
+    let finishRefresh!: (value: { accessToken: string; refreshToken: string; expiresIn: number }) => void;
+    mocks.api.mockImplementation(() => new Promise((resolve) => { finishRefresh = resolve; }));
+    useAuthStore.setState({ token: 'old-access', refreshToken: 'old-refresh', hydrated: true });
+
+    const first = useAuthStore.getState().refreshSession();
+    const second = useAuthStore.getState().refreshSession();
+    expect(mocks.api).toHaveBeenCalledTimes(1);
+
+    finishRefresh({ accessToken: 'new-access', refreshToken: 'new-refresh', expiresIn: 900 });
+    expect(await Promise.all([first, second])).toEqual([true, true]);
+    expect(mocks.persistTokens).toHaveBeenCalledTimes(1);
+    expect(useAuthStore.getState()).toMatchObject({ token: 'new-access', refreshToken: 'new-refresh' });
+    expect(useAuthStore.getState().tokenExpiresAt).toBeGreaterThan(Date.now() + 800_000);
+  });
+
+  it('does not clear an active session when refresh fails temporarily', async () => {
+    useAuthStore.setState({ token: 'old-access', refreshToken: 'old-refresh', hydrated: true });
+    mocks.api.mockRejectedValue(new TypeError('network unavailable'));
+
+    expect(await useAuthStore.getState().refreshSession()).toBe(false);
+    expect(mocks.clearTokens).not.toHaveBeenCalled();
+    expect(useAuthStore.getState()).toMatchObject({ token: 'old-access', refreshToken: 'old-refresh' });
+  });
+
   it('attempts server revocation and always clears local credentials on logout', async () => {
     useAuthStore.setState({ token: 'access', refreshToken: 'refresh', hydrated: true });
     mocks.api.mockRejectedValue(new TypeError('offline'));

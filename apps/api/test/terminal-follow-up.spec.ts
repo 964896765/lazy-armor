@@ -3,9 +3,10 @@ import { compileScenarioPlan, evaluateConditionAst, SCENARIO_DEFINITIONS, STRATE
   terminalFollowUpRule, buildTerminalFollowUpRuntime } from '@lazy-armor/plan-schema';
 const subject = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa:742:PullRequest:800';
 describe('registered deterministic terminal follow-up revisions', () => {
-  it('preserves the canonical 96 scenarios and 8 profiles at revision 1', () => {
+  it('preserves 96 canonical scenarios and 8 profiles while versioning changed runtime contracts', () => {
     expect(SCENARIO_DEFINITIONS).toHaveLength(96); expect(STRATEGY_PROFILES).toHaveLength(8);
-    expect(SCENARIO_DEFINITIONS.every((s) => s.revision === 1)).toBe(true);
+    expect(SCENARIO_DEFINITIONS.filter((s) => s.revision === 2)).toHaveLength(5);
+    expect(SCENARIO_DEFINITIONS.every((s) => s.revision === 1 || s.revision === 2)).toBe(true);
     expect(STRATEGY_PROFILES.find((s) => s.key === 'SILENT_FOLLOW_UP')?.defaultActionMode).toBe('OBSERVE');
     expect(compileScenarioPlan({ scenarioKey: 'work.tasks' }).scenarioRevision).toBe(1);
   });

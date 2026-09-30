@@ -94,6 +94,9 @@ describe.sequential('Batch 8 verification and reconciliation', () => {
       await request(app.getHttpServer()).post(route).set(auth(owner.token)).send({ ...input, triggerPayload: { changed: true } }).expect(409);
       const intents = await request(app.getHttpServer()).get('/api/executions/' + created.body.id + '/action-intents').set(auth(owner.token)).expect(200);
       expect(intents.body[0].adapter.capabilityResolutionDecisionId).toBe(resolutionDecisionIds![0]);
+      expect(intents.body[0].adapter).toMatchObject({ verificationPolicyKey: policy.key, verificationPolicyRevision: policy.revision,
+        verificationPolicyHash: verificationPolicyHash(policy), resolutionContractHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+        verificationContractHash: expect.stringMatching(/^[a-f0-9]{64}$/) });
       expect(intents.body[0].effectiveRiskLevel).toBe('R3');
     }
     await worker.processExecution(created.body.id);
@@ -205,6 +208,29 @@ describe.sequential('Batch 8 verification and reconciliation', () => {
       expect(await service.get(owner.userId, input.caseId)).toMatchObject({ resultState: 'OUTCOME_UNKNOWN' });
       expect(lookups.get(input.key)).toBeUndefined(); expect(effects.get(input.key)).toBe(1);
       await outboxWorker.process(input.message); expect(effects.get(input.key)).toBe(1);
+    } finally {
+      await request(app.getHttpServer()).put('/api/connections/' + connectionId + '/permissions').set(auth(owner.token)).send({ permissions: [{ capability: capabilityKey, granted: true }] }).expect(200);
+    }
+  });
+
+  it('revalidates permission immediately before the side effect and leaves no operation behind', async () => {
+    const plan = await request(app.getHttpServer()).post('/api/plans').set(auth(owner.token)).send({ name: 'Preflight revoke ' + unique, domain: 'general', automationLevel: 'L2',
+      sources: [{ sourceType: 'manual', config: {}, sortOrder: 0 }], triggers: [{ triggerType: 'manual', config: {}, sortOrder: 0 }], conditions: [],
+      actions: [{ actionType: 'update_internal_record', connectionId, requiredCapability: capabilityKey, config: { recordType: 'network_fixture' }, stepOrder: 0 }] }).expect(201);
+    await activatePlan(app, owner.token, plan.body.id);
+    const created = await request(app.getHttpServer()).post('/api/plans/' + plan.body.id + '/executions').set(auth(owner.token))
+      .send({ requestId: unique + '-preflight-revoke', triggerPayload: {} }).expect(201);
+    await worker.processExecution(created.body.id);
+    const waiting = await request(app.getHttpServer()).get('/api/executions/' + created.body.id).set(auth(owner.token)).expect(200);
+    await request(app.getHttpServer()).post('/api/approvals/' + waiting.body.approvals[0].id + '/approve').set(auth(owner.token)).send({}).expect(201);
+    await request(app.getHttpServer()).put('/api/connections/' + connectionId + '/permissions').set(auth(owner.token)).send({ permissions: [{ capability: capabilityKey, granted: false }] }).expect(200);
+    try {
+      await worker.processExecution(created.body.id);
+      const detail = await request(app.getHttpServer()).get('/api/executions/' + created.body.id).set(auth(owner.token)).expect(200);
+      expect(detail.body.status).toBe('failed');
+      const [operations] = await pool.query<RowDataPacket[]>('SELECT id FROM side_effect_operations WHERE execution_id=UUID_TO_BIN(?)', [created.body.id]);
+      expect(operations).toHaveLength(0);
+      expect([...effects.keys()].some((key) => key.includes(created.body.id))).toBe(false);
     } finally {
       await request(app.getHttpServer()).put('/api/connections/' + connectionId + '/permissions').set(auth(owner.token)).send({ permissions: [{ capability: capabilityKey, granted: true }] }).expect(200);
     }

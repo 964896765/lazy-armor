@@ -1,6 +1,7 @@
 import { ConflictException, Inject, Injectable } from '@nestjs/common';
-import { connections, connectors, executionSteps, reconciliationCases, sideEffectOperations, verificationEvidence, verificationPolicies } from '@lazy-armor/database';
-import { catalogHash, CONNECTOR_RESPONSE_POLICY, evaluateVerification, verificationPolicyHash, type RuntimeResultState, type VerificationMethod, type VerificationPolicy } from '@lazy-armor/plan-schema';
+import { actionAdapterBindings, connections, connectors, executionSteps, reconciliationCases, sideEffectOperations, verificationEvidence, verificationPolicies } from '@lazy-armor/database';
+import { catalogHash, CONNECTOR_RESPONSE_POLICY, evaluateVerification, verificationContractHash, verificationPolicyHash,
+  type RuntimeResultState, type VerificationContract, type VerificationMethod, type VerificationPolicy } from '@lazy-armor/plan-schema';
 import { newId } from '@lazy-armor/shared';
 import { and, eq } from 'drizzle-orm';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
@@ -46,13 +47,14 @@ export class VerificationService {
   }
 
   async recordResponse(operation: Operation, ok: boolean, data: Record<string, unknown>, key: string, tx: VerificationTransaction) {
+    // ConnectorResult is the existing typed acknowledgement contract. The
+    // frozen provider policy governs read-back when that acknowledgement is
+    // unavailable or ambiguous; it must not reinterpret a completed response.
     return this.record(operation, CONNECTOR_RESPONSE_POLICY, 'PROVIDER_RESPONSE', { ok, data }, key, tx);
   }
 
   async openUnknown(operation: Operation, reasonCode: string, tx: VerificationTransaction) {
-    const connector = operation.connectionId ? (await tx.select({ key: connectors.key }).from(connections).innerJoin(connectors, eq(connectors.id, connections.connectorId))
-      .where(and(eq(connections.id, operation.connectionId), eq(connections.userId, operation.userId))).limit(1))[0] : null;
-    const policy = this.registry.select(connector?.key ?? null, operation.capabilityKey);
+    const policy = await this.policyForOperation(operation, tx);
     const stored = await this.ensurePolicy(policy, tx);
     const now = new Date();
     await tx.insert(reconciliationCases).values({ id: newId(), userId: operation.userId, executionId: operation.executionId,
@@ -68,5 +70,31 @@ export class VerificationService {
       sideEffectOperationId: operation.id, action: 'RECONCILIATION_CASE_OPENED', resourceType: 'reconciliation_case', resourceId: row.id,
       correlationId: operation.correlationId, after: { status: row.status, resultState: row.resultState, policyHash: row.policyHash }, source: 'side_effect', result: 'unknown' }, tx);
     return row;
+  }
+
+  private async policyForOperation(operation: Operation, tx: VerificationTransaction): Promise<VerificationPolicy> {
+    const binding = (await tx.select({
+      contract: actionAdapterBindings.verificationContractJson,
+      contractHash: actionAdapterBindings.verificationContractHash,
+      policyHash: actionAdapterBindings.verificationPolicyHash,
+      policyKey: actionAdapterBindings.verificationPolicyKey,
+      policyRevision: actionAdapterBindings.verificationPolicyRevision,
+    }).from(executionSteps).innerJoin(actionAdapterBindings, eq(actionAdapterBindings.actionIntentId, executionSteps.actionIntentId))
+      .where(eq(executionSteps.id, operation.executionStepId)).limit(1))[0];
+    if (binding?.contract || binding?.contractHash || binding?.policyHash) {
+      try {
+        if (!binding.contract || !binding.contractHash || !binding.policyHash || !binding.policyKey || !binding.policyRevision) throw new Error('Incomplete verification contract');
+        const contract = binding.contract as unknown as VerificationContract;
+        if (verificationContractHash(contract) !== binding.contractHash || verificationPolicyHash(contract.policy) !== binding.policyHash
+          || contract.policy.key !== binding.policyKey || contract.policy.revision !== binding.policyRevision) throw new Error('Verification contract mismatch');
+        return contract.policy;
+      } catch {
+        throw new ConflictException('Frozen verification contract changed');
+      }
+    }
+    // Historical operations retain their original registry-based behaviour.
+    const connector = operation.connectionId ? (await tx.select({ key: connectors.key }).from(connections).innerJoin(connectors, eq(connectors.id, connections.connectorId))
+      .where(and(eq(connections.id, operation.connectionId), eq(connections.userId, operation.userId))).limit(1))[0] : null;
+    return operation.executionStepId ? this.registry.select(connector?.key ?? null, operation.capabilityKey) : CONNECTOR_RESPONSE_POLICY;
   }
 }

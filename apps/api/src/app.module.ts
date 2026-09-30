@@ -56,6 +56,11 @@ import { StructuredReadModule } from './structured-read/structured-read.module';
 import { TerminalHandoffController, TerminalHandoffService } from './strategy-runtime/terminal-handoff.service';
 import { PortableSkillsModule } from './portable-skills/portable-skills.module';
 import { McpModule } from './mcp/mcp.module';
+import { PlanningOffersModule } from './planning-offers/planning-offers.module';
+import { FactDemandsModule } from './fact-demands/fact-demands.module';
+import { CreationDraftsModule } from './creation-drafts/creation-drafts.module';
+import { TodosModule } from './todos/todos.module';
+import { SearchModule } from './search/search.module';
 
 @Module({
   imports: [
@@ -119,6 +124,11 @@ import { McpModule } from './mcp/mcp.module';
     AdminModule,
     PortableSkillsModule,
     McpModule,
+    PlanningOffersModule,
+    FactDemandsModule,
+    CreationDraftsModule,
+    TodosModule,
+    SearchModule,
   ],
   controllers: [TerminalHandoffController],
   providers: [

@@ -47,6 +47,6 @@ describe('Today presenter', () => {
 
   it('uses a friendly empty state instead of a raw no-data message', () => {
     expect(todayEmptyTitle()).toBe('今天没有需要你处理的事');
-    expect(todayEmptyDescription()).toBe('懒人装甲正在后台照看你的计划');
+    expect(todayEmptyDescription()).toBe('有计划时会继续跟进；重要变化才会出现在这里');
   });
 });

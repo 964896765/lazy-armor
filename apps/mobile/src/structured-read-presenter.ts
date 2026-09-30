@@ -1,4 +1,4 @@
-import { resolveStructuredReadOutcome, type StructuredReadOutcome } from '@lazy-armor/plan-schema';
+import { resolveStructuredReadOutcome, type StructuredReadOutcome } from '@lazy-armor/plan-schema/mobile';
 
 /**
  * Unified Structured Read terminal semantics for mobile UI. candidateIds alone

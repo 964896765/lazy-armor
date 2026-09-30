@@ -1,4 +1,4 @@
-import { assertAppReadProfile, type AppReadProfile } from '@lazy-armor/plan-schema';
+import { assertAppReadProfile, type AppReadProfile } from '@lazy-armor/plan-schema/mobile';
 
 /**
  * Mobile-side mirror of the server App Read Profile registry. It is used only

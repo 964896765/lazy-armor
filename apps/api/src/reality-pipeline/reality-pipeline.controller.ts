@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Param, Post } from '@nestjs/common';
 import { CurrentUser, Roles, type AuthenticatedUser } from '../common/auth-context';
-import { CreateSourceObservationDto } from './dto';
+import { CreateSourceObservationDto, RegisterManualFactDto } from './dto';
 import { MobileEvidenceService } from './mobile-evidence.service';
 import { RealityPipelineService } from './reality-pipeline.service';
 
@@ -11,10 +11,14 @@ export class RealityPipelineController {
     private readonly evidence: MobileEvidenceService,
   ) {}
   @Roles('super_admin') @Post('source-observations') ingest(@CurrentUser() user: AuthenticatedUser, @Body() input: CreateSourceObservationDto) { return this.pipeline.ingest(user.id, input); }
+  @Post('manual-facts') registerManual(@CurrentUser() user: AuthenticatedUser, @Body() input: RegisterManualFactDto) {
+    return this.pipeline.registerManual(user.id, input);
+  }
   @Get('candidates/pending') pending(@CurrentUser() user: AuthenticatedUser) { return this.pipeline.listPending(user.id); }
   @Post('candidates/:id/confirm') confirm(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) { return this.pipeline.confirmCandidate(user.id, id); }
   @Post('candidates/:id/reject') reject(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) { return this.pipeline.rejectCandidate(user.id, id); }
   @Get('truth') listTruth(@CurrentUser() user: AuthenticatedUser) { return this.pipeline.listTruth(user.id); }
   @Get('truth/:id') truth(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) { return this.pipeline.truthResponse(user.id, id); }
   @Get('mobile-evidence') listEvidence(@CurrentUser() user: AuthenticatedUser) { return this.evidence.list(user.id); }
+  @Get('mobile-evidence/:id') getEvidence(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) { return this.evidence.get(user.id, id); }
 }

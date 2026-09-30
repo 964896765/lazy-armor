@@ -4,6 +4,9 @@ import { providerCapabilityEvidence, providerCapabilityManifests } from '@lazy-a
 import { newId } from '@lazy-armor/shared';
 import { and, eq } from 'drizzle-orm';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
+import { dingtalkManifest } from '../providers/dingtalk/dingtalk-manifest';
+import { feishuManifest } from '../providers/feishu/feishu-manifest';
+import { wecomManifest } from '../providers/wecom/wecom-manifest';
 
 @Injectable()
 export class ProviderCapabilityRegistryService implements OnModuleInit {
@@ -12,9 +15,22 @@ export class ProviderCapabilityRegistryService implements OnModuleInit {
   constructor(@Inject(DATABASE) private readonly db: InjectedDatabase) {}
 
   async onModuleInit() {
+    this.installRevision(feishuManifest);
+    this.installRevision(dingtalkManifest);
+    this.installRevision(wecomManifest);
+
     await this.sync();
-    const active = await this.db.select().from(providerCapabilityManifests).where(eq(providerCapabilityManifests.status, 'ACTIVE'));
-    for (const row of active) this.installRevision(row.manifestJson as unknown as ProviderCapabilityManifest);
+
+    const active = await this.db
+      .select()
+      .from(providerCapabilityManifests)
+      .where(eq(providerCapabilityManifests.status, 'ACTIVE'));
+
+    for (const row of active) {
+      this.installRevision(
+        row.manifestJson as unknown as ProviderCapabilityManifest,
+      );
+    }
   }
   installRevision(manifest: ProviderCapabilityManifest) { return this.registry.register(manifest); }
   list() { return this.registry.list(); }
@@ -25,12 +41,76 @@ export class ProviderCapabilityRegistryService implements OnModuleInit {
   }
 
   private async syncManifest(manifest: VersionedProviderCapabilityManifest) {
-    const existingRevision = (await this.db.select({ id: providerCapabilityManifests.id, manifestHash: providerCapabilityManifests.manifestHash })
+    const existingRevision = (await this.db
+      .select({
+        id: providerCapabilityManifests.id,
+        revision: providerCapabilityManifests.revision,
+        manifestHash: providerCapabilityManifests.manifestHash,
+        status: providerCapabilityManifests.status,
+      })
       .from(providerCapabilityManifests)
-      .where(and(eq(providerCapabilityManifests.providerKey, manifest.providerKey), eq(providerCapabilityManifests.revision, manifest.revision)))
+      .where(
+        and(
+          eq(providerCapabilityManifests.providerKey, manifest.providerKey),
+          eq(providerCapabilityManifests.revision, manifest.revision),
+        ),
+      )
       .limit(1))[0];
+
     if (existingRevision) {
-      if (existingRevision.manifestHash !== manifest.manifestHash) throw new Error(`Provider manifest revision is immutable: ${manifest.providerKey}@${manifest.revision}`);
+      if (existingRevision.manifestHash !== manifest.manifestHash) {
+        throw new Error(
+          `Provider manifest revision is immutable: ${manifest.providerKey}@${manifest.revision}`,
+        );
+      }
+
+      if (existingRevision.status === 'ACTIVE') {
+        return;
+      }
+
+      const activeRevision = (await this.db
+        .select({
+          id: providerCapabilityManifests.id,
+          revision: providerCapabilityManifests.revision,
+        })
+        .from(providerCapabilityManifests)
+        .where(
+          and(
+            eq(providerCapabilityManifests.providerKey, manifest.providerKey),
+            eq(providerCapabilityManifests.status, 'ACTIVE'),
+          ),
+        )
+        .limit(1))[0];
+
+      if (activeRevision && activeRevision.revision > manifest.revision) {
+        return;
+      }
+
+      const now = new Date();
+
+      await this.db.transaction(async (tx) => {
+        await tx
+          .update(providerCapabilityManifests)
+          .set({
+            status: 'SUPERSEDED',
+            supersededAt: now,
+          })
+          .where(
+            and(
+              eq(providerCapabilityManifests.providerKey, manifest.providerKey),
+              eq(providerCapabilityManifests.status, 'ACTIVE'),
+            ),
+          );
+
+        await tx
+          .update(providerCapabilityManifests)
+          .set({
+            status: 'ACTIVE',
+            supersededAt: null,
+          })
+          .where(eq(providerCapabilityManifests.id, existingRevision.id));
+      });
+
       return;
     }
     const now = new Date();

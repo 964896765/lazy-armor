@@ -3,7 +3,7 @@ import { Link, router, useLocalSearchParams } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { Text, TextInput, View } from 'react-native';
 import { api } from '../../src/api';
-import { ActionButton, colors } from '../../src/design';
+import { ActionButton, workspaceColors as colors } from '../../src/design';
 import { AuthPage, styles } from './login';
 
 export default function ResetPasswordPage() {
@@ -27,8 +27,11 @@ export default function ResetPasswordPage() {
   });
 
   return <AuthPage title="设置新密码" subtitle="重置成功后，所有已登录设备都会退出。">
+    <Text style={styles.fieldLabel}>重置令牌</Text>
     <TextInput style={styles.input} accessibilityLabel="重置令牌" autoCapitalize="none" autoCorrect={false} placeholder="重置令牌" placeholderTextColor={colors.textMuted} value={token} onChangeText={setToken} />
+    <Text style={styles.fieldLabel}>新密码</Text>
     <TextInput style={styles.input} accessibilityLabel="新密码" autoComplete="new-password" secureTextEntry placeholder="至少 10 位新密码" placeholderTextColor={colors.textMuted} value={newPassword} onChangeText={setNewPassword} />
+    <Text style={styles.fieldLabel}>确认新密码</Text>
     <TextInput style={styles.input} accessibilityLabel="确认新密码" autoComplete="new-password" secureTextEntry placeholder="再次输入新密码" placeholderTextColor={colors.textMuted} value={confirmPassword} onChangeText={setConfirmPassword} />
     {newPassword.length > 0 && !passwordValid ? <Text style={styles.error}>新密码至少需要 10 位。</Text> : null}
     {confirmPassword.length > 0 && !passwordsMatch ? <Text style={styles.error}>两次输入的新密码不一致。</Text> : null}

@@ -1,7 +1,8 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { deviceConsumables, deviceProfiles, planVersions, plans, preparedShoppingItems } from '@lazy-armor/database';
+import { deviceConsumables, deviceProfiles, planVersions, plans, preparedShoppingItems, truthRecords } from '@lazy-armor/database';
 import { newId } from '@lazy-armor/shared';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, isNull } from 'drizzle-orm';
+import { AuditService } from '../audit/audit.service';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
 
 type DeviceContext = Record<string, unknown>;
@@ -30,7 +31,7 @@ interface DeviceConsumableShape {
 
 @Injectable()
 export class DeviceService {
-  constructor(@Inject(DATABASE) private readonly db: InjectedDatabase) {}
+  constructor(@Inject(DATABASE) private readonly db: InjectedDatabase, private readonly audit: AuditService) {}
 
   async createProfile(userId: string, input: {
     type: string;
@@ -157,13 +158,36 @@ export class DeviceService {
   }
 
   async updateReplacement(userId: string, consumableId: string, lastReplacedAt: string) {
-    const row = await this.getConsumableRow(userId, consumableId);
-    const now = new Date();
-    await this.db.update(deviceConsumables).set({
-      lastReplacedAt: new Date(lastReplacedAt),
-      expectedReplaceAt: this.expectedReplaceAt(lastReplacedAt, row.replacementIntervalDays),
-      updatedAt: now,
-    }).where(eq(deviceConsumables.id, consumableId));
+    const replacementAt = new Date(lastReplacedAt);
+    await this.db.transaction(async (tx) => {
+      const row = (await tx.select().from(deviceConsumables).where(and(
+        eq(deviceConsumables.id, consumableId), eq(deviceConsumables.userId, userId),
+      )).limit(1).for('update'))[0];
+      if (!row) throw new NotFoundException('Device consumable not found');
+      // A retry of the same user attestation is idempotent. The lock also prevents
+      // concurrent confirmations from advancing the cycle twice.
+      if (row.lastReplacedAt.getTime() === replacementAt.getTime()) return;
+      const now = new Date();
+      await tx.update(deviceConsumables).set({
+        lastReplacedAt: replacementAt,
+        expectedReplaceAt: this.expectedReplaceAt(lastReplacedAt, row.replacementIntervalDays),
+        updatedAt: now,
+      }).where(and(eq(deviceConsumables.id, consumableId), eq(deviceConsumables.userId, userId)));
+      // Remaining-life evidence describes the previous consumable cycle. It must
+      // not keep a Plan Offer CURRENT after the user records an actual replacement.
+      const subjectKey = `device.consumable:${consumableId}`;
+      await tx.update(truthRecords).set({ revokedAt: now, updatedAt: now }).where(and(
+        eq(truthRecords.userId, userId), eq(truthRecords.subjectKey, subjectKey), isNull(truthRecords.revokedAt),
+      ));
+      await this.audit.append({
+        actorType: 'user', actorUserId: userId, userId,
+        action: 'DEVICE_CONSUMABLE_REPLACEMENT_ATTESTED', resourceType: 'device_consumable', resourceId: consumableId,
+        correlationId: consumableId, source: 'api', result: 'success',
+        before: { lastReplacedAt: row.lastReplacedAt.toISOString(), expectedReplaceAt: row.expectedReplaceAt.toISOString() },
+        after: { lastReplacedAt: replacementAt.toISOString(), remainingLifeTruthsRevoked: true },
+        changeSummary: 'User attested that the consumable was actually replaced; prior-cycle remaining-life evidence was revoked',
+      }, tx);
+    });
     return this.getConsumableById(userId, consumableId);
   }
 

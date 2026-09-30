@@ -11,14 +11,17 @@ import {
   planTriggers,
   planVersions,
   plans,
+  reconciliationCases,
 } from '@lazy-armor/database';
 import {
   ACTION_DEFINITIONS,
   definitionHash,
   normalizePlanDefinition,
+  projectConsumerOutcome,
   type PlanDefinition,
   type PlanDefinitionInput,
   type PlanState,
+  type RuntimeResultState,
 } from '@lazy-armor/plan-schema';
 import { newId } from '@lazy-armor/shared';
 import { and, asc, desc, eq, lt, or } from 'drizzle-orm';
@@ -31,7 +34,7 @@ import { resolvePlanTemplate } from '../templates/template-registry';
 import { EntitlementService } from '../membership/entitlement.service';
 import { decodeCursor, encodeCursor, type CursorPageDto } from '../common/cursor-pagination';
 
-type PlanExecutor = PlanQueryExecutor & Pick<InjectedDatabase, 'insert' | 'update'>;
+export type PlanExecutor = PlanQueryExecutor & Pick<InjectedDatabase, 'insert' | 'update'>;
 type TemplateVersionMetadata = {
   templateKey?: string | null;
   templateVersion?: string | null;
@@ -53,26 +56,27 @@ export class PlansService {
   ) {}
 
   async create(userId: string, input: PlanDefinitionInput) {
-    const parsed = this.parse(input);
-    const planId = newId();
+    let planId = '';
     await this.db.transaction(async (tx) => {
-      const now = new Date();
-      await tx.insert(plans).values({
-        id: planId,
-        userId,
-        status: 'draft',
-        currentVersionId: null,
-        activeVersionId: null,
-        createdAt: now,
-        updatedAt: now,
-        archivedAt: null,
-      });
-      const resolved = await this.resolveReferences(tx, userId, parsed, { allowMissingConnections: true });
-      const versionId = await this.insertVersion(tx, userId, planId, 1, resolved, now);
-      await tx.update(plans).set({ currentVersionId: versionId, updatedAt: now }).where(eq(plans.id, planId));
-      await this.audit.append({ actorType: 'user', actorUserId: userId, action: 'PLAN_CREATED', resourceType: 'plan', resourceId: planId, userId, correlationId: planId, changeSummary: `Plan created with version 1: ${parsed.name}`, source: 'api', result: 'success' }, tx);
+      ({ planId } = await this.createInTransaction(userId, input, tx));
     });
     return this.get(userId, planId);
+  }
+
+  /** Used by orchestration flows that must atomically persist a Plan and related authority records. */
+  async createInTransaction(userId: string, input: PlanDefinitionInput | PlanDefinition, executor: PlanExecutor) {
+    const parsed = this.parse(input);
+    const planId = newId();
+    const now = new Date();
+    await executor.insert(plans).values({ id: planId, userId, status: 'draft', currentVersionId: null,
+      activeVersionId: null, createdAt: now, updatedAt: now, archivedAt: null });
+    const resolved = await this.resolveReferences(executor, userId, parsed, { allowMissingConnections: true });
+    const versionId = await this.insertVersion(executor, userId, planId, 1, resolved, now);
+    await executor.update(plans).set({ currentVersionId: versionId, updatedAt: now }).where(eq(plans.id, planId));
+    await this.audit.append({ actorType: 'user', actorUserId: userId, action: 'PLAN_CREATED', resourceType: 'plan',
+      resourceId: planId, userId, correlationId: planId, changeSummary: `Plan created with version 1: ${parsed.name}`,
+      source: 'api', result: 'success' }, executor);
+    return { planId, planVersionId: versionId, versionNumber: 1, definition: resolved };
   }
 
   async createFromTemplate(userId: string, input: PlanDefinitionInput, metadata: TemplateVersionMetadata) {
@@ -571,13 +575,31 @@ export class PlansService {
       id: executions.id,
       status: executions.status,
       resultSummary: executions.resultSummary,
+      approvalStatus: executions.approvalStatus,
       finishedAt: executions.finishedAt,
       createdAt: executions.createdAt,
     }).from(executions)
       .where(and(eq(executions.userId, userId), eq(executions.planId, planId)))
       .orderBy(desc(executions.createdAt))
       .limit(1);
-    return rows[0] ?? null;
+    const row = rows[0];
+    if (!row) return null;
+    const unresolved = (await this.db.select({ id: reconciliationCases.id })
+      .from(reconciliationCases)
+      .where(and(eq(reconciliationCases.executionId, row.id), eq(reconciliationCases.userId, userId), eq(reconciliationCases.resultState, 'OUTCOME_UNKNOWN')))
+      .limit(1))[0];
+    const resultState: RuntimeResultState | null = unresolved ? 'OUTCOME_UNKNOWN'
+      : row.status === 'succeeded' ? 'SUCCEEDED'
+      : row.status === 'failed' ? 'FAILED'
+      : row.status === 'partially_succeeded' ? 'PARTIALLY_SUCCEEDED'
+      : null;
+    return { ...row, resultState, outcome: projectConsumerOutcome({
+      executionStatus: row.status,
+      approvalStatus: row.approvalStatus,
+      resultState,
+      reconciliationOpen: Boolean(unresolved),
+      reconciliationNeedsUser: false,
+    }) };
   }
 
   private async buildPlanCenterSummary(

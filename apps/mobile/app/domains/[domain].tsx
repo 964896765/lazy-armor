@@ -9,6 +9,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/api';
 import { useAuthStore } from '../../src/auth-store';
 import { EmptyState, PlanRow, Surface, WorkspaceHeader, colors, radius, spacing, typography } from '../../src/design';
+import { connectionStatusLabel, connectionStatusTone } from '../../src/connection-presenter';
 import { planNextRunLabel, planStatusLabel, planStatusTone, planVisualIcon } from '../../src/plan-presenter';
 
 interface PlanSummary {
@@ -50,8 +51,8 @@ export default function DomainWorkspace() {
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <ScrollView style={styles.page} contentContainerStyle={styles.content}>
-        <WorkspaceHeader title="领域详情" subtitle="管理这个领域的来源、计划与动态" onBack={() => router.back()} />
-        <DomainHero domain={definition.key} label={definition.label} description={domainDescription(definition.key)} />
+        <WorkspaceHeader title={definition.label} onBack={() => router.back()} action={<Text style={styles.enabledBadge}>规范目录</Text>} />
+        <DomainHero domain={definition.key} />
         <View style={styles.tabs}>{TABS.map((item) => <Pressable key={item} accessibilityRole="button" onPress={() => setTab(item)} style={[styles.tab, item === tab && styles.tabSelected]}><Text style={[styles.tabText, item === tab && styles.tabTextSelected]}>{item}</Text></Pressable>)}</View>
         {!token ? <Surface><EmptyState icon="grid-outline" title="登录后查看你的领域" description="只有你本人可查看与管理自己的计划和资料。" action={{ label: '去登录', onPress: () => router.push('/auth/login' as never) }} /></Surface> : null}
         {token && plans.isLoading ? <View style={styles.loading}><ActivityIndicator color={colors.primary} /><Text style={styles.loadingText}>正在读取{definition.label}…</Text></View> : null}
@@ -64,25 +65,20 @@ export default function DomainWorkspace() {
   );
 }
 
-function DomainHero({ domain, label, description }: { domain: string; label: string; description: string }) {
+function DomainHero({ domain }: { domain: string }) {
   const scenarios = scenariosForDomain(domain);
   return (
     <View style={styles.domainHero}>
-      <View style={styles.heroHeading}>
-        <View style={styles.heroIcon}><Ionicons name={domainIcon(domain)} size={28} color="#FFFFFF" /></View>
-        <View style={styles.heroCopy}><View style={styles.heroTitleRow}><Text style={styles.heroTitle}>{label}</Text><Text style={styles.enabledBadge}>已启用</Text></View><Text style={styles.heroDescription}>{description}</Text></View>
-      </View>
       <View style={styles.heroScenarioGrid}>{scenarios.map((scenario) => <Pressable key={scenario.key} accessibilityRole="button" onPress={() => router.push(`/domains/${domain}/${scenario.key}` as never)} style={({ pressed }) => [styles.heroScenario, pressed && styles.pressed]}><Ionicons name={scenarioIcon(scenario.key)} size={17} color={colors.primary} /><Text numberOfLines={1} style={styles.heroScenarioLabel}>{scenario.label}</Text></Pressable>)}</View>
     </View>
   );
 }
 
 function Overview({ domain, plans, activePlans, latest, connections }: { domain: string; plans: PlanSummary[]; activePlans: number; latest: PlanSummary['latestExecution']; connections: ConnectionSummary[] }) {
-  const scenarios = scenariosForDomain(domain);
   return (
     <>
       <SectionHeading title="连接的来源" action="添加连接" onPress={() => router.push('/connections/add' as never)} />
-      <View style={styles.listCard}>{connections.length > 0 ? connections.slice(0, 3).map((item, index) => <View key={item.id} style={[styles.sourceRow, index < Math.min(connections.length, 3) - 1 && styles.rowDivider]}><View style={styles.sourceIcon}><Ionicons name={connectionIcon(item.connectorId)} size={19} color={colors.primary} /></View><View style={styles.rowCopy}><Text style={styles.rowTitle}>{item.connectorName}</Text><Text numberOfLines={1} style={styles.rowDetail}>{item.externalAccountName}</Text></View><View style={styles.statusDot} /><Text style={styles.connectedText}>已连接</Text><Ionicons name="chevron-forward" size={16} color={colors.textMuted} /></View>) : <Pressable onPress={() => router.push('/connections/add' as never)} style={styles.emptySource}><Ionicons name="add-circle-outline" size={21} color={colors.primary} /><Text style={styles.emptySourceText}>添加真实来源后，计划才能持续获取信息</Text></Pressable>}</View>
+      <View style={styles.listCard}>{connections.length > 0 ? connections.slice(0, 3).map((item, index) => <SourceRow key={item.id} item={item} last={index === Math.min(connections.length, 3) - 1} />) : <Pressable onPress={() => router.push('/connections/add' as never)} style={styles.emptySource}><Ionicons name="add-circle-outline" size={21} color={colors.primary} /><Text style={styles.emptySourceText}>添加来源</Text></Pressable>}</View>
 
       <SectionHeading title="进行中的计划" count={activePlans} action="查看全部" onPress={() => router.push('/plan-center' as never)} />
       <View style={styles.listCard}>{plans.length > 0 ? plans.slice(0, 3).map((plan, index) => <PlanRow key={plan.id} icon={planVisualIcon(plan.name ?? '', undefined)} name={plan.name ?? plan.currentVersion?.name ?? '我的计划'} description={plan.description ?? '按你的设置持续运行'} detail={planNextRunLabel(plan.status, plan.nextExpectedRunAt)} status={planStatusLabel(plan.status)} statusTone={planStatusTone(plan.status)} onPress={() => router.push(`/plans/${plan.id}` as never)} last={index === Math.min(plans.length, 3) - 1} />) : <Text style={styles.cardEmpty}>还没有运行中的计划。</Text>}</View>
@@ -90,15 +86,26 @@ function Overview({ domain, plans, activePlans, latest, connections }: { domain:
       <SectionHeading title="最近事件" action="查看记录" onPress={() => router.push('/records' as never)} />
       <View style={styles.listCard}>{latest ? <View style={styles.eventRow}><View style={styles.eventIcon}><Ionicons name="checkmark" size={16} color="#FFFFFF" /></View><View style={styles.rowCopy}><Text style={styles.rowTitle}>{latest.resultSummary ?? planStatusLabel(latest.status)}</Text><Text style={styles.rowDetail}>最近一次运行结果已收进记录</Text></View><Ionicons name="chevron-forward" size={16} color={colors.textMuted} /></View> : <Text style={styles.cardEmpty}>该领域还没有运行记录。</Text>}</View>
 
-      <SectionHeading title="AI 建议" />
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.suggestionRow}>{scenarios.slice(0, 3).map((scenario) => <Pressable key={scenario.key} onPress={() => router.push(`/domains/${domain}/${scenario.key}` as never)} style={({ pressed }) => [styles.suggestionCard, pressed && styles.pressed]}><Ionicons name={scenarioIcon(scenario.key)} size={20} color={colors.primary} /><Text style={styles.suggestionTitle}>{scenario.label}计划</Text><Text style={styles.suggestionCopy}>设置条件与提醒，变化时再告诉你</Text><Text style={styles.suggestionAction}>使用建议</Text></Pressable>)}</ScrollView>
-      <Pressable accessibilityRole="button" onPress={() => router.push('/create' as never)} style={({ pressed }) => [styles.primaryCta, pressed && styles.pressed]}><Ionicons name="add" size={20} color="#FFFFFF" /><Text style={styles.primaryCtaText}>创建这个领域的计划</Text></Pressable>
+      <Pressable accessibilityRole="button" onPress={() => router.push('/create' as never)} style={({ pressed }) => [styles.primaryCta, pressed && styles.pressed]}><Ionicons name="add" size={20} color="#FFFFFF" /><Text style={styles.primaryCtaText}>创建计划</Text></Pressable>
     </>
   );
 }
 
 function SectionHeading({ title, count, action, onPress }: { title: string; count?: number; action?: string; onPress?: () => void }) {
   return <View style={styles.sectionHeading}><View style={styles.sectionHeadingTitle}><Text style={styles.sectionTitleInline}>{title}</Text>{typeof count === 'number' ? <Text style={styles.countBadge}>{count}</Text> : null}</View>{action && onPress ? <Pressable onPress={onPress} style={({ pressed }) => pressed && styles.pressed}><Text style={styles.sectionAction}>{action}  ›</Text></Pressable> : null}</View>;
+}
+
+function SourceRow({ item, last }: { item: ConnectionSummary; last: boolean }) {
+  const tone = connectionStatusTone(item.status);
+  return (
+    <View style={[styles.sourceRow, !last && styles.rowDivider]}>
+      <View style={styles.sourceIcon}><Ionicons name={connectionIcon(item.connectorId)} size={19} color={colors.primary} /></View>
+      <View style={styles.rowCopy}><Text style={styles.rowTitle}>{item.connectorName}</Text><Text numberOfLines={1} style={styles.rowDetail}>{item.externalAccountName}</Text></View>
+      <View style={[styles.statusDot, tone === 'warning' && styles.statusDotWarning, tone === 'muted' && styles.statusDotMuted]} />
+      <Text style={[styles.connectedText, tone === 'warning' && styles.connectedTextWarning, tone === 'muted' && styles.connectedTextMuted]}>{connectionStatusLabel(item.status)}</Text>
+      <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+    </View>
+  );
 }
 
 function PlansSection({ plans, label }: { plans: PlanSummary[]; label: string }) {
@@ -119,15 +126,6 @@ function ActivitySection({ plans }: { plans: PlanSummary[] }) {
 
 type IconName = ComponentProps<typeof Ionicons>['name'];
 
-function domainIcon(domain: string): IconName {
-  return ({
-    finance: 'wallet-outline', daily_life: 'basket-outline', life: 'basket-outline', family: 'people-outline', health: 'heart-outline', social: 'chatbubbles-outline',
-    pet: 'paw-outline', housing: 'home-outline', travel: 'airplane-outline', entertainment: 'game-controller-outline', work: 'briefcase-outline', operations: 'analytics-outline',
-    content: 'create-outline', study: 'school-outline', identity_docs: 'id-card-outline', government: 'business-outline', legal_contract: 'document-text-outline', vehicle: 'car-outline',
-    device: 'desktop-outline', digital_account: 'key-outline',
-  } as Record<string, IconName>)[domain] ?? 'grid-outline';
-}
-
 function scenarioIcon(scenario: string): IconName {
   return ({
     bill: 'receipt-outline', budget: 'pie-chart-outline', balance: 'layers-outline', subscription: 'calendar-outline', refund: 'refresh-outline', abnormal_transaction: 'warning-outline',
@@ -137,18 +135,6 @@ function scenarioIcon(scenario: string): IconName {
 
 function connectionIcon(connectorId: string): IconName {
   return ({ gmail: 'mail-outline', google_calendar: 'calendar-outline', calendar: 'calendar-outline', github: 'logo-github', file_provider: 'document-text-outline' } as Record<string, IconName>)[connectorId] ?? 'link-outline';
-}
-
-function domainDescription(domain: string) {
-  return ({
-    finance: '管理收支、预算、订阅与资产，让财务生活更清晰简单。',
-    daily_life: '把缴费、预约、快递和日常待办安静地管理起来。',
-    family: '汇总家庭成员、分工和共享资源，让重要事项不遗漏。',
-    health: '持续关注用药、复诊、体检和健康趋势。',
-    vehicle: '把保养、保险、年检和车辆异常放在一起管理。',
-    device: '管理设备状态、耗材、维护、续费和异常。',
-    digital_account: '守护登录、授权、订阅与账户容量。',
-  } as Record<string, string>)[domain] ?? '把这个领域的来源、计划与结果放在一起管理。';
 }
 
 const styles = StyleSheet.create({
@@ -163,14 +149,8 @@ const styles = StyleSheet.create({
   tabTextSelected: { color: colors.primary, fontWeight: '800' },
   loading: { alignItems: 'center', paddingVertical: 56, gap: spacing.md },
   loadingText: { ...typography.body, color: colors.textSecondary },
-  domainHero: { paddingTop: spacing.lg },
-  heroHeading: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  heroIcon: { width: 58, height: 58, borderRadius: 18, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
-  heroCopy: { flex: 1, minWidth: 0 },
-  heroTitleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  heroTitle: { ...typography.title, color: colors.text, fontSize: 22, lineHeight: 28 },
+  domainHero: { paddingTop: spacing.sm },
   enabledBadge: { ...typography.label, color: colors.primary, backgroundColor: colors.successSoft, borderRadius: radius.pill, paddingHorizontal: spacing.sm, paddingVertical: 3 },
-  heroDescription: { ...typography.caption, color: colors.textSecondary, marginTop: 3, lineHeight: 18 },
   heroScenarioGrid: { flexDirection: 'row', flexWrap: 'wrap', marginTop: spacing.md, backgroundColor: colors.accentSoft, borderRadius: radius.md, overflow: 'hidden' },
   heroScenario: { width: '33.333%', minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 6 },
   heroScenarioLabel: { ...typography.caption, color: colors.text, fontWeight: '700', flexShrink: 1 },
@@ -186,7 +166,11 @@ const styles = StyleSheet.create({
   rowTitle: { ...typography.bodyStrong, color: colors.text },
   rowDetail: { ...typography.caption, color: colors.textSecondary, marginTop: 1 },
   statusDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.success },
+  statusDotWarning: { backgroundColor: colors.warning },
+  statusDotMuted: { backgroundColor: colors.textMuted },
   connectedText: { ...typography.caption, color: colors.primary, fontWeight: '700' },
+  connectedTextWarning: { color: colors.warning },
+  connectedTextMuted: { color: colors.textMuted },
   rowDivider: { borderBottomWidth: 1, borderBottomColor: colors.border },
   emptySource: { minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.md },
   emptySourceText: { ...typography.caption, color: colors.textSecondary, flex: 1 },
@@ -194,10 +178,9 @@ const styles = StyleSheet.create({
   eventRow: { minHeight: 62, flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.md },
   eventIcon: { width: 30, height: 30, borderRadius: 10, backgroundColor: colors.success, alignItems: 'center', justifyContent: 'center' },
   suggestionRow: { gap: spacing.sm, paddingRight: spacing.lg },
-  suggestionCard: { width: 150, minHeight: 124, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, backgroundColor: '#FFFFFF', padding: spacing.md },
+  suggestionCard: { width: 132, minHeight: 92, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, backgroundColor: '#FFFFFF', padding: spacing.md },
   suggestionTitle: { ...typography.bodyStrong, color: colors.text, marginTop: spacing.sm },
-  suggestionCopy: { ...typography.caption, color: colors.textSecondary, marginTop: 3, flex: 1 },
-  suggestionAction: { ...typography.label, color: colors.primary, marginTop: spacing.sm },
+  suggestionAction: { ...typography.label, color: colors.primary, marginTop: 'auto', paddingTop: spacing.sm },
   primaryCta: { minHeight: 48, marginTop: spacing.xl, borderRadius: radius.md, backgroundColor: colors.primary, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm },
   primaryCtaText: { ...typography.bodyStrong, color: '#FFFFFF' },
   sectionBody: { paddingBottom: spacing.lg, borderBottomWidth: 1, borderBottomColor: colors.border },

@@ -39,6 +39,97 @@ export {
   type LifecycleReadStep,
   type LifecycleReadStepKey,
 } from './lifecycle-read-projection';
+export {
+  CONSUMER_PROJECTION_VERSION,
+  CONSUMER_READINESS_STATES,
+  isConsumerReadinessProjection,
+  type ConsumerActionPath,
+  type ConsumerProductReadiness,
+  type ConsumerReadinessProjection,
+  type ConsumerReadinessState,
+} from './consumer-projection';
+export {
+  CONSUMER_OUTCOMES,
+  CONSUMER_OUTCOME_VERSION,
+  isConsumerOutcomeProjection,
+  projectConsumerOutcome,
+  type ConsumerOutcome,
+  type ConsumerOutcomeActionPath,
+  type ConsumerOutcomeEvidence,
+  type ConsumerOutcomeProjection,
+} from './consumer-outcome';
+export {
+  PLAN_LIFECYCLE_PROJECTION_VERSION,
+  PLAN_LIFECYCLE_STATES,
+  PLAN_LIFECYCLE_STEPS,
+  buildPlanLifecycleProjection,
+  isPlanLifecycleProjection,
+  planLifecycleObservationSchema,
+  type PlanLifecycleObservation,
+  type PlanLifecycleProjection,
+  type PlanLifecycleState,
+  type PlanLifecycleStepKey,
+} from './plan-lifecycle';
+export {
+  PLAN_OFFER_AVAILABILITY,
+  PLAN_OFFER_CONTRACT_VERSION,
+  buildDeterministicPlanOffer,
+  planOfferRequestSchema,
+  type PlanOffer,
+  type PlanOfferAvailability,
+  type PlanOfferRequest,
+} from './plan-offer';
+export {
+  SCENARIO_CONTRACT_VERSION,
+  SCENARIO_CONTRACT_V2_REGISTRY,
+  SCENARIO_GOVERNANCE_STATES,
+  assertScenarioContractV2,
+  scenarioContractV2ByKey,
+  scenarioGoalSpecSchema,
+  scenarioResourceSubjectSchema,
+  type ScenarioContractV2,
+  type ScenarioGoalSpec,
+  type ScenarioGovernanceState,
+  type ScenarioResourceSubject,
+} from './scenario-contract-v2';
+export {
+  FACT_DEMAND_CONTRACT_VERSION,
+  FACT_DEMAND_STATES,
+  buildFactDemandProjections,
+  factDemandRequestForScenario,
+  factDemandRequestSchema,
+  type FactDemandProjection,
+  type FactDemandRequest,
+  type FactDemandState,
+  type FactTruthEvidence,
+  type SourceCandidateEvidence,
+} from './fact-demand';
+export {
+  PERSISTENT_PLAN_OFFER_CONTRACT_VERSION, PLAN_AVAILABILITY_STATES, PLAN_OFFER_STATES, assessPlanAvailability, buildPersistentPlanOffer,
+  choosePlanOfferRequestSchema, persistentPlanOfferRequestSchema, planOfferPreconditionHash,
+  type ChoosePlanOfferRequest, type PersistentPlanOffer, type PersistentPlanOfferRequest, type PlanAvailabilityAssessment,
+  type PlanAvailabilityState, type PlanOfferState,
+} from './plan-offer-persistence';
+export {
+  SOURCE_SELECTION_KINDS, SOURCE_SELECTION_SCHEMA_VERSION, buildSourceSelection, isSourceSelection, sourceIdNamespace,
+  type SourceSelection, type SourceSelectionKind,
+} from './source-selection';
+export {
+  CREATION_DRAFT_CONTRACT_VERSION,
+  CREATION_DRAFT_RESUME_STATES,
+  CREATION_DRAFT_STAGES,
+  CREATION_DRAFT_STATES,
+  creationDraftInputSchema,
+  creationDraftSourceChoiceSchema,
+  type CreationDraft,
+  type CreationDraftInput,
+  type CreationDraftResumeAssessment,
+  type CreationDraftResumeState,
+  type CreationDraftSourceChoice,
+  type CreationDraftSourceChoiceInput,
+  type CreationDraftStage,
+  type CreationDraftState,
+} from './creation-draft';
 
 export const SOURCE_TYPES = ['manual', 'email', 'calendar', 'notification', 'file', 'webhook', 'internal', 'commerce', 'device', 'vehicle', 'billing', 'content_platform'] as const;
 export const TRIGGER_TYPES = ['manual', 'schedule', 'event', 'webhook', 'threshold', 'date_before', 'date_after', 'data_changed'] as const;
@@ -433,9 +524,11 @@ export {
   SCENARIO_DEFINITIONS,
   SCENARIO_READINESS_STATES,
   STRATEGY_PROFILES,
+  V2_SCENARIO_DEFINITIONS,
   catalogHash,
   evaluateScenarioReadiness,
   scenarioByKey,
+  scenarioDefinitionByKey,
   type CapabilityRequirement,
   type FactSchemaDefinition,
   type RealityLevel,
@@ -498,7 +591,7 @@ export {
 } from './reality-pipeline';
 export {
   MOBILE_CANDIDATE_KIND_VALUES, MOBILE_CANDIDATE_LEGACY_ALIASES, MOBILE_CANDIDATE_REGISTRY, mobileCandidateKindForParser, resolveMobileCandidateSpec, toSourceObservationInput,
-  type MobileCandidateKind, type MobileCandidateKindSpec, type MobileObservationEnvelope, type MobileSourceType,
+  type MobileCandidateKind, type MobileCandidateKindSpec, type MobileObservationEnvelope, type MobileSourceMode, type MobileSourceType,
 } from './mobile-observation';
 export {
   APP_READ_SESSION_EVENT_TYPES, APP_READ_SESSION_HEARTBEAT_GRACE_SECONDS, APP_READ_SESSION_MAX_SECONDS,

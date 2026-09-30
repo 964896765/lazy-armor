@@ -28,7 +28,9 @@ export default function PrivacyDataPage() {
     <ScrollView style={local.page} contentContainerStyle={local.content}>
       <ShellPage title="我的数据" subtitle="按领域查看装甲已经验证的事实。这里不展示数据库表，只展示对你有意义的字段与来源。">
         {truth.isLoading ? <ActivityIndicator color={colors.primary} /> : null}
-        {CONSUMER_DATA_DOMAINS.map((domain) => {
+        {truth.isError ? <View style={local.group}><Text style={local.groupTitle}>暂时无法读取数据</Text><Text style={local.groupSubtitle}>不会把网络错误显示成“没有数据”。请稍后重新进入。</Text></View> : null}
+        {!token ? <View style={local.group}><Text style={local.groupTitle}>登录后查看</Text><Text style={local.groupSubtitle}>数据来源和使用计划只会显示给你本人。</Text></View> : null}
+        {truth.data ? CONSUMER_DATA_DOMAINS.map((domain) => {
           const rows = presented.filter((row) => row.domain === domain);
           if (rows.length === 0) return null;
           return (
@@ -50,8 +52,8 @@ export default function PrivacyDataPage() {
               </View>
             </View>
           );
-        })}
-        {(truth.data?.length ?? 0) === 0 && !truth.isLoading ? (
+        }) : null}
+        {truth.data?.length === 0 && !truth.isLoading && !truth.isError ? (
           <Text style={local.empty}>还没有已验证的数据。连接来源并创建计划后，这里会出现你关心的字段。</Text>
         ) : null}
         <Text style={local.footnote}>使用某条数据的计划，会在每条数据下方直接列出。</Text>

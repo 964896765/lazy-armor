@@ -1,8 +1,8 @@
 import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { createHash, randomBytes, verify } from 'node:crypto';
-import { deviceAppConnections, trustedDeviceChallenges, trustedDeviceRequestProofs, trustedDeviceRequestSessions, trustedDevices } from '@lazy-armor/database';
+import { deviceAppConnections, deviceHeartbeats, trustedDeviceChallenges, trustedDeviceRequestProofs, trustedDeviceRequestSessions, trustedDevices } from '@lazy-armor/database';
 import { newId } from '@lazy-armor/shared';
-import { and, desc, eq, gt, isNull } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, isNull } from 'drizzle-orm';
 import { AuditService } from '../audit/audit.service';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
 import type { CreateTrustedDeviceChallengeDto, VerifyTrustedDeviceChallengeDto } from './dto';
@@ -11,6 +11,7 @@ const CHALLENGE_TTL_MS = 5 * 60 * 1000;
 const DEVICE_SESSION_TTL_MS = 15 * 60 * 1000;
 const REQUEST_CLOCK_SKEW_MS = 90 * 1000;
 const TRUST_LEVEL = 'key_proven';
+const DEVICE_ONLINE_WINDOW_MS = process.env.NODE_ENV === 'test' ? 5_000 : 30_000;
 
 export interface TrustedDeviceRequestEnvelope {
   sessionId: string;
@@ -26,7 +27,15 @@ export class TrustedDevicesService {
 
   async list(userId: string) {
     const rows = await this.db.select().from(trustedDevices).where(eq(trustedDevices.userId, userId)).orderBy(desc(trustedDevices.updatedAt));
-    return rows.map((row) => this.toResponse(row));
+    const heartbeats = rows.length === 0 ? [] : await this.db.select().from(deviceHeartbeats).where(and(
+      eq(deviceHeartbeats.userId, userId), inArray(deviceHeartbeats.trustedDeviceId, rows.map((row) => row.id)),
+    ));
+    const heartbeatByDevice = new Map(heartbeats.map((heartbeat) => [heartbeat.trustedDeviceId, heartbeat]));
+    return rows.map((row) => {
+      const heartbeat = heartbeatByDevice.get(row.id);
+      const online = Boolean(row.status === 'active' && heartbeat && Date.now() - heartbeat.lastHeartbeatAt.getTime() <= DEVICE_ONLINE_WINDOW_MS);
+      return { ...this.toResponse(row), online, onlineState: online ? 'online' : (heartbeat?.onlineState ?? 'unknown'), lastHeartbeatAt: heartbeat?.lastHeartbeatAt.toISOString() ?? null };
+    });
   }
 
   async issueChallenge(userId: string, input: CreateTrustedDeviceChallengeDto) {

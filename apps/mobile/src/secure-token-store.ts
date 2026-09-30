@@ -9,6 +9,7 @@ const ONBOARDING_KEY = 'lazy_armor.onboarding_required';
 export interface SessionTokens {
   accessToken: string;
   refreshToken?: string;
+  expiresIn?: number;
 }
 
 let memoryAccessToken: string | undefined;

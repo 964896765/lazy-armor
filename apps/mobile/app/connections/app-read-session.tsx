@@ -11,7 +11,7 @@ import {
   acknowledgeAppReadSessionEvents, appReadSessionStatus, drainAppReadSessionEvents, openDeviceApp,
   openUsageAccessSettings, startNativeAppReadSession, stopNativeAppReadSession,
 } from '../../src/device-app-bridge';
-import { ActionButton, EmptyState, Surface, colors, radius, spacing, typography } from '../../src/design';
+import { ActionButton, EmptyState, Surface, WorkspaceHeader, colors, radius, spacing, typography } from '../../src/design';
 import { deviceBoundApi, ensureTrustedDevice } from '../../src/trusted-device-api';
 
 interface AppReadSession {
@@ -80,10 +80,8 @@ export default function AppReadSessionPage() {
   const canStart = Boolean(token && params.connectionId && params.packageName && native.data?.usageAccessGranted && !session);
   return <SafeAreaView style={styles.safeArea} edges={['top']}>
     <ScrollView contentContainerStyle={styles.content}>
-      <View style={styles.headerRow}>
-        <ActionButton label="返回" tone="quiet" onPress={() => router.back()} />
-        <View style={styles.headerCopy}><Text style={styles.title}>受控读取会话</Text><Text style={styles.subtitle}>只在目标应用位于前台时接收你允许的线索</Text></View>
-      </View>
+      <WorkspaceHeader title="受控读取会话" onBack={() => router.back()} />
+      <Text style={styles.subtitle}>只在目标应用位于前台时接收你允许的线索</Text>
       {current.isLoading || native.isLoading ? <ActivityIndicator color={colors.primary} /> : null}
       {!native.data?.usageAccessGranted ? <Surface>
         <View style={styles.cardHeading}><Ionicons name="shield-checkmark-outline" size={24} color={colors.warning} /><Text style={styles.cardTitle}>需要前台验证权限</Text></View>
@@ -152,8 +150,7 @@ const styles = StyleSheet.create({
   content: { paddingHorizontal: spacing.page, paddingTop: spacing.lg, paddingBottom: 48, gap: spacing.md },
   headerRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginBottom: spacing.sm },
   headerCopy: { flex: 1 },
-  title: { ...typography.display, color: colors.text },
-  subtitle: { ...typography.body, color: colors.textSecondary, marginTop: spacing.xs },
+  subtitle: { ...typography.body, color: colors.textSecondary, marginTop: spacing.xs, marginBottom: spacing.md },
   cardHeading: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   cardTitle: { ...typography.cardTitle, color: colors.text },
   body: { ...typography.body, color: colors.textSecondary, lineHeight: 22, marginTop: spacing.sm },

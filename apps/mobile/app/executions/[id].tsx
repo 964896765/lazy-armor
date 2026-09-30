@@ -113,7 +113,7 @@ export default function ExecutionDetail() {
             <View style={styles.hero}>
               <View style={styles.heroCopy}>
                 <Text style={styles.heroTitle}>{data.planName}</Text>
-                <Text style={styles.muted}>{formatDate(data.createdAt)} · 版本 {data.planVersionNumber}</Text>
+                <Text style={styles.muted}>{formatDate(data.createdAt)}</Text>
               </View>
               <View style={[styles.statusPill, statusTone(data.status)]}><Text style={[styles.statusText, statusTextTone(data.status)]}>{executionStatusLabel(data.status)}</Text></View>
             </View>
@@ -122,7 +122,7 @@ export default function ExecutionDetail() {
               {data.resultState ? <Text style={styles.result}>{runtimeResultLabel(data.resultState)}</Text> : null}
               <Text style={styles.result}>{data.resultSummary ?? consumerErrorMessage(data.errorMessage) ?? '正在处理'}</Text>
               <Text style={styles.body}>{executionAttentionLabel(data.status)}</Text>
-              <Pressable accessibilityRole="button" onPress={() => router.push(`/executions/${id}/lifecycle` as never)} style={styles.inlineButton}><Text style={styles.inlineButtonText}>查看 15 步生命周期</Text></Pressable>
+              <Pressable accessibilityRole="button" onPress={() => router.push(`/executions/${id}/lifecycle` as never)} style={styles.inlineButton}><Text style={styles.inlineButtonText}>查看完整过程</Text></Pressable>
             </Section>
 
             {data.reconciliationCases?.length ? (
@@ -134,7 +134,7 @@ export default function ExecutionDetail() {
                       <Text style={styles.rowTitle}>{reconciliationStatusLabel(row.status)}</Text>
                       <Text style={styles.rowSubtitle}>{runtimeResultLabel(row.resultState)} · 已回查 {row.attemptCount} 次</Text>
                     </View>
-                    <Pressable accessibilityRole="button" onPress={() => router.push(`/reconciliation/${row.id}` as never)} style={styles.inlineButton}><Text style={styles.inlineButtonText}>查看 Reconciliation</Text></Pressable>
+                    <Pressable accessibilityRole="button" onPress={() => router.push(`/reconciliation/${row.id}` as never)} style={styles.inlineButton}><Text style={styles.inlineButtonText}>查看结果回查</Text></Pressable>
                     {canRequestReconciliation(row) ? <Pressable accessibilityRole="button" disabled={recheck.isPending} onPress={() => recheck.mutate(row.id)} style={styles.inlineButton}><Text style={styles.inlineButtonText}>只读回查</Text></Pressable> : null}
                   </View>
                 ))}

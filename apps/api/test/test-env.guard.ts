@@ -5,11 +5,23 @@ const url = process.env.TEST_DATABASE_URL
   ?? process.env.DATABASE_URL
   ?? 'mysql://lazy_armor:lazy_armor_dev@127.0.0.1:3307/lazy_armor_test';
 const dbName = new URL(url).pathname.replace(/^\//, '');
-if (!dbName.toLowerCase().includes('test')) {
+const expectedDatabase = process.env.TEST_DATABASE_NAME?.trim();
+const requireExactTarget = process.env.REQUIRE_EXACT_TEST_TARGET === '1';
+if (!dbName.toLowerCase().includes('test') || dbName === 'lazy_armor') {
   throw new Error(`Refusing to run tests against non-isolated database "${dbName}". Test database name must contain "test".`);
 }
+if (expectedDatabase && dbName !== expectedDatabase) {
+  throw new Error(`Refusing test database "${dbName}"; this worktree requires exactly "${expectedDatabase}".`);
+}
+if (requireExactTarget && !expectedDatabase) throw new Error('REQUIRE_EXACT_TEST_TARGET=1 requires TEST_DATABASE_NAME.');
 process.env.DATABASE_URL = url;
 
 if (!process.env.REDIS_URL) process.env.REDIS_URL = 'redis://127.0.0.1:6379';
+const expectedRedisPrefix = process.env.TEST_REDIS_KEY_PREFIX?.trim();
+if (expectedRedisPrefix && process.env.REDIS_KEY_PREFIX && process.env.REDIS_KEY_PREFIX !== expectedRedisPrefix) {
+  throw new Error(`Refusing Redis prefix "${process.env.REDIS_KEY_PREFIX}"; this worktree requires exactly "${expectedRedisPrefix}".`);
+}
+if (requireExactTarget && !expectedRedisPrefix) throw new Error('REQUIRE_EXACT_TEST_TARGET=1 requires TEST_REDIS_KEY_PREFIX.');
+if (expectedRedisPrefix) process.env.REDIS_KEY_PREFIX = expectedRedisPrefix;
 if (!process.env.JWT_SECRET) process.env.JWT_SECRET = 'test-jwt-secret-that-is-longer-than-thirty-two-characters';
 if (!process.env.CREDENTIAL_MASTER_KEY) process.env.CREDENTIAL_MASTER_KEY = Buffer.alloc(32, 6).toString('base64');

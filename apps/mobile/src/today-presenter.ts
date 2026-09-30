@@ -93,5 +93,5 @@ export function todayEmptyTitle(): string {
 }
 
 export function todayEmptyDescription(): string {
-  return '懒人装甲正在后台照看你的计划';
+  return '有计划时会继续跟进；重要变化才会出现在这里';
 }

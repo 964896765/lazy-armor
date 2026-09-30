@@ -131,7 +131,7 @@ const local = StyleSheet.create({
   page: { flex: 1, backgroundColor: '#F5F4EF' },
   content: { padding: 24, paddingTop: 52 },
   eyebrow: { color: '#287052', fontSize: 13, fontWeight: '700', letterSpacing: 1 },
-  title: { color: '#17251F', fontSize: 30, fontWeight: '800', marginTop: 8 },
+  title: { color: '#17251F', fontSize: 18, lineHeight: 25, fontWeight: '700', marginTop: 6 },
   subtitle: { color: '#69756F', fontSize: 16, lineHeight: 24, marginTop: 8, marginBottom: 24 },
   card: { backgroundColor: '#FFFFFF', borderRadius: 16, padding: 18, marginBottom: 12, borderWidth: 1, borderColor: '#E3E7E4' },
   cardTitle: { fontWeight: '700', fontSize: 16, color: '#24342C', marginBottom: 4 },

@@ -8,6 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/api';
 import { useAuthStore } from '../../src/auth-store';
 import { executionStatusLabel } from '../../src/execution-presenter';
+import { consumerOutcomeLabel, type ConsumerOutcome } from '../../src/outcome-presenter';
 import {
   actionSummary,
   boolLabel,
@@ -16,7 +17,9 @@ import {
   notificationPreferenceLabel,
   planCenterStatusLabel,
   planEvidenceLine,
+  planNextStep,
   planStatusLabel,
+  sourceHealthHint,
   sourceTypeLabel,
   templateGroupLabel,
   triggerSummary,
@@ -35,7 +38,7 @@ interface PlanSummary {
   nextExpectedRunAt: string | null;
   hasMissingConnection: boolean;
   missingConnections: Array<{ providerKey: string; providerName: string; requiredCapabilities: string[]; usedBy: string[] }>;
-  latestExecution: { id: string; status: string; resultSummary: string | null; createdAt: string } | null;
+  latestExecution: { id: string; status: string; resultSummary: string | null; createdAt: string; outcome: { outcome: ConsumerOutcome | null } | null } | null;
   allowedTransitions: string[];
   currentVersion: { versionNumber: number; name: string; templateKey: string | null; templateVersion: string | null; templateConfig: Record<string, unknown> | null; automationLevel: string } | null;
   activeVersion: { versionNumber: number; name: string } | null;
@@ -199,6 +202,11 @@ export default function PlanDetailPage() {
               <View style={local.heroCopy}><Text style={local.title}>{summary.data.name ?? version.data.name}</Text><Text style={local.eyebrow}>{planStatusLabel(summary.data.status)}</Text><Text style={local.subtitle}>{summary.data.description ?? version.data.description ?? '这件事会按你的安排持续运行。'}</Text></View>
             </View>
 
+            <View style={local.nowRow}>
+              <View style={local.nowBlock}><Text style={local.nowLabel}>当前情况</Text><Text style={local.nowValue}>{summary.data.planCenterSummary ? planCenterStatusLabel(summary.data.planCenterSummary.kind, summary.data.planCenterSummary.currentStatus) : planStatusLabel(summary.data.status)}</Text></View>
+              <View style={local.nowBlock}><Text style={local.nowLabel}>下一步</Text><Text style={local.nowValue}>{planNextStep({ status: summary.data.status, hasMissingConnection: summary.data.hasMissingConnection, latestExecutionStatus: summary.data.latestExecution?.status, outcome: summary.data.latestExecution?.outcome?.outcome })}</Text></View>
+            </View>
+
             <Text style={local.sectionTitle}>它正在帮你</Text>
             <View style={local.sectionBody}>
               <View style={local.helpSteps}>
@@ -215,13 +223,13 @@ export default function PlanDetailPage() {
                   <View style={local.sourceChip} key={`${source.sourceType}-${index}`}><Text style={local.sourceText}>{sourceTypeLabel(source.sourceType)}</Text></View>
                 ))}
               </View>
-              <Text style={local.permissionText}>{summary.data.hasMissingConnection ? '还差一个连接，补好后就能继续。' : '只使用完成这条计划所需的信息。'}</Text>
+              <Text style={local.permissionText}>{sourceHealthHint(summary.data.hasMissingConnection, summary.data.missingConnections.map((item) => item.providerName))}</Text>
             </View>
 
             <Text style={local.sectionTitle}>最近结果</Text>
             <View style={local.sectionBody}>
               <Text style={local.resultDate}>{summary.data.latestExecution ? formatTime(summary.data.latestExecution.createdAt) : '还没有运行记录'}</Text>
-              <Text style={local.resultTitle}>{summary.data.latestExecution?.resultSummary ?? (summary.data.planCenterSummary ? planCenterStatusLabel(summary.data.planCenterSummary.kind, summary.data.planCenterSummary.currentStatus) : '第一次运行后，结果会出现在这里。')}</Text>
+              <Text style={local.resultTitle}>{summary.data.latestExecution ? `${consumerOutcomeLabel(summary.data.latestExecution.outcome?.outcome)} · ${summary.data.latestExecution.resultSummary ?? executionStatusLabel(summary.data.latestExecution.status)}` : (summary.data.planCenterSummary ? planCenterStatusLabel(summary.data.planCenterSummary.kind, summary.data.planCenterSummary.currentStatus) : '第一次运行后，结果会出现在这里。')}</Text>
               {summary.data.latestExecution ? <View style={local.inlineAction}><ActionButton label="查看完整记录" tone="quiet" onPress={() => router.push(`/executions/${summary.data?.latestExecution?.id}` as never)} /></View> : null}
             </View>
 
@@ -246,7 +254,7 @@ export default function PlanDetailPage() {
               <View style={local.settingsContent}>
                 <View style={local.settingsBlock}>
                   {planEvidenceLines(summary.data, version.data).map((line, index) => <Text style={local.text} key={index}>{line}</Text>)}
-                  <Text style={local.text}>来源与验证状态请见「15 步生命周期」。</Text>
+                  <Text style={local.text}>来源与验证状态请见「完整过程」。</Text>
                 </View>
               </View>
             ) : null}
@@ -281,7 +289,7 @@ export default function PlanDetailPage() {
                 <View style={local.settingsBlock}>
                   <Text style={local.cardTitle}>管理这条计划</Text>
                   <View style={local.actions}>
-                    <ActionButton label="查看 15 步生命周期" tone="quiet" onPress={() => router.push(`/plans/${id}/lifecycle` as never)} />
+                    <ActionButton label="查看完整过程" tone="quiet" onPress={() => router.push(`/plans/${id}/lifecycle` as never)} />
                     <ActionButton label="编辑计划" tone="quiet" onPress={() => router.push(`/plans/${id}/edit` as never)} />
                     <ActionButton label={apply.isPending ? '启用中…' : '启用修改'} onPress={() => apply.mutate()} disabled={apply.isPending || !currentVersionNumber || summary.data.hasMissingConnection} />
                     {summary.data.allowedTransitions.map((status) => <ActionButton key={status} label={statusActionLabel(status)} tone={status === 'archived' ? 'danger' : 'quiet'} onPress={() => changeStatus.mutate(status)} disabled={changeStatus.isPending} />)}
@@ -375,13 +383,6 @@ function notificationText(version: PlanVersionDetail) {
   return actionSummary('notify', notifyAction.config);
 }
 
-function latestExceptionText(summary: PlanSummary) {
-  if (!summary.latestExecution) return '最近没有发现异常。';
-  if (summary.latestExecution.status === 'failed') return summary.latestExecution.resultSummary ?? '上一次运行没有成功完成。';
-  if (summary.hasMissingConnection) return '当前缺少连接或授权，需要先补齐。';
-  return '最近没有发现异常。';
-}
-
 function statusActionLabel(status: string) {
   switch (status) {
     case 'ready':
@@ -410,6 +411,10 @@ const local = StyleSheet.create({
   eyebrow: { ...typography.label, color: colors.success, marginTop: 2 },
   title: { ...typography.title, color: colors.text },
   subtitle: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
+  nowRow: { flexDirection: 'row', gap: spacing.md, paddingVertical: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border },
+  nowBlock: { flex: 1, gap: 2 },
+  nowLabel: { ...typography.caption, color: colors.textMuted },
+  nowValue: { ...typography.bodyStrong, color: colors.text },
   sectionTitle: { ...typography.section, color: colors.text, marginTop: spacing.xl, marginBottom: spacing.sm },
   sectionTitleNoMargin: { ...typography.section, color: colors.text },
   sectionBody: { paddingBottom: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border },

@@ -27,6 +27,8 @@ describe.sequential('Batch 7 action integration', () => {
   it('migrates additive intent, adapter, and approval snapshot storage', async () => {
     const [tables] = await pool.query<RowDataPacket[]>("SELECT table_name FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name IN ('action_intents','action_adapter_bindings')");
     expect(tables).toHaveLength(2);
+    const [columns] = await pool.query<RowDataPacket[]>("SELECT column_name FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='action_adapter_bindings' AND column_name IN ('resolution_contract_json','resolution_contract_hash','verification_contract_json','verification_contract_hash')");
+    expect(columns).toHaveLength(4);
   });
 
   it('creates one intent/adapter per existing execution under concurrent dispatch and runs the original engine', async () => {
@@ -35,12 +37,26 @@ describe.sequential('Batch 7 action integration', () => {
     const executionId = responses[0].body.id;
     const intents = await request(app.getHttpServer()).get('/api/executions/' + executionId + '/action-intents').set(auth(owner.token)).expect(200);
     expect(intents.body).toHaveLength(1);
-    expect(intents.body[0]).toMatchObject({ effectiveRiskLevel: 'R1', status: 'BOUND_TO_EXECUTION', adapter: { adapterKey: 'existing-runner:record', status: 'BOUND' } });
+    expect(intents.body[0]).toMatchObject({ effectiveRiskLevel: 'R1', status: 'BOUND_TO_EXECUTION', adapter: {
+      adapterKey: 'existing-runner:record', status: 'BOUND', resolutionContractHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+      verificationPolicyKey: 'connector-response', verificationContractHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+    } });
     await request(app.getHttpServer()).get('/api/action-intents/' + intents.body[0].id).set(auth(stranger.token)).expect(404);
     await request(app.getHttpServer()).get('/api/action-intents/' + intents.body[0].id).expect(401);
     await worker.processExecution(executionId);
     const detail = await request(app.getHttpServer()).get('/api/executions/' + executionId).set(auth(owner.token)).expect(200);
     expect(detail.body.status).toBe('succeeded');
+  });
+
+  it('rejects a changed frozen verification contract before any attempt', async () => {
+    const created = await dispatch(await plan(), 'verification-tamper');
+    await pool.query("UPDATE action_adapter_bindings b JOIN action_intents i ON i.id=b.action_intent_id SET b.verification_contract_json=JSON_SET(b.verification_contract_json,'$.policy.timeoutMs',1) WHERE i.execution_id=UUID_TO_BIN(?)", [created.body.id]);
+    await worker.processExecution(created.body.id);
+    const detail = await request(app.getHttpServer()).get('/api/executions/' + created.body.id).set(auth(owner.token)).expect(200);
+    expect(detail.body).toMatchObject({ status: 'failed', errorCode: 'ACTION_RESOLUTION_CHANGED' });
+    expect(detail.body.steps[0].attemptCount).toBe(0);
+    const [operations] = await pool.query<RowDataPacket[]>('SELECT id FROM side_effect_operations WHERE execution_id=UUID_TO_BIN(?)', [created.body.id]);
+    expect(operations).toHaveLength(0);
   });
 
   it('fails closed before an action when the immutable adapter binding is changed', async () => {

@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
 import {
-  REALITY_ADAPTER_REGISTRY, REALITY_POLICY_REGISTRY, candidateDedupeKey, catalogHash, observationIdentity,
+  REALITY_ADAPTER_REGISTRY, REALITY_POLICY_REGISTRY, candidateDedupeKey, canonicalStringify, catalogHash, observationIdentity,
   parseAndNormalizeObservation, realityValueHash, type SourceObservationInput,
 } from '@lazy-armor/plan-schema';
 import {
@@ -9,10 +9,12 @@ import {
 } from '@lazy-armor/database';
 import { newId } from '@lazy-armor/shared';
 import { and, desc, eq } from 'drizzle-orm';
+import { createHash } from 'node:crypto';
 import { AuditService } from '../audit/audit.service';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
 import { StrategyRuntimeService } from '../strategy-runtime/strategy-runtime.service';
 import { VersionedResourceTruthService, type ResourceReadProof } from './versioned-resource-truth.service';
+import type { RegisterManualFactDto } from './dto';
 
 export type RealityExecutor = Pick<InjectedDatabase, 'select' | 'insert' | 'update' | 'delete'>;
 
@@ -25,6 +27,22 @@ export class RealityPipelineService implements OnModuleInit {
     private readonly versioned: VersionedResourceTruthService,
   ) {}
   async onModuleInit() { await this.syncRegistry(); }
+
+  async registerManual(userId: string, input: RegisterManualFactDto) {
+    const evidenceHash = createHash('sha256').update(canonicalStringify({
+      userId, parserKey: input.parserKey, resourceHint: input.resourceHint, payload: input.payload, observedAt: input.observedAt,
+    })).digest('hex');
+    return this.ingest(userId, {
+      sourceMode: 'MANUAL',
+      providerKey: 'user-manual',
+      externalEventKey: `manual:${input.idempotencyKey}`,
+      parserKey: input.parserKey,
+      resourceHint: input.resourceHint,
+      payload: input.payload,
+      evidenceHash,
+      observedAt: input.observedAt,
+    });
+  }
 
   async ingest(userId: string, input: SourceObservationInput, retryCount = 0, executor?: RealityExecutor): Promise<Awaited<ReturnType<RealityPipelineService['ingestOnce']>>> {
     const db = executor ?? this.db;
@@ -46,7 +64,7 @@ export class RealityPipelineService implements OnModuleInit {
     if (!/^[a-f0-9]{64}$/.test(input.evidenceHash)) throw new BadRequestException('evidenceHash must be SHA-256');
     let drafts;
     try { drafts = parseAndNormalizeObservation(input); } catch (error) { throw new BadRequestException(error instanceof Error ? error.message : 'Observation parser failed'); }
-    const identity = observationIdentity(input.providerKey, input.externalEventKey);
+    const identity = observationIdentity(input.providerKey, input.deviceId ? `${input.deviceId}:${input.externalEventKey}` : input.externalEventKey);
     const payloadHash = realityValueHash(input.payload);
     let observation = (await db.select().from(sourceObservations).where(and(eq(sourceObservations.userId, userId), eq(sourceObservations.sourceIdentity, identity))).limit(1))[0];
     let duplicate = Boolean(observation);

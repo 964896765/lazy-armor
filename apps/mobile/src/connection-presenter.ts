@@ -14,6 +14,73 @@ export function connectionStatusLabel(status: string) {
   }
 }
 
+export type ConnectionStatusTone = 'success' | 'warning' | 'muted';
+
+export function connectionStatusTone(status: string): ConnectionStatusTone {
+  if (status === 'connected') return 'success';
+  if (status === 'pending_authorization' || status === 'revoked') return 'muted';
+  return 'warning';
+}
+
+export function capabilityOfficialLabel(value: string): string {
+  if (value === 'AVAILABLE') return '可用';
+  if (value === 'LIMITED') return '有限';
+  if (value === 'UNAVAILABLE') return '不开放';
+  return '待核实';
+}
+
+export function capabilityImplementationLabel(value: string): string {
+  if (value === 'PRODUCTION') return '已上线';
+  if (value === 'BETA') return '测试中';
+  if (value === 'PARTIAL') return '部分实现';
+  if (value === 'DISABLED') return '已停用';
+  return '未实现';
+}
+
+export function capabilityGrantLabel(value: string): string {
+  if (value === 'GRANTED') return '已授权';
+  if (value === 'PARTIAL') return '部分授权';
+  if (value === 'REVOKED') return '已撤销';
+  if (value === 'EXPIRED') return '已过期';
+  return value === 'UNKNOWN' ? '未知' : '未授权';
+}
+
+export function capabilityHealthLabel(value: string): string {
+  if (value === 'HEALTHY') return '正常';
+  if (value === 'DEGRADED') return '降级';
+  if (value === 'REAUTHORIZATION_REQUIRED') return '需重连';
+  if (value === 'RATE_LIMITED') return '限流';
+  if (value === 'DEVICE_OFFLINE') return '设备离线';
+  return value === 'UNKNOWN' ? '未知' : '异常';
+}
+
+export interface CapabilityRealityInput {
+  providerAvailability?: string | null;
+  implementation?: string | null;
+  grant?: string | null;
+  health?: string | null;
+}
+
+export interface CapabilityRealitySummary {
+  total: number;
+  officialConfirmed: boolean;
+  implemented: number;
+  granted: number;
+  healthy: number;
+}
+
+/** Collapses a connection's capabilities into the four consumer-facing dimensions. */
+export function capabilityRealitySummary(capabilities: ReadonlyArray<CapabilityRealityInput>): CapabilityRealitySummary {
+  const total = capabilities.length;
+  return {
+    total,
+    officialConfirmed: total > 0 && capabilities.every((capability) => capability.providerAvailability === 'AVAILABLE'),
+    implemented: capabilities.filter((capability) => capability.implementation === 'PRODUCTION' || capability.implementation === 'BETA').length,
+    granted: capabilities.filter((capability) => capability.grant === 'GRANTED').length,
+    healthy: capabilities.filter((capability) => capability.health === 'HEALTHY').length,
+  };
+}
+
 export function connectionRecoveryAction(status: string): string | null {
   switch (status) {
     case 'reauthorization_required':
@@ -28,7 +95,7 @@ export function connectionRecoveryAction(status: string): string | null {
 export function connectionStatusExplanation(status: string) {
   switch (status) {
     case 'pending_authorization': return '正在等待你完成授权，完成后计划就能继续读取所需数据。';
-    case 'connected': return '连接状态正常，计划可以继续读取当前授权范围内的数据。';
+    case 'connected': return '账号连接已建立；各项能力是否可用，还要看授权范围与当前运行状态。';
     case 'degraded': return '连接状态不稳定，下一次自动运行可能拿不到完整结果。';
     case 'expired': return '连接已经过期，计划暂时拿不到最新数据。';
     case 'permission_required': return '这条连接缺少当前计划需要的授权范围。';
@@ -59,8 +126,8 @@ export function connectionStatusNextStep(status: string) {
 
 export function providerReadinessLabel(status: string) {
   switch (status) {
-    case 'PRODUCTION_READY': return '可使用';
-    case 'BETA': return '可试用';
+    case 'PRODUCTION_READY': return '平台已支持';
+    case 'BETA': return '平台试用中';
     case 'DRAFT_ONLY': return '开发中';
     case 'DISABLED': return '暂不可用';
     default: return '暂不可用';

@@ -90,4 +90,20 @@ describe('generic mobile notification receipt policy', () => {
     expect(notifications.emit).not.toHaveBeenCalled();
     expect(telemetry.increment).toHaveBeenCalledWith('mobile_notification.duplicate', 1, { source: 'generic' });
   });
+
+  it('accepts a shipment candidate with a normalized status', async () => {
+    const { service, values, notifications } = fixture();
+    const response = await service.receive('user-1', 'connection-1', { ...event, candidateKind: 'shipment_candidate', candidateResource: 'shipment', candidateConfidence: 75, candidateStatus: 'DELIVERED' }, 'trusted-device-1');
+    expect(response).toMatchObject({ duplicate: false, status: 'received_unclassified' });
+    expect(values).toHaveBeenCalled();
+    expect(notifications.emit).toHaveBeenCalled();
+  });
+
+  it('rejects a shipment candidate missing its normalized status', async () => {
+    const { service, values, audit, limiter } = fixture();
+    await expect(service.receive('user-1', 'connection-1', { ...event, candidateKind: 'shipment_candidate', candidateResource: 'shipment', candidateConfidence: 75, candidateStatus: null }, 'trusted-device-1')).rejects.toThrow('not a valid generic normalized signal');
+    expect(values).not.toHaveBeenCalled();
+    expect(limiter.consume).not.toHaveBeenCalled();
+    expect(audit.append).toHaveBeenCalledWith(expect.objectContaining({ action: 'MOBILE_NOTIFICATION_RECEIPT_REJECTED', result: 'blocked', reasonCode: 'INVALID_NORMALIZED_CANDIDATE' }));
+  });
 });

@@ -1,12 +1,14 @@
 import { useQuery } from '@tanstack/react-query';
-import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { useState } from 'react';
+import type { ComponentProps } from 'react';
 import type { BottomTabBarProps } from 'expo-router/build/react-navigation/bottom-tabs';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { api } from './api';
 import { useAuthStore } from './auth-store';
-import { RailItem } from './design';
+import { RailItem, colors, radius, spacing, typography } from './design';
 import { discoverLaunchableApps } from './device-app-bridge';
 import { buildConnectionRailModel } from './rail-model';
 
@@ -28,8 +30,10 @@ interface RailDeviceAppConnection {
 
 interface RailTrustedDevice { id: string; status: 'active' | 'revoked' }
 interface RailPendingNotification { id: string; connectionId: string }
-const RAIL_WIDTH = 54;
+const RAIL_WIDTH = 64;
+
 export function ConnectionRail({ state, navigation }: BottomTabBarProps) {
+  const [accountOpen, setAccountOpen] = useState(false);
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const token = useAuthStore((store) => store.token);
@@ -97,15 +101,16 @@ export function ConnectionRail({ state, navigation }: BottomTabBarProps) {
 
   return (
     <View style={[styles.frame, { top: Math.max(insets.top, 5), bottom: Math.max(insets.bottom, 5) }]}>
-      <View style={styles.fixedTop}>
-        <RailItem label="懒人装甲" imageSource={require('../assets/icon.png')} selected={activeRoute === 'plans'} showLabel={false} onPress={() => selectTab('plans')} />
-        <RailItem label="今天" icon="chatbubble-ellipses-outline" badgeCount={pendingNotifications.data?.length ?? 0} selected={activeRoute === 'index'} tone="brand" showLabel={false} onPress={() => selectTab('index')} />
-        <RailItem label="领域" icon="cube-outline" selected={activeRoute === 'domains'} showLabel={false} onPress={() => selectTab('domains')} />
-        <RailItem label="安全" icon="lock-closed-outline" selected={activeRoute === 'permissions'} showLabel={false} onPress={() => selectTab('permissions')} />
-        <RailItem label="懒人商城" icon="bag-handle-outline" selected={activeRoute === 'commerce'} tone="commerce" showLabel={false} onPress={() => selectTab('commerce')} />
-        <View style={styles.divider} />
-        <Text style={styles.railLabel}>我的连接</Text>
-      </View>
+      <RailItem
+        label="懒人装甲"
+        imageSource={require('../assets/icon.png')}
+        imageScale={1.45}
+        tone="brand"
+        selected={activeRoute === 'scenarios'}
+        showLabel
+        onPress={() => selectTab('scenarios')}
+      />
+      <View style={styles.divider} />
 
       <ScrollView style={styles.scroller} contentContainerStyle={styles.connections} showsVerticalScrollIndicator={false}>
         {rail.visible.map((connection) => (
@@ -117,17 +122,50 @@ export function ConnectionRail({ state, navigation }: BottomTabBarProps) {
             status={connection.status}
             badgeCount={connection.unread}
             showLabel={false}
-            onPress={() => selectTab('connections')}
+            onPress={() => connection.kind === 'app' ? router.push(`/apps/${connection.id}` as never) : router.push(`/connections/${connection.id}` as never)}
           />
         ))}
         {rail.overflowCount > 0 ? <RailItem label={`更多 ${rail.overflowCount}`} icon="ellipsis-horizontal" showLabel={false} onPress={() => selectTab('connections')} /> : null}
-        <RailItem label="添加连接" icon="add" tone="action" showLabel={false} onPress={() => router.push('/connections/add' as never)} />
+        <RailItem label="添加来源" icon="add" tone="action" showLabel={false} onPress={() => router.push('/connections/add' as never)} />
       </ScrollView>
-      <Pressable accessibilityRole="button" accessibilityLabel="打开我的" onPress={() => selectTab('me')} style={({ pressed }) => [styles.railAccount, activeRoute === 'me' && styles.railAccountSelected, pressed && styles.pressedAccount]}>
-        <View style={styles.avatar}><Ionicons name="person" size={18} color="#FFFFFF" /><View style={styles.onlineDot} /></View>
-      </Pressable>
+
+      <View style={styles.divider} />
+      <RailItem label="我的" icon="person-outline" tone="account" selected={accountOpen} showLabel onPress={() => setAccountOpen(true)} />
+      <AccountMenu visible={accountOpen} onClose={() => setAccountOpen(false)} selectTab={selectTab} />
     </View>
   );
+}
+
+function AccountMenu({ visible, onClose, selectTab }: { visible: boolean; onClose: () => void; selectTab: (name: string) => void }) {
+  const insets = useSafeAreaInsets();
+  const router = useRouter();
+  function go(action: () => void) {
+    onClose();
+    action();
+  }
+  return <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+    <View style={styles.overlay}>
+      <Pressable accessibilityLabel="关闭账号菜单" onPress={onClose} style={styles.scrim} />
+      <View style={[styles.drawer, { paddingTop: Math.max(insets.top, spacing.lg), paddingBottom: Math.max(insets.bottom, spacing.lg) }]}>
+        <View style={styles.heading}>
+          <Text style={styles.title}>我的</Text>
+          <Pressable accessibilityRole="button" accessibilityLabel="关闭" onPress={onClose} style={styles.close}><Ionicons name="close" size={20} color={colors.text} /></Pressable>
+        </View>
+        <ScrollView showsVerticalScrollIndicator={false}>
+          <MenuItem icon="person-outline" label="我的账号" onPress={() => go(() => selectTab('me'))} />
+          <MenuItem icon="list-outline" label="计划" onPress={() => go(() => selectTab('plans'))} />
+          <MenuItem icon="link-outline" label="连接中心" onPress={() => go(() => selectTab('connections'))} />
+          <MenuItem icon="time-outline" label="记录" onPress={() => go(() => selectTab('records'))} />
+          <MenuItem icon="shield-checkmark-outline" label="安全中心" onPress={() => go(() => router.push('/security-center' as never))} />
+          <MenuItem icon="cube-outline" label="资源中心" onPress={() => go(() => router.push('/private' as never))} />
+        </ScrollView>
+      </View>
+    </View>
+  </Modal>;
+}
+
+function MenuItem({ icon, label, onPress }: { icon: ComponentProps<typeof Ionicons>['name']; label: string; onPress: () => void }) {
+  return <Pressable accessibilityRole="button" onPress={onPress} style={styles.menuItem}><Ionicons name={icon} size={19} color={colors.primary} /><Text style={styles.menuItemText}>{label}</Text></Pressable>;
 }
 
 function connectionIcon(label: string): 'logo-github' | 'mail-outline' | 'chatbubbles-outline' | 'wallet-outline' | 'cart-outline' | 'phone-portrait-outline' | 'link-outline' {
@@ -144,15 +182,16 @@ function connectionIcon(label: string): 'logo-github' | 'mail-outline' | 'chatbu
 export const shellLayout = { railWidth: RAIL_WIDTH } as const;
 
 const styles = StyleSheet.create({
-  frame: { position: 'absolute', left: 0, width: RAIL_WIDTH, zIndex: 10, paddingHorizontal: 5, paddingVertical: 6, backgroundColor: '#EFF8F5', borderRightWidth: 1, borderRightColor: '#DDECE7' },
-  fixedTop: { alignItems: 'center', gap: 2 },
+  frame: { position: 'absolute', left: 0, width: RAIL_WIDTH, zIndex: 10, paddingHorizontal: 5, paddingVertical: 6, backgroundColor: '#FFF9F2', borderRightWidth: 1, borderRightColor: '#F2E8DB' },
   divider: { width: 36, height: 1, backgroundColor: '#EAECF0', marginVertical: 3 },
-  railLabel: { width: 44, color: '#788A84', fontSize: 6, lineHeight: 9, textAlign: 'center', fontWeight: '700', marginVertical: 2 },
   scroller: { flex: 1 },
   connections: { alignItems: 'center', gap: 2, paddingVertical: 2 },
-  railAccount: { width: 42, height: 46, alignSelf: 'center', alignItems: 'center', justifyContent: 'center', borderRadius: 13, marginTop: 3 },
-  railAccountSelected: { backgroundColor: '#DDF4ED' },
-  pressedAccount: { opacity: 0.68 },
-  avatar: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: '#087A5A' },
-  onlineDot: { position: 'absolute', right: -1, bottom: -1, width: 12, height: 12, borderRadius: 6, backgroundColor: '#23A559', borderWidth: 2, borderColor: '#FFFFFF' },
+  overlay: { flex: 1, flexDirection: 'row' },
+  scrim: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: 'rgba(22, 33, 58, 0.44)' },
+  drawer: { width: '70%', maxWidth: 292, minWidth: 232, backgroundColor: colors.surface, paddingHorizontal: spacing.md },
+  heading: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingBottom: spacing.lg },
+  title: { ...typography.title, color: colors.text },
+  close: { width: 36, height: 36, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background },
+  menuItem: { minHeight: 46, flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.sm },
+  menuItemText: { ...typography.bodyStrong, color: colors.text },
 });

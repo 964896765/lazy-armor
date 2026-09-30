@@ -234,6 +234,8 @@ describe.sequential('R3 consumer golden journeys', { timeout: 120_000 }, () => {
     const deliveredRecord = deliveredDetail.body.steps.find((step: { actionType: string }) => step.actionType === 'record');
     expect(deliveredNotify?.outputSnapshotJson).toMatchObject({ notified: true });
     expect(deliveredRecord?.outputSnapshotJson).toMatchObject({ recorded: true, recordType: 'daily_life.delivery' });
+    // 四态消费者投影：发送提醒成功 ≠ 快递已签收，但计划自身执行结果是 SUCCESS。
+    expect(deliveredDetail.body.outcome).toMatchObject({ outcome: 'SUCCESS', title: '已完成' });
     // 共享的 logistics summarize 会产出更细粒度的事件类型，覆盖 recipe 声明的 shipment_follow_up。
     expect(deliveredDetail.body.notifications).toEqual(expect.arrayContaining([
       expect.objectContaining({ eventType: 'logistics_delivered' }),
@@ -247,6 +249,7 @@ describe.sequential('R3 consumer golden journeys', { timeout: 120_000 }, () => {
     const transitRecord = transitDetail.body.steps.find((step: { actionType: string }) => step.actionType === 'record');
     expect(transitNotify?.outputSnapshotJson).toMatchObject({ notified: false, skipped: true });
     expect(transitRecord?.outputSnapshotJson).toMatchObject({ recorded: true, recordType: 'daily_life.delivery' });
+    expect(transitDetail.body.outcome).toMatchObject({ outcome: 'SUCCESS' });
   });
 
   it('R3-03 设备耗材（device.consumables）完整闭环：prepare_purchase → notify → record', async () => {

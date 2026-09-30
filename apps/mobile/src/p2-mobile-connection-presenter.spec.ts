@@ -2,10 +2,16 @@ import { describe, expect, it } from 'vitest';
 import {
   capabilityDescription,
   capabilityLabel,
+  capabilityOfficialLabel,
+  capabilityImplementationLabel,
+  capabilityGrantLabel,
+  capabilityHealthLabel,
+  capabilityRealitySummary,
   connectionStatusExplanation,
   connectionStatusNextStep,
   connectionRecoveryAction,
   connectionStatusLabel,
+  connectionStatusTone,
   consumerErrorMessage,
   consumerErrorNextStep,
   isConsumerConnector,
@@ -61,14 +67,48 @@ describe('P2 mobile connection presenter', () => {
     expect(label).not.toBe(capability);
   });
 
-  it('maps readiness and hides platform-only connectors', () => {
-    expect(providerReadinessLabel('PRODUCTION_READY')).toBe('可使用');
-    expect(providerReadinessLabel('BETA')).toBe('可试用');
+  it('maps platform readiness without claiming the user can already use it', () => {
+    expect(providerReadinessLabel('PRODUCTION_READY')).toBe('平台已支持');
+    expect(providerReadinessLabel('BETA')).toBe('平台试用中');
     expect(providerReadinessLabel('DRAFT_ONLY')).toBe('开发中');
     expect(providerReadinessLabel('DISABLED')).toBe('暂不可用');
     expect(isConsumerConnector('gmail')).toBe(true);
     expect(isConsumerConnector('manual')).toBe(false);
     expect(isConsumerConnector('internal')).toBe(false);
+  });
+
+  it('separates a healthy connection from one needing attention', () => {
+    expect(connectionStatusTone('connected')).toBe('success');
+    expect(connectionStatusTone('degraded')).toBe('warning');
+    expect(connectionStatusTone('expired')).toBe('warning');
+    expect(connectionStatusTone('permission_required')).toBe('warning');
+    expect(connectionStatusTone('pending_authorization')).toBe('muted');
+    expect(connectionStatusTone('revoked')).toBe('muted');
+  });
+
+  it('keeps the four capability dimensions in consumer language', () => {
+    expect(capabilityOfficialLabel('AVAILABLE')).toBe('可用');
+    expect(capabilityOfficialLabel('LIMITED')).toBe('有限');
+    expect(capabilityOfficialLabel('TO_VERIFY_OFFICIAL')).toBe('待核实');
+    expect(capabilityImplementationLabel('PRODUCTION')).toBe('已上线');
+    expect(capabilityImplementationLabel('NOT_IMPLEMENTED')).toBe('未实现');
+    expect(capabilityGrantLabel('GRANTED')).toBe('已授权');
+    expect(capabilityGrantLabel('EXPIRED')).toBe('已过期');
+    expect(capabilityHealthLabel('HEALTHY')).toBe('正常');
+    expect(capabilityHealthLabel('DEVICE_OFFLINE')).toBe('设备离线');
+  });
+
+  it('collapses capabilities into the four-dimension reality summary', () => {
+    const summary = capabilityRealitySummary([
+      { providerAvailability: 'AVAILABLE', implementation: 'PRODUCTION', grant: 'GRANTED', health: 'HEALTHY' },
+      { providerAvailability: 'AVAILABLE', implementation: 'BETA', grant: 'GRANTED', health: 'DEGRADED' },
+    ]);
+    expect(summary.total).toBe(2);
+    expect(summary.officialConfirmed).toBe(true);
+    expect(summary.implemented).toBe(2);
+    expect(summary.granted).toBe(2);
+    expect(summary.healthy).toBe(1);
+    expect(capabilityRealitySummary([]).officialConfirmed).toBe(false);
   });
 
   it('maps technical failures into consumer-safe language', () => {

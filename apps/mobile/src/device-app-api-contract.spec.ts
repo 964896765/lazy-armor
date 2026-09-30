@@ -33,4 +33,13 @@ describe('Generic App Connection request contract', () => {
     expect(createMobileNotificationReceiptRequest({ eventId: 'bad', contentHash: 'c'.repeat(64), sourcePackage: 'com.example.localbank', postedAt: Date.now(), capturedAt: Date.now(), hasTitle: false, hasText: false, candidateKind: 'unknown', candidateResource: null, candidateConfidence: 0, amountMinor: null, currency: null, parserVersion: 'generic-notification-v1', status: 'received_unclassified' })).toBeNull();
     expect(createMobileNotificationReceiptRequest({ eventId: 'b'.repeat(64), contentHash: 'c'.repeat(64), sourcePackage: 'com.example.localbank', postedAt: Date.now(), capturedAt: Date.now(), hasTitle: true, hasText: true, candidateKind: 'billing_transaction_candidate', candidateResource: 'mobile.billing.transaction', candidateConfidence: 70, amountMinor: null, currency: 'CNY', parserVersion: 'generic-notification-v1', status: 'received_unclassified' })).toBeNull();
   });
+
+  it('accepts a shipment candidate with a normalized status and rejects one without', () => {
+    const base = { eventId: 'b'.repeat(64), contentHash: 'c'.repeat(64), sourcePackage: 'com.sf.activity', postedAt: Date.now(), capturedAt: Date.now(), hasTitle: true, hasText: true, candidateConfidence: 75, amountMinor: null, currency: null, parserVersion: 'generic-notification-v1' as const, status: 'received_unclassified' as const };
+    const shipment = createMobileNotificationReceiptRequest({ ...base, candidateKind: 'shipment_candidate', candidateResource: 'shipment', candidateStatus: 'DELIVERED' });
+    expect(shipment).toMatchObject({ candidateKind: 'shipment_candidate', candidateResource: 'shipment', candidateStatus: 'DELIVERED' });
+    expect(createMobileNotificationReceiptRequest({ ...base, candidateKind: 'shipment_candidate', candidateResource: 'shipment', candidateStatus: null })).toBeNull();
+    expect(createMobileNotificationReceiptRequest({ ...base, candidateKind: 'bill_candidate', candidateResource: 'Bill', candidateStatus: 'DUE' })).not.toBeNull();
+    expect(createMobileNotificationReceiptRequest({ ...base, candidateKind: 'device_candidate', candidateResource: 'DeviceStatus', candidateStatus: 'LOW' })).not.toBeNull();
+  });
 });

@@ -12,6 +12,11 @@ export class FileImportController {
     return this.files.importBillingFile(user.id, input);
   }
 
+  @Post('transactions')
+  importTransactions(@CurrentUser() user: AuthenticatedUser, @Body() input: ImportBillingFileDto) {
+    return this.files.importTransactionFile(user.id, input);
+  }
+
   @Get()
   list(@CurrentUser() user: AuthenticatedUser) {
     return this.files.list(user.id);

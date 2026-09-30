@@ -16,6 +16,7 @@ import { ensureTrustedDevice } from '../../src/trusted-device-api';
 import {
   capabilityDescription,
   capabilityLabel,
+  capabilityRealitySummary,
   capabilityRiskHint,
   connectionActionLabel,
   connectionBucket,
@@ -26,7 +27,7 @@ import {
   mobileAppStateLabel,
   providerReadinessLabel,
 } from '../../src/connection-presenter';
-import { ActionButton, CollapsedAppFolder, EmptyState, Surface, WorkspaceHeader, WorkspaceSection, colors, radius, spacing, typography } from '../../src/design';
+import { ActionButton, CollapsedAppFolder, EmptyState, Surface, WorkspaceHeader, WorkspaceSection, workspaceColors as colors, radius, spacing, typography } from '../../src/design';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -38,6 +39,8 @@ interface ConnectionPlanUsage { planId: string; planName: string; planStatus: st
 interface OAuthStartResult { providerKey: string; authorizationUrl: string; expiresAt: string }
 interface DeviceAppConnection { id: string; trustedDeviceId: string | null; packageName: string; displayName: string; enabled: boolean; modes: string[]; lastSeenAt: string | null }
 interface TrustedDeviceSummary { id: string; status: 'active' | 'revoked' }
+interface CapabilityReality { key: string; name: string; providerAvailability: string; implementation: string; grant: string; health: string; usable: boolean; reasons: string[] }
+interface CapabilityRealityResponse { manifestRevision: number | null; providerReview: string; capabilities: CapabilityReality[] }
 
 function stringParam(value: string | string[] | undefined) { return Array.isArray(value) ? value[0] : value; }
 
@@ -55,6 +58,7 @@ function ConnectedService({ item, connector, token }: { item: Connection; connec
   const [feedback, setFeedback] = useState<string | null>(null);
   const permissions = useQuery({ queryKey: ['connection-permissions', item.id], queryFn: () => api<Permission[]>(`/connections/${item.id}/permissions`, token) });
   const plans = useQuery({ queryKey: ['connection-plans', item.id], queryFn: () => api<ConnectionPlanUsage[]>(`/connections/${item.id}/plans`, token) });
+  const capabilities = useQuery({ queryKey: ['connection-capabilities', item.id], queryFn: () => api<CapabilityRealityResponse>(`/connections/${item.id}/capabilities`, token) });
   const updatePermission = useMutation({
     mutationFn: (permission: Permission) => api<Permission[]>(`/connections/${item.id}/permissions`, token, { method: 'PUT', body: JSON.stringify({ permissions: [{ capability: permission.capability, granted: !permission.granted }] }) }),
     onSuccess: () => client.invalidateQueries({ queryKey: ['connection-permissions', item.id] }),
@@ -122,6 +126,7 @@ function ConnectedService({ item, connector, token }: { item: Connection; connec
             <Ionicons name="chevron-forward" size={18} color={colors.primary} />
           </Pressable>
           <Text style={styles.account}>{item.externalAccountName}</Text>
+          <CapabilityRealityLine capabilities={capabilities.data?.capabilities ?? []} loading={capabilities.isLoading} />
           {recovery ? <View style={styles.inlineAction}><ActionButton label={recovery} onPress={() => void recover()} /></View> : null}
           {feedback ? <Text style={styles.feedback}>{feedback}</Text> : null}
           <Text style={styles.subheading}>允许使用</Text>
@@ -139,6 +144,20 @@ function ConnectedService({ item, connector, token }: { item: Connection; connec
           <View style={styles.disconnect}><ActionButton label="断开账号" tone="danger" onPress={confirmDisconnect} disabled={disconnect.isPending || item.status === 'revoked'} /></View>
         </Surface>
       ) : null}
+    </View>
+  );
+}
+
+function CapabilityRealityLine({ capabilities, loading }: { capabilities: CapabilityReality[]; loading: boolean }) {
+  const summary = capabilityRealitySummary(capabilities);
+  if (loading) return <Text style={styles.realityLineMuted}>正在核对能力状态…</Text>;
+  if (summary.total === 0) return null;
+  const complete = summary.officialConfirmed && summary.implemented === summary.total && summary.granted === summary.total && summary.healthy === summary.total;
+  return (
+    <View style={styles.realityLine}>
+      <Text style={[styles.realityLineText, !complete && styles.realityLineTextWarning]}>
+        官方能力 {summary.officialConfirmed ? '已核实' : '待核实'} · 已实现 {summary.implemented}/{summary.total} · 已授权 {summary.granted}/{summary.total} · 当前健康 {summary.healthy}/{summary.total}
+      </Text>
     </View>
   );
 }
@@ -226,7 +245,7 @@ function AvailableService({ connector, token }: { connector: Connector; token: s
         <View style={styles.compactCopy}><View style={styles.compactTitleRow}><Text numberOfLines={1} style={styles.compactTitle}>{connectionDisplayName(connector.key, connector.name)}</Text><Text style={styles.readiness}>{providerReadinessLabel(connector.productionStatus)}</Text></View><Text numberOfLines={1} style={styles.compactDetail}>{connector.description}</Text></View>
         <Pressable accessibilityRole="button" disabled={!requestAvailable || pending} onPress={connector.key === 'file_provider' ? () => router.push('/file-import' as Href) : () => void connect()} style={({ pressed }) => [styles.connectButton, pressed && styles.rowPressed, (!requestAvailable || pending) && styles.connectDisabled]}><Text style={styles.connectButtonText}>{connector.key === 'file_provider' ? '选择' : pending ? '打开中' : requestAvailable ? '连接' : '暂不可用'}</Text></Pressable>
       </View>
-      <View style={styles.capabilityChips}>{connector.capabilities.slice(0, 3).map((capability) => <View style={styles.capabilityChip} key={capability.key}><Ionicons name="checkmark" size={12} color={colors.primary} /><Text numberOfLines={1} style={styles.capabilityChipText}>{capabilityLabel(connector.key, capability.key, capability.name)}</Text></View>)}</View>
+      <View style={styles.capabilityChips}>{connector.capabilities.slice(0, 3).map((capability) => <View style={styles.capabilityChip} key={capability.key}><Ionicons name="information-circle-outline" size={12} color={colors.primary} /><Text numberOfLines={1} style={styles.capabilityChipText}>{capabilityLabel(connector.key, capability.key, capability.name)}</Text></View>)}</View>
       {feedback ? <Text style={styles.feedback}>{feedback}</Text> : null}
     </View>
   );
@@ -258,20 +277,21 @@ export default function ConnectionsPage() {
   const visibleApps = (deviceApps.data ?? []).filter((item) => !needle || `${item.displayName} ${item.packageName}`.toLocaleLowerCase('zh-CN').includes(needle));
   const visibleUnconnectedApps = unconnectedApps.filter((item) => !needle || `${item.displayName} ${item.packageName}`.toLocaleLowerCase('zh-CN').includes(needle));
   const visibleAvailable = available.filter((item) => !needle || `${item.name} ${item.description}`.toLocaleLowerCase('zh-CN').includes(needle));
-  const connectedCount = (connections.data?.filter((item) => item.status !== 'revoked').length ?? 0) + (deviceApps.data?.filter((item) => item.enabled).length ?? 0);
+  const configuredCount = (connections.data?.filter((item) => item.status !== 'revoked').length ?? 0) + (deviceApps.data?.filter((item) => item.enabled).length ?? 0);
   const attentionCount = (connections.data?.filter((item) => Boolean(connectionRecoveryAction(item.status))).length ?? 0) + (deviceApps.data?.filter((item) => !item.enabled).length ?? 0);
   const hasAny = (connections.data?.length ?? 0) + (deviceApps.data?.length ?? 0) + (trustedDevices.data?.length ?? 0) > 0;
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
+    <SafeAreaView style={styles.safeArea} edges={[]}>
       <ScrollView style={styles.page} contentContainerStyle={styles.content} refreshControl={token ? <RefreshControl tintColor={colors.primary} refreshing={connections.isFetching} onRefresh={() => connections.refetch()} /> : undefined}>
-        <WorkspaceHeader title="连接中心" subtitle="管理已授权的服务与手机应用" action={<Pressable accessibilityRole="button" accessibilityLabel="添加连接" onPress={() => router.push('/connections/add' as Href)} style={({ pressed }) => [styles.headerAction, pressed && styles.rowPressed]}><Ionicons name="add" size={22} color="#344054" /></Pressable>} />
+        <WorkspaceHeader title="连接" subtitle="让计划安全地使用你的服务与手机来源" action={<Pressable accessibilityRole="button" accessibilityLabel="添加连接" onPress={() => router.push('/connections/add' as Href)} style={({ pressed }) => [styles.headerAction, pressed && styles.rowPressed]}><Ionicons name="add" size={22} color={colors.primary} /></Pressable>} />
         {!token ? (
           <Surface style={styles.stateSurface}><EmptyState icon="link-outline" title="登录后管理连接" description="登录和账号安全在“我的”中管理。" action={{ label: '去登录', onPress: () => router.push('/auth/login' as Href) }} /></Surface>
         ) : (
           <>
             <View style={styles.searchBox}><Ionicons name="search-outline" size={19} color={colors.textMuted} /><TextInput value={search} onChangeText={setSearch} placeholder="搜索已连接服务或可用来源" placeholderTextColor={colors.textMuted} style={styles.searchInput} />{search ? <Pressable accessibilityLabel="清空搜索" onPress={() => setSearch('')}><Ionicons name="close-circle" size={18} color={colors.textMuted} /></Pressable> : null}</View>
-            <View style={styles.summaryStrip}><ConnectionStat icon="link-outline" value={connectedCount} label="已连接" tone="success" /><View style={styles.statDivider} /><ConnectionStat icon="alert-circle-outline" value={attentionCount} label="需关注" tone={attentionCount > 0 ? 'warning' : 'muted'} /><View style={styles.statDivider} /><ConnectionStat icon="apps-outline" value={deviceApps.data?.length ?? 0} label="手机应用" tone="brand" /></View>
+            <View style={styles.realityHint}><Ionicons name="shield-checkmark-outline" size={20} color={colors.primary} /><Text style={styles.realityHintText}>每项能力分别核对官方开放、已实现、你的授权与当前健康；已安装不等于可用。</Text></View>
+            <View style={styles.summaryStrip}><ConnectionStat icon="link-outline" value={configuredCount} label="已添加" tone="success" /><View style={styles.statDivider} /><ConnectionStat icon="alert-circle-outline" value={attentionCount} label="需关注" tone={attentionCount > 0 ? 'warning' : 'muted'} /><View style={styles.statDivider} /><ConnectionStat icon="apps-outline" value={deviceApps.data?.length ?? 0} label="手机应用" tone="brand" /></View>
             {connections.isLoading ? <ActivityIndicator color={colors.primary} /> : null}
             {!hasAny ? <View style={styles.emptyConnection}><Text style={styles.emptyConnectionTitle}>还没有连接服务</Text><Text style={styles.emptyConnectionCopy}>添加在线服务或这台手机上的应用</Text><ActionButton label="添加连接" onPress={() => router.push('/connections/add' as Href)} /></View> : null}
 
@@ -334,7 +354,7 @@ function TrustedDeviceRow({ device }: { device: TrustedDeviceSummary }) {
   return (
     <Pressable accessibilityRole="button" onPress={() => router.push('/connections/trusted-devices' as Href)} style={({ pressed }) => [styles.connectionRow, pressed && styles.rowPressed]}>
       <View style={styles.compactIcon}><Ionicons name="phone-portrait-outline" size={20} color={colors.primary} /></View>
-      <View style={styles.compactCopy}><Text numberOfLines={1} style={styles.compactTitle}>可信设备</Text><Text style={styles.compactDetail}>{device.status === 'active' ? mobileAppStateLabel('ONLINE') : '已撤销'}</Text></View>
+      <View style={styles.compactCopy}><Text numberOfLines={1} style={styles.compactTitle}>可信设备</Text><Text style={styles.compactDetail}>{device.status === 'active' ? '已信任，在线状态另行检测' : '已撤销'}</Text></View>
       <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
     </Pressable>
   );
@@ -372,13 +392,15 @@ function providerIcon(key: string): ComponentProps<typeof Ionicons>['name'] {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#FFFFFF' },
-  page: { flex: 1, backgroundColor: '#FFFFFF' },
+  safeArea: { flex: 1, backgroundColor: colors.background },
+  page: { flex: 1, backgroundColor: colors.background },
   content: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: 72 },
-  headerAction: { width: 36, height: 36, borderRadius: 12, backgroundColor: '#F2F4F7', borderWidth: 1, borderColor: '#EAECF0', alignItems: 'center', justifyContent: 'center' },
-  searchBox: { minHeight: 44, marginTop: spacing.md, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.md, backgroundColor: '#F3F6F8', borderRadius: radius.md },
+  headerAction: { width: 36, height: 36, borderRadius: 12, backgroundColor: colors.accentSoft, borderWidth: 1, borderColor: '#FFDFBE', alignItems: 'center', justifyContent: 'center' },
+  searchBox: { minHeight: 46, marginTop: spacing.sm, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.md, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md },
   searchInput: { ...typography.body, color: colors.text, flex: 1, paddingVertical: 0 },
-  summaryStrip: { minHeight: 66, flexDirection: 'row', alignItems: 'center', marginTop: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.border },
+  realityHint: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, marginTop: spacing.md, padding: spacing.md, backgroundColor: colors.accentSoft, borderRadius: radius.md },
+  realityHintText: { ...typography.caption, flex: 1, color: colors.textSecondary, lineHeight: 18 },
+  summaryStrip: { minHeight: 70, flexDirection: 'row', alignItems: 'center', marginTop: spacing.md, paddingHorizontal: spacing.sm, backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border },
   stat: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm },
   statDivider: { width: 1, height: 30, backgroundColor: colors.border },
   statValue: { ...typography.bodyStrong },
@@ -392,8 +414,8 @@ const styles = StyleSheet.create({
   loginAction: { marginTop: spacing.lg },
   error: { ...typography.caption, color: colors.danger, marginTop: spacing.md },
   sectionTitle: { ...typography.section, color: colors.text, marginTop: spacing.xl, marginBottom: spacing.md },
-  connectionList: { backgroundColor: '#FFFFFF' },
-  availableList: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, overflow: 'hidden' },
+  connectionList: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, overflow: 'hidden' },
+  availableList: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, overflow: 'hidden' },
   availableBlock: { paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.border },
   availableRow: { minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   connectButton: { minWidth: 52, minHeight: 32, borderRadius: 11, backgroundColor: colors.successSoft, alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing.sm },
@@ -423,6 +445,10 @@ const styles = StyleSheet.create({
   detailLinkTitle: { ...typography.bodyStrong, color: colors.primary },
   detailLinkDescription: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
   account: { ...typography.caption, color: colors.textMuted },
+  realityLine: { marginTop: spacing.sm },
+  realityLineText: { ...typography.caption, color: colors.textSecondary, lineHeight: 18 },
+  realityLineTextWarning: { color: colors.warning },
+  realityLineMuted: { ...typography.caption, color: colors.textMuted, marginTop: spacing.sm },
   inlineAction: { alignItems: 'flex-start', marginTop: spacing.md },
   feedback: { ...typography.caption, color: colors.warning, marginTop: spacing.md },
   subheading: { ...typography.bodyStrong, color: colors.text, marginTop: spacing.xl, marginBottom: spacing.sm },

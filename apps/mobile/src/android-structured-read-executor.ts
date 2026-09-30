@@ -1,4 +1,4 @@
-import { isSensitiveField, type AppReadProfile } from '@lazy-armor/plan-schema';
+import { isSensitiveField, type AppReadProfile } from '@lazy-armor/plan-schema/mobile';
 import { resolveAppReadProfile } from './app-read-profiles';
 import { appReadSessionStatus, captureAppReadUiNodes, type CapturedUiNode } from './device-app-bridge';
 import type { DeviceTask } from './device-task-client';

@@ -6,6 +6,8 @@
   "scripts": {
     "build": "expo export --platform web",
     "android:prebuild": "expo prebuild --platform android --no-install",
+    "android:debug": "cd android && gradlew.bat :app:assembleDebug",
+    "android:stabilize": "pnpm android:prebuild && pnpm android:debug",
     "android:release": "cd android && gradlew.bat assembleRelease",
     "dev": "expo start",
     "start": "expo start",

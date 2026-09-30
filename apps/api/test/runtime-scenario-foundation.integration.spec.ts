@@ -21,20 +21,21 @@ describe.sequential('runtime productization batch 2 scenario foundation', () => 
   afterAll(async () => { await pool?.end(); await app?.close(); });
 
   it('persists immutable complete catalogs', async () => {
+    const expectedCatalog = [...SCENARIO_DEFINITIONS, ...TERMINAL_FOLLOW_UP_RULES.map(terminalFollowUpScenario)];
     const [[scenarioCount], [resourceCount], [factCount], [strategyCount]] = await Promise.all([
-      pool.query<RowDataPacket[]>("SELECT COUNT(*) total FROM scenario_definitions WHERE status='CATALOG_ONLY' AND revision=1"),
+      pool.query<RowDataPacket[]>("SELECT COUNT(*) total FROM scenario_definitions WHERE status='CATALOG_ONLY'"),
       pool.query<RowDataPacket[]>("SELECT COUNT(*) total FROM resource_catalog_definitions WHERE status='ACTIVE'"),
       pool.query<RowDataPacket[]>("SELECT COUNT(*) total FROM fact_schema_definitions WHERE status='ACTIVE'"),
       pool.query<RowDataPacket[]>("SELECT COUNT(*) total FROM strategy_profile_definitions WHERE status='ACTIVE'"),
     ]);
-    expect(scenarioCount[0].total).toBe(96);
+    // Existing databases also retain the five superseded revision-1 rows.
+    expect(scenarioCount[0].total).toBeGreaterThanOrEqual(expectedCatalog.length);
     expect(resourceCount[0].total).toBeGreaterThanOrEqual(50);
     expect(factCount[0].total).toBeGreaterThanOrEqual(96);
     expect(strategyCount[0].total).toBe(8);
-    const [canonical] = await pool.query<RowDataPacket[]>('SELECT scenario_key, definition_hash FROM scenario_definitions WHERE revision=1 ORDER BY scenario_key');
-    expect(canonical.map((row) => ({ key: row.scenario_key, hash: row.definition_hash }))).toEqual(
-      SCENARIO_DEFINITIONS.map((item) => ({ key: item.key, hash: catalogHash(item) })).sort((a, b) => a.key.localeCompare(b.key)),
-    );
+    const [canonical] = await pool.query<RowDataPacket[]>('SELECT scenario_key, revision, definition_hash FROM scenario_definitions ORDER BY scenario_key');
+    const persisted = new Map(canonical.map((row) => [`${row.scenario_key}@${row.revision}`, row.definition_hash]));
+    for (const item of expectedCatalog) expect(persisted.get(`${item.key}@${item.revision}`)).toBe(catalogHash(item));
     for (const rule of TERMINAL_FOLLOW_UP_RULES) {
       const [rows] = await pool.query<RowDataPacket[]>('SELECT definition_hash FROM scenario_definitions WHERE scenario_key=? AND revision=?', [rule.scenarioKey, rule.scenarioRevision]);
       expect(rows).toHaveLength(1);
@@ -76,6 +77,6 @@ describe.sequential('runtime productization batch 2 scenario foundation', () => 
     await Promise.all([catalog.sync(), catalog.sync(), catalog.sync()]);
     const [after] = await pool.query<RowDataPacket[]>('SELECT scenario_key, revision, definition_hash FROM scenario_definitions ORDER BY scenario_key, revision');
     expect(after).toEqual(before);
-    expect(after.filter((row) => row.revision === 1)).toHaveLength(96);
+    expect(after.length).toBeGreaterThanOrEqual(SCENARIO_DEFINITIONS.length + TERMINAL_FOLLOW_UP_RULES.length);
   });
 });

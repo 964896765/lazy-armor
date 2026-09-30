@@ -1,19 +1,18 @@
 import type { ReactNode } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { colors } from '../colors';
+import { workspaceColors as colors } from '../workspace';
 import { spacing } from '../spacing';
 import { typography } from '../typography';
 
-export function WorkspaceHeader({ title, subtitle, action, onBack }: { title: string; subtitle?: string; action?: ReactNode; onBack?: () => void }) {
-  return <View style={styles.header}>{onBack ? <Pressable accessibilityRole="button" accessibilityLabel="返回" onPress={onBack} style={({ pressed }) => [styles.back, pressed && styles.pressed]}><Ionicons name="chevron-back" size={24} color="#344054" /></Pressable> : null}<View style={styles.copy}><Text style={styles.title}>{title}</Text>{subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}</View>{action ? <View>{action}</View> : null}</View>;
+export function WorkspaceHeader({ title, action, onBack }: { title: string; subtitle?: string; action?: ReactNode; onBack?: () => void }) {
+  return <View style={styles.header}>{onBack ? <Pressable accessibilityRole="button" accessibilityLabel="返回" onPress={onBack} style={({ pressed }) => [styles.back, pressed && styles.pressed]}><Ionicons name="chevron-back" size={22} color={colors.text} /></Pressable> : null}<View style={styles.copy}><Text numberOfLines={1} ellipsizeMode="tail" style={styles.title}>{title}</Text></View>{action ? <View>{action}</View> : null}</View>;
 }
 
 const styles = StyleSheet.create({
-  header: { minHeight: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md, paddingBottom: spacing.sm, borderBottomWidth: 1, borderBottomColor: '#EAECF0' },
-  copy: { flex: 1 },
-  back: { width: 34, height: 34, marginLeft: -4, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
-  pressed: { backgroundColor: '#EEF1F5' },
-  title: { ...typography.title, color: colors.text },
-  subtitle: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
+  header: { minHeight: 60, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm, paddingTop: spacing.sm, paddingBottom: spacing.sm },
+  copy: { flex: 1, minWidth: 0 },
+  back: { width: 40, height: 40, marginLeft: -6, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  pressed: { backgroundColor: colors.pressed },
+  title: { ...typography.navigationTitle, color: colors.text },
 });

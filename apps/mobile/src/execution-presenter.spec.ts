@@ -3,6 +3,8 @@ import {
   executionAttentionLabel,
   executionListState,
   executionNeedsAttention,
+  executionRecordCategory,
+  executionRecordCategoryLabel,
   executionStatusLabel,
   executionStepMark,
   executionStepSummary,
@@ -40,5 +42,22 @@ describe('Execution records presenter', () => {
     expect(executionAttentionLabel('failed')).toBe('需要你处理');
     expect(executionAttentionLabel('waiting_approval')).toBe('需要你确认');
     expect(executionStepSummary('retry_wait')).toContain('重试');
+  });
+
+  it('never presents pending or unknown results as successful records', () => {
+    expect(executionRecordCategory('succeeded')).toBe('success');
+    expect(executionRecordCategory('queued')).toBe('processing');
+    expect(executionRecordCategory('running')).toBe('processing');
+    expect(executionRecordCategory('outcome_unknown')).toBe('exception');
+    expect(executionRecordCategory('unrecognized')).toBe('exception');
+    expect(executionAttentionLabel('running')).toBe('正在处理');
+  });
+
+  it('separates undetermined outcomes into their own record category', () => {
+    expect(executionRecordCategory('succeeded', 'OUTCOME_UNKNOWN')).toBe('outcome');
+    expect(executionRecordCategory('partially_succeeded', 'OUTCOME_UNKNOWN')).toBe('outcome');
+    expect(executionRecordCategory('succeeded', null)).toBe('success');
+    expect(executionRecordCategory('failed', undefined)).toBe('failed');
+    expect(executionRecordCategoryLabel('outcome')).toBe('结果待确认');
   });
 });

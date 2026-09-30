@@ -48,6 +48,54 @@ export function evaluateVerification(policy: VerificationPolicy, method: Verific
 
 export function verificationPolicyHash(policy: VerificationPolicy): string { validateVerificationPolicy(policy); return catalogHash(policy); }
 
+export interface VerificationContract {
+  version: '1';
+  providerKey: string | null;
+  capabilityKey: string | null;
+  policy: VerificationPolicy;
+  policyHash: string;
+}
+
+export interface ActionResolutionContract {
+  version: '1';
+  planVersionId: string;
+  actionIntentId: string;
+  actionIntentHash: string;
+  adapterRevision: number;
+  adapterKey: string;
+  connectorId: string | null;
+  connectionId: string | null;
+  capabilityKey: string | null;
+  capabilityResolutionDecisionId: string | null;
+  capabilityResolutionDecisionHash: string | null;
+  riskInputFingerprint: string;
+  effectiveRisk: string;
+  verificationContractHash: string;
+}
+
+export function buildVerificationContract(providerKey: string | null, capabilityKey: string | null, policy: VerificationPolicy): VerificationContract {
+  validateVerificationPolicy(policy);
+  if (policy.providerKey !== null && (policy.providerKey !== providerKey || policy.capabilityKey !== capabilityKey)) {
+    throw new Error('Verification policy does not match the resolved provider capability');
+  }
+  return { version: '1', providerKey, capabilityKey, policy: structuredClone(policy), policyHash: verificationPolicyHash(policy) };
+}
+
+export function verificationContractHash(contract: VerificationContract): string {
+  const rebuilt = buildVerificationContract(contract.providerKey, contract.capabilityKey, contract.policy);
+  if (contract.version !== '1' || rebuilt.policyHash !== contract.policyHash) throw new Error('Invalid verification contract');
+  return catalogHash(contract);
+}
+
+export function actionResolutionContractHash(contract: ActionResolutionContract): string {
+  if (contract.version !== '1' || !contract.planVersionId || !contract.actionIntentId || !contract.actionIntentHash
+    || !Number.isInteger(contract.adapterRevision) || contract.adapterRevision < 1 || !contract.adapterKey
+    || !contract.riskInputFingerprint || !contract.effectiveRisk || !contract.verificationContractHash) {
+    throw new Error('Invalid action resolution contract');
+  }
+  return catalogHash(contract);
+}
+
 // Compatibility policy uses the existing ConnectorResult contract, not guessed provider fields.
 export const CONNECTOR_RESPONSE_POLICY: VerificationPolicy = {
   key: 'connector-response', revision: '1', providerKey: null, capabilityKey: null, methods: ['PROVIDER_RESPONSE', 'USER_CONFIRMATION'],

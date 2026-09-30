@@ -269,6 +269,13 @@ const abnormalSpendGuardSchema = z.object({
   notificationPreference: z.enum(['summary', 'important']).default('important'),
 }).strict();
 
+const accountingSchema = z.object({
+  planName: z.string().trim().min(1).max(120).optional(),
+  summaryDay: z.number().int().min(1).max(28).default(1),
+  showCategories: z.boolean().default(true),
+  notificationPreference: z.enum(['silent', 'summary', 'important']).default('summary'),
+}).strict();
+
 const calendarConflictGuardSchema = z.object({
   planName: z.string().trim().min(1).max(120).optional(),
   calendarConnectionId: z.string().uuid(),
@@ -860,6 +867,48 @@ export const PLAN_TEMPLATES: readonly PlanTemplateManifest[] = [
           { groupId: 'root', logicalOperator: 'OR', fieldPath: 'amountChange', operator: 'PERCENT_CHANGE_GT', comparisonValue: parsed.increaseThresholdPercent, sortOrder: 1 },
         ],
         actions: [{ actionType: 'classify', config: { taxonomy: 'billing_category', showCategories: true }, stepOrder: 0 }, { actionType: 'compare', config: { baseline: 'previous_period', enabled: true, anomalyThresholdPercent: parsed.increaseThresholdPercent }, stepOrder: 1 }, { actionType: 'summarize', config: { format: 'short', showCategories: true, showMonthOverMonth: true }, stepOrder: 2 }, { actionType: 'notify', config: { channel: 'in_app', priority: parsed.notificationPreference === 'important' ? 'P1' : 'P2', eventType: 'abnormal_spend_detected' }, stepOrder: 3 }],
+      };
+    },
+  },
+  {
+    key: 'account-book-keeping', templateVersion: '1', domain: 'finance', group: '我的钱',
+    name: '账目整理', description: '归类并汇总已确认交易，核对差异并生成账目报告，不做任何资金操作。', icon: '账目', status: 'published', automationLevel: 'L1',
+    requiredConnectors: ['internal'], approvalPolicy: NEVER_APPROVAL_POLICY,
+    riskConstraint: riskConstraint('R1', ['classify', 'compare', 'summarize', 'notify']), notificationPolicy: notificationPolicy('summary', ['silent', 'summary', 'important'], { silentOnSuccess: true }),
+    details: {
+      doesWhat: '把已确认（verified）的交易事实按类别整理，汇总周期收支，核对账目差异并生成可核对的分析报告。',
+      runsWhen: '每月固定日期运行，也能在导入文件并确认交易后手动触发补跑。',
+      dataNeeded: '已确认交易事实：金额、方向、状态、商户、发生时间及来源证据。',
+      remindsWhen: '默认生成摘要；发现账目差异或存在未确认交易时提醒。',
+      connectionSummary: '交易事实来自文件导入并经确认的 Truth；未确认候选不进入统计。',
+      riskSummary: '只做归类、汇总、核对与报告，不转账、不支付、不修改账户资金。',
+    },
+    configFields: [
+      { key: 'planName', type: 'text', required: false, label: '计划名称', helpText: '例如“家庭账目整理”。' },
+      { key: 'summaryDay', type: 'number', required: true, label: '每月汇总日期', helpText: '每个月哪一天生成账目报告。', defaultValue: 1, min: 1, max: 28 },
+      { key: 'showCategories', type: 'boolean', required: true, label: '显示分类汇总', helpText: '按类别整理收支结构。', defaultValue: true },
+      { key: 'notificationPreference', type: 'select', required: true, label: '提醒方式', helpText: '正常情况建议摘要提醒。', defaultValue: 'summary', options: [{ value: 'silent', label: '静默' }, { value: 'summary', label: '摘要提醒' }, { value: 'important', label: '重要提醒' }] },
+    ],
+    configSchema: accountingSchema,
+    buildDefinition(config) {
+      const parsed = accountingSchema.parse(config);
+      const actions: PlanDefinitionInput['actions'] = [
+        { actionType: 'classify', config: { taxonomy: 'finance', showCategories: parsed.showCategories }, stepOrder: 0 },
+        { actionType: 'summarize', config: { format: 'detailed', showCategories: parsed.showCategories, domain: 'finance' }, stepOrder: 1 },
+        { actionType: 'compare', config: { baseline: 'previous_period', enabled: true, anomalyThresholdPercent: 50 }, stepOrder: 2 },
+      ];
+      if (parsed.notificationPreference !== 'silent') {
+        actions.push({ actionType: 'notify', config: { channel: 'in_app', priority: parsed.notificationPreference === 'important' ? 'P1' : 'P2', eventType: 'accounting_report_ready' }, stepOrder: actions.length });
+      }
+      return {
+        name: parsed.planName?.trim() || '账目整理',
+        description: '归类并汇总已确认交易，核对差异并生成账目报告，不做资金操作。',
+        domain: 'finance',
+        automationLevel: 'L1',
+        sources: [{ sourceType: 'internal', config: { resource: 'finance.transaction' }, sortOrder: 0 }],
+        triggers: schedule(`0 9 ${parsed.summaryDay} * *`),
+        conditions: [],
+        actions,
       };
     },
   },

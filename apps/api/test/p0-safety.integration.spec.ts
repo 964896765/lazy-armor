@@ -186,7 +186,12 @@ describe.sequential('P0-6 Risk, Approval and Notification integration', () => {
   });
 
   it('18 expires Approval safely, makes terminal history immutable and cancels pending Approval with Execution', async () => {
-    const expiringPlan = await createPlan(definition('Approval expiry', [action('TEST_R3_EXTERNAL')])); const expiring = await runToWait(expiringPlan.id); await wait(2_100); await approvalService.expireDue();
+    const expiringPlan = await createPlan(definition('Approval expiry', [action('TEST_R3_EXTERNAL')])); const expiring = await runToWait(expiringPlan.id);
+    // 确定性时间控制：共享测试库会累积历史 pending 审批，expireDue 的 .limit(100) 可能不命中本审批。
+    // 因此把其他 pending 审批置为未来、本审批置为过去，确保本次只过期目标审批。
+    await pool.query("UPDATE approval_requests SET expires_at='2099-01-01 00:00:00.000000' WHERE status='pending' AND id != UUID_TO_BIN(?)", [expiring.approval.id]);
+    await pool.query("UPDATE approval_requests SET expires_at='2020-01-01 00:00:00.000000' WHERE id=UUID_TO_BIN(?)", [expiring.approval.id]);
+    await approvalService.expireDue();
     expect((await request(app.getHttpServer()).get(`/api/approvals/${expiring.approval.id}`).set(auth(userA.token)).expect(200)).body.status).toBe('expired');
     await expect(pool.query("UPDATE approval_requests SET status='approved' WHERE id=UUID_TO_BIN(?)", [expiring.approval.id])).rejects.toThrow(/immutable/);
     const cancelPlan = await createPlan(definition('Approval cancellation', [action('TEST_R3_EXTERNAL')])); const cancel = await runToWait(cancelPlan.id); await request(app.getHttpServer()).post(`/api/executions/${cancel.execution.id}/cancel`).set(auth(userA.token)).expect(201);

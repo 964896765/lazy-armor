@@ -32,7 +32,10 @@ export class RiskEngine {
       : undefined;
     const factors: string[] = [];
     const binding = planVersionId ? (await executor.select().from(strategyRuntimeBindings).where(eq(strategyRuntimeBindings.planVersionId, planVersionId)).limit(1))[0] : undefined;
-    const scenario = binding ? scenarioByRevision(binding.scenarioKey, binding.scenarioRevision) : null;
+    // V2-only scenarios and terminal follow-up rules have no immutable-96 row
+    // at every revision; resolve by key + revision so a dedicated (non-canonical)
+    // revision still yields its pinned risk floor instead of being rejected.
+    const scenario = binding ? scenarioByRevision(binding.scenarioKey, binding.scenarioRevision) : undefined;
     if (binding && (!scenario || scenario.revision !== binding.scenarioRevision)) throw new Error('Scenario risk policy revision unavailable');
     const scenarioRisk: RiskLevel = scenario?.defaultRiskFloor ?? 'R0';
     let dynamicRisk: RiskLevel = 'R0';
