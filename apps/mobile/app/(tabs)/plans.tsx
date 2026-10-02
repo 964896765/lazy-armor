@@ -3,95 +3,102 @@ import { useQuery } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import type { ComponentProps } from 'react';
 import { useMemo, useState } from 'react';
-import { ActivityIndicator, Image, type ImageSourcePropType, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/api';
 import { useAuthStore } from '../../src/auth-store';
-import { workspaceColors as colors, radius, spacing, typography } from '../../src/design';
-import { consumerPlanStatusLabel, consumerPlanStatusTone, planCenterStatusLabel, planDomainLabel, planExceptionReason, planNextRunLabel, planVisualIcon } from '../../src/plan-presenter';
+import { PLAN_DOMAIN_CATALOG, catalogTemplateCount, type PlanDomainCatalog } from '../../src/plan-domain-catalog';
+import { consumerPlanStatusLabel, planNextRunLabel } from '../../src/plan-presenter';
 
 type IconName = ComponentProps<typeof Ionicons>['name'];
-type PlanFilter = 'all' | 'running' | 'confirmation' | 'completed';
+type PageMode = 'catalog' | 'scheduled';
+interface PlanSummary { id: string; status: string; name: string | null; description: string | null; domain: string | null; nextExpectedRunAt: string | null; hasMissingConnection: boolean; currentVersion: { name: string; domain?: string } | null }
 
-interface PlanSummary {
-  id: string; status: string; name: string | null; description: string | null; templateKey: string | null; consumerGroup?: string | null; templateVersion: string | null; domain: string | null; nextExpectedRunAt: string | null; hasMissingConnection: boolean;
-  latestExecution: { id: string; status: string; resultSummary: string | null; createdAt: string } | null;
-  currentVersion: { versionNumber: number; name: string } | null;
-  activeVersion: { versionNumber: number; name: string } | null;
-  planCenterSummary: { kind: 'logistics' | 'household' | 'content' | 'daily_summary' | 'study' | 'device'; currentStatus: string; isException?: boolean; latestEventSummary?: string | null } | null;
-}
-
-const FILTERS: readonly { key: PlanFilter | 'records'; label: string }[] = [
-  { key: 'all', label: '全部' }, { key: 'running', label: '进行中' }, { key: 'confirmation', label: '待确认' }, { key: 'completed', label: '已完成' }, { key: 'records', label: '记录' },
-];
-const PLAN_IMAGES: Readonly<Record<string, ImageSourcePropType>> = {
-  logistics: require('../../assets/services/household-supply.jpg'), household: require('../../assets/services/home-organization.jpg'), device: require('../../assets/services/appliance-cleaning.jpg'), daily_summary: require('../../assets/services/move-in.jpg'), content: require('../../assets/services/home-cleaning.jpg'), study: require('../../assets/services/elder-care.jpg'), fallback: require('../../assets/services/household-supply.jpg'),
+const DOMAIN_MAP: Readonly<Record<string, string>> = {
+  life: 'life', daily_life: 'life', living: 'living', family: 'family', pet: 'family', health: 'health', finance: 'finance', billing: 'finance', work: 'work', operations: 'work', content: 'work', study: 'study', information: 'information', travel: 'travel', social: 'social', entertainment: 'entertainment', housing: 'asset', vehicle: 'asset', device: 'asset', digital_account: 'asset', identity_docs: 'identity', government: 'identity', legal_contract: 'identity',
 };
+const ICON_TONES = ['#3F7BF4', '#8357E8', '#15A968', '#F17A16', '#3379E8', '#704FE2'] as const;
+const ICON_BACKGROUNDS = ['#E8EFFF', '#EEE8FF', '#E4F8EF', '#FFF0E2', '#E7F0FF', '#EEE9FF'] as const;
 
-export default function Plans() {
+export default function PlansPage() {
   const token = useAuthStore((store) => store.token);
-  const [filter, setFilter] = useState<PlanFilter>('all');
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [query, setQuery] = useState('');
-  const plans = useQuery({ queryKey: ['plans', token], queryFn: () => api<PlanSummary[]>('/plans', token), enabled: Boolean(token) });
-  const allPlans = plans.data ?? [];
-  const activeCount = allPlans.filter(isRunning).length;
-  const filtered = useMemo(() => {
-    const normalized = query.trim().toLocaleLowerCase('zh-CN');
-    return allPlans.filter((plan) => matchesFilter(plan, filter)).filter((plan) => !normalized || `${planName(plan)} ${plan.description ?? ''} ${plan.domain ?? ''}`.toLocaleLowerCase('zh-CN').includes(normalized));
-  }, [allPlans, filter, query]);
+  const [mode, setMode] = useState<PageMode>('catalog');
+  const [domainKey, setDomainKey] = useState(PLAN_DOMAIN_CATALOG[0].key);
+  const domain = PLAN_DOMAIN_CATALOG.find((item) => item.key === domainKey) ?? PLAN_DOMAIN_CATALOG[0];
+  const plans = useQuery({ queryKey: ['plans', token], queryFn: () => api<PlanSummary[]>('/plans', token), enabled: Boolean(token && mode === 'scheduled') });
+  const domainPlans = useMemo(() => (plans.data ?? []).filter((plan) => normalizePlanDomain(plan) === domain.key), [domain.key, plans.data]);
 
-  return <SafeAreaView style={styles.safeArea} edges={[]}>
-    <ScrollView style={styles.page} contentContainerStyle={styles.content} refreshControl={token ? <RefreshControl tintColor={colors.primary} refreshing={plans.isFetching} onRefresh={() => plans.refetch()} /> : undefined}>
-      <View style={styles.header}><View style={styles.headerActions}>
-        <Pressable accessibilityRole="button" accessibilityLabel="搜索计划" onPress={() => setSearchOpen((value) => !value)} style={({ pressed }) => [styles.headerAction, pressed && styles.pressed]}><Ionicons name="search-outline" size={21} color={colors.text} /><Text style={styles.headerActionText}>搜索</Text></Pressable>
-        <View style={styles.actionDivider} />
-        <Pressable accessibilityRole="button" accessibilityLabel="新建计划" onPress={() => router.push('/create' as never)} style={({ pressed }) => [styles.headerAction, pressed && styles.pressed]}><Ionicons name="add-circle-outline" size={21} color={colors.text} /><Text style={styles.headerActionText}>新建</Text></Pressable>
-      </View></View>
+  const openCreate = (template?: string) => router.push(template ? ({ pathname: '/create', params: { intent: `创建“${template}”计划` } } as never) : '/create' as never);
+  return <SafeAreaView edges={['top']} style={styles.safeArea}>
+    <ScrollView contentContainerStyle={styles.content} refreshControl={mode === 'scheduled' && token ? <RefreshControl tintColor="#2F6FDB" refreshing={plans.isFetching} onRefresh={() => plans.refetch()} /> : undefined}>
+      <View style={styles.header}><Pressable accessibilityRole="button" accessibilityLabel="打开菜单" onPress={() => router.push('/profile' as never)} style={({ pressed }) => [styles.roundButton, pressed && styles.pressed]}><MenuGlyph /></Pressable><View style={styles.modeBar}><ModeButton icon="list" label="计划" selected={mode === 'catalog'} onPress={() => setMode('catalog')} /><ModeButton icon="time-outline" label="我的计划" selected={mode === 'scheduled'} onPress={() => setMode('scheduled')} /></View><Pressable accessibilityRole="button" accessibilityLabel="新建计划" onPress={() => openCreate()} style={({ pressed }) => [styles.roundButton, pressed && styles.pressed]}><Ionicons name="add" size={32} color="#18202C" /></Pressable></View>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.domainTabs}>{PLAN_DOMAIN_CATALOG.map((item) => <Pressable key={item.key} accessibilityRole="tab" accessibilityState={{ selected: item.key === domain.key }} onPress={() => setDomainKey(item.key)} style={[styles.domainTab, item.key === domain.key && styles.domainTabSelected]}><Text style={[styles.domainText, item.key === domain.key && styles.domainTextSelected]}>{item.label}</Text></Pressable>)}</ScrollView>
+      <View style={styles.domainIntro}><Text style={styles.domainTitle}>{domain.label} · {domain.english}</Text><Text style={styles.domainDescription}>{domain.description} · {catalogTemplateCount(domain)} 项</Text></View>
 
-      {searchOpen ? <View style={styles.searchBox}><Ionicons name="search-outline" size={19} color={colors.textMuted} /><TextInput autoFocus value={query} onChangeText={setQuery} placeholder="搜索计划名称或领域" placeholderTextColor={colors.textMuted} style={styles.searchInput} />{query ? <Pressable accessibilityRole="button" accessibilityLabel="清空搜索" onPress={() => setQuery('')}><Ionicons name="close-circle" size={19} color={colors.textMuted} /></Pressable> : null}</View> : null}
-
-      <View accessibilityRole="tablist" style={styles.filters}>{FILTERS.map((item) => <Pressable key={item.key} accessibilityRole="tab" accessibilityState={{ selected: item.key !== 'records' && filter === item.key }} onPress={() => item.key === 'records' ? router.push('/records' as never) : setFilter(item.key)} style={[styles.filter, item.key !== 'records' && filter === item.key && styles.filterSelected]}><Text style={[styles.filterText, item.key !== 'records' && filter === item.key && styles.filterTextSelected]}>{item.label}</Text></Pressable>)}</View>
-
-      {token && activeCount > 0 ? <Text style={styles.compactSummary}>正在进行 {activeCount} 个计划</Text> : null}
-
-      {!token ? <InlineState icon="shield-checkmark-outline" title="登录后查看计划" description="这里只展示服务端属于你的真实计划。" action="去登录" onPress={() => router.push('/auth/login' as never)} /> : null}
-      {token && plans.isLoading ? <View style={styles.loading}><ActivityIndicator color={colors.primary} /><Text style={styles.loadingText}>正在同步计划…</Text></View> : null}
-      {token && plans.isError ? <InlineState icon="refresh-outline" title="暂时没能读取计划" description="网络恢复后可重新加载。" action="重试" onPress={() => plans.refetch()} /> : null}
-      {token && !plans.isLoading && !plans.isError && filtered.length > 0 ? <View style={styles.grid}>{filtered.map((plan) => <PlanCard key={plan.id} plan={plan} />)}</View> : null}
-      {token && !plans.isLoading && !plans.isError && filtered.length === 0 ? <View style={styles.emptyPlan}><View style={styles.emptyIcon}><Ionicons name={query ? 'search-outline' : 'layers-outline'} size={21} color={colors.primary} /></View><View style={styles.emptyCopy}><Text style={styles.emptyTitle}>{query ? '没有匹配的计划' : filter === 'all' ? '还没有计划' : '这个分类暂时没有计划'}</Text><Text style={styles.emptyDescription}>{query ? '换个关键词试试。' : '从真实场景开始创建，状态会由服务端同步。'}</Text></View>{!query && filter === 'all' ? <Pressable accessibilityRole="button" onPress={() => router.push('/create' as never)} style={({ pressed }) => [styles.emptyAction, pressed && styles.pressed]}><Text style={styles.emptyActionText}>新建</Text></Pressable> : null}</View> : null}
+      {mode === 'catalog' ? <CatalogList domain={domain} onCreate={openCreate} /> : <ScheduledPlans token={token} plans={domainPlans} loading={plans.isLoading} error={plans.isError} onRetry={() => plans.refetch()} onCreate={openCreate} />}
     </ScrollView>
   </SafeAreaView>;
 }
 
-function PlanCard({ plan }: { plan: PlanSummary }) {
-  const name = planName(plan);
-  const kind = plan.planCenterSummary?.kind ?? 'fallback';
-  const tone = consumerPlanStatusTone({ status: plan.status, hasMissingConnection: plan.hasMissingConnection });
-  const status = consumerPlanStatusLabel({ status: plan.status, hasMissingConnection: plan.hasMissingConnection });
-  return <Pressable accessibilityRole="button" accessibilityLabel={`${name}，${status}`} onPress={() => router.push(`/plans/${plan.id}` as never)} style={({ pressed }) => [styles.card, pressed && styles.pressed]}>
-    <View style={styles.cardVisual}><Image source={PLAN_IMAGES[kind] ?? PLAN_IMAGES.fallback} resizeMode="cover" style={styles.cardImage} /></View>
-    <View style={styles.cardBody}><View style={styles.cardTitleRow}><View style={styles.cardIcon}><Ionicons name={planVisualIcon(name, plan.planCenterSummary?.kind) as IconName} size={18} color={colors.primary} /></View><Text numberOfLines={1} style={styles.cardTitle}>{name}</Text></View><Text numberOfLines={2} style={styles.cardDescription}>{planDescription(plan)}</Text><View style={[styles.statusPill, tone === 'warning' && styles.statusWarning, tone === 'muted' && styles.statusMuted]}><View style={[styles.statusDot, tone === 'warning' && styles.statusDotWarning, tone === 'muted' && styles.statusDotMuted]} /><Text style={[styles.statusText, tone === 'warning' && styles.statusTextWarning]}>{status}</Text></View><View style={styles.tags}><Text numberOfLines={1} style={styles.tag}>{planDomainLabel(plan.domain)}</Text><Text numberOfLines={1} style={styles.tag}>{planNextRunLabel(plan.status, plan.nextExpectedRunAt)}</Text></View></View>
-  </Pressable>;
+function ModeButton({ icon, label, selected, onPress }: { icon: IconName; label: string; selected: boolean; onPress: () => void }) {
+  return <Pressable accessibilityRole="tab" accessibilityState={{ selected }} onPress={onPress} style={[styles.modeButton, selected && styles.modeButtonSelected]}><Ionicons name={icon} size={21} color={selected ? '#171D25' : '#7A8795'} /><Text style={[styles.modeLabel, selected && styles.modeLabelSelected]}>{label}</Text></Pressable>;
 }
 
-function InlineState({ icon, title, description, action, onPress }: { icon: IconName; title: string; description: string; action: string; onPress: () => void }) {
-  return <View style={styles.inlineState}><View style={styles.inlineIcon}><Ionicons name={icon} size={19} color={colors.primary} /></View><View style={styles.inlineCopy}><Text style={styles.emptyTitle}>{title}</Text><Text style={styles.emptyDescription}>{description}</Text></View><Pressable onPress={onPress} style={({ pressed }) => [styles.emptyAction, pressed && styles.pressed]}><Text style={styles.emptyActionText}>{action}</Text></Pressable></View>;
+function MenuGlyph() { return <View style={styles.menuGlyph}><View style={styles.menuLong} /><View style={styles.menuShort} /></View>; }
+
+function CatalogList({ domain, onCreate }: { domain: PlanDomainCatalog; onCreate: (name: string) => void }) {
+  let itemIndex = 0;
+  return <View>{domain.groups.map((group, groupIndex) => <View key={group.title ?? `group-${groupIndex}`}>{group.title ? <Text style={styles.groupTitle}>{group.title}</Text> : null}<View style={styles.list}>{group.templates.map((name) => { const index = itemIndex++; return <TemplateRow key={name} name={name} domain={domain} index={index} onCreate={() => onCreate(name)} />; })}</View></View>)}</View>;
 }
 
-function planName(plan: PlanSummary) { return plan.name ?? plan.currentVersion?.name ?? '我的懒人计划'; }
-function isRunning(plan: PlanSummary) { return ['active', 'ready', 'degraded', 'blocked'].includes(plan.status); }
-function matchesFilter(plan: PlanSummary, filter: PlanFilter) { if (filter === 'all') return true; if (filter === 'running') return isRunning(plan); if (filter === 'confirmation') return ['waiting_approval', 'waiting_confirmation', 'pending_confirmation'].includes(plan.latestExecution?.status ?? '') || plan.status === 'pending_confirmation'; return ['completed', 'archived', 'succeeded'].includes(plan.status); }
-function planDescription(plan: PlanSummary) { const exception = planExceptionReason(plan); if (exception) return exception; if (plan.planCenterSummary) return planCenterStatusLabel(plan.planCenterSummary.kind, plan.planCenterSummary.currentStatus); if (plan.description) return plan.description; if (plan.latestExecution?.resultSummary) return plan.latestExecution.resultSummary; return '按已确认的目标持续跟进。'; }
+function TemplateRow({ name, domain, index, onCreate }: { name: string; domain: PlanDomainCatalog; index: number; onCreate: () => void }) {
+  const tone = ICON_TONES[index % ICON_TONES.length];
+  return <Pressable accessibilityRole="button" accessibilityLabel={`创建${name}`} onPress={onCreate} style={({ pressed }) => [styles.templateRow, pressed && styles.pressed]}><View style={[styles.templateIcon, { backgroundColor: ICON_BACKGROUNDS[index % ICON_BACKGROUNDS.length] }]}><Ionicons name={templateIcon(name)} size={25} color={tone} /></View><View style={styles.templateCopy}><Text style={styles.templateName}>{name}</Text><Text numberOfLines={2} style={styles.templateDescription}>{templateDescription(name, domain.description)}</Text></View><View style={styles.rowAdd}><Ionicons name="add" size={26} color="#27313D" /></View></Pressable>;
+}
+
+function ScheduledPlans({ token, plans, loading, error, onRetry, onCreate }: { token?: string; plans: PlanSummary[]; loading: boolean; error: boolean; onRetry: () => void; onCreate: (name?: string) => void }) {
+  if (!token) return <State icon="lock-closed-outline" title="登录后查看我的计划" detail="这里显示账号下真实创建并保存的计划。" action="去登录" onPress={() => router.push('/auth/login' as never)} />;
+  if (loading) return <View style={styles.loading}><ActivityIndicator color="#2F6FDB" /><Text style={styles.stateDetail}>正在读取计划…</Text></View>;
+  if (error) return <State icon="cloud-offline-outline" title="暂时无法读取计划" detail="服务器数据没有被本地示例替代。" action="重试" onPress={onRetry} />;
+  if (plans.length === 0) return <State icon="calendar-outline" title="这个领域还没有我的计划" detail="选择上方“计划模板”中的模板开始创建。" action="创建计划" onPress={() => onCreate()} />;
+  return <View style={styles.list}>{plans.map((plan, index) => <Pressable key={plan.id} onPress={() => router.push(`/plans/${plan.id}` as never)} style={({ pressed }) => [styles.templateRow, pressed && styles.pressed]}><View style={[styles.templateIcon, { backgroundColor: ICON_BACKGROUNDS[index % ICON_BACKGROUNDS.length] }]}><Ionicons name="time-outline" size={25} color={ICON_TONES[index % ICON_TONES.length]} /></View><View style={styles.templateCopy}><View style={styles.planTitleLine}><Text numberOfLines={1} style={styles.templateName}>{planName(plan)}</Text><Text style={styles.status}>{consumerPlanStatusLabel({ status: plan.status, hasMissingConnection: plan.hasMissingConnection })}</Text></View><Text numberOfLines={1} style={styles.templateDescription}>{plan.description ?? planNextRunLabel(plan.status, plan.nextExpectedRunAt)}</Text></View><Ionicons name="chevron-forward" size={20} color="#657382" /></Pressable>)}</View>;
+}
+
+function State({ icon, title, detail, action, onPress }: { icon: IconName; title: string; detail: string; action: string; onPress: () => void }) {
+  return <View style={styles.state}><View style={styles.templateIcon}><Ionicons name={icon} size={25} color="#397BE8" /></View><View style={styles.templateCopy}><Text style={styles.templateName}>{title}</Text><Text style={styles.stateDetail}>{detail}</Text></View><Pressable onPress={onPress} style={styles.stateAction}><Text style={styles.stateActionText}>{action}</Text></Pressable></View>;
+}
+
+function normalizePlanDomain(plan: PlanSummary) { return DOMAIN_MAP[plan.domain ?? plan.currentVersion?.domain ?? ''] ?? 'life'; }
+function planName(plan: PlanSummary) { return plan.name ?? plan.currentVersion?.name ?? '未命名计划'; }
+function templateIcon(name: string): IconName {
+  if (/提醒|到期|监控|守护/.test(name)) return 'notifications';
+  if (/日历|日程|日期|赛程/.test(name)) return 'calendar';
+  if (/账|财务|消费|预算|持仓|投资|基金|发票/.test(name)) return 'wallet';
+  if (/健康|体检|用药|复诊|就医|睡眠|运动|减脂/.test(name)) return 'heart';
+  if (/家庭|家人|孩子|亲子|伴侣|父母|宠物/.test(name)) return 'home';
+  if (/旅行|行程|出行|航班|火车|转机|签证|行李/.test(name)) return 'airplane';
+  if (/学习|课程|阅读|论文|考试|单词|知识|概念/.test(name)) return 'school';
+  if (/消息|联系人|联系|沟通|群聊|聚会/.test(name)) return 'people';
+  if (/文件|资料|材料|合同|证件|护照|身份/.test(name)) return 'document-text';
+  if (/电影|剧集|播客|演出|游戏|比赛|体育|F1/.test(name)) return 'film';
+  if (/整理|清单/.test(name)) return 'checkbox';
+  return 'sparkles';
+}
+function templateDescription(name: string, fallback: string) {
+  if (/提醒|守护/.test(name)) return `按你确认的时间和条件跟进${name.replace(/提醒|守护/g, '') || '重要事项'}，有变化时及时提醒。`;
+  if (/监控|跟进|追踪/.test(name)) return `持续跟进${name.replace(/监控|跟进|追踪/g, '') || '进展'}，把重要变化集中呈现。`;
+  if (/整理|汇总|小结|总结|摘要/.test(name)) return `收集并整理相关信息，生成清楚、可检查的${name}。`;
+  if (/计划|安排|方案|路线|清单|准备/.test(name)) return `围绕你的目标和时间，逐步完成${name}。`;
+  if (/报告|简报|分析|速览/.test(name)) return `汇集可靠来源，为你生成结构清晰的${name}。`;
+  if (/推荐|精选|去哪儿|新鲜去处/.test(name)) return `结合你的偏好和条件，整理可比较的${name}。`;
+  return `${fallback}，按你的条件创建“${name}”。`;
+}
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: colors.background }, page: { flex: 1, backgroundColor: colors.background }, content: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: 80 }, pressed: { opacity: 0.68 },
-  header: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end' }, title: { ...typography.pageTitle, color: colors.text }, headerActions: { flexDirection: 'row', alignItems: 'center' }, headerAction: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: spacing.sm }, headerActionText: { ...typography.caption, color: colors.text, fontWeight: '700' }, actionDivider: { width: 1, height: 22, marginHorizontal: 2, backgroundColor: colors.border },
-  searchBox: { minHeight: 46, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.sm, paddingHorizontal: spacing.md, borderRadius: radius.pill, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }, searchInput: { ...typography.body, color: colors.text, flex: 1, paddingVertical: 9 },
-  filters: { minHeight: 50, flexDirection: 'row', alignItems: 'stretch', marginTop: spacing.md, padding: 3, borderRadius: radius.pill, backgroundColor: '#EFEEEA' }, filter: { flex: 1, alignItems: 'center', justifyContent: 'center', borderRadius: radius.pill }, filterSelected: { backgroundColor: colors.surface, shadowColor: '#625B53', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 5, elevation: 1 }, filterText: { ...typography.caption, color: colors.textSecondary, fontWeight: '700' }, filterTextSelected: { color: colors.text },
-  runningSummary: { minHeight: 82, flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.md, paddingHorizontal: spacing.md, borderRadius: radius.lg, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, shadowColor: '#655E55', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 1 }, summaryIcon: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 14, backgroundColor: colors.accentSoft }, summaryCopy: { flex: 1, minWidth: 0 }, summaryTitle: { ...typography.bodyStrong, color: colors.text }, summaryCount: { color: '#5875B9', fontSize: 20 }, summaryText: { ...typography.caption, color: colors.textSecondary, marginTop: 3 },
-  sectionHeading: { minHeight: 58, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: spacing.md }, sectionTitle: { ...typography.section, color: colors.text, fontSize: 20, lineHeight: 27 }, viewAll: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 2 }, viewAllText: { ...typography.caption, color: colors.primary, fontWeight: '700' },
-  compactSummary: { ...typography.caption, color: colors.textSecondary, marginVertical: spacing.md }, grid: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }, card: { width: '100%', minHeight: 94, flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }, cardVisual: { width: 76, height: 76, borderRadius: 12, overflow: 'hidden', backgroundColor: '#ECE8E1' }, cardImage: { width: '100%', height: '100%' }, cardBody: { flex: 1, minHeight: 88, justifyContent: 'center', paddingHorizontal: spacing.md, paddingVertical: spacing.sm }, cardTitleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm }, cardIcon: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center', borderRadius: 14, backgroundColor: colors.accentSoft }, cardTitle: { ...typography.bodyStrong, color: colors.text, flex: 1 }, cardDescription: { ...typography.caption, color: colors.textSecondary, lineHeight: 17, marginTop: 2 },
-  statusPill: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: spacing.sm, paddingHorizontal: 9, paddingVertical: 4, borderRadius: radius.pill, backgroundColor: '#E4F5E7' }, statusWarning: { backgroundColor: '#FFF0D8' }, statusMuted: { backgroundColor: '#E9EEFA' }, statusDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#27A653' }, statusDotWarning: { backgroundColor: '#D48816' }, statusDotMuted: { backgroundColor: '#5275D6' }, statusText: { fontSize: 9, lineHeight: 13, color: '#188C3E', fontWeight: '800' }, statusTextWarning: { color: '#B66A00' }, tags: { flexDirection: 'row', gap: 4, marginTop: spacing.sm }, tag: { maxWidth: '49%', color: colors.textSecondary, fontSize: 8, lineHeight: 12, paddingHorizontal: 6, paddingVertical: 3, borderRadius: 6, backgroundColor: '#F0F0EE', overflow: 'hidden' },
-  loading: { paddingVertical: 64, alignItems: 'center', gap: spacing.md }, loadingText: { ...typography.caption, color: colors.textSecondary }, inlineState: { minHeight: 86, flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.sm }, inlineIcon: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 13, backgroundColor: colors.accentSoft }, inlineCopy: { flex: 1, minWidth: 0 }, emptyPlan: { minHeight: 100, flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.md, borderRadius: radius.lg, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }, emptyIcon: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center', borderRadius: 13, backgroundColor: colors.accentSoft }, emptyCopy: { flex: 1, minWidth: 0 }, emptyTitle: { ...typography.bodyStrong, color: colors.text }, emptyDescription: { ...typography.caption, color: colors.textSecondary, lineHeight: 18, marginTop: 2 }, emptyAction: { minHeight: 34, alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing.md, borderRadius: 12, backgroundColor: colors.primary }, emptyActionText: { color: '#FFFFFF', fontSize: 11, lineHeight: 16, fontWeight: '800' },
+  safeArea: { flex: 1, backgroundColor: 'transparent' }, content: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 28 }, pressed: { opacity: 0.66 },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 11, paddingHorizontal: 2 }, roundButton: { width: 52, height: 52, alignItems: 'center', justifyContent: 'center', borderRadius: 26, backgroundColor: 'rgba(255,255,255,0.94)' }, menuGlyph: { width: 25, gap: 7 }, menuLong: { width: 25, height: 3, borderRadius: 2, backgroundColor: '#18202C' }, menuShort: { width: 17, height: 3, borderRadius: 2, backgroundColor: '#18202C' },
+  modeBar: { flex: 1, maxWidth: 250, flexDirection: 'row', padding: 4, borderRadius: 26, backgroundColor: 'rgba(166,196,228,0.34)' }, modeButton: { flex: 1, minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: 22 }, modeButtonSelected: { backgroundColor: 'rgba(255,255,255,0.95)' }, modeLabel: { color: '#687588', fontSize: 15 }, modeLabelSelected: { color: '#161D28', fontWeight: '700' },
+  domainTabs: { gap: 8, paddingVertical: 16, paddingRight: 26 }, domainTab: { minWidth: 58, minHeight: 38, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14, borderRadius: 19, backgroundColor: 'rgba(170,198,226,0.24)' }, domainTabSelected: { backgroundColor: 'rgba(255,255,255,0.95)' }, domainText: { color: '#536678', fontSize: 15 }, domainTextSelected: { color: '#171D25', fontWeight: '700' }, domainIntro: { marginBottom: 10, paddingHorizontal: 3 }, domainTitle: { color: '#27333F', fontSize: 16, fontWeight: '700' }, domainDescription: { marginTop: 3, color: '#667585', fontSize: 13, lineHeight: 19 }, groupTitle: { marginTop: 11, marginBottom: 7, paddingLeft: 4, color: '#344251', fontSize: 15, fontWeight: '700' }, list: { gap: 8 },
+  templateRow: { minHeight: 82, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 20, borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.98)', backgroundColor: 'rgba(255,255,255,0.84)' }, templateIcon: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center', borderRadius: 17, backgroundColor: '#E8EFFF' }, templateCopy: { flex: 1, minWidth: 0 }, templateName: { color: '#111820', fontSize: 17, lineHeight: 23, fontWeight: '700' }, templateDescription: { marginTop: 3, color: '#5C6978', fontSize: 14, lineHeight: 20 }, rowAdd: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.94)' },
+  loading: { minHeight: 180, alignItems: 'center', justifyContent: 'center', gap: 10 }, state: { minHeight: 88, flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.72)' }, stateDetail: { marginTop: 3, color: '#5C6978', fontSize: 14, lineHeight: 20 }, stateAction: { minHeight: 38, justifyContent: 'center', paddingHorizontal: 12, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.9)' }, stateActionText: { color: '#2F6FDB', fontSize: 14, fontWeight: '800' }, planTitleLine: { flexDirection: 'row', alignItems: 'center', gap: 7 }, status: { color: '#167A4B', fontSize: 12, fontWeight: '700' },
 });

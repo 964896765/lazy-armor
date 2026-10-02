@@ -129,7 +129,7 @@ const styles = StyleSheet.create({
   emptyTitle: { ...typography.bodyStrong, color: colors.text },
   emptyDescription: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
   emptyAction: { minHeight: 34, paddingHorizontal: spacing.md, borderRadius: 12, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
-  emptyActionText: { color: '#FFFFFF', fontSize: 11, lineHeight: 16, fontWeight: '700' },
+  emptyActionText: { color: '#FFFFFF', fontSize: 12, lineHeight: 18, fontWeight: '700' },
   pressed: { opacity: 0.7 },
   timelineGroup: { backgroundColor: colors.surface, paddingHorizontal: spacing.sm, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg },
   timelineRow: { minHeight: 82, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.sm, paddingHorizontal: spacing.xs },
@@ -145,6 +145,6 @@ const styles = StyleSheet.create({
   recordTitle: { ...typography.bodyStrong, color: colors.text, flex: 1 },
   time: { ...typography.caption, color: colors.textMuted },
   summary: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
-  status: { color: '#16834A', fontSize: 10, lineHeight: 15, marginTop: 2 },
+  status: { color: '#16834A', fontSize: 12, lineHeight: 18, marginTop: 2 },
   statusWarning: { color: '#B54708' },
 });

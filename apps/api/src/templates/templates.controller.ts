@@ -100,3 +100,66 @@ export class TemplatesController {
     });
   }
 }
+
+/**
+ * Current public catalog contract. The legacy /templates controller remains
+ * available while older clients are migrated, but new clients use this name.
+ */
+@Controller('plan-templates')
+export class PlanTemplatesController {
+  constructor(private readonly templates: TemplatesService, private readonly usage: UsageService) {}
+
+  @Get()
+  list() {
+    return this.templates.list();
+  }
+
+  @Get(':key')
+  get(@Param('key') key: string) {
+    return this.templates.get(key);
+  }
+
+  @Post('natural-language/parse')
+  async parse(@CurrentUser() user: AuthenticatedUser, @Body() input: NaturalLanguageTemplateDto) {
+    const result = this.templates.parseNaturalLanguage(input.query);
+    await this.meter(user.id, input, result, 'parse');
+    return result;
+  }
+
+  @Post('natural-language/install')
+  async installFromGoal(@CurrentUser() user: AuthenticatedUser, @Body() input: NaturalLanguageTemplateDto) {
+    const result = await this.templates.installFromNaturalLanguage(user.id, input.query);
+    await this.meter(user.id, input, result, 'install');
+    return result;
+  }
+
+  @Post(':key/install')
+  install(@CurrentUser() user: AuthenticatedUser, @Param('key') key: string, @Body() input: TemplateInstallDto) {
+    return this.templates.install(user.id, key, input.config);
+  }
+
+  private meter(userId: string, input: NaturalLanguageTemplateDto, output: unknown, operation: string) {
+    const requestIdentity = input.requestId ?? createHash('sha256').update(input.query).digest('hex');
+    const identity = createHash('sha256').update([userId, operation, requestIdentity].join(':')).digest('hex');
+    return this.usage.recordAiUsage({
+      userId,
+      identity,
+      inputUnits: input.query.length,
+      outputUnits: JSON.stringify(output).length,
+      provider: 'deterministic_fallback',
+      resourceId: requestIdentity,
+      billable: false,
+    });
+  }
+}
+
+/** Chat can propose a plan, but never installs or executes it directly. */
+@Controller('chat')
+export class ChatController {
+  constructor(private readonly planner: AgentPlannerService) {}
+
+  @Post('plan')
+  plan(@CurrentUser() user: AuthenticatedUser, @Body() input: NaturalLanguageTemplateDto) {
+    return this.planner.plan(user.id, input.query);
+  }
+}

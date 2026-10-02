@@ -7,14 +7,14 @@ export interface V6Destination {
 export const PRIMARY_DESTINATIONS: readonly V6Destination[] = [
   { label: '首页', path: '/', icon: 'home-outline' },
   { label: '计划', path: '/plans', icon: 'calendar-outline' },
-  { label: '问一问', path: '/search-ai', icon: 'chatbubble-ellipses-outline' },
-  { label: '资源', path: '/private', icon: 'extension-puzzle-outline' },
-  { label: '服务', path: '/services', icon: 'person-outline' },
+  { label: '聊天', path: '/chat', icon: 'chatbubble-ellipses-outline' },
+  { label: '资源', path: '/private', icon: 'folder-outline' },
+  { label: '服务', path: '/services', icon: 'grid-outline' },
 ];
 
 export const UTILITY_DESTINATIONS = [
   { label: '消息', path: '/messages', icon: 'chatbubble-outline' },
-  { label: '待办', path: '/todo', icon: 'checkbox-outline' },
+  { label: '待处理', path: '/attention', icon: 'checkbox-outline' },
 ] as const;
 
 /** @deprecated V7 uses one five-item bottom navigation. */

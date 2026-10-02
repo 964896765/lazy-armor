@@ -96,7 +96,7 @@ const styles = StyleSheet.create({
   summaryIcon: { width: 30, height: 30, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
   orangeIcon: { backgroundColor: '#FFF0E7' }, greenIcon: { backgroundColor: colors.successSoft }, violetIcon: { backgroundColor: '#F0EBFF' },
   orangeText: { color: '#F47B32' }, greenText: { color: colors.primary }, violetText: { color: '#7A5AF8' },
-  summaryValue: { ...typography.bodyStrong, color: colors.text, lineHeight: 16 }, summaryLabel: { fontSize: 8, lineHeight: 10, color: colors.textMuted },
+  summaryValue: { ...typography.bodyStrong, color: colors.text, lineHeight: 18 }, summaryLabel: { fontSize: 12, lineHeight: 18, color: colors.textMuted },
   loading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: spacing.xl, gap: spacing.sm },
   loadingText: { ...typography.caption, color: colors.textSecondary },
   inlineState: { minHeight: 72, flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.lg, paddingVertical: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border },
@@ -117,6 +117,6 @@ const styles = StyleSheet.create({
   iconLife: { backgroundColor: colors.successSoft },
   iconWork: { backgroundColor: '#E8EEF2' },
   iconThings: { backgroundColor: colors.warningSoft },
-  domainCopy: { flex: 1, minWidth: 0 }, domainLabel: { ...typography.bodyStrong, color: colors.text }, domainMeta: { fontSize: 8, lineHeight: 11, color: colors.textMuted, marginTop: 2 },
+  domainCopy: { flex: 1, minWidth: 0 }, domainLabel: { ...typography.bodyStrong, color: colors.text }, domainMeta: { fontSize: 12, lineHeight: 18, color: colors.textMuted, marginTop: 2 },
   pressed: { backgroundColor: colors.pressed },
 });

@@ -55,7 +55,7 @@ export default function DomainScenarioPage() {
   const plans = useQuery({ queryKey: ['scenario-plans', scenarioKey, token], queryFn: () => api<ScenarioPlan[]>(`/strategy-runtime/bindings?scenarioKey=${encodeURIComponent(scenarioKey)}`, token), enabled: Boolean(scenarioKey && token) });
   const facts = useQuery({ queryKey: ['scenario-truth', token], queryFn: () => api<ScenarioFact[]>('/truth-records', token), enabled: Boolean(token) });
   const executions = useQuery({ queryKey: ['scenario-executions', token], queryFn: () => api<ScenarioExecution[]>('/executions', token), enabled: Boolean(token && (plans.data?.length ?? 0) > 0) });
-  const templates = useQuery({ queryKey: ['scenario-templates', token], queryFn: () => api<ScenarioTemplate[]>('/templates', token), enabled: Boolean(token) });
+  const templates = useQuery({ queryKey: ['plan-templates', token], queryFn: () => api<ScenarioTemplate[]>('/plan-templates', token), enabled: Boolean(token) });
   const data = definition.data;
   const evidence = runtime.data?.runtime;
   const destination = actionRoute(evidence?.product.actionPath ?? null);

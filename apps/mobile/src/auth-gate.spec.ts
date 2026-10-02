@@ -14,6 +14,7 @@ describe('resolveAuthDestination', () => {
   it('requires newly registered users to complete onboarding before entering the app', () => {
     expect(resolveAuthDestination({ hydrated: true, token: 'access', onboardingRequired: true, segment: '(tabs)' })).toBe('/onboarding');
     expect(resolveAuthDestination({ hydrated: true, token: 'access', onboardingRequired: true, segment: 'onboarding' })).toBeNull();
+    expect(resolveAuthDestination({ hydrated: true, token: 'access', onboardingRequired: true, segment: 'oauth' })).toBeNull();
   });
 
   it('keeps completed users out of auth and onboarding routes', () => {

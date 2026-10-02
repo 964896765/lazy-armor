@@ -61,6 +61,7 @@ import { FactDemandsModule } from './fact-demands/fact-demands.module';
 import { CreationDraftsModule } from './creation-drafts/creation-drafts.module';
 import { TodosModule } from './todos/todos.module';
 import { SearchModule } from './search/search.module';
+import { ServicesCatalogModule } from './services-catalog/services-catalog.module';
 
 @Module({
   imports: [
@@ -129,6 +130,7 @@ import { SearchModule } from './search/search.module';
     CreationDraftsModule,
     TodosModule,
     SearchModule,
+    ServicesCatalogModule,
   ],
   controllers: [TerminalHandoffController],
   providers: [

@@ -191,6 +191,7 @@ describe.skipIf(!enabled).sequential('R5-01 Feishu/Lark local TCP golden journey
     const prePool = createPool({ uri: process.env.DATABASE_URL, connectionLimit: 2, timezone: 'Z' });
     await prePool.query("DELETE FROM provider_runtime_policies WHERE provider_key='feishu'");
     await prePool.query("DELETE FROM verification_policies WHERE policy_key LIKE 'feishu.%'");
+    await prePool.query("DELETE e FROM provider_capability_evidence e INNER JOIN provider_capability_manifests m ON m.id=e.manifest_id WHERE m.provider_key='feishu'");
     await prePool.query("DELETE FROM provider_capability_evidence WHERE provider_key='feishu'");
     await prePool.query("DELETE FROM provider_capability_manifests WHERE provider_key='feishu'");
     await prePool.end();

@@ -1607,6 +1607,33 @@ export const usageEvents = mysqlTable('usage_events', {
   index('usage_events_side_effect_idx').on(table.sideEffectOperationId, table.usageType),
 ]);
 
+export const serviceProviderProfiles = mysqlTable('service_provider_profiles', {
+  id: uuidBinary('id').primaryKey(),
+  userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  displayName: varchar('display_name', { length: 120 }).notNull(),
+  status: varchar('status', { length: 32 }).notNull(),
+  verifiedAt: datetime('verified_at', { mode: 'date', fsp: 6 }),
+  ...timestamps,
+}, (table) => [uniqueIndex('service_provider_profiles_user_uq').on(table.userId), index('service_provider_profiles_status_idx').on(table.status)]);
+
+export const serviceOfferings = mysqlTable('service_offerings', {
+  id: uuidBinary('id').primaryKey(),
+  providerProfileId: uuidBinary('provider_profile_id').notNull().references(() => serviceProviderProfiles.id, { onDelete: 'restrict' }),
+  domain: varchar('domain', { length: 40 }).notNull(),
+  serviceType: varchar('service_type', { length: 40 }).notNull(),
+  title: varchar('title', { length: 160 }).notNull(),
+  summary: varchar('summary', { length: 600 }).notNull(),
+  tagsJson: json('tags_json').$type<string[]>().notNull(),
+  priceMinMinor: int('price_min_minor'),
+  priceMaxMinor: int('price_max_minor'),
+  currency: char('currency', { length: 3 }),
+  ratingBasisPoints: int('rating_basis_points'),
+  useCount: int('use_count').notNull().default(0),
+  imageUrl: varchar('image_url', { length: 1000 }),
+  status: varchar('status', { length: 32 }).notNull(),
+  ...timestamps,
+}, (table) => [index('service_offerings_catalog_idx').on(table.status, table.domain, table.serviceType, table.createdAt), index('service_offerings_provider_idx').on(table.providerProfileId, table.status)]);
+
 export const schema = {
   users,
   membershipPlans,
@@ -1684,4 +1711,6 @@ export const schema = {
   outboxMessages,
   auditLogs,
   usageEvents,
+  serviceProviderProfiles,
+  serviceOfferings,
 };

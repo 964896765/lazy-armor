@@ -118,7 +118,7 @@ const styles = StyleSheet.create({
   kindTabs: { flexDirection: 'row', backgroundColor: '#EEF1F5', padding: 3, borderRadius: radius.md, marginTop: spacing.md, marginBottom: spacing.md },
   kindTab: { flex: 1, minHeight: 36, justifyContent: 'center', alignItems: 'center', borderRadius: radius.sm, paddingHorizontal: 3 },
   kindTabSelected: { backgroundColor: colors.surface, shadowColor: '#101828', shadowOpacity: 0.06, shadowRadius: 4, elevation: 1 },
-  kindText: { fontSize: 10, lineHeight: 14, color: colors.textMuted, fontWeight: '600', textAlign: 'center' },
+  kindText: { fontSize: 12, lineHeight: 18, color: colors.textMuted, fontWeight: '600', textAlign: 'center' },
   kindTextSelected: { color: colors.primary, fontWeight: '800' },
   discovery: { flex: 1 },
   searchBox: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.md, backgroundColor: '#F2F3F5', borderRadius: 14 },

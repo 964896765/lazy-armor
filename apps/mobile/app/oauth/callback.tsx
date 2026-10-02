@@ -18,15 +18,17 @@ interface Permission { capability: string; name: string; riskLevel: string; gran
 function first(value: string | string[] | undefined) { return Array.isArray(value) ? value[0] : value; }
 
 export default function OAuthCallbackPage() {
-  const params = useLocalSearchParams<{ provider?: string | string[]; code?: string | string[]; state?: string | string[]; error?: string | string[] }>();
+  const params = useLocalSearchParams<{ provider?: string | string[]; code?: string | string[]; state?: string | string[]; error?: string | string[]; onboarding?: string | string[] }>();
   const provider = first(params.provider);
   const code = first(params.code);
   const state = first(params.state);
   const providerError = first(params.error);
+  const fromOnboarding = first(params.onboarding) === '1';
   const token = useAuthStore((store) => store.token);
   const router = useRouter();
   const client = useQueryClient();
-  const redirectUri = useMemo(() => provider ? Linking.createURL('/oauth/callback', { queryParams: { provider } }) : '', [provider]);
+  const redirectUri = useMemo(() => provider ? Linking.createURL('/oauth/callback', { queryParams: { provider, ...(fromOnboarding ? { onboarding: '1' } : {}) } }) : '', [fromOnboarding, provider]);
+  const destination = fromOnboarding ? '/onboarding?step=notifications' : '/connections';
   const callback = useMutation({
     mutationFn: async () => {
       if (!token || !provider || !code || !state) throw new Error('INVALID_CALLBACK');
@@ -69,7 +71,7 @@ export default function OAuthCallbackPage() {
             <View style={[styles.stateIcon, styles.failureIcon]}><Ionicons name="warning" size={30} color={colors.warning} /></View>
             <Text style={styles.stateTitle}>连接没有完成</Text>
             <Text style={styles.stateDescription}>{failure}</Text>
-            <View style={styles.stateAction}><ActionButton label="返回我的连接" onPress={() => router.replace('/connections')} /></View>
+            <View style={styles.stateAction}><ActionButton label={fromOnboarding ? '返回首次设置' : '返回我的连接'} onPress={() => router.replace(destination as never)} /></View>
           </View>
         ) : null}
 
@@ -98,7 +100,7 @@ export default function OAuthCallbackPage() {
                 </Surface>
               ))}
             </View>
-            <View style={styles.done}><ActionButton label="完成" onPress={() => router.replace('/connections')} /></View>
+            <View style={styles.done}><ActionButton label="完成" onPress={() => router.replace(destination as never)} /></View>
           </>
         ) : null}
       </ScrollView>

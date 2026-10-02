@@ -86,6 +86,7 @@ describe.skipIf(!enabled).sequential('R6 Controlled Structured Read golden reads
     const prePool = createPool({ uri: process.env.DATABASE_URL, connectionLimit: 2, timezone: 'Z' });
     await prePool.query("DELETE FROM provider_runtime_policies WHERE provider_key='feishu'");
     await prePool.query("DELETE FROM verification_policies WHERE policy_key LIKE 'feishu.%'");
+    await prePool.query("DELETE e FROM provider_capability_evidence e INNER JOIN provider_capability_manifests m ON m.id=e.manifest_id WHERE m.provider_key='feishu'");
     await prePool.query("DELETE FROM provider_capability_evidence WHERE provider_key='feishu'");
     await prePool.query("DELETE FROM provider_capability_manifests WHERE provider_key='feishu'");
     await prePool.end();
@@ -171,8 +172,8 @@ describe.skipIf(!enabled).sequential('R6 Controlled Structured Read golden reads
     });
     expect(awaiting.status).toBe('AWAITING_ANDROID_STRUCTURED_READ_EVIDENCE');
     const taskId = awaiting.acceptance.deviceTaskId as string;
-    const claimed = await deviceTasks.claim(owner.userId, deviceId, taskId);
-    const completed = await deviceTasks.complete(owner.userId, taskId, claimed.claimToken!, {
+    const claimed = await deviceTasks.claim(owner.userId, trustedDeviceId, deviceId, taskId);
+    const completed = await deviceTasks.complete(owner.userId, trustedDeviceId, deviceId, taskId, claimed.claimToken!, {
       packageName: 'com.lazyarmor.fixture.wallet', resourceId: 'wallet-1', activityName: 'WalletActivity', observedAt: new Date().toISOString(),
       nodes: [{ resourceId: 'wallet.balance', text: '1,234.50', role: 'TextView', enabled: true }],
     });
@@ -211,18 +212,18 @@ describe.skipIf(!enabled).sequential('R6 Controlled Structured Read golden reads
       requestId: `mismatch-${unique}`, userId: owner.userId, sourceType: 'DEVICE_APP', resourceType: 'FixtureWallet', resourceId: 'wallet-1',
       packageName: 'com.lazyarmor.fixture.wallet', appReadSessionId: session.id, deviceId, requestedFields: ['wallet.balance'],
     });
-    const mismatchClaim = await deviceTasks.claim(owner.userId, deviceId, mismatchTask.acceptance.deviceTaskId as string);
-    await expect(deviceTasks.complete(owner.userId, mismatchTask.acceptance.deviceTaskId as string, mismatchClaim.claimToken!, { packageName: 'com.lazyarmor.fixture.wallet', resourceId: 'other-resource', nodes: [{ resourceId: 'wallet.balance', text: '5' }] })).rejects.toThrow();
+    const mismatchClaim = await deviceTasks.claim(owner.userId, trustedDeviceId, deviceId, mismatchTask.acceptance.deviceTaskId as string);
+    await expect(deviceTasks.complete(owner.userId, trustedDeviceId, deviceId, mismatchTask.acceptance.deviceTaskId as string, mismatchClaim.claimToken!, { packageName: 'com.lazyarmor.fixture.wallet', resourceId: 'other-resource', nodes: [{ resourceId: 'wallet.balance', text: '5' }] })).rejects.toThrow();
 
     // duplicate completion
     const dupTask = await structuredRead.androidRead(owner.userId, {
       requestId: `dup-${unique}`, userId: owner.userId, sourceType: 'DEVICE_APP', resourceType: 'FixtureWallet', resourceId: 'wallet-1',
       packageName: 'com.lazyarmor.fixture.wallet', appReadSessionId: session.id, deviceId, requestedFields: ['wallet.balance'],
     });
-    const dupClaim = await deviceTasks.claim(owner.userId, deviceId, dupTask.acceptance.deviceTaskId as string);
+    const dupClaim = await deviceTasks.claim(owner.userId, trustedDeviceId, deviceId, dupTask.acceptance.deviceTaskId as string);
     const good = { packageName: 'com.lazyarmor.fixture.wallet', resourceId: 'wallet-1', nodes: [{ resourceId: 'wallet.balance', text: '5' }] };
-    await deviceTasks.complete(owner.userId, dupTask.acceptance.deviceTaskId as string, dupClaim.claimToken!, good);
-    await expect(deviceTasks.complete(owner.userId, dupTask.acceptance.deviceTaskId as string, dupClaim.claimToken!, good)).rejects.toThrow();
+    await deviceTasks.complete(owner.userId, trustedDeviceId, deviceId, dupTask.acceptance.deviceTaskId as string, dupClaim.claimToken!, good);
+    await expect(deviceTasks.complete(owner.userId, trustedDeviceId, deviceId, dupTask.acceptance.deviceTaskId as string, dupClaim.claimToken!, good)).rejects.toThrow();
   });
 });
 

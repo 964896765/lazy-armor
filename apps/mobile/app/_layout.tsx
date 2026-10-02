@@ -7,6 +7,7 @@ import { useAuthStore } from '../src/auth-store';
 import { useAuthSessionRefresh } from '../src/auth-session-refresh';
 import { colors, typography } from '../src/design';
 import { useDeviceTaskRunnerLifecycle } from '../src/device-task-lifecycle-hook';
+import { ThemeBackground } from '../src/theme-background';
 
 export default function RootLayout() {
   const [client] = useState(() => new QueryClient({
@@ -24,9 +25,9 @@ export default function RootLayout() {
 
   return (
     <QueryClientProvider client={client}>
-      <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
-      <AuthGate>
-        <Stack screenOptions={{ contentStyle: { backgroundColor: colors.background }, headerStyle: { backgroundColor: colors.background }, headerShadowVisible: false, headerTintColor: colors.primary, headerTitleStyle: { color: colors.text, ...typography.navigationTitle } }}>
+      <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
+      <ThemeBackground><AuthGate>
+        <Stack screenOptions={{ contentStyle: { backgroundColor: 'transparent' }, headerStyle: { backgroundColor: 'rgba(255,255,255,0.92)' }, headerShadowVisible: false, headerTintColor: colors.primary, headerTitleStyle: { color: colors.text, ...typography.navigationTitle } }}>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen name="auth" options={{ headerShown: false }} />
           <Stack.Screen name="onboarding" options={{ headerShown: false }} />
@@ -79,7 +80,7 @@ export default function RootLayout() {
           <Stack.Screen name="feature-placeholder" options={{ headerShown: false }} />
           <Stack.Screen name="private-space" options={{ headerShown: false }} />
         </Stack>
-      </AuthGate>
+      </AuthGate></ThemeBackground>
     </QueryClientProvider>
   );
 }

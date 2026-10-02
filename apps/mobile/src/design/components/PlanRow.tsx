@@ -45,7 +45,7 @@ const styles = StyleSheet.create({
   successStatus: { backgroundColor: '#E8F7EF' },
   warningStatus: { backgroundColor: '#FFF4E5' },
   mutedStatus: { backgroundColor: '#F2F4F7' },
-  statusText: { fontSize: 11, lineHeight: 17, fontWeight: '600' },
+  statusText: { fontSize: 12, lineHeight: 18, fontWeight: '600' },
   successText: { color: '#16834A' },
   warningText: { color: '#B54708' },
   mutedText: { color: '#667085' },

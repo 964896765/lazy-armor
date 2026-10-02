@@ -63,6 +63,8 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Repository hygiene
         run: pnpm repository:hygiene
+      - name: Current terminology gate
+        run: pnpm terminology:check
       - name: Production data truth gate
         run: pnpm data:truth
       - name: Production dependency audit
@@ -143,6 +145,8 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Repository hygiene
         run: pnpm repository:hygiene
+      - name: Current terminology gate
+        run: pnpm terminology:check
       - name: Production data truth gate
         run: pnpm data:truth
       - name: Production dependency audit

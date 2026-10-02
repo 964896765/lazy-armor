@@ -19,6 +19,6 @@ const styles = StyleSheet.create({
   preview: { width: 12, height: 12, borderRadius: 4 },
   placeholder: { backgroundColor: '#D0D5DD' },
   count: { position: 'absolute', right: -6, top: -6, minWidth: 18, height: 18, paddingHorizontal: 3, borderRadius: 9, backgroundColor: '#5865F2', borderWidth: 2, borderColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
-  countText: { color: '#FFFFFF', fontSize: 8, lineHeight: 10, fontWeight: '800' },
-  label: { width: 50, color: colors.textSecondary, fontSize: 8, lineHeight: 11, fontWeight: '600', textAlign: 'center', marginTop: 2 },
+  countText: { color: '#FFFFFF', fontSize: 12, lineHeight: 18, fontWeight: '800' },
+  label: { width: 50, color: colors.textSecondary, fontSize: 12, lineHeight: 18, fontWeight: '600', textAlign: 'center', marginTop: 2 },
 });

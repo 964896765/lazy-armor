@@ -54,19 +54,20 @@ const quickIntents = ['帮我盯住快递变化', '每月整理账单', '车辆�
 export default function Create() {
   const token = useAuthStore((store) => store.token);
   const client = useQueryClient();
-  const params = useLocalSearchParams<{ scenarioKey?: string }>();
+  const params = useLocalSearchParams<{ scenarioKey?: string; intent?: string }>();
   const scenarioKey = isValidScenarioKey(params.scenarioKey) ? params.scenarioKey : null;
-  const [intent, setIntent] = useState('');
-  const templates = useQuery({ queryKey: ['templates', token], queryFn: () => api<PlanTemplateSummary[]>('/templates', token), enabled: Boolean(token) });
+  const initialIntent = typeof params.intent === 'string' ? params.intent.slice(0, 500) : '';
+  const [intent, setIntent] = useState(initialIntent);
+  const templates = useQuery({ queryKey: ['plan-templates', token], queryFn: () => api<PlanTemplateSummary[]>('/plan-templates', token), enabled: Boolean(token) });
   const agentPlan = useMutation({
-    mutationFn: () => api<AgentPlannerResult>('/templates/natural-language/agent', token, { method: 'POST', body: JSON.stringify({ query: intent.trim() }) }),
+    mutationFn: () => api<AgentPlannerResult>('/chat/plan', token, { method: 'POST', body: JSON.stringify({ query: intent.trim() }) }),
   });
   const parseIntent = useMutation({
-    mutationFn: () => api<NaturalLanguageSuggestion>('/templates/natural-language/parse', token, { method: 'POST', body: JSON.stringify({ query: intent.trim() }) }),
+    mutationFn: () => api<NaturalLanguageSuggestion>('/plan-templates/natural-language/parse', token, { method: 'POST', body: JSON.stringify({ query: intent.trim() }) }),
     onError: () => { if (intent.trim()) agentPlan.mutate(); },
   });
   const installIntent = useMutation({
-    mutationFn: () => api<{ id: string }>('/templates/natural-language/install', token, { method: 'POST', body: JSON.stringify({ query: intent.trim() }) }),
+    mutationFn: () => api<{ id: string }>('/plan-templates/natural-language/install', token, { method: 'POST', body: JSON.stringify({ query: intent.trim() }) }),
     onSuccess: async (result) => {
       await client.invalidateQueries({ queryKey: ['plans', token] });
       router.push(`/plans/${result.id}` as never);
@@ -88,7 +89,7 @@ export default function Create() {
     <SafeAreaView style={styles.safeArea} edges={[]}>
       <ScrollView style={styles.page} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" refreshControl={token ? <RefreshControl tintColor={colors.primary} refreshing={templates.isFetching} onRefresh={() => templates.refetch()} /> : undefined}>
         <WorkspaceHeader title="创建计划" subtitle="用自然语言，创建属于你的自动化计划" action={<Pressable accessibilityRole="button" accessibilityLabel="关闭" onPress={() => router.back()} style={styles.closeButton}><Ionicons name="close" size={24} color={colors.text} /></Pressable>} />
-        {scenarioKey ? <><View style={styles.scenarioContext}><Ionicons name="layers-outline" size={17} color={colors.primary} /><Text style={styles.scenarioContextText}>已选择场景 {scenarioKey}，创建后将绑定该场景上下文</Text></View><View style={styles.wizardEntry}><ActionButton label="进入五步创建向导" onPress={() => router.push(`/create-wizard?scenarioKey=${scenarioKey}` as never)} /></View></> : null}
+        {scenarioKey ? <><View style={styles.scenarioContext}><Ionicons name="layers-outline" size={17} color={colors.primary} /><Text style={styles.scenarioContextText}>已选择计划模板 {scenarioKey}，创建时会读取对应目标和资源要求</Text></View><View style={styles.wizardEntry}><ActionButton label="进入五步创建向导" onPress={() => router.push(`/create-wizard?scenarioKey=${scenarioKey}` as never)} /></View></> : null}
         <View style={styles.steps}>{creationSteps.map((label, index) => <View key={label} style={styles.stepItem}><View style={styles.stepTop}><View style={[styles.stepCircle, index === 0 && styles.stepCircleActive]}><Text style={[styles.stepNumber, index === 0 && styles.stepNumberActive]}>{index + 1}</Text></View>{index < creationSteps.length - 1 ? <View style={styles.stepLine} /> : null}</View><Text style={[styles.stepLabel, index === 0 && styles.stepLabelActive]}>{label}</Text></View>)}</View>
 
         {!token ? <Surface style={styles.stateSurface}><EmptyState icon="sparkles-outline" title="登录后开始安排" description="告诉我一件麻烦事，我来帮你找办法。" action={{ label: '去登录', onPress: () => router.push('/connections') }} /></Surface> : (

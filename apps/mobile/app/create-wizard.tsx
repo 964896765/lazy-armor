@@ -524,7 +524,7 @@ const styles = StyleSheet.create({
   draftCopy: { flex: 1, minWidth: 0 },
   draftTitle: { ...typography.bodyStrong, color: colors.text },
   draftMeta: { ...typography.caption, color: colors.textMuted, marginTop: 3 },
-  boundary: { fontSize: 10, lineHeight: 15, color: colors.textMuted, marginTop: spacing.md },
+  boundary: { fontSize: 12, lineHeight: 18, color: colors.textMuted, marginTop: spacing.md },
   saveBar: { minHeight: 40, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.lg, paddingHorizontal: spacing.md, borderRadius: radius.md, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
   saveBarError: { borderColor: colors.danger, backgroundColor: colors.dangerSoft },
   saveText: { ...typography.caption, color: colors.textSecondary, fontWeight: '700' },

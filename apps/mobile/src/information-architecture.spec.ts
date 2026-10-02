@@ -3,7 +3,7 @@ import { isSecondaryWorkspacePath, PRIMARY_ENTRIES, SECONDARY_PAGES } from './in
 
 describe('information architecture', () => {
   it('keeps exactly the eight agreed primary entries', () => {
-    expect(PRIMARY_ENTRIES.map((entry) => entry.label)).toEqual(['我', '首页', '计划', '资源', '服务', '消息', '问一问', '待办']);
+    expect(PRIMARY_ENTRIES.map((entry) => entry.label)).toEqual(['我', '首页', '计划', '资源', '服务', '消息', '问一问', '待处理']);
   });
 
   it('assigns every primary entry a secondary-page catalog', () => {

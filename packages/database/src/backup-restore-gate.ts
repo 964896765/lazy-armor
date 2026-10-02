@@ -82,9 +82,18 @@ async function main() {
   const restoreDatabaseUrl = replaceDatabaseName(baseDatabaseUrl, RESTORE_DB);
 
   const appTarget = parseMysqlUrl(baseDatabaseUrl);
-  const adminTarget = parseMysqlUrl(adminDatabaseUrl);
-  await recreateDatabase(adminTarget, appTarget, BACKUP_DB);
-  await recreateDatabase(adminTarget, appTarget, RESTORE_DB);
+  let adminTarget = parseMysqlUrl(adminDatabaseUrl);
+  try {
+    await recreateDatabase(adminTarget, appTarget, BACKUP_DB);
+    await recreateDatabase(adminTarget, appTarget, RESTORE_DB);
+  } catch (error) {
+    if (process.env.MYSQL_ADMIN_URL) {
+      throw error;
+    }
+    adminTarget = parseMysqlUrl(replaceDatabaseName(baseDatabaseUrl, 'information_schema'));
+    await recreateDatabase(adminTarget, appTarget, BACKUP_DB);
+    await recreateDatabase(adminTarget, appTarget, RESTORE_DB);
+  }
 
   runCommand('pnpm', ['--filter', '@lazy-armor/database', 'migrate'], repoRoot, {
     ...process.env,
@@ -92,8 +101,8 @@ async function main() {
   });
 
   const ids = await seedCanonicalDataset(backupDatabaseUrl);
-  dumpDatabase(parseMysqlUrl(adminDatabaseUrl), BACKUP_DB, dumpPath);
-  restoreDatabase(parseMysqlUrl(adminDatabaseUrl), RESTORE_DB, dumpPath);
+  dumpDatabase(adminTarget, BACKUP_DB, dumpPath);
+  restoreDatabase(adminTarget, RESTORE_DB, dumpPath);
 
   const verification = await verifyRestoredData(backupDatabaseUrl, restoreDatabaseUrl);
   const report = {

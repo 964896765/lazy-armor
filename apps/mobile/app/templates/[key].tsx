@@ -63,7 +63,7 @@ export default function TemplateDetailPage() {
   const client = useQueryClient();
   const detail = useQuery({
     queryKey: ['template-detail', key, token],
-    queryFn: () => api<TemplateDetail>(`/templates/${key}`, token),
+    queryFn: () => api<TemplateDetail>(`/plan-templates/${key}`, token),
     enabled: Boolean(key && token),
   });
   const draftConfig = useMemo(() => {
@@ -163,7 +163,7 @@ export default function TemplateDetailPage() {
   const selectedConsumable = deviceConsumables.data?.find((item) => item.id === selectedConsumableId) ?? null;
 
   const install = useMutation({
-    mutationFn: () => api<{ id: string }>(`/templates/${key}/install`, token, {
+    mutationFn: () => api<{ id: string }>(`/plan-templates/${key}/install`, token, {
       method: 'POST',
       body: JSON.stringify({ config: normalizeTemplateConfig(detail.data?.configFields ?? [], values) }),
     }),

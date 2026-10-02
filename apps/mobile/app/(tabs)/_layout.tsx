@@ -1,6 +1,6 @@
 import { Tabs, usePathname } from 'expo-router';
 import { StyleSheet, View } from 'react-native';
-import { GlobalActionBar, TopWorkspaceNav } from '../../src/v6-shell';
+import { GlobalActionBar } from '../../src/v6-shell';
 import { isSecondaryWorkspacePath } from '../../src/information-architecture';
 
 export default function TabsLayout() {
@@ -8,7 +8,6 @@ export default function TabsLayout() {
   const secondaryPage = isSecondaryWorkspacePath(pathname);
   return (
     <View style={styles.container}>
-      {!secondaryPage ? <TopWorkspaceNav /> : null}
       <View style={styles.scene}>
         <Tabs initialRouteName="index" tabBar={() => null} screenOptions={{ headerShown: false }}>
           <Tabs.Screen name="index" options={{ title: '首页' }} />
@@ -18,6 +17,7 @@ export default function TabsLayout() {
           <Tabs.Screen name="commerce" options={{ href: null }} />
           <Tabs.Screen name="messages" options={{ href: null }} />
           <Tabs.Screen name="search-ai" options={{ href: null }} />
+          <Tabs.Screen name="chat" options={{ href: null }} />
           <Tabs.Screen name="todo" options={{ href: null }} />
           <Tabs.Screen name="scenarios" options={{ href: null }} />
           <Tabs.Screen name="create" options={{ href: null }} />

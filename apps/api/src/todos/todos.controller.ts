@@ -10,4 +10,9 @@ export class TodosController {
   list(@CurrentUser() user: AuthenticatedUser) {
     return this.todos.list(user.id);
   }
+
+  @Get('attention')
+  attention(@CurrentUser() user: AuthenticatedUser) {
+    return this.todos.list(user.id);
+  }
 }

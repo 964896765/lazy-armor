@@ -11,7 +11,8 @@
     "migration:safety": "node scripts/check-migration-safety.mjs && node scripts/check-drizzle-migration-segments.mjs",
     "repository:hygiene": "node scripts/check-repository-hygiene.mjs",
     "data:truth": "node scripts/check-production-data-truth.mjs",
-    "audit:dependencies": "pnpm audit --prod --audit-level=high",
+    "audit:dependencies": "pnpm audit --registry=https://registry.npmjs.org/ --prod --audit-level=high",
+    "terminology:check": "node scripts/check-terminology.mjs",
     "db:migrate": "pnpm --filter @lazy-armor/database migrate",
     "db:backup-restore-gate": "pnpm --filter @lazy-armor/database backup-restore-gate",
     "db:mysql84-verify": "node scripts/verify-mysql84-integration.mjs",
@@ -26,9 +27,10 @@
   },
   "pnpm": {
     "overrides": {
+      "brace-expansion": "5.0.12",
       "decode-uri-component": "0.5.0",
       "lodash": "4.18.0",
-      "multer": "2.3.0",
+      "multer": "2.4.0",
       "path-to-regexp": "8.4.2",
       "uuid": "11.1.1"
     }

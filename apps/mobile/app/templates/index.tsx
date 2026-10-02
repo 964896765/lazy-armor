@@ -26,7 +26,7 @@ export default function TemplatesIndexPage() {
   const token = useAuthStore((store) => store.token);
   const [search, setSearch] = useState('');
   const [domain, setDomain] = useState<string | null>(null);
-  const templates = useQuery({ queryKey: ['templates', token], queryFn: () => api<TemplateSummary[]>('/templates', token), enabled: Boolean(token) });
+  const templates = useQuery({ queryKey: ['plan-templates', token], queryFn: () => api<TemplateSummary[]>('/plan-templates', token), enabled: Boolean(token) });
   const domains = [...new Set((templates.data ?? []).map((item) => item.domain))];
   const shown = (templates.data ?? []).filter((item) => (!domain || item.domain === domain) && `${item.name} ${item.description}`.toLowerCase().includes(search.trim().toLowerCase()));
   return <RuntimeDetailScreen title="计划方案" subtitle="">

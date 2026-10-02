@@ -3,13 +3,13 @@ import { isSelected, PRIMARY_DESTINATIONS, UTILITY_DESTINATIONS } from './v6-nav
 
 describe('V6 global navigation shell', () => {
   it('exposes exactly five primary bottom destinations', () => {
-    expect(PRIMARY_DESTINATIONS.map((item) => item.label)).toEqual(['首页', '计划', '问一问', '资源', '服务']);
-    expect(PRIMARY_DESTINATIONS.map((item) => item.path)).toEqual(['/', '/plans', '/search-ai', '/private', '/services']);
+    expect(PRIMARY_DESTINATIONS.map((item) => item.label)).toEqual(['首页', '计划', '聊天', '资源', '服务']);
+    expect(PRIMARY_DESTINATIONS.map((item) => item.path)).toEqual(['/', '/plans', '/chat', '/private', '/services']);
   });
 
-  it('keeps messages and todo as header utilities', () => {
-    expect(UTILITY_DESTINATIONS.map((item) => item.label)).toEqual(['消息', '待办']);
-    expect(UTILITY_DESTINATIONS.map((item) => item.path)).toEqual(['/messages', '/todo']);
+  it('keeps messages and attention as header utilities', () => {
+    expect(UTILITY_DESTINATIONS.map((item) => item.label)).toEqual(['消息', '待处理']);
+    expect(UTILITY_DESTINATIONS.map((item) => item.path)).toEqual(['/messages', '/attention']);
   });
 
   it('selects the home tab only on the exact root path', () => {
