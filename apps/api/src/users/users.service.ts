@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { profiles, users } from '@lazy-armor/database';
+import { authIdentities, profiles, users } from '@lazy-armor/database';
 import { and, eq } from 'drizzle-orm';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
 
@@ -23,13 +23,14 @@ export class UsersService {
   async getMe(userId: string) {
     const rows = await this.db.select({
       id: users.id,
+      email: authIdentities.email,
       status: users.status,
       displayName: profiles.displayName,
       avatar: profiles.avatar,
       timezone: profiles.timezone,
       locale: profiles.locale,
       settings: profiles.preferencesJson,
-    }).from(users).innerJoin(profiles, eq(users.id, profiles.userId)).where(eq(users.id, userId)).limit(1);
+    }).from(users).innerJoin(profiles, eq(users.id, profiles.userId)).innerJoin(authIdentities, eq(users.id, authIdentities.userId)).where(eq(users.id, userId)).limit(1);
     if (!rows[0]) throw new NotFoundException('User not found');
     return {
       ...rows[0],

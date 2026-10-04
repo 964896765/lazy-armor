@@ -691,6 +691,7 @@ export const billingRecords = mysqlTable('billing_records', {
 ]);
 
 export const fileImports = mysqlTable('file_imports', {
+  artifactId: uuidBinary('artifact_id'),
   id: uuidBinary('id').primaryKey(),
   userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
   providerKey: varchar('provider_key', { length: 80 }).notNull(),
@@ -990,6 +991,7 @@ export const webhookReceipts = mysqlTable('webhook_receipts', {
 ]);
 
 export const plans = mysqlTable('plans', {
+  executionScope: varchar('execution_scope', { length: 16 }).notNull().default('PLAN'),
   id: uuidBinary('id').primaryKey(),
   userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
   status: varchar('status', { length: 32 }).notNull(),
@@ -1115,6 +1117,9 @@ export const planCreationContracts = mysqlTable('plan_creation_contracts', {
 
 export const creationDrafts = mysqlTable('creation_drafts', {
   draftId: uuidBinary('draft_id').primaryKey(),
+  scopeKey: varchar('scope_key', { length: 160 }).notNull().default(''),
+  conversationId: uuidBinary('conversation_id'),
+  proposalMessageId: uuidBinary('proposal_message_id'),
   userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
   scenarioKey: varchar('scenario_key', { length: 120 }).notNull(),
   scenarioRevision: int('scenario_revision').notNull(),
@@ -1128,7 +1133,7 @@ export const creationDrafts = mysqlTable('creation_drafts', {
   ...timestamps,
   expiresAt: datetime('expires_at', { mode: 'date', fsp: 6 }).notNull(),
 }, (table) => [
-  uniqueIndex('creation_drafts_user_scenario_uq').on(table.userId, table.scenarioKey),
+  uniqueIndex('creation_drafts_user_scope_uq').on(table.userId, table.scopeKey),
   index('creation_drafts_user_state_idx').on(table.userId, table.state, table.expiresAt),
 ]);
 
@@ -1616,12 +1621,19 @@ export const serviceProviderProfiles = mysqlTable('service_provider_profiles', {
   ...timestamps,
 }, (table) => [uniqueIndex('service_provider_profiles_user_uq').on(table.userId), index('service_provider_profiles_status_idx').on(table.status)]);
 
+export const serviceMedia = mysqlTable('service_media', {
+ id: uuidBinary('id').primaryKey(), userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }), requestId: varchar('request_id', { length: 100 }).notNull(), contentSha256: varchar('content_sha256', { length: 64 }).notNull(), sourceSha256: varchar('source_sha256', { length: 64 }).notNull(), sizeBytes: int('size_bytes').notNull(), payload: json('payload').$type<{ contentBase64: string; width: number; height: number }>().notNull(), createdAt: datetime('created_at', { mode: 'date', fsp: 6 }).notNull(),
+}, table => [uniqueIndex('service_media_request_uq').on(table.userId, table.requestId)]);
 export const serviceOfferings = mysqlTable('service_offerings', {
   id: uuidBinary('id').primaryKey(),
   providerProfileId: uuidBinary('provider_profile_id').notNull().references(() => serviceProviderProfiles.id, { onDelete: 'restrict' }),
   domain: varchar('domain', { length: 40 }).notNull(),
   serviceType: varchar('service_type', { length: 40 }).notNull(),
+  deliveryMode: varchar('delivery_mode', { length: 16 }).notNull().default('REMOTE'),
   title: varchar('title', { length: 160 }).notNull(),
+  serviceArea: varchar('service_area', { length: 300 }),
+  contact: varchar('contact', { length: 160 }),
+  publishRequestId: varchar('publish_request_id', { length: 100 }),
   summary: varchar('summary', { length: 600 }).notNull(),
   tagsJson: json('tags_json').$type<string[]>().notNull(),
   priceMinMinor: int('price_min_minor'),
@@ -1630,11 +1642,49 @@ export const serviceOfferings = mysqlTable('service_offerings', {
   ratingBasisPoints: int('rating_basis_points'),
   useCount: int('use_count').notNull().default(0),
   imageUrl: varchar('image_url', { length: 1000 }),
+  imageMediaId: uuidBinary('image_media_id').references(() => serviceMedia.id, { onDelete: 'restrict' }),
   status: varchar('status', { length: 32 }).notNull(),
   ...timestamps,
-}, (table) => [index('service_offerings_catalog_idx').on(table.status, table.domain, table.serviceType, table.createdAt), index('service_offerings_provider_idx').on(table.providerProfileId, table.status)]);
+}, (table) => [index('service_offerings_catalog_idx').on(table.status, table.domain, table.serviceType, table.createdAt), index('service_offerings_provider_idx').on(table.providerProfileId, table.status), uniqueIndex('service_offerings_publish_request_uq').on(table.providerProfileId, table.publishRequestId)]);
+
+export const consumerConversations = mysqlTable('consumer_conversations', {
+ id: uuidBinary('id').primaryKey(), userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }), mode: varchar('mode', { length: 16 }).notNull(), title: varchar('title', { length: 160 }).notNull(), status: varchar('status', { length: 24 }).notNull(), templateKey: varchar('template_key', { length: 120 }), planId: uuidBinary('plan_id').references(() => plans.id, { onDelete: 'restrict' }), draftId: uuidBinary('draft_id').references(() => creationDrafts.draftId, { onDelete: 'restrict' }), contextRefs: json('context_refs').$type<Array<{ type: 'ServiceOffering' | 'ExternalServiceReference'; id: string }>>(), version: int('version').notNull().default(0), ...timestamps,
+}, table => [index('consumer_conversations_user_idx').on(table.userId, table.updatedAt)]);
+export const conversationOnceRequests = mysqlTable('conversation_once_requests', {
+ proposalMessageId: uuidBinary('proposal_message_id'),
+ id: uuidBinary('id').primaryKey(), userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }), conversationId: uuidBinary('conversation_id').notNull().references(() => consumerConversations.id, { onDelete: 'restrict' }), planId: uuidBinary('plan_id').notNull().references(() => plans.id, { onDelete: 'restrict' }), planVersionId: uuidBinary('plan_version_id').notNull().references(() => planVersions.id, { onDelete: 'restrict' }), requestId: varchar('request_id', { length: 100 }).notNull(), inputHash: varchar('input_hash', { length: 64 }).notNull(), triggerPayload: json('trigger_payload').$type<Record<string, unknown>>().notNull(), createdAt: datetime('created_at', { mode: 'date', fsp: 6 }).notNull(),
+}, table => [uniqueIndex('conversation_once_request_uq').on(table.userId, table.requestId)]);
+const artifactMediumText = customType<{ data: string; driverData: string }>({ dataType: () => 'mediumtext' });
+export const artifacts = mysqlTable('artifacts', {
+ id: uuidBinary('id').primaryKey(), userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }), requestId: varchar('request_id', { length: 100 }).notNull(), fileName: varchar('file_name', { length: 160 }).notNull(), mimeType: varchar('mime_type', { length: 100 }).notNull(), sizeBytes: int('size_bytes').notNull(), sourceSha256: varchar('source_sha256', { length: 64 }).notNull(), sourceBase64: artifactMediumText('source_base64').notNull(), extractorKey: varchar('extractor_key', { length: 80 }).notNull(), extractionStatus: varchar('extraction_status', { length: 24 }).notNull(), extractedText: artifactMediumText('extracted_text'), extractedSha256: varchar('extracted_sha256', { length: 64 }), extractionMetadata: json('extraction_metadata').$type<Record<string, unknown>>().notNull(), createdAt: datetime('created_at', { mode: 'date', fsp: 6 }).notNull(),
+}, table => [uniqueIndex('artifacts_request_uq').on(table.userId, table.requestId)]);
+export const consumerAttachments = mysqlTable('consumer_attachments', {
+ artifactId: uuidBinary('artifact_id').references(() => artifacts.id, { onDelete: 'restrict' }),
+ id: uuidBinary('id').primaryKey(), conversationId: uuidBinary('conversation_id').notNull().references(() => consumerConversations.id, { onDelete: 'restrict' }), requestId: varchar('request_id', { length: 100 }).notNull(), fileName: varchar('file_name', { length: 160 }).notNull(), mimeType: varchar('mime_type', { length: 80 }).notNull(), sizeBytes: int('size_bytes').notNull(), contentSha256: varchar('content_sha256', { length: 64 }).notNull(), content: text('content').notNull(), createdAt: datetime('created_at', { mode: 'date', fsp: 6 }).notNull(),
+}, table => [uniqueIndex('consumer_attachments_request_uq').on(table.conversationId, table.requestId)]);
+export const consumerMessages = mysqlTable('consumer_messages', {
+ id: uuidBinary('id').primaryKey(), conversationId: uuidBinary('conversation_id').notNull().references(() => consumerConversations.id, { onDelete: 'restrict' }), requestId: varchar('request_id', { length: 100 }).notNull(), role: varchar('role', { length: 16 }).notNull(), content: text('content').notNull(), structuredPayload: json('structured_payload').$type<Record<string, unknown>>(), contextRefs: json('context_refs').$type<Array<{ type: string; id: string }>>().notNull(), modelId: varchar('model_id', { length: 100 }), createdAt: datetime('created_at', { mode: 'date', fsp: 6 }).notNull(),
+}, table => [uniqueIndex('consumer_messages_request_uq').on(table.conversationId, table.requestId, table.role), index('consumer_messages_conversation_idx').on(table.conversationId, table.createdAt)]);
+export const externalServiceReferences = mysqlTable('external_service_references', {
+ id: uuidBinary('id').primaryKey(), userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }), title: varchar('title', { length: 160 }).notNull(), summary: varchar('summary', { length: 600 }).notNull(), sourcePlatform: varchar('source_platform', { length: 100 }).notNull(), sourceUrl: varchar('source_url', { length: 2000 }).notNull(), providerName: varchar('provider_name', { length: 160 }), priceSnapshot: varchar('price_snapshot', { length: 100 }), thumbnail: varchar('thumbnail', { length: 2000 }), category: varchar('category', { length: 40 }).notNull(), importMethod: varchar('import_method', { length: 16 }).notNull(), ...timestamps,
+}, table => [index('external_services_user_idx').on(table.userId, table.createdAt)]);
+export const consumerServiceRequests = mysqlTable('consumer_service_requests', {
+ id: uuidBinary('id').primaryKey(), userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }), offeringId: uuidBinary('offering_id').notNull().references(() => serviceOfferings.id, { onDelete: 'restrict' }), requestId: varchar('request_id', { length: 100 }).notNull(), scheduledAt: datetime('scheduled_at', { mode: 'date', fsp: 6 }).notNull(), address: varchar('address', { length: 600 }).notNull(), requirement: varchar('requirement', { length: 600 }).notNull(), contact: varchar('contact', { length: 160 }).notNull(), status: varchar('status', { length: 24 }).notNull(), version: int('version').notNull().default(1), completedAt: datetime('completed_at', { mode: 'date', fsp: 6 }), ...timestamps,
+}, table => [uniqueIndex('service_requests_user_request_uq').on(table.userId, table.requestId), index('service_requests_schedule_idx').on(table.userId, table.scheduledAt)]);
+export const consumerServiceRequestEvents = mysqlTable('consumer_service_request_events', {
+ id: uuidBinary('id').primaryKey(), requestId: uuidBinary('request_id').notNull().references(() => consumerServiceRequests.id, { onDelete: 'restrict' }), actorUserId: uuidBinary('actor_user_id').notNull().references(() => users.id, { onDelete: 'restrict' }), fromStatus: varchar('from_status', { length: 24 }), toStatus: varchar('to_status', { length: 24 }).notNull(), createdAt: datetime('created_at', { mode: 'date', fsp: 6 }).notNull(),
+}, table => [index('service_request_events_idx').on(table.requestId, table.createdAt)]);
+
+export const aiProviderConfigs = mysqlTable('ai_provider_configs', {
+ id: uuidBinary('id').primaryKey(), userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }), provider: varchar('provider', { length: 32 }).notNull(), model: varchar('model', { length: 80 }).notNull(), thinkingMode: varchar('thinking_mode', { length: 16 }).notNull(), credentialId: uuidBinary('credential_id').notNull().references(() => credentialRefs.id, { onDelete: 'restrict' }), maskedKey: varchar('masked_key', { length: 40 }).notNull(), enabled: int('enabled').notNull().default(1), testedAt: datetime('tested_at', { mode: 'date', fsp: 6 }), ...timestamps,
+}, table => [uniqueIndex('ai_provider_configs_user_uq').on(table.userId)]);
 
 export const schema = {
+ conversationOnceRequests,
+ artifacts,
+ serviceMedia,
+ aiProviderConfigs,
+  consumerConversations, consumerAttachments, consumerMessages, externalServiceReferences, consumerServiceRequests, consumerServiceRequestEvents,
   users,
   membershipPlans,
   userMemberships,

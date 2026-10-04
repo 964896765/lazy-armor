@@ -5,10 +5,10 @@ export interface V6Destination {
 }
 
 export const PRIMARY_DESTINATIONS: readonly V6Destination[] = [
-  { label: '首页', path: '/', icon: 'home-outline' },
+  { label: '日程', path: '/schedule', icon: 'calendar-outline' },
   { label: '计划', path: '/plans', icon: 'calendar-outline' },
-  { label: '聊天', path: '/chat', icon: 'chatbubble-ellipses-outline' },
-  { label: '资源', path: '/private', icon: 'folder-outline' },
+  { label: '会话', path: '/chat', icon: 'chatbubble-ellipses-outline' },
+  { label: '资源', path: '/resources', icon: 'folder-outline' },
   { label: '服务', path: '/services', icon: 'grid-outline' },
 ];
 

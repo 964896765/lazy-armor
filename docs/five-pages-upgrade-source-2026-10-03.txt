@@ -1,0 +1,782 @@
+懒人装甲
+日程 · 计划 · 会话 · 资源 · 服务
+五大核心页面闭环与全栈升级总方案
+版本与基线
+方案日期：2026-10-03仓库：964896765/lazy-armor本次在线核对 main：fcda7866b4b1609d37d92e5bf312d3834a8e6775（PR #3 合并：V7移动端UI与运行时基础能力）定位：不重造核心引擎，以现有 Plan / Truth / Capability / Risk / Execution / Verification 为权威，全面重构消费者层闭环。
+
+本文件取代旧的“页面各自发展”思路，冻结五个一级入口的职责、数据合同、状态模型、跳转关系、后端改造、清理项与验收顺序。
+
+目录
+0. 最终产品决策冻结
+1. 当前真实基线与必须解决的脱节
+2. 统一闭环：从需求到执行再回到日程
+3. 五个一级页面的职责与边界
+4. 日程：统一时间轴与结果入口
+5. 计划：模板库 + 我的计划 + AI创建
+6. 会话：临时一次性 + 计划长期化
+7. 资源：本机 / 云端 / 其它设备 / 接口
+8. 服务：内部服务 / 外部服务
+9. AI套件：模型、Skill、Conversation、Capability编排
+10. 前后端统一数据合同与投影层
+11. 数据模型与数据库升级
+12. API与移动端路由适配
+13. 清除、合并、迁移与兼容策略
+14. 安全、隐私、风险与权限
+15. 真实闭环验收与测试矩阵
+16. 后续开发阶段与任务书
+17. 上线门槛与最终目标状态
+附录A. 最新UI基准图
+附录B. 服务与资源流程基准
+
+0. 最终产品决策冻结
+一句话总定位
+懒人装甲不是聊天工具、待办工具或服务商城，而是“个人生活操作系统”：AI理解需求，Skill定义做法，资源提供真实能力，服务补充现实执行，计划负责长期持续，日程统一呈现何时发生、发生到哪一步、结果是什么。
+
+层级
+最终名称
+用户问的问题
+核心对象
+一级1
+日程
+今天/某天有什么？哪些完成了？
+TimelineItem / Result / Attention
+一级2
+计划
+哪些事情要长期帮我做？
+Template / Plan / PlanVersion
+一级3
+会话
+现在想让AI帮我做什么？
+Conversation / Message / Draft / ActionProposal
+一级4
+资源
+系统现在能用什么数据、账号、设备和接口？
+Resource / Capability / Connection / Device
+一级5
+服务
+还有哪些现实服务可以被发起或引用？
+ServiceOffering / ServiceRequest / ExternalServiceReference
+
+页面
+冻结后的二级切换
+必须删除/替换的旧称
+日程
+前一天｜日期｜后一天；未完成｜已完成
+首页、现在｜历史
+计划
+模板｜我的计划
+计划｜我的计划（左侧“计划”改“模板”）
+会话
+临时｜计划
+聊天｜工作、聊天页
+资源
+本机｜云端｜其它设备｜接口
+“连接应用”作为一级页、泛化的资源数字心智
+服务
+内部服务｜外部服务
+本地｜远程、把整个第三方App当服务
+
+动作词也必须冻结
+本机资源：开启 / 已开启；云端资源：连接 / 已连接；其它设备：连接 / 在线 / 离线；接口：添加 / 正常 / 在线；内部服务：发起服务；外部服务：添加 / 已添加 / 打开原服务；计划：创建 / 运行中 / 待处理 / 已暂停。
+
+
+1. 当前真实基线与必须解决的脱节
+当前项目已经具备较成熟的核心后端，不应该为了新UI再造第二套系统。当前真正的问题是“消费者层与核心能力没有形成统一产品合同”。
+现有能力
+当前状态
+这次怎么处理
+Plan / PlanVersion / CreationDraft / PlanningOffers
+核心能力已存在
+保留，AI计划会话复用；长表单降级为“计划配置”
+Truth / Reality Pipeline / Provenance
+现实事实链已存在
+继续作为所有AI/计划判断依据，不允许模型输出直接当Truth
+Capability Resolver / Provider Runtime
+已有能力解析和Provider边界
+扩展为资源/服务统一能力查找，不造新Resolver
+Risk / Approval / Execution / Verification / Reconciliation
+副作用安全链成熟
+临时会话、长期计划、内部服务请求都必须回到这条链
+AI Adapter / Agent Planner
+结构存在，但生产仍偏Fixture
+增加真实模型实现与Conversation，不重写AI架构
+Portable Skills / MCP
+已有模块
+强化“AI怎么做”的Skill与互操作，不变成新业务引擎
+Mobile五个页面
+UI方向已收敛
+统一命名、状态、投影和跳转；清除旧页面心智
+Services Catalog
+内部服务目录已有基础
+补ServiceRequest；另建外部服务引用模型，严禁混表
+
+1.1 当前最关键的五个脱节点
+会话只有“看起来像AI”的入口还不够：需要真实Conversation持久化、上下文引用、真实模型Adapter，以及结构化结果卡。
+资源页不能再由移动端临时拼多个API：需要统一ResourceProjection，让“本机/云端/设备/接口”的状态、能力、健康度由后端事实驱动。
+计划创建不能让用户手工设计Engine：所有模板+、右上+、临时转计划统一进入“会话-计划”，CreationDraft负责结构化状态。
+服务必须拆成内部与外部两种真实模型：内部是平台ServiceOffering/Request闭环；外部是从第三方分享进来的ExternalServiceReference。
+日程不能只看日历：要把计划运行、会话临时任务、内部服务预约、日历事件、需要用户处理的事项统一投影成时间轴。
+
+2. 统一闭环：从需求到执行再回到日程
+用户需求 / 模板入口 / 日程事项        ↓      会话（临时 / 计划）        ↓      AI Intent        ↓      Skill：这类事情怎么做        ↓      Capability Demand：需要什么能力        ↓      Capability Resolver   ┌──────┼────────┐   ↓      ↓        ↓ 资源    内部服务   外部服务引用   │      │        │   └──────┴────────┘        ↓ Risk → Approval → Execution → Verification → Result        ↓ 一次性？────────────长期？   ↓                    ↓临时会话结束        Plan / PlanVersion 持续运行   └──────────┬─────────┘              ↓          日程 Timeline              ↓      未完成 / 已完成 / 结果 / 下一步
+
+核心原则
+五个页面不是五套业务系统，而是同一套底层事实、能力和执行链的五个消费者视图。任何一个页面产生的动作，都必须能在其它相关页面看见结果和影响。
+
+起点
+过程
+终点/回流
+会话-临时
+AI→Skill→资源/服务→执行
+结果回会话；有时间或待处理事项时进入日程
+模板 +
+进入会话-计划→AI补齐→CreationDraft→确认
+创建Plan→我的计划→每次运行进入日程
+我的计划
+查看/修改/暂停/补资源
+状态变化同步日程与资源使用关系
+资源
+开启/连接/添加能力
+Readiness重算；受影响计划/会话立刻恢复或降级
+内部服务
+发起ServiceRequest
+预约/进行/完成进入日程；会话可继续跟进
+外部服务
+添加引用→打开原服务
+可被AI/计划推荐；默认不把外部平台行为伪装成已执行
+
+3. 五个一级页面的职责与边界
+页面
+必须负责
+明确不负责
+日程
+按日期+时间展示所有用户可感知事项；区分未完成/已完成；打开来源对象
+不成为第二个计划列表；不承载复杂配置
+计划
+发现模板；管理已经创建的长期计划；展示下一步与状态
+不处理一次性即时需求；不让用户配置技术字段
+会话
+自然语言入口；临时处理；AI创建/调整计划；结构化动作和结果
+不直接绕过Risk/Approval；不把聊天记录当Truth
+资源
+全局数据/账号/设备/接口能力底座；连接状态与Capability
+不放Skill；不放外部服务收藏；不重复设置页账号设备
+服务
+内部现实服务闭环；外部具体服务引用库
+不把第三方App目录当服务；不替代云端资源Connector
+
+统一设计语言：一级页尽量只展示“当前状态 + 最重要下一步”。Lifecycle、Truth provenance、策略、Capability key、Risk snapshot等工程细节进入二级“查看依据/高级信息”。
+
+4. 日程：统一时间轴与结果入口
+日程替代旧“首页”。它不是普通日历，而是懒人装甲所有可感知运行结果的统一时间轴。
+区域
+最终设计
+数据来源
+顶部日期
+前一天｜10月03日 周六（点开日期选择器）｜后一天
+客户端日期+用户时区
+状态切换
+未完成｜已完成
+TimelineProjection.statusGroup
+排序
+默认按时间；无明确时间的待处理放“未定时/待处理”组
+scheduledAt / dueAt / occurredAt
+卡片
+时间、标题、说明、状态、来源图标、进入详情箭头
+统一TimelineItem
+未完成状态
+待开始 / 即将开始 / 进行中 / 待处理 / 已逾期
+从各域状态映射
+已完成
+完成时间、结果摘要；可打开来源记录
+Result / Execution / ServiceRequest / Event
+
+Timeline不应成为新权威表
+第一阶段按请求聚合各域数据生成Projection；只有性能真的成为问题时，再增加物化读模型。不要把同一状态复制写入多个主表。
+
+Timeline kind
+示例
+点击跳转
+CALENDAR_EVENT
+10:00 产品周会
+日程事件详情/资源来源
+PLAN_RUN
+07:30 晨间重点
+计划详情/本次运行结果
+TEMPORARY_TASK
+14:00 AI生成文件
+对应临时会话
+SERVICE_REQUEST
+15:00 家电维修上门
+内部服务请求详情
+ATTENTION
+账单来源缺失
+我的计划/补资源动作
+REMINDER
+家庭补给确认
+来源计划或服务详情
+
+
+5. 计划：模板库 + 我的计划 + AI创建
+5.1 模板
+模板页只负责“发现长期方案”。用户看到的是产品化模板，不看到Scenario、Strategy、15步生命周期。
+元素
+设计
+顶部切换
+模板｜我的计划
+分类
+13个产品展示域；技术19域通过共享映射合同转换
+模板卡
+图标 + 名称 + 一句话说明 + “+”
+模板+
+直接跳“会话-计划”，携带templateKey；AI只询问缺失信息
+右上+
+从零新建长期计划，也跳“会话-计划”空白CreationDraft
+
+5.2 我的计划
+“我的计划”不是“正在运行”同义词，而是用户已经创建出的全部计划实例。默认优先展示需要处理和运行中的计划。
+筛选
+说明
+全部
+所有未归档计划
+运行中
+正常长期运行
+待处理
+缺资源、需确认、授权过期、执行异常等需要用户介入
+已暂停
+用户或系统暂停
+更多
+已结束/归档
+
+卡片必须展示
+例子
+名称
+月度账单汇总
+目标摘要
+汇总账单、缴费与订阅
+用户态状态
+待处理
+最重要下一步
+缺少1个账单来源 / 下次运行明天07:30 / 正在跟踪2个包裹
+
+创建计划主流程变化
+旧“新建计划”长表单不再是主入口。它改名为“计划配置/编辑计划”，只在用户需要手动精调时打开；真正新建由“会话-计划 + CreationDraft”完成。
+
+
+6. 会话：临时一次性 + 计划长期化
+模式
+定位
+结束条件
+临时
+这一次帮我完成：问答、分析、总结、查找、生成、一次性动作
+得到Result后结束；可一键“设为计划”
+计划
+把需求变成长期计划；创建、补齐、调整、解释已有计划
+用户确认PlanDraft并创建/更新Plan
+
+会话页必须共用一套聊天UI，模式只是上下文和允许输出类型不同；不要维护两套AI系统。
+会话能力
+目标
+Conversation持久化
+新对话、历史会话、conversationId、messageId、上下文窗口
+结构化结果
+ANSWER / CLARIFICATION / ACTION / PLAN_PROPOSAL / RESULT_CARD
+上下文引用
+resourceRef、truthRef、planId、serviceRef、attachmentRef；禁止把上下文简单拼进500字符prompt
+附件
+文件/图片/语音/连接资源；按能力路由，未支持时明确不可用
+临时转计划
+把本次成功做法转成CreationDraft，不要求用户重填
+计划会话
+实时展示结构化计划卡：目标、资源、周期、确认规则、缺口；聊天修改后立即更新
+
+会话-计划的正确行为模板/用户描述 → CreationDraftAI判断需要哪些Skill与Capability→ Resolver检查现有资源→ 只问缺失信息→ PlanningOffer/PlanDraft→ 用户确认→ Plan + PlanVersion→ 我的计划→ 每次运行投影到日程
+
+
+7. 资源：本机 / 云端 / 其它设备 / 接口
+资源是整个懒人装甲共同使用的能力底座，不是“给计划选附件”的页面，也不是“AI专用连接”。
+Tab
+对象
+状态词
+代表模块
+本机
+手机OS权限与本地能力
+开启 / 已开启 / 受限制 / 不可用
+Native bridge / device capability
+云端
+第三方账号与云应用
+连接 / 已连接 / 授权过期 / 异常
+connections / providers / provider-runtime
+其它设备
+可提供能力的电脑、旧手机、平板、NAS等
+连接 / 在线 / 离线 / 已撤销
+trusted-devices / device-tasks
+接口
+API、MCP、Webhook、自定义数据接口
+添加 / 正常 / 在线 / 异常
+connector-sdk / mcp / webhook/provider runtime
+
+资源一级卡片固定只显示：图标、名称、一句话能力、状态、箭头。Capability明细、使用中的计划/会话、权限、最近验证时间全部进入详情。
+本机示例
+用户文案
+日历
+读取日程与事件；已开启
+通讯录
+联系人信息；已开启
+短信
+读取短信与重要通知；开启
+文件
+访问你授权的文件；已开启
+相册
+图片、截图和扫描件；开启
+位置
+当前位置与出行能力；开启
+通知
+读取手机通知；已开启
+
+必须新增ResourceProjection
+移动端不再分别请求connections/device-apps/device-profiles/connectors后自己推导“可用”。后端统一输出resourceId、kind、status、health、capabilities、account/device信息、reasons、lastVerifiedAt；所有“正常/可用”必须有真实证据。
+
+
+8. 服务：内部服务 / 外部服务
+8.1 内部服务
+内部服务是在懒人装甲平台内发布的具体ServiceOffering，可以直接发起ServiceRequest并持续跟进。它不是一个“服务大类”。
+页面
+核心内容
+主动作
+内部服务首页
+搜索+分类+具体服务卡+我发布的服务
+查看服务
+内部服务详情
+图片、服务方、内容、价格、方式、范围、可预约时间
+发起服务
+发起服务
+预约时间、地址、要求、联系人
+确认发起
+服务请求
+待确认→已预约→进行中→已完成/已取消
+查看/取消/联系
+发布服务
+图片、名称、说明、分类、方式、区域、价格
+发布服务
+
+8.2 外部服务
+外部服务不是第三方App目录，而是“从其它App/网页分享进来的具体服务引用”。例如“美团上的空调深度清洗”而不是“美团”。
+页面
+核心内容
+主动作
+外部服务首页
+我的外部服务引用库；搜索/分类
+查看
+添加外部服务
+从其它应用分享 / 粘贴链接 / 手动添加
+解析
+添加确认
+缩略图、标题、来源、价格快照、分类、说明
+添加
+外部服务详情
+添加时信息、来源平台、链接、备注
+打开原服务
+打开方式Sheet
+来源App / 浏览器 / 复制链接
+跳到原始具体页面
+
+动作词严禁混用
+资源页云端才叫“连接”。外部服务只叫“添加/已添加”，因为它不代表获得平台API或账号权限。内部服务叫“发起服务”。
+
+
+9. AI套件：模型、Skill、Conversation、Capability编排
+现有 ai-adapter / AgentPlannerService / AgentModelAdapter 是正确边界，不应该另建第二套AI Engine。
+组件
+职责
+后续改造
+AgentModelAdapter
+模型供应商抽象
+保留Fixture用于测试；新增真实模型实现（生产配置可切换）
+AgentPlannerService
+受控规划、验证输出
+扩展临时ACTION与PLAN_PROPOSAL；继续fail-closed
+Portable Skills
+告诉AI这类事情怎么做
+正式Skill manifest：whenToUse、requiredCapabilities、workflow、riskRules、outputSchema
+Conversation Store
+对话历史与上下文
+新增Conversation / Message / ContextRef持久化
+Capability Resolver
+找谁能完成能力需求
+统一查Resource与可发起内部Service；外部服务默认作为Reference推荐
+Risk/Approval
+副作用门禁
+临时与计划模式都不能绕过
+
+AI输出类型
+含义
+是否可直接执行
+ANSWER
+纯解释/总结
+无副作用
+CLARIFICATION
+缺信息
+否
+ACTION_PROPOSAL
+一次性动作建议
+必须经过Risk/Approval/Execution
+PLAN_PROPOSAL
+长期计划草案
+必须用户确认并创建PlanVersion
+RESULT
+已验证结果的解释
+只能引用真实Execution/Truth/Service状态
+
+Skill的正式定义
+Skill = AI完成某类任务的标准工作方法；Capability = 系统能做什么；Resource/Service = 实际由谁提供能力；Plan = 让这种做法长期持续。不要按Gmail/Outlook/QQ邮箱分别造“邮件总结Skill”，而应让“邮件总结Skill”声明READ_EMAIL等Capability，由Resolver选择可用资源。
+
+
+10. 前后端统一数据合同与投影层
+为了彻底解决“前端一套、后端一套”，五个一级页面都应拿到稳定的Consumer Projection。Projection是读模型，不是新业务Engine。
+Projection
+建议字段（示意）
+来源
+TimelineProjection
+id, kind, title, subtitle, scheduledAt, statusGroup, status, sourceRef, primaryAction
+plans/executions/calendar/service/todos/conversation
+PlanLibraryProjection
+templateKey/productDomain/title/summary + planId/status/nextRun/attention
+templates/plans/runtime-readiness
+ConversationProjection
+conversationId/mode/messages/contextRefs/structuredCards/draftRef
+ai-adapter + conversation store
+ResourceProjection
+resourceId/kind/name/status/health/capabilities/reasons/lastVerifiedAt
+connections/providers/devices/mcp/local evidence
+ServiceProjection
+id/kind(INTERNAL|EXTERNAL)/title/provider/price/status/primaryAction
+service-offerings/requests/external refs
+
+Projection层必须遵守：不复制写入业务权威、不从移动端猜“健康/可用”、所有状态都能追到sourceRef/evidence、API向后兼容一轮后再删除旧端点。
+前端只做显示与用户意图提交      ↓Consumer Projection API      ↓Domain Service / Existing Core Authority      ↓Truth / Connection / Plan / Execution / Service State禁止：Mobile 通过多个零散API自行推断 runtime readiness。
+
+
+11. 数据模型与数据库升级
+原则：只新增当前闭环缺失的权威数据；日程和资源优先做派生Projection，不制造重复主表。
+模型
+是否新增
+核心字段/说明
+Conversation
+新增
+id,userId,mode(TEMPORARY|PLAN),title,status,createdAt,updatedAt
+ConversationMessage
+新增
+id,conversationId,role,content,structuredPayload,modelId,createdAt
+ConversationContextRef
+新增
+message/conversation关联 resourceRef, truthRef, planId, serviceRef, attachmentRef
+ExternalServiceReference
+新增
+title,summary,thumbnail,sourcePlatform,sourceUrl,deepLink,providerName,priceSnapshot,tags,importMethod,lastCheckedAt
+ServiceRequest
+若当前未完整存在则新增/补齐
+offeringId,userId,schedule,address,requirement,status,providerAck,completedAt
+ServiceRequestEvent
+建议新增
+状态轨迹、审计、时间线投影依据
+ResourceProjection
+不做权威表
+由现有Connection/Device/Provider/MCP/权限证据聚合
+TimelineProjection
+第一阶段不做权威表
+按日期聚合；性能不足再物化读模型
+CreationDraft
+保留并扩展
+增加conversationId/templateKey/plan configuration summary，继续版本冲突控制
+Plan/PlanVersion
+保留
+不重写不可变版本和apply语义
+
+分类模型统一
+技术层仍保留19个Domain、96 canonical scenarios、8 strategies与15步生命周期；产品层使用13个展示域与模板库。必须把“技术域→产品域”的映射移到共享合同，不再由Mobile本地DOMAIN_MAP单独维护。
+
+
+12. API与移动端路由适配
+12.1 目标API（优先扩现有Controller）
+域
+建议接口
+说明
+日程
+GET /timeline?date=&statusGroup=
+聚合TimelineProjection；支持前后日期
+模板
+GET /plan-templates?productDomain=
+返回产品域模板；兼容现有registry
+我的计划
+GET /plans?view=consumer&status=
+返回PlanLibraryProjection
+会话
+POST/GET /conversations；POST /conversations/:id/messages
+持久化会话与结构化输出
+AI计划
+POST /conversations/:id/plan-draft；PATCH /creation-drafts/:id
+会话与CreationDraft双向绑定
+资源
+GET /resources?kind=LOCAL|CLOUD|DEVICE|INTERFACE
+统一ResourceProjection
+内部服务
+GET /service-offerings；POST/GET /service-requests
+补齐请求生命周期
+外部服务
+POST /external-services/import；GET/POST/DELETE /external-services
+分享/链接/手动导入与引用管理
+
+12.2 Mobile路由冻结
+一级
+建议路由
+关键二级路由
+日程
+/(tabs)/schedule
+/schedule/item/:id
+计划
+/(tabs)/plans
+/plans/:id；/plan-config/:id；template +跳/chat?mode=plan
+会话
+/(tabs)/chat
+/conversation/:id；mode=temporary|plan
+资源
+/(tabs)/resources
+/resources/:id；/connections/cloud；/devices/:id；/interfaces/:id
+服务
+/(tabs)/services
+/services/internal/:id；/service-requests/:id；/services/external/:id；/services/publish
+
+兼容规则
+旧 /search-ai 保留一轮重定向到会话；旧首页路由可内部重定向到日程；旧“新建计划”页面改为计划配置，不再从右上+直接进入。完成迁移并确认埋点无调用后再删除。
+
+
+13. 清除、合并、迁移与兼容策略
+这次不是只“加功能”，必须同时删除旧心智和冗余路径，否则信息不对称会继续扩大。
+类别
+清除/迁移项
+最终归宿
+导航
+首页、聊天命名
+日程、会话
+会话模式
+聊天｜工作
+临时｜计划
+计划
+左Tab“计划”
+模板
+创建计划
+长表单主入口
+会话-计划主入口；表单改计划配置
+首页
+现在｜历史
+日期导航 + 未完成｜已完成时间轴
+资源
+本机把所有已安装App当资源
+本机只展示真实OS/Native Capability；云端展示Provider Connection
+服务
+外部服务=第三方App入口
+外部服务=具体服务引用
+状态词
+连接/开启/添加混用
+按资源类型与服务类型冻结
+前端推断
+多个API拼接“可用”
+ResourceProjection/Readiness服务端统一
+文档
+旧12域/旧计划模式/旧导航
+更新成五页模型+技术域/产品域映射
+仓库
+重复zip、metro缓存、生成资源/重复mobile树
+移出Git追踪并强化repository hygiene
+
+13.1 不能删的核心
+Truth/Reality Pipeline
+Plan / PlanVersion不可变语义
+Scenario / Strategy技术合同
+Capability Resolver
+Risk / Approval
+Execution / Verification / Reconciliation / Audit
+Connector SDK / Provider Runtime
+TrustedDevice / DeviceTask
+禁止事项
+不得因为新UI重新造 ScenarioEngine、SkillEngine、ServiceExecutionEngine、CrossProviderEngine 或第二套Plan系统。新页面只增加Projection、薄Adapter和真正缺失的数据模型。
+
+
+14. 安全、隐私、风险与权限
+场景
+硬规则
+本机资源
+用户显式开启；权限撤销后Resource status立即降级；不得用“已开启”伪装未授权
+云端资源
+OAuth/API Key/企业应用等多认证类型统一Credential边界；token不进入AI上下文
+其它设备
+设备身份与账号登录设备分离；任务有lease/expiry/revoke/evidence
+临时AI动作
+任何发送、发布、支付、删除等副作用必须Risk→Approval→Execution→Verification
+计划
+AI只能提案/草案；用户确认后才形成正式PlanVersion
+内部服务
+发起ServiceRequest属于真实外部协作，必须明确用户确认、时间、地址与联系人
+外部服务
+导入URL与metadata视为不可信输入；只保存引用，不把“打开原服务”伪装成“已下单/已完成”
+图片/文件
+按最小化原则存储；敏感内容只作为ContextRef/证据，支持删除与撤销
+
+头像页与设置页继续保持极简：头像页承载个人资料/账号管理/主题与背景/帮助反馈/关于；设置页只承载消息获取、消息通知、后台服务、账号登录设备等系统必需项。资源页负责“能力”，设置页负责“应用行为”，不要重复。
+
+15. 真实闭环验收与测试矩阵
+验收不再以“有页面/有接口/有模板”作为完成，而以用户从入口走到真实结果并能在日程回看为标准。
+Golden Journey
+完整链路
+验收重点
+一次性日程整理
+会话-临时→日历/待办资源→Skill→结果卡→日程结果
+真实数据、无Plan污染、来源可追溯
+模板创建晨间重点
+模板+→会话-计划→CreationDraft→资源检查→确认→Plan→次日运行→日程
+只问缺失项；PlanVersion正确；运行可验证
+月度账单缺资源恢复
+我的计划待处理→资源→连接邮箱/短信→Readiness重算→计划恢复→日程
+状态自动联动，不靠前端猜
+内部服务请求
+会话/服务页→内部ServiceOffering→发起→服务方确认→预约→完成→日程
+ServiceRequest状态链、用户确认、结果回流
+外部服务添加
+第三方分享→懒人装甲解析→添加确认→外部服务库→AI/计划推荐→打开原服务
+保存具体服务而非App；价格标记快照；不伪造执行
+临时转长期
+临时会话成功→设为计划→计划会话补周期→确认→Plan→后续日程
+复用上下文，不要求重填
+设备资源执行
+计划/会话→Capability→其它设备→DeviceTask→Evidence→Verification→日程
+离线/过期/撤销fail closed
+
+测试层
+必须覆盖
+Schema/Contract
+Projection DTO、状态映射、技术域→产品域映射、external service import schema
+API Integration
+权限、账号隔离、版本冲突、幂等、分页/日期边界、时区
+Real DB
+Conversation并发、CreationDraft版本、ServiceRequest状态事务、outbox一致性
+Mobile
+五页导航、深链、返回、空态/错误态/离线态、权限撤销
+AI
+模型输出schema验证、恶意prompt、不存在的resourceRef、禁止动作标记、Token预算
+Device/Provider
+真实账号、真实设备、权限撤销、网络断开、后台限制、credential过期
+E2E
+上述7条Golden Journey至少各一条真实证据包
+
+
+16. 后续开发阶段与任务书
+以下顺序优先解决“合同统一和真实闭环”，而不是继续堆模板或页面。除Hard Stop外可连续推进。
+阶段
+主要任务
+DoD
+P0 · Product Contract Freeze
+冻结五页名称/路由/状态词；共享产品域映射；清理旧文案与重定向
+Mobile所有一级页统一；不再出现首页/聊天/工作等旧核心词
+P1 · Consumer Projections
+Timeline/PlanLibrary/Resource/Service Projection DTO与服务
+Mobile不再自己推断runtime availability
+P2 · Conversation + Real AI
+Conversation表；消息/上下文；真实AgentModelAdapter；结构化输出
+临时会话可真实读取资源并完成至少2个低风险任务
+P3 · AI Plan Creation
+模板+/右上+/临时转计划→会话-计划→CreationDraft→Plan
+旧长表单只作为配置；完整创建闭环通过
+P4 · Resource Suite
+本机权限证据、云端连接、多账号、其它设备、接口统一Projection
+资源状态可被AI/Plan实时消费，撤销后readiness降级
+P5 · Service Suite
+内部ServiceRequest；外部ExternalServiceReference；分享/链接解析
+内部可发起并进日程；外部可导入并打开原服务
+P6 · Unified Schedule
+按日期聚合所有Timeline kind；未完成/已完成；来源跳转
+计划、会话、内部服务、日历事件至少四类进入时间轴
+P7 · Cross-Surface Loop
+资源缺口修复、服务引用、计划调整、临时转长期
+任何关键状态改变都能跨页面同步
+P8 · Cleanup & Release
+删死路由/死组件/重复资产；文档更新；CI+真实设备/账号验收
+无fixture冒充REAL；Release Gate通过；五页真实闭环证据齐全
+
+16.1 代码落点建议
+现有/新增模块
+动作
+apps/api/src/ai-adapter
+新增生产AgentModelAdapter；保留现有planner/context compiler/validation
+apps/api/src/portable-skills
+增加正式Skill manifest和resolver接口；不要新建SkillEngine
+apps/api/src/creation-drafts + planning-offers
+绑定conversation/template；作为AI计划创建权威草案
+apps/api/src/plans
+增加consumer projection；不改不可变PlanVersion核心
+apps/api/src/connections/provider-runtime/device*/mcp
+提供ResourceProjection证据输入
+apps/api/src/services-catalog
+补内部ServiceRequest；保持Offering目录
+apps/api/src/external-services（建议新增薄模块）
+只管理ExternalServiceReference导入/删除/解析
+apps/api/src/timeline（建议新增Projection模块）
+聚合读模型；不做新业务权威
+apps/mobile/app/(tabs)
+改成schedule/plans/chat/resources/services五个明确surface
+packages/plan-schema
+共享产品域映射、Projection enums/types；避免Mobile单独DOMAIN_MAP
+
+
+17. 上线门槛与最终目标状态
+门槛
+必须满足
+产品一致性
+五页命名、动作词、状态模型、跳转全部一致；旧入口只做兼容重定向
+前后端一致性
+页面所有“正常/已连接/运行中/已完成”均来自后端真实状态或本机真实权限
+AI真实可用
+生产不再绑定Fixture；Conversation可持续；模型失败有降级
+资源真实可用
+至少本机+云端+设备各有真实能力证据，revoke后立即反映
+计划闭环
+模板→AI→Plan→Runtime→Result→日程完整跑通
+服务闭环
+内部至少一条真实ServiceRequest；外部至少一条真实分享导入引用
+日程闭环
+至少四类来源进入同一日期时间轴，完成/未完成状态可靠
+安全
+高风险动作gate closed；Credential不暴露；账号/设备隔离
+工程
+CI、migration safety、真实DB并发、Android artifact、repo hygiene通过
+证据
+真实设备/真实账号/真实Provider形成可审计evidence pack
+
+最终目标状态
+用户可以从任意入口开始：说一句话、点一个模板、开启一个资源、发起一项服务；系统都能沿同一能力链完成或明确告诉他还缺什么，并最终在“我的计划”和“日程”里留下可理解、可追溯、可继续的状态。
+
+
+附录A. 最新UI基准图
+以下图作为本方案的消费者层视觉基准。实际开发应保持同一背景/圆角/透明度语言，但文案、状态和动作必须以本文件冻结合同为准。
+
+A-1 日程页：日期导航 + 未完成/已完成 + 时间轴
+
+
+A-2 我的计划：状态分组 + 下一步 + 新建计划入口
+
+
+A-3 会话页：临时/计划二态，后续应替换旧“聊天/工作”逻辑
+
+附录B. 服务与资源流程基准
+
+B-1 服务套件：内部服务完整请求闭环 + 外部具体服务引用闭环
+
+
+B-2 资源套件：本机 / 云端 / 其它设备 / 接口四类能力入口
+
+最终执行指令（可直接交给编码Agent）
+先改合同，再改页面，再打闭环
+第一步冻结五页路由、文案、状态与Projection DTO；第二步让后端返回真实统一Projection；第三步逐页替换旧API拼装；第四步接真实AI与服务/资源；第五步用Golden Journey验收。任何阶段都不允许用静态示例冒充REAL。
+
+开发过程中发现旧实现与本方案冲突时，以“不破坏核心Authority、前端只呈现真实状态、同一概念只有一个权威模型”为裁决原则。
+文档结束

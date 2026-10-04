@@ -496,6 +496,8 @@ export class LocalTestMcpServer extends FixtureMcpServer {
 export class HttpMcpTransport implements McpTransport {
   readonly transportType: McpTransportType = 'HTTP';
   private readonly inflight = new Map<string, AbortController>();
+  private sessionId?: string;
+  private initialized?: Promise<void>;
 
   constructor(
     private readonly serverId: string,
@@ -505,6 +507,7 @@ export class HttpMcpTransport implements McpTransport {
 
   private validateEndpoint(): URL {
     const url = new URL(this.endpoint);
+    if (url.username || url.password || url.hash) throw new McpClientError('MCP_SERVER_UNAVAILABLE', 'Embedded MCP credentials are forbidden', this.serverId);
     if (url.protocol !== 'https:' && url.protocol !== 'http:') throw new McpClientError('MCP_SERVER_UNAVAILABLE', 'MCP HTTP endpoint must be http(s)', this.serverId);
     if (url.protocol === 'http:' && !['localhost', '127.0.0.1', '::1'].includes(url.hostname)) {
       throw new McpClientError('MCP_SERVER_UNAVAILABLE', 'Plain HTTP is only allowed to localhost', this.serverId);
@@ -514,6 +517,7 @@ export class HttpMcpTransport implements McpTransport {
 
   async discover() {
     const url = this.validateEndpoint();
+    await this.initialize(url);
     const response = await this.request('tools/list', {}, url);
     const tools = (response.tools ?? []) as Array<Record<string, unknown>>;
     return tools.map((tool) => ({
@@ -521,7 +525,7 @@ export class HttpMcpTransport implements McpTransport {
       description: String(tool.description ?? ''),
       inputSchema: (tool.inputSchema ?? { type: 'object', properties: {} }) as Record<string, unknown>,
       outputSchema: (tool.outputSchema ?? { type: 'object', properties: {} }) as Record<string, unknown>,
-      effectClass: (tool.effectClass ?? 'READ_ONLY') as McpEffectClass,
+      effectClass: (tool.effectClass ?? ((tool.annotations as Record<string, unknown> | undefined)?.readOnlyHint === true ? 'READ_ONLY' : 'EXTERNAL_SIDE_EFFECT')) as McpEffectClass,
       riskHint: String(tool.riskHint ?? 'R0'),
       verificationMethod: typeof tool.verificationMethod === 'string' ? tool.verificationMethod : null,
     }));
@@ -529,16 +533,17 @@ export class HttpMcpTransport implements McpTransport {
 
   async invoke(toolName: string, args: Record<string, unknown>, options: { signal?: AbortSignal }): Promise<Record<string, unknown>> {
     const url = this.validateEndpoint();
+    await this.initialize(url);
     const response = await this.request('tools/call', { name: toolName, arguments: args }, url, options.signal);
     if (response.isError) throw new Error(String(response.content ?? 'tool error'));
-    const content = response.content;
+    const content = response.structuredContent ?? response.content;
     return content && typeof content === 'object' && !Array.isArray(content) ? content as Record<string, unknown> : {};
   }
 
   async health() {
     try {
-      const response = await this.request('health', {}, this.validateEndpoint());
-      return { healthy: response.status === 'healthy', reason: typeof response.reason === 'string' ? response.reason : undefined, toolCatalogHash: String(response.toolCatalogHash ?? '') };
+      await this.discover();
+      return { healthy: true, toolCatalogHash: '' };
     } catch {
       return { healthy: false, reason: 'unreachable', toolCatalogHash: '' };
     }
@@ -548,24 +553,48 @@ export class HttpMcpTransport implements McpTransport {
     return Promise.resolve(this.inflight.get(requestId)?.abort());
   }
 
-  private async request(method: string, params: Record<string, unknown>, url: URL, signal?: AbortSignal): Promise<Record<string, unknown>> {
+  private initialize(url: URL): Promise<void> {
+    return this.initialized ??= (async () => {
+      await this.request('initialize', { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'lazy-armor', version: '0.1.0' } }, url);
+      await this.request('notifications/initialized', {}, url, undefined, true);
+    })();
+  }
+
+  private async request(method: string, params: Record<string, unknown>, url: URL, signal?: AbortSignal, notification = false): Promise<Record<string, unknown>> {
     const requestId = createHash('sha256').update(`${method}:${Date.now()}:${Math.random()}`).digest('hex').slice(0, 16);
     const controller = new AbortController();
     this.inflight.set(requestId, controller);
     const abort = () => controller.abort();
+    const deadline = setTimeout(abort, 5000);
+    if (signal?.aborted) controller.abort();
     signal?.addEventListener('abort', abort, { once: true });
     try {
       const response = await fetch(url.toString(), {
         method: 'POST',
-        headers: { 'content-type': 'application/json', ...this.options.headers },
-        body: JSON.stringify({ jsonrpc: '2.0', id: requestId, method, params }),
+        headers: { ...this.options.headers, 'content-type': 'application/json', accept: 'application/json, text/event-stream', 'MCP-Protocol-Version': '2025-03-26', ...(this.sessionId ? { 'Mcp-Session-Id': this.sessionId } : {}) },
+        body: JSON.stringify({ jsonrpc: '2.0', ...(notification ? {} : { id: requestId }), method, params }),
         signal: controller.signal,
+        redirect: 'error',
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const body = await response.json() as { result?: Record<string, unknown>; error?: unknown };
+      const session = response.headers.get('mcp-session-id');
+      if (session) { if (session.length > 256 || /[\r\n]/.test(session)) throw new Error('Invalid MCP session'); this.sessionId = session; }
+      if (notification) { await response.body?.cancel(); return {}; }
+      if (!response.body) throw new Error('Empty MCP response');
+      const reader = response.body.getReader(); const chunks: Uint8Array[] = []; let size = 0;
+      try {
+        for (;;) { const chunk = await reader.read(); if (chunk.done) break; size += chunk.value.byteLength; if (size > 1000000) throw new Error('MCP response exceeds limit'); chunks.push(chunk.value); }
+      } finally { await reader.cancel(); }
+      const raw = new TextDecoder().decode(Buffer.concat(chunks));
+      const messages = response.headers.get('content-type')?.includes('text/event-stream')
+        ? raw.split(/\r?\n\r?\n/).flatMap(event => { const data = event.split(/\r?\n/).filter(line => line.startsWith('data:')).map(line => line.slice(5).trimStart()).join('\n'); return data ? [JSON.parse(data)] : []; })
+        : [JSON.parse(raw)];
+      const body = messages.find(message => message.id === requestId) as { result?: Record<string, unknown>; error?: unknown } | undefined;
+      if (!body) throw new Error('MCP response identity mismatch');
       if (body.error) throw new Error('JSON-RPC error');
       return body.result ?? {};
     } finally {
+      clearTimeout(deadline);
       signal?.removeEventListener('abort', abort);
       this.inflight.delete(requestId);
     }

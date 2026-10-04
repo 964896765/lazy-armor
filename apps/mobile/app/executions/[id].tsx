@@ -120,7 +120,7 @@ export default function ExecutionDetail() {
 
             <Section title="本次结果" accent={needsAttention ? colors.danger : colors.primary}>
               {data.resultState ? <Text style={styles.result}>{runtimeResultLabel(data.resultState)}</Text> : null}
-              <Text style={styles.result}>{data.resultSummary ?? consumerErrorMessage(data.errorMessage) ?? '正在处理'}</Text>
+              <Text style={styles.result}>{data.resultSummary ?? (data.errorMessage ? consumerErrorMessage(data.errorMessage) : executionStatusLabel(data.status))}</Text>
               <Text style={styles.body}>{executionAttentionLabel(data.status)}</Text>
               <Pressable accessibilityRole="button" onPress={() => router.push(`/executions/${id}/lifecycle` as never)} style={styles.inlineButton}><Text style={styles.inlineButtonText}>查看完整过程</Text></Pressable>
             </Section>
@@ -156,7 +156,7 @@ export default function ExecutionDetail() {
                   <View key={approval.id} style={[styles.detailRow, index > 0 && styles.divider]}>
                     <View style={styles.detailCopy}>
                       <Text style={styles.rowTitle}>{approval.actionSummary}</Text>
-                      {approval.reason ? <Text style={styles.rowSubtitle}>{consumerErrorMessage(approval.reason)}</Text> : null}
+                      {approval.reason ? <Text style={styles.rowSubtitle}>{approval.reason}</Text> : null}
                       {approval.decisionReason ? <Text style={styles.rowSubtitle}>{approval.decisionReason}</Text> : null}
                     </View>
                     <View style={styles.compactStatus}><Text style={styles.compactStatusText}>{approvalStatusLabel(approval.status)}</Text></View>
@@ -172,7 +172,7 @@ export default function ExecutionDetail() {
                     <View style={styles.notificationDot} />
                     <View style={styles.detailCopy}>
                       <Text style={styles.rowTitle}>{item.title}</Text>
-                      <Text style={styles.rowSubtitle}>{consumerErrorMessage(item.body)}</Text>
+                      <Text style={styles.rowSubtitle}>{item.body}</Text>
                     </View>
                     <Text style={styles.rowTime}>{shortTime(item.createdAt)}</Text>
                   </View>

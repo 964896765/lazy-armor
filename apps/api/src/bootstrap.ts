@@ -7,6 +7,7 @@ import { resolveCorrelationId, runWithRequestContext } from './common/request-co
 import { SafeLoggerService } from './common/safe-logger.service';
 import { ObservabilityService } from './observability/observability.service';
 import { ConfigService } from '@nestjs/config';
+import { readFileSync } from 'node:fs';
 
 type RequestWithRawBody = Request & { rawBody?: Buffer };
 const captureRawBody = (req: Request, _res: Response, body: Buffer) => {
@@ -15,7 +16,14 @@ const captureRawBody = (req: Request, _res: Response, body: Buffer) => {
 
 // 构建共享 HTTP 应用（CORS 白名单 + 安全响应头 + 请求体上限 + 校验管道 + 优雅停机）。
 export async function createHttpApp() {
-  const app = await NestFactory.create(AppModule, { bodyParser: false, bufferLogs: true });
+  const tlsKeyPath = process.env.API_TLS_KEY_PATH;
+  const tlsCertPath = process.env.API_TLS_CERT_PATH;
+  if (Boolean(tlsKeyPath) !== Boolean(tlsCertPath)) throw new Error('API_TLS_KEY_PATH and API_TLS_CERT_PATH must be configured together');
+  const app = await NestFactory.create(AppModule, {
+    bodyParser: false,
+    bufferLogs: true,
+    ...(tlsKeyPath && tlsCertPath ? { httpsOptions: { key: readFileSync(tlsKeyPath), cert: readFileSync(tlsCertPath) } } : {}),
+  });
   const logger = app.get(SafeLoggerService);
   const telemetry = app.get(ObservabilityService);
   const trustedProxies = app.get(ConfigService).get<string>('TRUSTED_PROXY_CIDRS');
@@ -24,6 +32,8 @@ export async function createHttpApp() {
   // Base64 adds ~33% overhead. Only the authenticated local-file import path
   // receives the larger parser budget; every other API keeps the tighter cap.
   app.use('/api/file-imports', json({ limit: '1400kb', verify: captureRawBody }));
+  app.use('/api/artifacts', json({ limit: '3mb' }));
+  app.use('/api/service-media', json({ limit: '11mb' }));
   app.use(json({ limit: '256kb', verify: captureRawBody }));
   app.use(urlencoded({ extended: false, limit: '64kb' }));
   app.setGlobalPrefix('api');

@@ -1,0 +1,44 @@
+import type { INestApplication } from '@nestjs/common';
+import type { Pool } from 'mysql2/promise';
+import request from 'supertest';
+import { beforeAll, afterAll, describe, expect, it } from 'vitest';
+import { auth, bootP2App, register, setPlusMembership, type Session } from './p2-test-helpers';
+import { ExecutionWorker } from '../src/execution/execution-worker.service';
+
+describe.sequential('conversation one-time request uses canonical execution', { timeout: 90000 }, () => {
+ let app: INestApplication; let pool: Pool; let owner: Session; let other: Session; let worker: ExecutionWorker;
+ beforeAll(async () => { const unique = `once-${Date.now()}`; const boot = await bootP2App(unique); app = boot.app; pool = boot.pool; worker = boot.worker; owner = await register(app, `${unique}@example.com`, 'Once owner'); other = await register(app, `${unique}-other@example.com`, 'Other'); await setPlusMembership(app, owner.userId); });
+ afterAll(async () => { await app?.close(); await pool?.end(); });
+ it('executes a real in-app notification once and projects the persisted runtime result', async () => {
+  const plan = await request(app.getHttpServer()).post('/api/plans').set(auth(owner.token)).send({ name: '一次性站内通知', domain: 'billing', automationLevel: 'L1', approvalPolicy: { type: 'always', config: {} }, sources: [{ sourceType: 'manual', config: {}, sortOrder: 0 }], triggers: [{ triggerType: 'manual', config: {}, sortOrder: 0 }], conditions: [{ groupId: 'root', logicalOperator: 'AND', fieldPath: 'amount', operator: 'GT', comparisonValue: 0, sortOrder: 0 }], actions: [{ actionType: 'notify', config: { channel: 'in_app' }, stepOrder: 0 }] }).expect(201);
+  const planId = plan.body.id;
+  await request(app.getHttpServer()).post(`/api/plans/${planId}/status`).set(auth(owner.token)).send({ status: 'ready' }).expect(201);
+  await request(app.getHttpServer()).post(`/api/plans/${planId}/versions/1/apply`).set(auth(owner.token)).expect(201);
+  const active = await request(app.getHttpServer()).post(`/api/plans/${planId}/status`).set(auth(owner.token)).send({ status: 'active' }).expect(201);
+  const conversation = await request(app.getHttpServer()).post('/api/conversations').set(auth(owner.token)).send({ mode: 'TEMPORARY' }).expect(201);
+  const path = `/api/conversations/${conversation.body.id}/run-once`;
+  const input = { planId, planVersionId: active.body.activeVersionId, requestId: `once-request-${Date.now()}`, triggerPayload: { amount: 10 }, confirmed: true };
+  await request(app.getHttpServer()).post(path).set(auth(other.token)).send(input).expect(404);
+  await request(app.getHttpServer()).post(path).set(auth(owner.token)).send({ ...input, confirmed: false }).expect(400);
+  const run = await request(app.getHttpServer()).post(path).set(auth(owner.token)).send(input).expect(201);
+  expect(run.body.executionId).toBeTruthy();
+  await worker.processExecution(run.body.executionId);
+  const waiting = await request(app.getHttpServer()).get(`/api/executions/${run.body.executionId}`).set(auth(owner.token)).expect(200);
+  expect(waiting.body.status).toBe('waiting_approval');
+  const approvalId = waiting.body.approvals[0].id;
+  await request(app.getHttpServer()).post(`/api/approvals/${approvalId}/approve`).set(auth(other.token)).send({}).expect(404);
+  await request(app.getHttpServer()).post(`/api/approvals/${approvalId}/approve`).set(auth(owner.token)).send({}).expect(201);
+  await worker.processExecution(run.body.executionId);
+  const replay = await request(app.getHttpServer()).post(path).set(auth(owner.token)).send(input).expect(201); expect(replay.body.executionId).toBe(run.body.executionId);
+  await request(app.getHttpServer()).post(path).set(auth(owner.token)).send({ ...input, triggerPayload: { amount: 20 } }).expect(409);
+  const detail = await request(app.getHttpServer()).get(`/api/executions/${run.body.executionId}`).set(auth(owner.token)).expect(200);
+  expect(detail.body.status).toBe('succeeded'); expect(detail.body.steps[0].outputSnapshotJson.notified).toBe(true);
+  const notifications = await request(app.getHttpServer()).get('/api/notifications').set(auth(owner.token)).expect(200);
+  expect(notifications.body.some((item: { executionId?: string }) => item.executionId === run.body.executionId)).toBe(true);
+  const projection = await request(app.getHttpServer()).get(`/api/once-requests/${run.body.id}`).set(auth(owner.token)).expect(200);
+  expect(projection.body.outcome).toEqual(detail.body.outcome);
+  await request(app.getHttpServer()).get(`/api/once-requests/${run.body.id}`).set(auth(other.token)).expect(404);
+  const timeline = await request(app.getHttpServer()).get(`/api/timeline?date=${detail.body.createdAt.slice(0, 10)}&timezone=UTC`).set(auth(owner.token)).expect(200);
+  expect(timeline.body).toContainEqual(expect.objectContaining({ id: `execution:${run.body.executionId}`, kind: 'TEMPORARY_TASK', sourceRef: { type: 'Execution', id: run.body.executionId } }));
+ });
+});

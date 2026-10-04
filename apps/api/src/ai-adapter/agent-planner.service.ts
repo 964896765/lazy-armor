@@ -4,6 +4,7 @@ import {
   PLAN_STRATEGIES,
   compileScenarioPlan,
   scenarioByKey,
+  compileActionProposal,
   type CompiledScenarioPlan,
   type StrategyKey,
 } from '@lazy-armor/plan-schema';
@@ -47,6 +48,7 @@ export interface AgentPlanProposal {
 }
 
 export interface PlannerResult {
+  actionProposal?: import('@lazy-armor/plan-schema').ActionProposal;
   proposalId: string;
   result: AgentPlannerResultKind | 'PLANNER_OUTPUT_INVALID';
   proposal?: AgentPlanProposal;
@@ -82,13 +84,13 @@ export class AgentPlannerService {
     private readonly lazyArmorTools: LazyArmorMcpToolService,
   ) {}
 
-  async plan(userId: string, intent: string, options: { audit?: boolean } = {}): Promise<PlannerResult> {
+  async plan(userId: string, intent: string, options: { audit?: boolean; workContext?: 'TEMPORARY' | 'PLAN'; contextSources?: Array<{ label: string; content: string }> } = {}): Promise<PlannerResult> {
     const facts = await this.collectFacts(userId, intent);
     return this.planWithFacts(intent, facts, { ...options, userId });
   }
 
   /** No-DB planning path used by deterministic unit tests (audit disabled). */
-  async planWithFacts(intent: string, facts: PlannerRuntimeFacts, options: { audit?: boolean; userId?: string } = {}): Promise<PlannerResult> {
+  async planWithFacts(intent: string, facts: PlannerRuntimeFacts, options: { audit?: boolean; userId?: string; workContext?: 'TEMPORARY' | 'PLAN'; contextSources?: Array<{ label: string; content: string }> } = {}): Promise<PlannerResult> {
     const proposalId = newId();
     const skillBodies = this.skills.listRuntimeAgentSkills().map((skill) => ({ name: skill.name, instruction: skill.bodyMarkdown }));
     const context = this.compiler.compile({
@@ -100,10 +102,11 @@ export class AgentPlannerService {
       capabilities: facts.capabilities,
       tools: facts.tools,
       evidence: [],
-      untrustedSources: [],
+      untrustedSources: options.contextSources ?? [],
     });
-    const output = await this.model.complete({ intent, context, systemPolicy: '见 SYSTEM_POLICY section', allowedResults: [...AGENT_PLANNER_RESULTS] });
+    const output = await this.model.complete({ userId: options.userId, workContext: options.workContext, intent, context, systemPolicy: '见 SYSTEM_POLICY section', allowedResults: [...AGENT_PLANNER_RESULTS] });
     const validation = this.validateOutput(output, facts, intent);
+    if (output.result === 'ACTION_PROPOSAL' && options.workContext !== 'TEMPORARY') { validation.valid = false; validation.errors.push('ActionProposal requires temporary conversation context'); }
 
     const result: PlannerResult = {
       proposalId,
@@ -115,6 +118,7 @@ export class AgentPlannerService {
       if (output.result === 'ANSWER') result.answer = { explanation: output.explanation };
       if (output.result === 'CLARIFICATION_REQUIRED') result.clarification = { missingRequirements: output.missingRequirements };
       if (output.result === 'PLAN_DRAFT') result.proposal = validation.proposal!;
+      if (output.result === 'ACTION_PROPOSAL') { result.actionProposal = compileActionProposal(output.actionProposal).proposal; result.answer = { explanation: output.explanation }; }
     }
 
     if (options.audit !== false && options.userId) {
@@ -167,6 +171,9 @@ export class AgentPlannerService {
     const truths = await this.collectTruthRefs(userId);
     const capabilities = (await this.readiness.projectCapabilities(userId)).map((capability) => ({
       key: capability.capabilityKey,
+      connectionId: capability.connectionId,
+      providerKey: capability.providerKey,
+      operation: capability.operation,
       usable: capability.usable,
       reasons: capability.reasons,
     }));
@@ -180,7 +187,7 @@ export class AgentPlannerService {
     if (!AGENT_PLANNER_RESULTS.includes(output.result)) {
       errors.push(`Model result ${output.result} is not allowed; only ${AGENT_PLANNER_RESULTS.join('/')}`);
     }
-    for (const marker of FORBIDDEN_OUTPUT_MARKERS) {
+    for (const marker of (output.result === 'ACTION_PROPOSAL' ? ['execute_now', 'approve_execution', 'transfer_money'] : FORBIDDEN_OUTPUT_MARKERS)) {
       const serialized = JSON.stringify(output);
       if (serialized.includes(marker)) errors.push(`Model output contains forbidden action marker ${marker}`);
     }
@@ -195,6 +202,13 @@ export class AgentPlannerService {
     for (const tool of this.lazyArmorTools.listTools()) agentToolNames.add(tool.name);
 
     let compiled: CompiledScenarioPlan | null = null;
+    if (output.result === 'ACTION_PROPOSAL') {
+      try {
+        const action = compileActionProposal(output.actionProposal).proposal;
+        if (action.requiredCapability && !capabilityKeys.has(action.requiredCapability)) errors.push('Unknown ActionProposal capability');
+        if (output.toolRequirements.length) errors.push('ActionProposal tools must be bound by the canonical action adapter');
+      } catch { errors.push('ActionProposal does not satisfy the canonical action contract'); }
+    }
     if (output.result === 'PLAN_DRAFT') {
       const scenario = output.scenarioKey ? scenarioByKey(output.scenarioKey) : null;
       if (!scenario) errors.push(`Scenario ${output.scenarioKey} does not exist`);

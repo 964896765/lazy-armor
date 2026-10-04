@@ -59,6 +59,8 @@ export interface CreationDraftSourceChoice {
 
 /** 持久化的创建流程草稿实体。 */
 export interface CreationDraft {
+  conversationId?: string | null;
+  proposalMessageId?: string | null;
   contractVersion: typeof CREATION_DRAFT_CONTRACT_VERSION;
   draftId: string;
   scenarioKey: string;

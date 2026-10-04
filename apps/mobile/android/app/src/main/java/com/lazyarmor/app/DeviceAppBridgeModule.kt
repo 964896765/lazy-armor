@@ -51,6 +51,40 @@ class DeviceAppBridgeModule(reactContext: ReactApplicationContext) : ReactContex
   private var speechPromise: Promise? = null
   private var speechRecognizer: SpeechRecognizer? = null
 
+  @ReactMethod
+  fun runtimeSettings(promise: Promise) {
+    val prefs = reactApplicationContext.getSharedPreferences("lazy_armor_runtime_settings", android.content.Context.MODE_PRIVATE)
+    val result = Arguments.createMap()
+    result.putBoolean("acquisition", prefs.getBoolean("acquisition", true) && LazyArmorNotificationListener.status(reactApplicationContext).optBoolean("accessGranted"))
+    result.putBoolean("notifications", prefs.getBoolean("notifications", true) && androidx.core.app.NotificationManagerCompat.from(reactApplicationContext).areNotificationsEnabled())
+    result.putBoolean("background", prefs.getBoolean("background", true))
+    result.putString("deviceName", Build.MANUFACTURER + " " + Build.MODEL)
+    promise.resolve(result)
+  }
+
+  @ReactMethod
+  fun setRuntimeSetting(key: String, enabled: Boolean, promise: Promise) {
+    if (key !in listOf("acquisition", "notifications", "background")) { promise.reject("E_SETTING", "Unknown setting"); return }
+    reactApplicationContext.getSharedPreferences("lazy_armor_runtime_settings", android.content.Context.MODE_PRIVATE).edit().putBoolean(key, enabled).commit()
+    if (!enabled && key == "acquisition") {
+      reactApplicationContext.getSharedPreferences("lazy_armor_notification_source", android.content.Context.MODE_PRIVATE).edit().putString("notification_preview_queue", "[]").commit()
+    }
+    if (!enabled && key == "background") {
+      AppReadSessionStore.stop(reactApplicationContext)
+      reactApplicationContext.stopService(Intent(reactApplicationContext, AppReadForegroundService::class.java))
+    }
+    if (!enabled && key == "notifications") androidx.core.app.NotificationManagerCompat.from(reactApplicationContext).cancelAll()
+    promise.resolve(true)
+  }
+
+  @ReactMethod
+  fun openAppNotificationSettings(promise: Promise) {
+    try {
+      reactApplicationContext.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, reactApplicationContext.packageName).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+      promise.resolve(true)
+    } catch (error: Exception) { promise.reject("E_SETTINGS", error) }
+  }
+
   override fun getName(): String = "LazyArmorDeviceBridge"
 
   @ReactMethod
@@ -391,6 +425,7 @@ class DeviceAppBridgeModule(reactContext: ReactApplicationContext) : ReactContex
   @ReactMethod
   fun startAppReadSession(sessionId: String, targetPackage: String, modes: ReadableArray, expiresAt: Double, promise: Promise) {
     try {
+      check(reactApplicationContext.getSharedPreferences("lazy_armor_runtime_settings", android.content.Context.MODE_PRIVATE).getBoolean("background", true)) { "后台服务已关闭" }
       val selectedModes = (0 until modes.size()).mapNotNull { modes.getString(it) }.toSet()
       AppReadSessionStore.start(reactApplicationContext, sessionId, targetPackage, selectedModes, expiresAt.toLong())
       ContextCompat.startForegroundService(reactApplicationContext, Intent(reactApplicationContext, AppReadForegroundService::class.java))

@@ -1,3 +1,4 @@
+import { useRuntimeSettings } from './runtime-settings';
 import { AppState } from 'react-native';
 import { useEffect } from 'react';
 import { executeStructuredRead } from './android-structured-read-executor';
@@ -9,6 +10,8 @@ import { ensureTrustedDevice } from './trusted-device-api';
 
 async function assertDeviceTaskRunnerReady(token: string): Promise<boolean> {
   try {
+    await useRuntimeSettings.getState().refresh();
+    if (!useRuntimeSettings.getState().background) return false;
     await ensureTrustedDevice(token);
     const connections = await api<Array<{ enabled: boolean }>>('/device-app-connections', token);
     return connections.some((connection) => connection.enabled === true);
@@ -26,6 +29,7 @@ const runner = new DeviceTaskRunner({
 const lifecycle = new DeviceTaskRunnerLifecycle({ runner, assertReady: assertDeviceTaskRunnerReady });
 
 export function useDeviceTaskRunnerLifecycle() {
+  const background = useRuntimeSettings(state => state.background);
   const token = useAuthStore((state) => state.token);
   const hydrated = useAuthStore((state) => state.hydrated);
 
@@ -46,5 +50,5 @@ export function useDeviceTaskRunnerLifecycle() {
       subscription.remove();
       lifecycle.stop();
     };
-  }, [token, hydrated]);
+  }, [token, hydrated, background]);
 }

@@ -6,6 +6,7 @@ import {
   buildSourceSelection,
   creationDraftInputSchema,
   scenarioContractV2ByKey,
+  scenarioByKey,
   type CreationDraft,
   type CreationDraftResumeAssessment,
   type CreationDraftResumeState,
@@ -22,6 +23,7 @@ import { newId } from '@lazy-armor/shared';
 import { and, desc, eq, lte } from 'drizzle-orm';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
 import { FactDemandResolverService } from '../fact-demands/fact-demand-resolver.service';
+import type { PlanExecutor } from '../plans/plans.service';
 import type { SaveCreationDraftDto } from './dto';
 
 const CREATION_DRAFT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -77,6 +79,7 @@ export class CreationDraftsService {
     await this.db.insert(creationDrafts).values({
       draftId,
       userId,
+      scopeKey: `scenario:${input.scenarioKey}`,
       scenarioKey: input.scenarioKey,
       scenarioRevision: input.scenarioRevision,
       stage: input.stage,
@@ -91,6 +94,43 @@ export class CreationDraftsService {
       expiresAt,
     });
     return this.toEntity((await this.findById(draftId))!);
+  }
+
+  async bindConversation(userId: string, conversationId: string, tx: PlanExecutor, input: { draftId?: string; scenarioKey?: string } = {}) {
+    const now = new Date();
+    if (input.draftId) {
+      const row = (await tx.select().from(creationDrafts).where(and(eq(creationDrafts.draftId, input.draftId), eq(creationDrafts.userId, userId))).for('update'))[0];
+      if (!row) throw new NotFoundException('CreationDraft not found');
+      if (row.state !== 'ACTIVE' || row.expiresAt <= now) throw new ConflictException('CreationDraft is not active');
+      if (row.conversationId) return { draftId: row.draftId, conversationId: row.conversationId };
+      await tx.update(creationDrafts).set({ scopeKey: `conversation:${conversationId}`, conversationId, updatedAt: now, version: row.version + 1 }).where(eq(creationDrafts.draftId, row.draftId));
+      return { draftId: row.draftId, conversationId };
+    }
+    const scenario = input.scenarioKey ? scenarioByKey(input.scenarioKey) : null;
+    if (input.scenarioKey && !scenario) throw new NotFoundException('Scenario not found');
+    const draftId = newId();
+    await tx.insert(creationDrafts).values({ draftId, userId, scopeKey: `conversation:${conversationId}`, conversationId, scenarioKey: scenario?.key ?? '__pending__', scenarioRevision: scenario?.revision ?? 1, stage: 1, goalJson: { intent: 'DESCRIBE_REQUIREMENT', description: '待补充计划需求', constraints: {} }, subjectJson: null, sourceChoicesJson: [], selectedOfferKey: null, version: 1, state: 'ACTIVE', createdAt: now, updatedAt: now, expiresAt: new Date(now.getTime() + CREATION_DRAFT_TTL_MS) });
+    return { draftId, conversationId };
+  }
+
+  async recordConversationGoal(userId: string, draftId: string, description: string, tx: PlanExecutor) {
+    const row = (await tx.select().from(creationDrafts).where(and(eq(creationDrafts.draftId, draftId), eq(creationDrafts.userId, userId))).for('update'))[0];
+    if (!row || !['ACTIVE', 'COMPLETED'].includes(row.state) || row.expiresAt <= new Date()) throw new ConflictException('CreationDraft expired or is not active');
+    await tx.update(creationDrafts).set({ state: 'ACTIVE', expiresAt: new Date(Date.now() + CREATION_DRAFT_TTL_MS), goalJson: { ...row.goalJson, description: description.slice(0, 500), constraints: { ...(row.goalJson.constraints as Record<string, unknown> ?? {}), userInput: description } }, proposalMessageId: null, stage: 1, version: row.version + 1, updatedAt: new Date() }).where(eq(creationDrafts.draftId, draftId));
+  }
+
+  async recordConversationProposal(userId: string, draftId: string, messageId: string, proposal: { scenarioKey?: string | null; scenarioRevision?: number | null; intentSummary?: string }, tx: PlanExecutor) {
+    const row = (await tx.select().from(creationDrafts).where(and(eq(creationDrafts.draftId, draftId), eq(creationDrafts.userId, userId))).for('update'))[0];
+    if (!row || row.state !== 'ACTIVE' || row.expiresAt <= new Date()) throw new ConflictException('CreationDraft expired or is not active');
+    const scenario = proposal.scenarioKey ? scenarioByKey(proposal.scenarioKey) : null;
+    if (!scenario || scenario.revision !== proposal.scenarioRevision) throw new ConflictException('Scenario revision changed');
+    await tx.update(creationDrafts).set({ scenarioKey: scenario.key, scenarioRevision: scenario.revision, goalJson: { ...row.goalJson, description: proposal.intentSummary?.slice(0, 500) || row.goalJson.description }, proposalMessageId: messageId, stage: 5, version: row.version + 1, updatedAt: new Date() }).where(eq(creationDrafts.draftId, draftId));
+  }
+
+  async completeConversation(userId: string, draftId: string, messageId: string, tx: PlanExecutor) {
+    const row = (await tx.select().from(creationDrafts).where(and(eq(creationDrafts.draftId, draftId), eq(creationDrafts.userId, userId))).for('update'))[0];
+    if (!row || row.state !== 'ACTIVE' || row.expiresAt <= new Date() || row.proposalMessageId !== messageId) throw new ConflictException('CreationDraft changed or expired; regenerate the proposal');
+    await tx.update(creationDrafts).set({ state: 'COMPLETED', version: row.version + 1, updatedAt: new Date() }).where(eq(creationDrafts.draftId, draftId));
   }
 
   async list(userId: string): Promise<CreationDraft[]> {
@@ -123,7 +163,7 @@ export class CreationDraftsService {
     const contract = scenarioContractV2ByKey(draft.scenarioKey);
     if (!contract || contract.scenario.revision !== draft.scenarioRevision) {
       state = 'NEEDS_RECONFIRMATION';
-      reasonCodes.push('SCENARIO_CONTRACT_CHANGED');
+      reasonCodes.push(draft.scenarioKey === '__pending__' ? 'SCENARIO_NOT_RESOLVED' : 'SCENARIO_CONTRACT_CHANGED');
     } else if (!subject) {
       state = 'NEEDS_SUBJECT';
     } else {
@@ -246,7 +286,7 @@ export class CreationDraftsService {
 
   private async findByKey(userId: string, scenarioKey: string) {
     return (await this.db.select().from(creationDrafts)
-      .where(and(eq(creationDrafts.userId, userId), eq(creationDrafts.scenarioKey, scenarioKey))).limit(1))[0];
+      .where(and(eq(creationDrafts.userId, userId), eq(creationDrafts.scopeKey, `scenario:${scenarioKey}`))).limit(1))[0];
   }
 
   private async findById(draftId: string) {
@@ -264,6 +304,8 @@ export class CreationDraftsService {
     return {
       contractVersion: CREATION_DRAFT_CONTRACT_VERSION,
       draftId: row.draftId,
+      conversationId: row.conversationId,
+      proposalMessageId: row.proposalMessageId,
       scenarioKey: row.scenarioKey,
       scenarioRevision: row.scenarioRevision,
       stage: row.stage as CreationDraftStage,

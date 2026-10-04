@@ -32,7 +32,7 @@ export class McpServerRegistryService implements OnModuleInit {
   private client!: McpClient;
 
   onModuleInit() {
-    this.seedFixtureServers();
+    if (process.env.NODE_ENV === 'test') this.seedFixtureServers();
     this.client = new McpClient(
       {
         allowedServers: [...this.transports.keys()],
@@ -58,6 +58,7 @@ export class McpServerRegistryService implements OnModuleInit {
   registerServer(descriptor: McpServerDescriptor, transport: McpTransport) {
     this.transports.set(descriptor.serverId, transport);
     this.descriptors.set(descriptor.serverId, descriptor);
+    this.client = new McpClient({ allowedServers: [...this.transports.keys()], timeoutMs: 5000, maxResponseBytes: 1000000, maxRequestBytes: 256000, allowSideEffect: false }, this.transports);
   }
 
   async discover(serverId: string): Promise<McpServerDescriptor> {

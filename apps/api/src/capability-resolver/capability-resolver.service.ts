@@ -1,7 +1,7 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { resolveCapability, type ResolutionCandidate } from '@lazy-armor/connector-sdk';
 import { canonicalStringify } from '@lazy-armor/plan-schema';
-import { capabilityResolutionDecisions, connections, connectors, connectionCapabilityGrants, providerCapabilityHealth, plans, planVersions } from '@lazy-armor/database';
+import { planActions, capabilityResolutionDecisions, connections, connectors, connectionCapabilityGrants, providerCapabilityHealth, plans, planVersions } from '@lazy-armor/database';
 import { newId } from '@lazy-armor/shared';
 import { createHash } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
@@ -13,6 +13,29 @@ import { ResolutionEvidenceService } from './resolution-evidence.service';
 
 @Injectable()
 export class CapabilityResolverService {
+  /** Local capabilities are bound to an owned immutable action, never a fake connection. */
+  async resolveLocalNotification(userId: string, planVersionId: string, requestKey: string) {
+    const owned = (await this.db.select({ id: planVersions.id }).from(planVersions).innerJoin(plans, and(eq(plans.id, planVersions.planId), eq(plans.userId, userId))).where(eq(planVersions.id, planVersionId)).limit(1))[0];
+    const action = (await this.db.select().from(planActions).where(eq(planActions.planVersionId, planVersionId)))[0];
+    if (!owned || !action || action.actionType !== 'notify' || action.connectionId || action.configJson?.channel !== 'in_app') throw new ConflictException('No local notification capability binding');
+    const input = { planVersionId, requestKey, localActionId: action.id, actionHash: hash({ actionType: action.actionType, config: action.configJson }), capability: 'internal.notification.in_app' };
+    const requestHash = hash(input); const prior = await this.findRequest(userId, requestKey);
+    if (prior) { if (prior.requestHash !== requestHash || hash(prior.decisionJson) !== prior.decisionHash) throw new ConflictException('Local capability binding changed'); return prior; }
+    const decision = { status: 'RESOLVED', selectedCandidateId: 'internal.notification.in_app', authority: 'NotificationService', actionId: action.id };
+    const row = { id: newId(), userId, planVersionId, requestKey, requestHash, decisionHash: hash(decision), inputJson: input, decisionJson: decision, createdAt: new Date() };
+    try { await this.db.transaction(async tx => {
+      await tx.insert(capabilityResolutionDecisions).values(row);
+      await this.audit.append({ actorType: 'user', actorUserId: userId, userId, action: 'CAPABILITY_RESOLUTION_DECIDED', resourceType: 'capability_resolution', resourceId: row.id, correlationId: planVersionId, after: decision, source: 'api', result: 'success' }, tx);
+    }); } catch (error) {
+      let cause: unknown = error; let duplicate = false;
+      for (let i = 0; i < 5 && cause && typeof cause === 'object'; i++) { const item = cause as { code?: string; cause?: unknown }; if (item.code === 'ER_DUP_ENTRY') duplicate = true; cause = item.cause; }
+      if (!duplicate) throw error;
+      const saved = await this.findRequest(userId, requestKey);
+      if (!saved || saved.requestHash !== requestHash || hash(saved.decisionJson) !== saved.decisionHash) throw new ConflictException('Local capability binding changed');
+      return saved;
+    }
+    return row;
+  }
   constructor(@Inject(DATABASE) private readonly db: InjectedDatabase,
     private readonly manifests: ProviderCapabilityRegistryService, private readonly audit: AuditService,
     private readonly evidence: ResolutionEvidenceService) {}

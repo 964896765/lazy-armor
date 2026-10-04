@@ -1,4 +1,8 @@
 import { Module } from '@nestjs/common';
+import { ExecutionModule } from '../execution/execution.module';
+import { ConnectorsModule } from '../connectors/connectors.module';
+import { CapabilityResolverModule } from '../capability-resolver/capability-resolver.module';
+import { McpExecutionRegistrationService } from './mcp-execution-registration.service';
 import { AuditModule } from '../audit/audit.module';
 import { ConnectionsModule } from '../connections/connections.module';
 import { CredentialsModule } from '../credentials/credentials.module';
@@ -13,9 +17,9 @@ import { McpClientService } from './mcp-client.service';
 import { McpServerRegistryService } from './mcp-server-registry.service';
 
 @Module({
-  imports: [AuditModule, ConnectionsModule, CredentialsModule, PlansModule, ProviderCapabilitiesModule, RealityPipelineModule, RuntimeCatalogModule],
+  imports: [ExecutionModule, ConnectorsModule, CapabilityResolverModule, AuditModule, ConnectionsModule, CredentialsModule, PlansModule, ProviderCapabilitiesModule, RealityPipelineModule, RuntimeCatalogModule],
   controllers: [LazyArmorMcpController],
-  providers: [McpServerRegistryService, McpClientService, McpActionAdapter, LazyArmorMcpToolService],
-  exports: [McpServerRegistryService, McpClientService, McpActionAdapter, LazyArmorMcpToolService],
+  providers: [McpExecutionRegistrationService, McpServerRegistryService, McpClientService, McpActionAdapter, LazyArmorMcpToolService],
+  exports: [McpExecutionRegistrationService, McpServerRegistryService, McpClientService, McpActionAdapter, LazyArmorMcpToolService],
 })
 export class McpModule {}

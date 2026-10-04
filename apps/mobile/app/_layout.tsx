@@ -57,6 +57,8 @@ export default function RootLayout() {
           <Stack.Screen name="privacy-center/data" options={{ headerShown: false }} />
           <Stack.Screen name="privacy-center/permissions" options={{ headerShown: false }} />
           <Stack.Screen name="profile" options={{ headerShown: false }} />
+          <Stack.Screen name="profile-edit" options={{ headerShown: false }} />
+          <Stack.Screen name="settings" options={{ headerShown: false }} />
           <Stack.Screen name="change-password" options={{ headerShown: false }} />
           <Stack.Screen name="oauth/callback" options={{ title: '连接服务' }} />
           <Stack.Screen name="file-import" options={{ title: '导入账单文件' }} />

@@ -1,5 +1,5 @@
 import { ConflictException, Inject, Injectable } from '@nestjs/common';
-import { actionAdapterBindings, connections, connectors, executionSteps, reconciliationCases, sideEffectOperations, verificationEvidence, verificationPolicies } from '@lazy-armor/database';
+import { notifications, executionEvents, actionAdapterBindings, connections, connectors, executionSteps, reconciliationCases, sideEffectOperations, verificationEvidence, verificationPolicies } from '@lazy-armor/database';
 import { catalogHash, CONNECTOR_RESPONSE_POLICY, evaluateVerification, verificationContractHash, verificationPolicyHash,
   type RuntimeResultState, type VerificationContract, type VerificationMethod, type VerificationPolicy } from '@lazy-armor/plan-schema';
 import { newId } from '@lazy-armor/shared';
@@ -14,6 +14,16 @@ type Operation = typeof sideEffectOperations.$inferSelect;
 
 @Injectable()
 export class VerificationService {
+  async verifyLocalNotification(userId: string, executionId: string, stepId: string, stepOrder: number, output: Record<string, unknown>) {
+    const row = (await this.db.select().from(notifications).where(and(eq(notifications.userId, userId), eq(notifications.executionId, executionId), eq(notifications.dedupeKey, `execution:${executionId}:step:${stepOrder}`))).limit(1))[0];
+    if (!row || output.notified !== true || row.title !== output.title || row.body !== output.body) throw new ConflictException('Persisted notification read-back did not match the requested effect');
+    const evidence = { method: 'LOCAL_READ_BACK', resultState: 'SUCCEEDED', notificationId: row.id, contentHash: catalogHash({ title: row.title, body: row.body }), verifiedAt: new Date().toISOString() };
+    await this.db.transaction(async tx => {
+      await tx.insert(executionEvents).values({ id: newId(), executionId, executionStepId: stepId, eventType: 'local_effect_verified', dataJson: evidence, createdAt: new Date() });
+      await this.audit.append({ actorType: 'worker', actorUserId: null, userId, executionId, action: 'LOCAL_EFFECT_VERIFIED', resourceType: 'execution_step', resourceId: stepId, correlationId: executionId, after: evidence, source: 'execution_worker', result: 'success' }, tx);
+    });
+    return evidence;
+  }
   constructor(@Inject(DATABASE) private readonly db: InjectedDatabase, private readonly registry: VerificationPolicyRegistry,
     private readonly sanitizer: SnapshotSanitizer, private readonly audit: AuditService) {}
 
@@ -47,6 +57,8 @@ export class VerificationService {
   }
 
   async recordResponse(operation: Operation, ok: boolean, data: Record<string, unknown>, key: string, tx: VerificationTransaction) {
+    const frozen = await this.policyForOperation(operation, tx);
+    if (frozen.key.startsWith('mcp-read-back/')) return this.record(operation, frozen, 'OPERATION_LOOKUP', data, key, tx);
     // ConnectorResult is the existing typed acknowledgement contract. The
     // frozen provider policy governs read-back when that acknowledgement is
     // unavailable or ambiguous; it must not reinterpret a completed response.

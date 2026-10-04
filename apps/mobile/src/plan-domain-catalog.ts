@@ -2,48 +2,25 @@ export interface PlanCatalogGroup { title?: string; templates: readonly string[]
 export interface PlanDomainCatalog { key: string; label: string; english: string; description: string; groups: readonly PlanCatalogGroup[] }
 
 export const PLAN_DOMAIN_CATALOG: readonly PlanDomainCatalog[] = [
-  { key: 'life', label: '日常', english: 'Life', description: '管理个人日常节奏、提醒和事务秩序', groups: [{ templates: [
-    '今日重点安排', '每日提醒', '每周计划', '月度计划', '待办整理', '日历整理', '通知整理', '文件整理', '出门前准备', '重要事项准备', '周期事项跟进', '截止日期守护', '生活缴费提醒', '订阅到期提醒', '日常事务周报',
-  ] }] },
-  { key: 'living', label: '生活', english: 'Living', description: '帮助用户减少生活决策成本', groups: [{ templates: [
-    '生活采购清单', '周末去哪儿', '冰箱食材盘点', '一周三餐安排', '附近新店推荐', '城市散步路线', '本地活动精选', '近郊出游推荐', '通信套餐核对', '约会方案', '朋友聚会安排', '下班后小安排', '快递退换货提醒', '独处恢复计划', '发票保修整理', '本地新鲜去处',
-  ] }] },
-  { key: 'family', label: '家庭', english: 'Family', description: '管理家庭成员、家庭协作和家庭事务', groups: [{ templates: [
-    '家庭日程协调', '家务分工安排', '家庭采购清单', '全家快递汇总', '家庭晚餐计划', '孩子接送安排', '家校消息摘要', '孩子活动准备', '亲子活动推荐', '家人复诊用药', '家人体检安排', '宠物健康提醒', '家庭账单检查', '家庭消费小结', '家电维护检查', '家人纪念日准备', '伴侣约会计划', '父母近况联系', '家庭照片整理', '家庭维修跟进',
-  ] }] },
-  { key: 'health', label: '健康', english: 'Health', description: '管理身体状态和健康周期', groups: [{ templates: [
-    '健康计划', '运动计划', '饮食计划', '睡眠改善计划', '减脂计划', '体重变化跟进', '运动进度跟进', '睡眠跟进', '用药提醒', '复诊提醒', '体检计划', '体检准备', '就医准备', '检查报告整理', '健康记录整理', '健康指标趋势', '久坐提醒', '健康周报', '健康月报',
-  ] }] },
-  { key: 'finance', label: '财务', english: 'Finance', description: '管理资金、消费和投资信息', groups: [
-    { title: '日常财务', templates: ['月度账单汇总', '水电燃气账单检查', '话费异常守护', '订阅费用检查', '消费分类整理', '家庭支出汇总', '财务资料整理', '月度财务总结'] },
-    { title: '投资研究', templates: ['市场行情速览', '持仓异动监控', '公司公告监控', '投资账户总结', '持仓风险检查', '股票观察清单', '公司基本面追踪', '财报前简报', '财报后分析', '宏观经济简报', '行业板块分析', '资产配置分析', '基金 ETF 持仓', '公司行动日历', '投资研究报告'] },
-  ] },
-  { key: 'work', label: '工作', english: 'Work', description: '管理职业任务和工作流程', groups: [{ templates: [
-    '今日工作安排', '周工作计划', '项目计划', '项目进度跟进', '客户事项跟进', '协作事项跟进', '待回复事项检查', '邮件整理', '会议安排', '会议准备', '会议记录整理', '汇报准备', '工作待办整理', '工作内容分发', '日报生成', '周报生成', '项目总结', '内容发布计划', '多平台内容分发',
-  ] }] },
-  { key: 'study', label: '学习', english: 'Study', description: '管理知识积累和能力提升', groups: [{ templates: [
-    '学习计划', '课程进度跟进', '外语练习', '单词复习', '阅读计划', '待读清单', '读书笔记整理', '知识卡片整理', '论文精读清单', '练习题生成', '错题分析', '概念讲解', '考试复习计划', '新工具入门', '研究问题清单', '学习报告',
-  ] }] },
-  { key: 'information', label: '信息', english: 'Information', description: '管理外部信息获取和研究', groups: [{ templates: [
-    'AI 动态简报', '行业研究简报', '公司动态监控', '政策变化简报', '技术更新简报', '主题研究追踪', '专题研究报告', '新论文精选', '收藏文章摘要', '信息来源核查', '舆情变化监控', '行业活动精选', '公开数据更新', '信息源清理', '热点事件追踪', '每日信息速览', '每周信息总结',
-  ] }] },
-  { key: 'travel', label: '出行', english: 'Travel', description: '管理旅行和移动场景', groups: [{ templates: [
-    '家庭旅行计划', '旅行预订汇总', '旅行计划手册', '旅行攻略制定', '目的地研究报告', '行程路线优化', '机酒价格监控', '航班变化监控', '火车票行程整理', '转机方案', '签证材料准备', '出发前检查', '行李打包清单', '落地信息包', '当地餐厅清单', '旅行安全简报', '天气变化跟进', '旅行预算结算', '旅行结束整理',
-  ] }] },
-  { key: 'social', label: '人际', english: 'Social', description: '管理人与人的连接', groups: [{ templates: [
-    '待回复消息整理', '承诺事项跟进', '久未联系好友', '新联系人跟进', '重要谈话准备', '冲突沟通草稿', '活动后跟进', '一对一交流准备', '感谢消息草稿', '生日纪念日准备', '礼物建议报告', '多人时间协调', '群聊结论整理', '聚会邀请草稿', '人际关系回顾',
-  ] }] },
-  { key: 'entertainment', label: '兴趣', english: 'Entertainment', description: '管理娱乐、兴趣和个人爱好', groups: [{ templates: [
-    '电影推荐', '剧集更新提醒', '播客更新跟进', '演出展览精选', '演出票务监控', '游戏推荐', '游戏发售日历', '游戏折扣监控', '游戏更新摘要', '新游戏口碑', '游戏攻略包', '球队赛程', '比赛日简报', '比赛战报', '世界杯战报', 'F1 比赛周指南', '体育赛事日历', '户外出发检查', '兴趣收藏整理', '个人创作计划',
-  ] }] },
-  { key: 'asset', label: '资产', english: 'Asset', description: '管理长期拥有的资产', groups: [{ templates: [
-    '房屋维护计划', '房租物业提醒', '家电保养计划', '车辆保养计划', '车辆年检提醒', '车辆保险提醒', '油耗记录整理', '设备耗材检查', '设备保养计划', '设备故障跟进', '数字账号整理', '账号安全检查', '密码更新提醒', '软件订阅整理', '家庭资产清单', '重要资产到期提醒',
-  ] }] },
-  { key: 'identity', label: '事务', english: 'Identity', description: '管理重要身份、文件和流程', groups: [{ templates: [
-    '身份证到期提醒', '护照到期提醒', '驾驶证换证提醒', '签证材料准备', '证件资料整理', '政务事项跟进', '办事材料清单', '合同到期提醒', '合同事项跟进', '合同资料整理', '法律事项资料准备', '报销材料整理', '发票整理', '申报事项准备', '重要材料归档', '办理进度跟进',
-  ] }] },
-] as const;
+  { key: "life", label: "日常", english: "life", description: "日常核心计划，由 AI 根据需求个性化", groups: [{ templates: ["今日重点","待办与提醒","日历整理","通知整理","文件整理","周期事项跟进","截止日期守护","生活缴费与订阅提醒"] }] },
+  { key: "living", label: "生活", english: "living", description: "生活核心计划，由 AI 根据需求个性化", groups: [{ templates: ["生活采购","冰箱与食材管理","一周饮食安排","周末与休闲安排","本地活动与新店推荐","聚会与约会安排","快递退换货跟进","发票、保修与生活资料整理"] }] },
+  { key: "family", label: "家庭", english: "family", description: "家庭核心计划，由 AI 根据需求个性化", groups: [{ templates: ["家庭日程协调","家务与家庭分工","家庭采购与补给","家庭快递管理","孩子接送与活动","家校消息整理","家人健康与复诊","家庭账单与消费","家庭维修与家电维护"] }] },
+  { key: "health", label: "健康", english: "health", description: "健康核心计划，由 AI 根据需求个性化", groups: [{ templates: ["健康改善计划","运动计划","饮食与体重管理","睡眠改善","用药与复诊提醒","体检与就医准备","健康记录与指标分析","健康周期总结"] }] },
+  { key: "finance", label: "财务", english: "finance", description: "财务核心计划，由 AI 根据需求个性化", groups: [{ templates: ["账单汇总","固定账单检查","消费分类与支出分析","订阅费用管理","财务资料整理","月度财务复盘","投资账户与持仓跟踪","公司与财报研究","市场与行业分析","资产配置与投资研究"] }] },
+  { key: "work", label: "工作", english: "work", description: "工作核心计划，由 AI 根据需求个性化", groups: [{ templates: ["今日工作安排","周工作计划","项目管理","客户与协作跟进","工作消息与邮件整理","会议管理","汇报与总结","工作待办整理","内容发布与多平台分发"] }] },
+  { key: "study", label: "学习", english: "study", description: "学习核心计划，由 AI 根据需求个性化", groups: [{ templates: ["学习计划","课程进度跟进","外语学习","阅读与笔记","知识整理","练习与错题分析","考试复习","研究与学习报告"] }] },
+  { key: "information", label: "信息", english: "information", description: "信息核心计划，由 AI 根据需求个性化", groups: [{ templates: ["每日信息简报","行业研究","公司动态跟踪","政策与规则变化","技术与 AI 动态","主题长期追踪","信息核查与来源整理","热点与舆情跟踪"] }] },
+  { key: "travel", label: "出行", english: "travel", description: "出行核心计划，由 AI 根据需求个性化", groups: [{ templates: ["旅行计划","行程与预订整理","目的地攻略","路线优化","机票酒店价格跟踪","航班与交通变化","签证与出发准备","行李与落地信息","旅行预算与结束整理"] }] },
+  { key: "social", label: "人际", english: "social", description: "人际核心计划，由 AI 根据需求个性化", groups: [{ templates: ["待回复与承诺跟进","联系人关系维护","重要谈话准备","沟通与消息草稿","聚会与多人协调","生日纪念日与礼物","人际关系回顾"] }] },
+  { key: "entertainment", label: "兴趣", english: "entertainment", description: "兴趣核心计划，由 AI 根据需求个性化", groups: [{ templates: ["影视推荐与更新","播客与内容订阅","演出展览与票务","游戏推荐与更新","游戏价格与攻略","体育赛事跟踪","户外活动准备","兴趣收藏与个人创作"] }] },
+  { key: "asset", label: "资产", english: "asset", description: "资产核心计划，由 AI 根据需求个性化", groups: [{ templates: ["房屋维护","房租物业管理","家电保养","车辆维护","车辆证照与保险","设备耗材与维护","数字账号与安全","家庭资产与到期事项"] }] },
+  { key: "identity", label: "事务", english: "identity", description: "事务核心计划，由 AI 根据需求个性化", groups: [{ templates: ["证件到期与换证","签证与证件材料","政务事项办理","办事材料准备","合同管理","法律事项资料","报销、发票与申报","重要资料归档与办理跟进"] }] },
+];
 
 export function catalogTemplateCount(domain: PlanDomainCatalog) {
   return domain.groups.reduce((total, group) => total + group.templates.length, 0);
+}
+
+export function coreTemplateIntent(domain: PlanDomainCatalog, name: string) {
+  return '我想创建「' + domain.label + '」领域的「' + name + '」计划。请先询问我的具体目标、范围、周期与已有资源，再个性化细化；未经确认不要执行操作。';
 }

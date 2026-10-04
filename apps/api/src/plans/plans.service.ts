@@ -64,11 +64,11 @@ export class PlansService {
   }
 
   /** Used by orchestration flows that must atomically persist a Plan and related authority records. */
-  async createInTransaction(userId: string, input: PlanDefinitionInput | PlanDefinition, executor: PlanExecutor) {
+  async createInTransaction(userId: string, input: PlanDefinitionInput | PlanDefinition, executor: PlanExecutor, executionScope: 'PLAN' | 'ONCE' = 'PLAN') {
     const parsed = this.parse(input);
     const planId = newId();
     const now = new Date();
-    await executor.insert(plans).values({ id: planId, userId, status: 'draft', currentVersionId: null,
+    await executor.insert(plans).values({ id: planId, userId, executionScope, status: 'draft', currentVersionId: null,
       activeVersionId: null, createdAt: now, updatedAt: now, archivedAt: null });
     const resolved = await this.resolveReferences(executor, userId, parsed, { allowMissingConnections: true });
     const versionId = await this.insertVersion(executor, userId, planId, 1, resolved, now);
@@ -115,14 +115,14 @@ export class PlansService {
 
   async list(userId: string) {
     const rows = await this.db.select().from(plans)
-      .where(eq(plans.userId, userId))
+      .where(and(eq(plans.userId, userId), eq(plans.executionScope, 'PLAN')))
       .orderBy(desc(plans.updatedAt));
     return Promise.all(rows.map((row) => this.toResponse(userId, row)));
   }
 
   async listPage(userId: string, query: CursorPageDto) {
     const cursor = decodeCursor(query.cursor);
-    const filters = [eq(plans.userId, userId)];
+    const filters = [eq(plans.userId, userId), eq(plans.executionScope, 'PLAN')];
     if (cursor) filters.push(or(lt(plans.updatedAt, cursor.createdAt), and(eq(plans.updatedAt, cursor.createdAt), lt(plans.id, cursor.id)))!);
     const rows = await this.db.select().from(plans).where(and(...filters))
       .orderBy(desc(plans.updatedAt), desc(plans.id)).limit(query.limit + 1);
@@ -164,24 +164,27 @@ export class PlansService {
   }
 
   async createVersion(userId: string, planId: string, input: PlanDefinitionInput) {
+    const created = await this.db.transaction(tx => this.createVersionInTransaction(userId, planId, input, tx));
+    return this.getVersion(userId, planId, created.versionNumber);
+  }
+
+  async createVersionInTransaction(userId: string, planId: string, input: PlanDefinitionInput, tx: PlanExecutor, expectedCurrentVersionId?: string) {
     const parsed = this.parse(input);
-    let createdVersion = 0;
-    await this.db.transaction(async (tx) => {
-      const plan = await this.getOwnedPlan(userId, planId, tx, true);
-      if (plan.status === 'archived') throw new ConflictException('Archived plans cannot receive new versions');
-      const current = plan.currentVersionId
-        ? await tx.select({ versionNumber: planVersions.versionNumber }).from(planVersions)
-          .where(and(eq(planVersions.id, plan.currentVersionId), eq(planVersions.planId, planId))).limit(1)
-        : [];
-      if (plan.currentVersionId && !current[0]) throw new ConflictException('Current version pointer is invalid');
-      createdVersion = (current[0]?.versionNumber ?? 0) + 1;
-      const resolved = await this.resolveReferences(tx, userId, parsed, { allowMissingConnections: true });
-      const now = new Date();
-      const versionId = await this.insertVersion(tx, userId, planId, createdVersion, resolved, now);
-      await tx.update(plans).set({ currentVersionId: versionId, updatedAt: now }).where(eq(plans.id, planId));
-      await this.audit.append({ actorType: 'user', actorUserId: userId, action: 'PLAN_VERSION_CREATED', resourceType: 'plan_version', resourceId: versionId, userId, correlationId: planId, causationId: versionId, changeSummary: `Plan ${planId} version ${createdVersion} created`, source: 'api', result: 'success' }, tx);
-    });
-    return this.getVersion(userId, planId, createdVersion);
+    const plan = await this.getOwnedPlan(userId, planId, tx, true);
+    if (plan.status === 'archived') throw new ConflictException('Archived plans cannot receive new versions');
+    if (expectedCurrentVersionId && plan.currentVersionId !== expectedCurrentVersionId) throw new ConflictException('Plan changed since the proposal was generated');
+    const current = plan.currentVersionId
+      ? await tx.select({ versionNumber: planVersions.versionNumber }).from(planVersions)
+        .where(and(eq(planVersions.id, plan.currentVersionId), eq(planVersions.planId, planId))).limit(1)
+      : [];
+    if (plan.currentVersionId && !current[0]) throw new ConflictException('Current version pointer is invalid');
+    const versionNumber = (current[0]?.versionNumber ?? 0) + 1;
+    const resolved = await this.resolveReferences(tx, userId, parsed, { allowMissingConnections: true });
+    const now = new Date();
+    const versionId = await this.insertVersion(tx, userId, planId, versionNumber, resolved, now);
+    await tx.update(plans).set({ currentVersionId: versionId, updatedAt: now }).where(eq(plans.id, planId));
+    await this.audit.append({ actorType: 'user', actorUserId: userId, action: 'PLAN_VERSION_CREATED', resourceType: 'plan_version', resourceId: versionId, userId, correlationId: planId, causationId: versionId, changeSummary: `Plan ${planId} version ${versionNumber} created`, source: 'api', result: 'success' }, tx);
+    return { planId, planVersionId: versionId, versionNumber, definition: resolved };
   }
 
   async applyVersion(userId: string, planId: string, versionNumber: number) {
@@ -500,6 +503,7 @@ export class PlansService {
     if (lock && 'for' in query) query = query.for('update') as typeof query;
     const rows = await query;
     if (!rows[0]) throw new NotFoundException('Plan not found');
+    if (lock && rows[0].executionScope === 'ONCE') throw new ConflictException('One-time execution versions are immutable; create a new proposal');
     return rows[0];
   }
 

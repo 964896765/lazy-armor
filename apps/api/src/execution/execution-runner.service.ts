@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { executionSteps, executions, planActions, plans } from '@lazy-armor/database';
+import { VerificationService } from './verification.service';
+import { conversationOnceRequests, executionSteps, executions, planActions, plans } from '@lazy-armor/database';
 import type { NormalizedAction } from '@lazy-armor/plan-schema';
 import { and, asc, eq } from 'drizzle-orm';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
@@ -55,6 +56,7 @@ export class ExecutionRunner {
     private readonly telemetry: ObservabilityService,
     private readonly actionAdapter: ActionAdapter,
     private readonly truthGuard: TruthHandoffGuard,
+    private readonly verification: VerificationService,
   ) {}
 
   async run(executionId: string, workerToken: string, runContext?: ExecutionRunContext): Promise<RunnerOutcome> {
@@ -83,7 +85,7 @@ export class ExecutionRunner {
       }
 
       try {
-      if (execution.planStatus !== 'active') return this.cancelAtBoundary(executionId, 'running', await this.successCount(executionId), 'PLAN_NOT_ACTIVE');
+      if (!(await this.planCanRun(execution))) return this.cancelAtBoundary(executionId, 'running', await this.successCount(executionId), 'PLAN_NOT_ACTIVE');
       const assembled = await this.assembler.assembleById(execution.userId, execution.planId, execution.planVersionId);
       if (assembled.version.planId !== execution.planId || assembled.computedHash !== execution.definitionHash || assembled.version.definitionHash !== execution.definitionHash) {
         return this.fail(executionId, 'running', 'PLAN_DEFINITION_INTEGRITY_ERROR', 'Plan Definition integrity verification failed');
@@ -119,7 +121,7 @@ export class ExecutionRunner {
         execution = await this.load(executionId);
         const succeeded = await this.successCount(executionId);
         if (execution.cancellationRequestedAt) return this.cancelAtBoundary(executionId, 'running', succeeded);
-        if (execution.planStatus !== 'active') return this.cancelAtBoundary(executionId, 'running', succeeded, 'PLAN_NOT_ACTIVE');
+        if (!(await this.planCanRun(execution))) return this.cancelAtBoundary(executionId, 'running', succeeded, 'PLAN_NOT_ACTIVE');
 
         let step = (await this.db.select().from(executionSteps).where(and(eq(executionSteps.executionId, executionId), eq(executionSteps.stepOrder, actionDefinition.stepOrder))).limit(1))[0];
         if (step?.status === 'succeeded') continue;
@@ -148,6 +150,7 @@ export class ExecutionRunner {
         this.telemetry.event('log', 'execution_step_started', { executionStepId: step.id, stepOrder: step.stepOrder, attempt });
         try {
           const output = await this.telemetry.runWithContext({ executionStepId: step.id, attempt }, () => this.actions.execute(execution.userId, executionId, actionDefinition as NormalizedAction, context, gate.effectiveRisk));
+          if (execution.executionScope === 'ONCE' && !actionDefinition.connectionId) output.localVerification = await this.verification.verifyLocalNotification(execution.userId, executionId, step.id, step.stepOrder, output);
           context = { ...context, ...output };
           await this.stepStates.transition(step.id, 'succeeded', { outputSnapshotJson: this.sanitizer.sanitize(output), finishedAt: new Date() });
           await this.events.append(executionId, 'step_succeeded', { attempt }, step.id);
@@ -210,6 +213,7 @@ export class ExecutionRunner {
       definitionHash: executions.definitionHash, requestId: executions.requestId, triggerPayloadJson: executions.triggerPayloadJson,
       status: executions.status, cancellationRequestedAt: executions.cancellationRequestedAt, startedAt: executions.startedAt,
       planStatus: plans.status,
+      executionScope: plans.executionScope,
       resolvedRetryPolicyJson: executions.resolvedRetryPolicyJson,
       resolvedFallbackPolicyJson: executions.resolvedFallbackPolicyJson,
       resolvedApprovalPolicyJson: executions.resolvedApprovalPolicyJson,
@@ -217,6 +221,12 @@ export class ExecutionRunner {
     }).from(executions).innerJoin(plans, and(eq(executions.planId, plans.id), eq(executions.userId, plans.userId))).where(eq(executions.id, id)).limit(1);
     if (!rows[0]) throw new Error('Execution ownership or Plan relation is invalid');
     return rows[0];
+  }
+  private async planCanRun(execution: { userId: string; planId: string; planVersionId: string; requestId: string; planStatus: string; executionScope: string }) {
+    if (execution.executionScope === 'PLAN') return execution.planStatus === 'active';
+    if (execution.executionScope !== 'ONCE' || execution.planStatus !== 'draft' || !execution.requestId.startsWith('once:')) return false;
+    const task = (await this.db.select().from(conversationOnceRequests).where(and(eq(conversationOnceRequests.id, execution.requestId.slice(5)), eq(conversationOnceRequests.userId, execution.userId), eq(conversationOnceRequests.planId, execution.planId), eq(conversationOnceRequests.planVersionId, execution.planVersionId))).limit(1))[0];
+    return Boolean(task?.proposalMessageId);
   }
 
   private async hydrateTruthContext(execution: { userId: string; resolvedRiskSnapshotJson: Record<string, unknown> | null }): Promise<Record<string, unknown>> {

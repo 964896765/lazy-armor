@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { resolveApiUrl, resolveAppEnv } from './api';
+import { api, resolveApiUrl, resolveAppEnv } from './api';
 
 describe('API environment resolution', () => {
   afterEach(() => {
@@ -47,4 +47,20 @@ describe('API environment resolution', () => {
     expect(resolveAppEnv()).toBe('staging');
     expect(resolveApiUrl()).toBe('https://staging-api.lazyarmor.example');
   });
+});
+describe('request deadlines', () => {
+ afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
+ it('allows a slow AI response beyond the ordinary request deadline', async () => {
+  vi.useFakeTimers(); let requestSignal: AbortSignal | undefined;
+  vi.stubGlobal('fetch', vi.fn((_url, init) => { requestSignal = init.signal; return new Promise(resolve => setTimeout(() => resolve({ ok: true, status: 200, json: async () => ({ answer: 'ready' }) }), 5000)); }));
+  const result = api('/conversations/test/messages', 'test-token', { method: 'POST' });
+  await vi.advanceTimersByTimeAsync(4000); expect(requestSignal?.aborted).toBe(false);
+  await vi.advanceTimersByTimeAsync(1000); expect(await result).toEqual({ answer: 'ready' });
+ });
+ it('still aborts an ordinary stalled request', async () => {
+  vi.useFakeTimers(); let requestSignal: AbortSignal | undefined;
+  vi.stubGlobal('fetch', vi.fn((_url, init) => { requestSignal = init.signal; return new Promise((_resolve, reject) => init.signal.addEventListener('abort', () => reject(new Error('aborted')))); }));
+  const result = api('/timeline', 'test-token').catch(error => error.message);
+  await vi.advanceTimersByTimeAsync(3000); expect(requestSignal?.aborted).toBe(true); expect(await result).toBe('aborted');
+ });
 });

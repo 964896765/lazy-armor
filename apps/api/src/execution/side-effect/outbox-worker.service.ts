@@ -1,6 +1,6 @@
 import { Inject, Injectable, OnApplicationShutdown, OnModuleInit } from '@nestjs/common';
 import { ConnectorError, ConnectorRegistry, resolveSideEffectContract, type SideEffectContract } from '@lazy-armor/connector-sdk';
-import { executionSteps, executions, outboxMessages, plans, sideEffectOperations } from '@lazy-armor/database';
+import { conversationOnceRequests, executionSteps, executions, outboxMessages, plans, sideEffectOperations } from '@lazy-armor/database';
 import { and, eq, or } from 'drizzle-orm';
 import { DATABASE, type InjectedDatabase } from '../../common/database.module';
 import { AuditService } from '../../audit/audit.service';
@@ -181,8 +181,9 @@ export class OutboxWorker implements OnModuleInit, OnApplicationShutdown {
     const startedAt = Date.now();
     try {
       // §56：Plan 不再 active，不得派发外部副作用。
-      const execution = (await this.db.select({ planId: executions.planId, cancellationRequestedAt: executions.cancellationRequestedAt, resolvedRiskSnapshotJson: executions.resolvedRiskSnapshotJson }).from(executions).where(eq(executions.id, payload.executionId)).limit(1))[0];
-      const plan = execution ? (await this.db.select({ status: plans.status }).from(plans).where(and(eq(plans.id, execution.planId), eq(plans.userId, operation.userId))).limit(1))[0] : null;
+      const execution = (await this.db.select({ planId: executions.planId, planVersionId: executions.planVersionId, requestId: executions.requestId, cancellationRequestedAt: executions.cancellationRequestedAt, resolvedRiskSnapshotJson: executions.resolvedRiskSnapshotJson }).from(executions).where(eq(executions.id, payload.executionId)).limit(1))[0];
+      const plan = execution ? (await this.db.select({ status: plans.status, executionScope: plans.executionScope, currentVersionId: plans.currentVersionId }).from(plans).where(and(eq(plans.id, execution.planId), eq(plans.userId, operation.userId))).limit(1))[0] : null;
+      const once = execution && plan?.executionScope === 'ONCE' && plan.status === 'draft' && execution.requestId.startsWith('once:') ? (await this.db.select().from(conversationOnceRequests).where(and(eq(conversationOnceRequests.id, execution.requestId.slice(5)), eq(conversationOnceRequests.userId, operation.userId), eq(conversationOnceRequests.planId, execution.planId), eq(conversationOnceRequests.planVersionId, execution.planVersionId))).limit(1))[0] : null;
       if (execution?.cancellationRequestedAt) {
         if (operation.status === 'executing') {
           await this.unknownOutcome(operation, message, new ExecutionRuntimeError('OUTCOME_UNKNOWN', 'Cancelled dispatch recovery cannot confirm the prior effect'), payload.executionId);
@@ -191,7 +192,7 @@ export class OutboxWorker implements OnModuleInit, OnApplicationShutdown {
         await this.cancelOperation(operation, message, 'CANCELLED_BEFORE_DISPATCH', payload.executionId);
         return;
       }
-      if (!plan || plan.status !== 'active') {
+      if (!plan || !(plan.executionScope === 'PLAN' ? plan.status === 'active' : once?.proposalMessageId && once.planVersionId === plan.currentVersionId)) {
         if (operation.status === 'executing') {
           await this.unknownOutcome(operation, message, new ExecutionRuntimeError('OUTCOME_UNKNOWN', 'Inactive plan dispatch recovery cannot confirm the prior effect'), payload.executionId);
           return;
@@ -259,6 +260,7 @@ export class OutboxWorker implements OnModuleInit, OnApplicationShutdown {
       this.telemetry.increment('connector.calls', 1, { connectorKey, capability: operation.capabilityKey ?? 'unknown', operation: 'execute' });
       dispatchStarted = true;
       const result = await this.telemetry.runWithContext({ connectorKey, requestId: rebuilt.requestId }, () => connector.execute?.({
+        executionOperationId: operation.id,
         capability: operation.capabilityKey!,
         input: { context: { ...rebuilt.triggerPayload, ...handoffTargetContext(rebuilt.actionConfig) }, config: rebuilt.actionConfig },
         requestId: rebuilt.requestId,
@@ -288,6 +290,7 @@ export class OutboxWorker implements OnModuleInit, OnApplicationShutdown {
       await this.succeedOperation(operation, message, result.data, rebuilt.executionId);
     } catch (error) {
       const connectorError = error instanceof ConnectorError ? error : null;
+      if (dispatchStarted && connectorError?.providerOperationId) await this.operations.mark(operation.id, { providerOperationId: connectorError.providerOperationId });
       if (connectorError?.category === 'RATE_LIMITED' && connectorError.retryAfterMs && operation.connectionId) {
         await this.rateLimits.honorRetryAfter(connectorKeyForMetrics, operation.connectionId, connectorError.retryAfterMs);
       }
@@ -295,6 +298,10 @@ export class OutboxWorker implements OnModuleInit, OnApplicationShutdown {
         await this.circuits.recordFailure(connectorKeyForMetrics);
       }
       const mapped = asRuntimeError(error);
+      if (dispatchStarted && (connectorError?.category === 'OUTCOME_UNKNOWN' || connectorError?.operationState === 'unknown')) {
+        await this.unknownOutcome(operation, message, mapped, payload.executionId);
+        return;
+      }
       // 审批后权限/连接/凭证变化 → 受控失败，绝不无限重试（§53-55）。
       if (BLOCKING_CODES.has(mapped.code)) {
         if (operation.status === 'executing') {

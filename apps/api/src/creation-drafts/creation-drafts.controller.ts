@@ -1,11 +1,13 @@
 import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Post } from '@nestjs/common';
 import { CurrentUser, type AuthenticatedUser } from '../common/auth-context';
 import { CreationDraftsService } from './creation-drafts.service';
+import { DraftGapProjectionService } from './draft-gap-projection.service';
 import { SaveCreationDraftDto } from './dto';
 
 @Controller('creation-drafts')
 export class CreationDraftsController {
-  constructor(private readonly drafts: CreationDraftsService) {}
+  constructor(private readonly drafts: CreationDraftsService, private readonly gaps: DraftGapProjectionService) {}
+  @Get(':id/gaps') gapsProjection(@CurrentUser() user: AuthenticatedUser, @Param('id', ParseUUIDPipe) id: string) { return this.gaps.project(user.id, id); }
 
   @Post()
   upsert(@CurrentUser() user: AuthenticatedUser, @Body() request: SaveCreationDraftDto) {

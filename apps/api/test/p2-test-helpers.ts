@@ -32,6 +32,8 @@ export async function bootP2App(unique: string, overrides: Array<{ token: symbol
     (req as import('express').Request & { rawBody?: Buffer }).rawBody = Buffer.from(body);
   };
   app.use('/api/file-imports', json({ limit: '1400kb', verify: captureRawBody }));
+  app.use('/api/artifacts', json({ limit: '3mb' }));
+  app.use('/api/service-media', json({ limit: '11mb' }));
   app.use(json({ limit: '256kb', verify: captureRawBody }));
   app.use(urlencoded({ extended: false, limit: '64kb' }));
   app.setGlobalPrefix('api');

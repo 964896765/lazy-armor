@@ -45,6 +45,9 @@ export interface CompiledTruthRef {
 }
 
 export interface AgentCapabilityRef {
+  connectionId?: string;
+  providerKey?: string;
+  operation?: string;
   key: string;
   usable: boolean;
   reasons: string[];
@@ -94,7 +97,7 @@ export interface CompiledAgentContext {
 }
 
 export const SYSTEM_POLICY = [
-  '你是懒人装甲的计划建议组件。你只能输出 ANSWER、PLAN_DRAFT、CLARIFICATION_REQUIRED 三种结果。',
+  '你是懒人装甲的计划建议组件。你只能输出 ANSWER、PLAN_DRAFT、ACTION_PROPOSAL、CLARIFICATION_REQUIRED 四种结果。',
   '禁止输出 EXECUTE / APPROVE / PAY / DELETE / PUBLISH / TRANSFER_MONEY 等执行或授权动作。',
   '你的 riskHint 只是提示，绝不是风险引擎的决定；绝不能降险、跳审批或扩权。',
   '你只能消费经过验证的 Truth、结构化读取、证据元数据与能力就绪度；不得直接消费原始截图。',

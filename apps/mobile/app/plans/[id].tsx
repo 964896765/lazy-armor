@@ -1,3 +1,4 @@
+import { ConsumerPresentationMapper as presentation } from '../../src/consumer-presentation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -185,7 +186,7 @@ export default function PlanDetailPage() {
 
   if (!token) return (
     <SafeAreaView style={local.safeArea} edges={['top']}>
-      <Surface><EmptyState icon="shield-checkmark-outline" title="登录后查看计划详情" action={{ label: '去登录', onPress: () => router.push('/connections') }} /></Surface>
+      <Surface><EmptyState icon="shield-checkmark-outline" title="登录后查看计划详情" action={{ label: '去登录', onPress: () => router.push('/auth/login' as never) }} /></Surface>
     </SafeAreaView>
   );
 
@@ -193,13 +194,14 @@ export default function PlanDetailPage() {
     <SafeAreaView style={local.safeArea} edges={['top']}>
       <ScrollView style={local.page} contentContainerStyle={local.content} refreshControl={<RefreshControl tintColor={colors.primary} refreshing={summary.isFetching || version.isFetching} onRefresh={refreshAll} />}>
         <WorkspaceHeader title="计划详情" subtitle="它如何替你处理这件事" onBack={() => router.back()} />
+        <ActionButton label="运行一次" onPress={() => router.push(`/run-once?planId=${id}` as never)} />
         {(summary.isLoading || version.isLoading) ? <View style={local.loading}><ActivityIndicator color={colors.primary} /><Text style={local.text}>正在看看这条计划…</Text></View> : null}
         {summary.isError ? <Surface><EmptyState icon="cloud-offline-outline" title="计划暂时加载失败" description="请稍后再试。" action={{ label: '重新加载', onPress: refreshAll }} /></Surface> : null}
         {summary.data && version.data ? (
           <>
             <View style={local.hero}>
               <View style={local.heroIcon}><Ionicons name={planDetailIcon(summary.data.planCenterSummary?.kind)} size={25} color={colors.primary} /></View>
-              <View style={local.heroCopy}><Text style={local.title}>{summary.data.name ?? version.data.name}</Text><Text style={local.eyebrow}>{planStatusLabel(summary.data.status)}</Text><Text style={local.subtitle}>{summary.data.description ?? version.data.description ?? '这件事会按你的安排持续运行。'}</Text></View>
+              <View style={local.heroCopy}><Text style={local.title}>{presentation.text(summary.data.name ?? version.data.name,'我的计划')}</Text><Text style={local.eyebrow}>{planStatusLabel(summary.data.status)}</Text><Text style={local.subtitle}>{presentation.text(summary.data.description ?? version.data.description,'持续跟进目标，资源与运行方式可在计划会话中完善。')}</Text></View>
             </View>
 
             <View style={local.nowRow}>
@@ -207,12 +209,12 @@ export default function PlanDetailPage() {
               <View style={local.nowBlock}><Text style={local.nowLabel}>下一步</Text><Text style={local.nowValue}>{planNextStep({ status: summary.data.status, hasMissingConnection: summary.data.hasMissingConnection, latestExecutionStatus: summary.data.latestExecution?.status, outcome: summary.data.latestExecution?.outcome?.outcome })}</Text></View>
             </View>
 
-            <Text style={local.sectionTitle}>它正在帮你</Text>
+            <Text style={local.sectionTitle}>计划内容</Text>
             <View style={local.sectionBody}>
               <View style={local.helpSteps}>
                 {version.data.definition.triggers.map((trigger, index) => <HelpStep key={`${trigger.triggerType}-${index}`} icon="time-outline" text={triggerSummary(trigger.triggerType, trigger.config)} />)}
                 {version.data.definition.actions.map((action, index) => <HelpStep key={`${action.actionType}-${index}`} icon="play-outline" text={actionSummary(action.actionType, action.config)} />)}
-                <HelpStep icon="arrow-forward-outline" text={summary.data.nextExpectedRunAt ? `下一次预计在 ${formatTime(summary.data.nextExpectedRunAt)}` : '下一次时间正在安排'} />
+                <HelpStep icon="arrow-forward-outline" text={summary.data.status === 'active' && summary.data.nextExpectedRunAt ? `下一次预计在 ${formatTime(summary.data.nextExpectedRunAt)}` : '启用后按配置时间运行'} />
               </View>
             </View>
 
@@ -239,7 +241,7 @@ export default function PlanDetailPage() {
                   title={`还需要连接 ${summary.data.missingConnections.map((item) => item.providerName).join('、')}`}
                   description="计划已经替你保留，连接完成后就能继续运行。"
                   actionLabel="去连接"
-                  onPress={() => router.push('/connections')}
+                  onPress={() => router.push('/resources' as never)}
                   secondaryAction={{ label: resolveConnections.isPending ? '检查中…' : '重新检查', onPress: () => resolveConnections.mutate() }}
                 />
                 {resolveConnections.isError ? <Text style={local.error}>还没有找到可用连接，请先完成授权。</Text> : null}
@@ -290,7 +292,7 @@ export default function PlanDetailPage() {
                   <Text style={local.cardTitle}>管理这条计划</Text>
                   <View style={local.actions}>
                     <ActionButton label="查看完整过程" tone="quiet" onPress={() => router.push(`/plans/${id}/lifecycle` as never)} />
-                    <ActionButton label="编辑计划" tone="quiet" onPress={() => router.push(`/plans/${id}/edit` as never)} />
+                    <ActionButton label="会话中调整计划" tone="quiet" onPress={() => router.push(`/chat?mode=plan&planId=${id}` as never)} /><ActionButton label="编辑计划" tone="quiet" onPress={() => router.push(`/plans/${id}/edit` as never)} />
                     <ActionButton label={apply.isPending ? '启用中…' : '启用修改'} onPress={() => apply.mutate()} disabled={apply.isPending || !currentVersionNumber || summary.data.hasMissingConnection} />
                     {summary.data.allowedTransitions.map((status) => <ActionButton key={status} label={statusActionLabel(status)} tone={status === 'archived' ? 'danger' : 'quiet'} onPress={() => changeStatus.mutate(status)} disabled={changeStatus.isPending} />)}
                   </View>

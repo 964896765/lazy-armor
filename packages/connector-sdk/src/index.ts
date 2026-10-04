@@ -92,6 +92,8 @@ export interface ConnectorCredentialContext {
 }
 
 export interface ConnectorRequest {
+  /** Server-owned outbox operation identity, never supplied by a model. */
+  executionOperationId?: string;
   capability: string;
   input: Record<string, unknown>;
   requestId: string;
@@ -114,6 +116,7 @@ export interface SubscriptionRequest extends ConnectorRequest {
 }
 
 export interface ConnectorErrorOptions {
+  providerOperationId?: string;
   retryable?: boolean;
   retryAfterMs?: number;
   providerCode?: string;
@@ -121,6 +124,7 @@ export interface ConnectorErrorOptions {
 }
 
 export class ConnectorError extends Error {
+  readonly providerOperationId: string | null;
   readonly retryable: boolean;
   readonly retryAfterMs: number | null;
   readonly providerCode: string | null;
@@ -134,6 +138,7 @@ export class ConnectorError extends Error {
   ) {
     super(message);
     this.name = 'ConnectorError';
+    this.providerOperationId = options?.providerOperationId && options.providerOperationId.length <= 255 ? options.providerOperationId : null;
     this.retryable = options?.retryable ?? false;
     this.retryAfterMs = options?.retryAfterMs ?? null;
     this.providerCode = options?.providerCode ?? null;

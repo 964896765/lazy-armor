@@ -94,6 +94,7 @@ class LazyArmorNotificationListener : NotificationListenerService() {
 
   override fun onNotificationPosted(notification: StatusBarNotification) {
     if (!enabledPackages(applicationContext).contains(notification.packageName)) return
+    if (!getSharedPreferences("lazy_armor_runtime_settings", Context.MODE_PRIVATE).getBoolean("acquisition", true)) return
     val extras = notification.notification.extras ?: return
     val title = extras.getCharSequence("android.title")?.toString().orEmpty()
     val body = extras.getCharSequence("android.text")?.toString().orEmpty()

@@ -1,3 +1,4 @@
+import { ConsumerModule } from './consumer/consumer.module';
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_FILTER } from '@nestjs/core';
@@ -131,6 +132,7 @@ import { ServicesCatalogModule } from './services-catalog/services-catalog.modul
     TodosModule,
     SearchModule,
     ServicesCatalogModule,
+    ConsumerModule,
   ],
   controllers: [TerminalHandoffController],
   providers: [

@@ -8,7 +8,7 @@ import type { CompiledAgentContext } from './agent-context-compiler.service';
  * structured completion plus model capability metadata.
  */
 
-export const AGENT_PLANNER_RESULTS = ['ANSWER', 'PLAN_DRAFT', 'CLARIFICATION_REQUIRED'] as const;
+export const AGENT_PLANNER_RESULTS = ['ANSWER', 'PLAN_DRAFT', 'ACTION_PROPOSAL', 'CLARIFICATION_REQUIRED'] as const;
 export type AgentPlannerResultKind = typeof AGENT_PLANNER_RESULTS[number];
 
 export interface AgentToolRequirement {
@@ -19,6 +19,8 @@ export interface AgentToolRequirement {
 }
 
 export interface AgentModelRequest {
+  userId?: string;
+  workContext?: 'TEMPORARY' | 'PLAN';
   intent: string;
   context: CompiledAgentContext;
   /** Hard system policy, always separated from every other section. */
@@ -27,6 +29,7 @@ export interface AgentModelRequest {
 }
 
 export interface AgentModelOutput {
+  actionProposal?: import('@lazy-armor/plan-schema').ActionProposal | null;
   result: AgentPlannerResultKind;
   intentSummary: string;
   domain: string | null;

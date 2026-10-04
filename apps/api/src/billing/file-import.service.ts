@@ -8,6 +8,7 @@ import { DATABASE, type InjectedDatabase } from '../common/database.module';
 import { RealityPipelineService } from '../reality-pipeline/reality-pipeline.service';
 import type { ImportBillingFileDto } from './dto';
 import { UsageService } from '../usage/usage.service';
+import { ArtifactService } from '../artifacts/artifact.service';
 
 interface ParsedBillingRow {
   provider: string;
@@ -40,6 +41,7 @@ export class FileImportService {
     private readonly audit: AuditService,
     private readonly usage: UsageService,
     private readonly pipeline: RealityPipelineService,
+    private readonly artifacts: ArtifactService,
   ) {}
 
   async importBillingFile(userId: string, input: ImportBillingFileDto) {
@@ -51,12 +53,13 @@ export class FileImportService {
     const rows = this.parse(content.toString('utf8'), input.mimeType);
     if (rows.length === 0) throw new BadRequestException('File contains no billing records');
     if (rows.length > MAX_RECORDS) throw new BadRequestException(`File exceeds ${MAX_RECORDS} billing records`);
+    const artifact = await this.artifacts.import(userId, { ...input, requestId: `billing:${createHash('sha256').update(input.idempotencyKey).digest('hex')}` });
     const importId = newId();
     const now = new Date();
     try {
       await this.db.transaction(async (tx) => {
         await tx.insert(fileImports).values({
-          id: importId, userId, providerKey: 'local_file', idempotencyKey: input.idempotencyKey,
+          artifactId: artifact.id, id: importId, userId, providerKey: 'local_file', idempotencyKey: input.idempotencyKey,
           fileName: input.fileName, mimeType: input.mimeType, sizeBytes: content.length, contentSha256,
           status: 'processing', recordCount: 0, errorCode: null, createdAt: now, processedAt: null,
         });
@@ -64,7 +67,7 @@ export class FileImportService {
           await tx.insert(billingRecords).values({
             id: newId(), userId, provider: row.provider, category: row.category, billingPeriod: row.billingPeriod,
             amountMinor: row.amountMinor, currency: row.currency, occurredAt: row.occurredAt, sourceType: 'file',
-            metadataJson: { fileImportId: importId, rowNumber: index + 1, contentSha256 }, createdAt: now, updatedAt: now,
+            metadataJson: { artifactId: artifact.id, fileImportId: importId, rowNumber: index + 1, contentSha256 }, createdAt: now, updatedAt: now,
           });
         }
         await tx.update(fileImports).set({ status: 'completed', recordCount: rows.length, processedAt: now }).where(eq(fileImports.id, importId));
@@ -115,10 +118,11 @@ export class FileImportService {
     if (totalCount === 0) throw new BadRequestException('File contains no transaction records');
     if (entries.length === 0) throw new BadRequestException('File contains no valid transaction records');
     if (totalCount > MAX_RECORDS) throw new BadRequestException(`File exceeds ${MAX_RECORDS} records`);
+    const artifact = await this.artifacts.import(userId, { ...input, requestId: `transaction:${createHash('sha256').update(input.idempotencyKey).digest('hex')}` });
     const importId = newId();
     const now = new Date();
     await this.db.insert(fileImports).values({
-      id: importId, userId, providerKey: 'local_file', idempotencyKey: input.idempotencyKey,
+      artifactId: artifact.id, id: importId, userId, providerKey: 'local_file', idempotencyKey: input.idempotencyKey,
       fileName: input.fileName, mimeType: input.mimeType, sizeBytes: content.length, contentSha256,
       status: 'processing', recordCount: 0, errorCode: null, createdAt: now, processedAt: null,
     });
@@ -304,7 +308,7 @@ export class FileImportService {
 
   private toResponse(row: typeof fileImports.$inferSelect) {
     return {
-      id: row.id, providerKey: row.providerKey, fileName: row.fileName, mimeType: row.mimeType,
+      id: row.id, artifactId: row.artifactId, providerKey: row.providerKey, fileName: row.fileName, mimeType: row.mimeType,
       sizeBytes: row.sizeBytes, contentSha256: row.contentSha256, status: row.status, recordCount: row.recordCount,
       createdAt: row.createdAt.toISOString(), processedAt: row.processedAt?.toISOString() ?? null,
     };

@@ -1,190 +1,71 @@
-import { Ionicons } from '@expo/vector-icons';
-import { useMutation } from '@tanstack/react-query';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
-import { router } from 'expo-router';
-import type { ComponentProps } from 'react';
-import { useRef, useState } from 'react';
-import { ActivityIndicator, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import type { CreationDraft } from '@lazy-armor/plan-schema';
+import { Ionicons } from '@expo/vector-icons';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/api';
 import { useAuthStore } from '../../src/auth-store';
-import { cancelSystemSpeechRecognition, startSystemSpeechRecognition } from '../../src/device-app-bridge';
-import { workspaceColors as colors, radius, spacing, typography } from '../../src/design';
-import { AI_DEMO_NOTICE, buildAiResponse, type PlannerResultLike } from '../../src/search-presenter';
-
-type IconName = ComponentProps<typeof Ionicons>['name'];
-type AiPrompt = { display: string; query: string };
-type LocalAttachment = { name: string; excerpt: string; size: number };
-
-const COMPOSER_INPUT_MIN_HEIGHT = 40;
-const COMPOSER_INPUT_MAX_HEIGHT = 116;
-
-export default function ChatPage() {
-  const token = useAuthStore((store) => store.token);
-  const [mode, setMode] = useState<'chat' | 'work'>('chat');
-  const [aiQuery, setAiQuery] = useState('');
-  const [voicePending, setVoicePending] = useState(false);
-  const [voiceError, setVoiceError] = useState<string | null>(null);
-  const [voiceOpen, setVoiceOpen] = useState(false);
-  const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
-  const [attachment, setAttachment] = useState<LocalAttachment | null>(null);
-  const [composerInputHeight, setComposerInputHeight] = useState(COMPOSER_INPUT_MIN_HEIGHT);
-  const voiceCancelled = useRef(false);
-
-  const ask = useMutation({
-    mutationFn: (input: AiPrompt) => api<PlannerResultLike>('/chat/plan', token, {
-      method: 'POST',
-      body: JSON.stringify({ query: input.query }),
-    }),
-  });
-  const aiResponse = buildAiResponse(ask.data);
-  const canJumpToWizard = aiResponse.kind === 'PLAN_DRAFT' && Boolean(aiResponse.scenarioKey);
-  const submittedQuestion = ask.variables?.display.trim() ?? '';
-
-  function submit() {
-    const question = aiQuery.trim();
-    if (!question || ask.isPending) return;
-    const context = attachment ? `\n\n用户选择的本地资料《${attachment.name}》摘录：\n${attachment.excerpt}` : '';
-    ask.mutate({ display: question, query: `${question}${context}`.slice(0, 500) });
-    setAiQuery('');
-    setComposerInputHeight(COMPOSER_INPUT_MIN_HEIGHT);
-    setAttachment(null);
-  }
-
-  function resetConversation() {
-    ask.reset();
-    setAiQuery('');
-    setComposerInputHeight(COMPOSER_INPUT_MIN_HEIGHT);
-  }
-
-  async function startVoiceInput() {
-    if (voicePending) return;
-    Keyboard.dismiss();
-    voiceCancelled.current = false;
-    setVoicePending(true);
-    setVoiceOpen(true);
-    setVoiceError(null);
-    const transcript = await startSystemSpeechRecognition('zh-CN');
-    setVoicePending(false);
-    setVoiceOpen(false);
-    if (voiceCancelled.current) return;
-    if (!transcript) {
-      setVoiceError('没有听清，请检查麦克风权限后重试。');
-      return;
-    }
-    setAiQuery((current) => `${current}${current.trim() ? ' ' : ''}${transcript}`);
-  }
-
-  async function cancelVoiceInput() {
-    voiceCancelled.current = true;
-    await cancelSystemSpeechRecognition();
-    setVoicePending(false);
-    setVoiceOpen(false);
-  }
-
-  async function pickLocalFile() {
-    setAttachmentMenuOpen(false);
-    const picked = await DocumentPicker.getDocumentAsync({
-      type: ['text/plain', 'text/csv', 'application/json'], copyToCacheDirectory: true, multiple: false,
-    });
-    if (picked.canceled) return;
-    const asset = picked.assets[0];
-    if (!asset || (asset.size ?? 0) > 500_000) {
-      setVoiceError('资料需为不超过 500 KB 的 TXT、CSV 或 JSON 文件。');
-      return;
-    }
-    try {
-      const content = await FileSystem.readAsStringAsync(asset.uri);
-      const excerpt = content.replace(/\s+/g, ' ').trim().slice(0, 260);
-      if (!excerpt) throw new Error('EMPTY_FILE');
-      setAttachment({ name: asset.name.slice(0, 80), excerpt, size: asset.size ?? content.length });
-      setVoiceError(null);
-    } catch {
-      setVoiceError('没有读取到可用于提问的文字内容。');
-    }
-  }
-
-  return <SafeAreaView edges={['top']} style={styles.safeArea}><KeyboardAvoidingView style={styles.page} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-    <View style={styles.pageHeader}><Text style={styles.pageTitle}>问一问</Text><Pressable accessibilityRole="button" accessibilityLabel="新对话" onPress={resetConversation} style={({ pressed }) => [styles.newChatButton, pressed && styles.pressed]}><Ionicons name="add" size={18} color="#1769E0" /><Text style={styles.newChatText}>新对话</Text></Pressable></View>
-    <View style={styles.modeBar}><ModeTab label="聊天" selected={mode === 'chat'} onPress={() => setMode('chat')} /><ModeTab label="工作" selected={mode === 'work'} onPress={() => setMode('work')} /></View>
-    <Pressable style={styles.conversation} onPress={Keyboard.dismiss} accessible={false}><ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="never" keyboardDismissMode="on-drag">
-      {!submittedQuestion && !ask.isPending && mode === 'chat' ? <ChatEmpty onSelect={setAiQuery} /> : null}
-      {!submittedQuestion && !ask.isPending && mode === 'work' ? <WorkEmpty onSelect={setAiQuery} /> : null}
-      {submittedQuestion ? <View style={styles.questionRow}><View style={styles.questionBubble}><Text style={styles.questionText}>{submittedQuestion}</Text></View><View style={styles.userAvatar}><Ionicons name="person-outline" size={20} color={colors.primary} /></View></View> : null}
-      {ask.isPending ? <View style={styles.thinking}><View style={styles.botAvatar}><Ionicons name="sparkles-outline" size={20} color={colors.primary} /></View><ActivityIndicator color={colors.primary} /><Text style={styles.thinkingText}>正在分析…</Text></View> : null}
-      {ask.isError ? <View style={styles.aiCard}><Text style={styles.cardTitle}>AI 暂不可用</Text><Text style={styles.body}>当前没有取得服务端结果，请稍后再试。</Text></View> : null}
-      {ask.data && !ask.isError ? <AiResultCard response={aiResponse} onJumpToWizard={canJumpToWizard ? () => router.push(`/create-wizard?scenarioKey=${encodeURIComponent(aiResponse.scenarioKey!)}` as never) : undefined} /> : null}
-    </ScrollView></Pressable>
-    <SafeAreaView edges={['bottom']} style={styles.bottomSafe}>{voiceError ? <Text style={styles.voiceError}>{voiceError}</Text> : null}{attachment ? <View style={styles.attachmentChip}><Ionicons name="document-text-outline" size={15} color={colors.primary} /><Text numberOfLines={1} style={styles.attachmentName}>{attachment.name}</Text><Pressable accessibilityRole="button" accessibilityLabel="移除资料" onPress={() => setAttachment(null)} hitSlop={8}><Ionicons name="close" size={17} color={colors.textSecondary} /></Pressable></View> : null}<View style={styles.bottomRow}><View style={styles.composer}>
-      <Pressable accessibilityRole="button" accessibilityLabel="添加资料" onPress={() => { Keyboard.dismiss(); setAttachmentMenuOpen(true); }} style={styles.addButton}><Ionicons name="add" size={27} color="#1F2937" /></Pressable><TextInput value={aiQuery} onChangeText={(value) => { setAiQuery(value); setVoiceError(null); }} onContentSizeChange={(event) => setComposerInputHeight(Math.max(COMPOSER_INPUT_MIN_HEIGHT, Math.min(event.nativeEvent.contentSize.height, COMPOSER_INPUT_MAX_HEIGHT)))} placeholder={mode === 'work' ? '描述你想设计的计划模板' : '询问懒人装甲'} placeholderTextColor="#778392" style={[styles.input, { height: composerInputHeight }]} multiline scrollEnabled={composerInputHeight >= COMPOSER_INPUT_MAX_HEIGHT} textAlignVertical="top" maxLength={500} /><ComposerActions voicePending={voicePending} canSend={Boolean(aiQuery.trim() && !ask.isPending && token)} onVoice={startVoiceInput} onSend={submit} />
-    </View></View></SafeAreaView>
-    <AttachmentSheet open={attachmentMenuOpen} onClose={() => setAttachmentMenuOpen(false)} onPickFile={() => void pickLocalFile()} />
-    <VoiceOverlay open={voiceOpen} onCancel={() => void cancelVoiceInput()} />
-  </KeyboardAvoidingView></SafeAreaView>;
-}
-
-function ModeTab({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) { return <Pressable accessibilityRole="tab" accessibilityState={{ selected }} onPress={onPress} style={[styles.modeTab, selected && styles.modeTabSelected]}><Text style={[styles.modeText, selected && styles.modeTextSelected]}>{label}</Text></Pressable>; }
-
-function ChatEmpty({ onSelect }: { onSelect: (value: string) => void }) {
-  const suggestions = [{ icon: 'sunny-outline' as IconName, text: '早上好！\n今天心情有点低落，能陪我聊聊吗？' }, { icon: 'document-text-outline' as IconName, text: '我最近工作压力有点大，\n总觉得时间不够用，怎么办？' }, { icon: 'bulb-outline' as IconName, text: '给我一些让生活更轻松的小建议吧' }];
-  return <View style={styles.emptyChat}>{suggestions.map((item) => <Pressable key={item.text} onPress={() => onSelect(item.text.replace('\n', ''))} style={styles.suggestion}><View style={styles.suggestionIcon}><Ionicons name={item.icon} size={25} color="#347FF0" /></View><Text style={styles.suggestionText}>{item.text}</Text><Ionicons name="chevron-forward" size={23} color="#53627A" /></Pressable>)}</View>;
-}
-
-function WorkEmpty({ onSelect }: { onSelect: (value: string) => void }) {
-  const steps = [{ icon: 'locate-outline' as IconName, title: '设计模板目标', detail: '明确这份计划模板要达成什么', prompt: '帮我设计一份计划模板，并先明确目标' }, { icon: 'list-outline' as IconName, title: '设定步骤', detail: '拆解关键步骤，规划执行流程', prompt: '帮我拆解计划的关键步骤' }, { icon: 'cube-outline' as IconName, title: '选择资源', detail: '需要哪些工具、材料或参考内容', prompt: '帮我选择完成计划需要的资源' }, { icon: 'notifications-outline' as IconName, title: '设定提醒', detail: '安排执行频率与提醒方式', prompt: '帮我设定计划的执行频率和提醒' }];
-  return <View style={styles.workEmpty}><View style={styles.workHero}><View style={styles.workHeroIcon}><Ionicons name="sparkles-outline" size={39} color="#416DF1" /></View><Text style={styles.workTitle}>欢迎使用工作模式</Text><Text style={styles.workDetail}>我可以帮你制定计划模板，通过对话明确目标、步骤、资源和提醒，生成可直接使用的模板。</Text></View><View style={styles.workSteps}>{steps.map((item) => <Pressable key={item.title} onPress={() => onSelect(item.prompt)} style={styles.workStep}><View style={styles.workStepIcon}><Ionicons name={item.icon} size={28} color="#347FF0" /></View><View style={styles.workStepCopy}><Text style={styles.workStepTitle}>{item.title}</Text><Text style={styles.workStepDetail}>{item.detail}</Text></View><Ionicons name="chevron-forward" size={23} color="#677486" /></Pressable>)}</View></View>;
-}
-
-function AttachmentSheet({ open, onClose, onPickFile }: { open: boolean; onClose: () => void; onPickFile: () => void }) {
-  return <Modal visible={open} transparent animationType="slide" onRequestClose={onClose}><Pressable style={styles.modalBackdrop} onPress={onClose}><Pressable style={styles.sheet} onPress={(event) => event.stopPropagation()}>
-    <View style={styles.sheetHandle} /><View style={styles.sheetHeader}><View><Text style={styles.sheetTitle}>添加资料</Text><Text style={styles.sheetHint}>资料只在你明确选择后用于本次提问</Text></View><Pressable accessibilityRole="button" accessibilityLabel="关闭" onPress={onClose} style={styles.closeButton}><Ionicons name="close" size={23} color={colors.text} /></Pressable></View>
-    <SheetAction icon="document-text-outline" title="文件" detail="读取 TXT、CSV 或 JSON 的文字摘录" onPress={onPickFile} />
-    <SheetAction icon="link-outline" title="已连接的信息源" detail="前往连接中心选择已授权来源" onPress={() => { onClose(); router.push('/connections' as never); }} />
-    <SheetAction icon="image-outline" title="照片" detail="图片理解接口尚未接入" disabled />
-    <SheetAction icon="camera-outline" title="摄像头" detail="拍摄与图像理解尚未接入" disabled />
-  </Pressable></Pressable></Modal>;
-}
-
-function SheetAction({ icon, title, detail, onPress, disabled = false }: { icon: IconName; title: string; detail: string; onPress?: () => void; disabled?: boolean }) {
-  return <Pressable accessibilityRole="button" disabled={disabled} onPress={onPress} style={({ pressed }) => [styles.sheetAction, disabled && styles.sheetActionDisabled, pressed && styles.pressed]}><View style={styles.sheetActionIcon}><Ionicons name={icon} size={22} color={disabled ? colors.textMuted : colors.primary} /></View><View style={styles.sheetActionCopy}><Text style={styles.sheetActionTitle}>{title}</Text><Text style={styles.sheetActionDetail}>{detail}</Text></View>{disabled ? <Text style={styles.pendingBadge}>待接入</Text> : <Ionicons name="chevron-forward" size={19} color={colors.textMuted} />}</Pressable>;
-}
-
-function VoiceOverlay({ open, onCancel }: { open: boolean; onCancel: () => void }) {
-  return <Modal visible={open} transparent animationType="fade" onRequestClose={onCancel}><View style={styles.voiceBackdrop}><View style={styles.voiceCard}><View style={styles.voiceOrb}><Ionicons name="mic" size={34} color="#FFFFFF" /></View><Text style={styles.voiceTitle}>正在听</Text><Text style={styles.voiceHint}>说出你想问的内容，停顿后会自动填写</Text><View style={styles.voiceBars}>{[20, 34, 48, 30, 42].map((height, index) => <View key={index} style={[styles.voiceBar, { height }]} />)}</View><Pressable accessibilityRole="button" onPress={onCancel} style={styles.voiceCancel}><Text style={styles.voiceCancelText}>取消</Text></Pressable></View></View></Modal>;
-}
-
-function AiResultCard({ response, onJumpToWizard }: { response: ReturnType<typeof buildAiResponse>; onJumpToWizard?: () => void }) {
-  return <View style={styles.aiCard}>
-    <View style={styles.aiIcon}><Ionicons name="sparkles-outline" size={24} color={colors.primary} /></View>
-    <Text style={styles.cardTitle}>{response.title}</Text>
-    {response.body ? <Text style={styles.body}>{response.body}</Text> : null}
-    {response.missingRequirements.length > 0 ? <View style={styles.missingBox}>{response.missingRequirements.map((item) => <Text key={item} style={styles.missingItem}>· {item}</Text>)}</View> : null}
-    {onJumpToWizard ? <Pressable accessibilityRole="button" onPress={onJumpToWizard} style={styles.askButton}><Text style={styles.askButtonText}>去创建向导继续</Text></Pressable> : null}
-    <Text style={styles.demoNotice}>{AI_DEMO_NOTICE}</Text>
-  </View>;
-}
-
-function ComposerActions({ voicePending, canSend, onVoice, onSend }: { voicePending: boolean; canSend: boolean; onVoice: () => void; onSend: () => void }) {
-  return <View style={styles.composerActions}><Pressable accessibilityRole="button" accessibilityLabel="语音输入" disabled={voicePending} onPress={onVoice} style={({ pressed }) => [styles.voiceButton, voicePending && styles.voiceButtonActive, pressed && styles.pressed]}>{voicePending ? <ActivityIndicator size="small" color={colors.primary} /> : <Ionicons name="mic-outline" size={21} color={colors.textSecondary} />}</Pressable><Pressable accessibilityRole="button" accessibilityLabel="发送" disabled={!canSend} onPress={onSend} style={[styles.send, !canSend && styles.sendDisabled]}><Ionicons name="send" size={18} color="#FFFFFF" /></Pressable></View>;
-}
-
-const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: 'rgba(248,250,253,0.90)' }, page: { flex: 1 }, conversation: { flex: 1 }, content: { flexGrow: 1, paddingHorizontal: 18, paddingTop: 8, paddingBottom: 10 }, pressed: { opacity: 0.68 },
-  pageHeader: { minHeight: 66, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingHorizontal: 18, paddingTop: 8 }, pageTitle: { color: '#111827', fontSize: 30, lineHeight: 37, fontWeight: '700' }, newChatButton: { minHeight: 40, flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 13, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: '#D8E2F0', backgroundColor: '#FFFFFF' }, newChatText: { color: '#1769E0', fontSize: 14, fontWeight: '600' }, modeBar: { alignSelf: 'flex-start', flexDirection: 'row', gap: 22, marginLeft: 18, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#DCE3EC' }, modeTab: { minHeight: 40, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 2, borderBottomWidth: 2, borderBottomColor: 'transparent' }, modeTabSelected: { borderBottomColor: '#2F80ED' }, modeText: { color: '#687588', fontSize: 14 }, modeTextSelected: { color: '#162033', fontWeight: '600' },
-  emptyChat: { flex: 1, justifyContent: 'flex-end', gap: 10, paddingBottom: 8, paddingTop: 220 }, suggestion: { minHeight: 76, flexDirection: 'row', alignItems: 'center', gap: 13, paddingHorizontal: 13, paddingVertical: 10, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.72)' }, suggestionIcon: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center', borderRadius: 17, backgroundColor: 'rgba(235,243,255,0.94)' }, suggestionText: { flex: 1, color: '#253245', fontSize: 15, lineHeight: 22 },
-  workEmpty: { paddingTop: 70 }, workHero: { alignItems: 'center', paddingHorizontal: 22, paddingBottom: 28 }, workHeroIcon: { width: 84, height: 84, alignItems: 'center', justifyContent: 'center', borderRadius: 42, backgroundColor: 'rgba(239,243,255,0.92)' }, workTitle: { marginTop: 20, color: '#101720', fontSize: 23, lineHeight: 31, fontWeight: '800' }, workDetail: { marginTop: 10, color: '#637083', fontSize: 15, lineHeight: 25, textAlign: 'center' }, workSteps: { gap: 10 }, workStep: { minHeight: 79, flexDirection: 'row', alignItems: 'center', gap: 13, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.76)' }, workStepIcon: { width: 50, height: 50, alignItems: 'center', justifyContent: 'center', borderRadius: 18, backgroundColor: 'rgba(237,244,255,0.94)' }, workStepCopy: { flex: 1 }, workStepTitle: { color: '#121A26', fontSize: 17, lineHeight: 24, fontWeight: '800' }, workStepDetail: { marginTop: 2, color: '#697789', fontSize: 13, lineHeight: 20 },
-  header: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: spacing.md, marginTop: spacing.sm }, headerCopy: { flex: 1, minWidth: 0 }, title: { ...typography.pageTitle, color: colors.text }, assistantTitle: { ...typography.bodyStrong, color: colors.text }, subtitle: { ...typography.caption, color: colors.textSecondary, lineHeight: 19, marginTop: 2 }, newChat: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }, newChatText: { ...typography.caption, color: colors.text, fontWeight: '700' },
-  welcomeMessage: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginTop: 10 }, aiAvatar: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center', borderRadius: 17, backgroundColor: '#EAF3FF' }, welcomeBubble: { flex: 1, paddingHorizontal: 11, paddingVertical: 9, borderRadius: 12, backgroundColor: 'rgba(246,248,252,0.86)' }, welcomeTitle: { ...typography.bodyStrong, color: colors.text, fontSize: 14 }, welcomeText: { fontSize: 13, color: colors.textSecondary, lineHeight: 22, marginTop: 3 },
-  questionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: spacing.sm, marginTop: spacing.xl }, questionBubble: { maxWidth: '82%', paddingHorizontal: spacing.lg, paddingVertical: spacing.md, borderRadius: 18, backgroundColor: '#E4F1EB' }, questionText: { ...typography.bodyStrong, color: colors.text, lineHeight: 22 }, userAvatar: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center', borderRadius: 20, backgroundColor: '#EFEEEA' },
-  thinking: { minHeight: 64, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.lg }, botAvatar: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center', borderRadius: 20, backgroundColor: colors.accentSoft }, thinkingText: { ...typography.caption, color: colors.textSecondary },
-  bottomSafe: { backgroundColor: '#F8FAFD' }, bottomRow: { minHeight: 70, flexDirection: 'row', alignItems: 'flex-end', paddingHorizontal: 16, paddingVertical: 8 }, bottomRowExpanded: { minHeight: 70 },
-  composer: { flex: 1, minHeight: 54, flexDirection: 'row', alignItems: 'flex-end', gap: 5, paddingHorizontal: 7, paddingVertical: 5, borderRadius: 18, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#D6E0EC' }, composerExpanded: { minHeight: 54 }, composerInputRow: { flex: 1 }, composerToolsRow: { flexDirection: 'row' }, composerActions: { flexDirection: 'row', alignItems: 'center', gap: 2, paddingBottom: 1 }, addButton: { width: 38, height: 42, alignItems: 'center', justifyContent: 'center' }, input: { color: '#172131', flex: 1, minWidth: 0, minHeight: COMPOSER_INPUT_MIN_HEIGHT, maxHeight: 116, paddingHorizontal: 3, paddingTop: 10, paddingBottom: 6, fontSize: 15, lineHeight: 21 }, voiceButton: { width: 36, height: 42, alignItems: 'center', justifyContent: 'center' }, voiceButtonActive: { backgroundColor: colors.accentSoft }, send: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center', borderRadius: 20, backgroundColor: '#2F80ED' }, sendDisabled: { backgroundColor: '#A8C8F5' }, voiceError: { fontSize: 13, lineHeight: 20, color: colors.danger, paddingHorizontal: 16, paddingTop: 4 }, attachmentChip: { alignSelf: 'center', maxWidth: '72%', flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 8, paddingVertical: 5, marginTop: 3, borderRadius: 8, backgroundColor: colors.accentSoft }, attachmentName: { flexShrink: 1, fontSize: 13, color: colors.primary, fontWeight: '600' },
-  modalBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(31, 34, 31, 0.28)' }, sheet: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: 34, borderTopLeftRadius: 28, borderTopRightRadius: 28, backgroundColor: colors.surface }, sheetHandle: { alignSelf: 'center', width: 44, height: 5, borderRadius: 3, backgroundColor: colors.border, marginBottom: spacing.md }, sheetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.md }, sheetTitle: { ...typography.cardTitle, color: colors.text }, sheetHint: { fontSize: 13, lineHeight: 21, color: colors.textMuted, marginTop: 3 }, closeButton: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F2F1ED' }, sheetAction: { minHeight: 70, flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: spacing.sm, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }, sheetActionDisabled: { opacity: 0.58 }, sheetActionIcon: { width: 40, height: 40, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentSoft }, sheetActionCopy: { flex: 1 }, sheetActionTitle: { ...typography.bodyStrong, color: colors.text }, sheetActionDetail: { fontSize: 13, lineHeight: 22, color: colors.textSecondary, marginTop: 2 }, pendingBadge: { fontSize: 13, color: colors.textMuted, paddingHorizontal: 8, paddingVertical: 4, borderRadius: radius.pill, backgroundColor: '#F0EFEB' },
-  voiceBackdrop: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xl, backgroundColor: 'rgba(24, 30, 27, 0.42)' }, voiceCard: { width: '100%', maxWidth: 330, alignItems: 'center', paddingHorizontal: spacing.xl, paddingTop: 34, paddingBottom: spacing.xl, borderRadius: 30, backgroundColor: colors.surface }, voiceOrb: { width: 76, height: 76, borderRadius: 38, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.primary, shadowColor: colors.primary, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.22, shadowRadius: 18, elevation: 6 }, voiceTitle: { ...typography.cardTitle, color: colors.text, marginTop: spacing.lg }, voiceHint: { ...typography.caption, color: colors.textSecondary, lineHeight: 19, textAlign: 'center', marginTop: spacing.sm }, voiceBars: { height: 56, flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: spacing.lg }, voiceBar: { width: 6, borderRadius: 3, backgroundColor: colors.primary }, voiceCancel: { minWidth: 112, minHeight: 44, alignItems: 'center', justifyContent: 'center', marginTop: spacing.md, borderRadius: radius.pill, backgroundColor: '#F0EFEB' }, voiceCancelText: { ...typography.caption, color: colors.text, fontWeight: '700' },
-  askButton: { minHeight: 46, marginTop: spacing.md, borderRadius: radius.pill, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing.lg }, askButtonDisabled: { backgroundColor: colors.textMuted }, askButtonText: { ...typography.bodyStrong, color: '#FFFFFF' },
-  aiCard: { alignItems: 'flex-start', marginTop: 10, marginLeft: 42, paddingHorizontal: 11, paddingVertical: 9, borderRadius: 12, backgroundColor: 'rgba(246,248,252,0.88)' }, aiIcon: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentSoft }, cardTitle: { ...typography.bodyStrong, color: colors.text, marginTop: 7 },
-  body: { ...typography.body, color: colors.textSecondary, lineHeight: 22, marginTop: spacing.sm }, missingBox: { marginTop: spacing.md, padding: spacing.md, borderRadius: radius.md, backgroundColor: colors.accentSoft, alignSelf: 'stretch' }, missingItem: { ...typography.caption, color: colors.textSecondary, lineHeight: 20 },
-  demoNotice: { fontSize: 13, lineHeight: 20, color: colors.textMuted, textAlign: 'center', marginTop: spacing.md },
-});
-
+import { SegmentedControl } from '../../src/consumer-ui';
+import { ConsumerPresentationMapper as presentation } from '../../src/consumer-presentation';
+import { Button, Card, ui } from '../../src/editor-ui';
+import { startSystemSpeechRecognition } from '../../src/device-app-bridge';
+import { ConversationMessage } from '../../src/conversation-message';
+import { conversationKeyboardBehavior, emptyConversationRequest, shouldFollowConversation } from '../../src/conversation-content';
+interface Attachment { id: string; fileName: string; sizeBytes: number }
+interface Message { id: string; role: string; content: string; contextRefs: Array<{ type: string; id: string }>; structuredPayload: { result?: string; actionProposal?: { name: string; actionType: string; input: Record<string, unknown> }; proposal?: { intentSummary: string; scenarioKey: string; missingRequirements: string[]; requiredCapabilities: string[]; explanation: string } } | null }
+interface Conversation { id: string; title: string; mode: 'TEMPORARY' | 'PLAN'; version: number; messages: Message[]; planId: string | null; status: string; creationDraft: CreationDraft | null; attachments: Attachment[] }
+export default function ConversationPage() { const params = useLocalSearchParams<{ mode?: string; templateKey?: string; conversationId?: string; intent?: string; planId?: string; serviceOfferingId?: string; externalServiceId?: string; draftId?: string; scenarioKey?: string }>(); const token = useAuthStore(s => s.token); const client = useQueryClient(); const [mode, setMode] = useState<'TEMPORARY' | 'PLAN'>(params.mode === 'plan' || params.planId ? 'PLAN' : 'TEMPORARY'); const [id, setId] = useState<string | null>(params.conversationId ?? null); const [input, setInput] = useState(''); const [pendingAttachments, setPendingAttachments] = useState<Attachment[]>([]); const [historyOpen, setHistoryOpen] = useState(false); const [error, setError] = useState(''); const scroll = useRef<ScrollView>(null); const followBottom = useRef(true); const modeWorkspaces = useRef<Record<string, { id: string | null; input: string; attachments: Attachment[] }>>({}); const routeContextActive = useRef(true); const config = useQuery({ queryKey: ['ai-service', token], queryFn: () => api<{ configured: boolean }>('/ai-service', token), enabled: Boolean(token) }); const history = useQuery({ queryKey: ['conversations', token], queryFn: () => api<Conversation[]>('/conversations', token), enabled: Boolean(token && historyOpen) }); const conversation = useQuery({ queryKey: ['conversation', token, id], queryFn: () => api<Conversation>(`/conversations/${id}`, token), enabled: Boolean(token && id) });
+ const draftGaps = useQuery({ queryKey: ['draft-gaps', token, conversation.data?.creationDraft?.draftId, conversation.data?.creationDraft?.version], queryFn: () => api<{ missingFacts: string[]; capabilityGaps: Array<{ capabilityKey: string; reasons: string[] }>; reasons: string[]; serviceOptions: Array<{ sourceRef: { id: string }; title: string; primaryAction: { path: string; label: string } }> }>(`/creation-drafts/${conversation.data?.creationDraft?.draftId}/gaps`, token), enabled: Boolean(token && conversation.data?.creationDraft) });
+ const onceRequests = useQuery({ queryKey: ['once-requests', token, id], queryFn: () => api<Array<{ id: string; status: string }>>(`/conversations/${id}/once-requests`, token), enabled: Boolean(token && id), refetchInterval: 5000 });
+ useEffect(() => { routeContextActive.current = true; modeWorkspaces.current = {}; setMode(params.mode === 'plan' || params.planId ? 'PLAN' : 'TEMPORARY'); setId(params.conversationId ?? null); followBottom.current = true; setError(''); setPendingAttachments([]); setInput(params.intent ?? ''); restoreStarted.current = null; }, [token, params.mode, params.conversationId, params.templateKey, params.intent, params.planId, params.serviceOfferingId, params.externalServiceId, params.draftId, params.scenarioKey]);
+ useFocusEffect(useCallback(() => { if (token) { void client.invalidateQueries({ queryKey: ['ai-service', token] }); void client.invalidateQueries({ queryKey: ['draft-gaps', token] }); } }, [token, client]));
+ const send = useMutation({ mutationFn: async () => { let current = conversation.data; if (!id) { current = await api<Conversation>('/conversations', token, { method: 'POST', body: JSON.stringify({ mode, ...(routeContextActive.current && params.templateKey ? { templateKey: params.templateKey } : {}), ...(routeContextActive.current && params.planId ? { planId: params.planId } : {}), ...(routeContextActive.current && params.serviceOfferingId ? { serviceOfferingId: params.serviceOfferingId } : {}), ...(routeContextActive.current && params.externalServiceId ? { externalServiceId: params.externalServiceId } : {}), ...(routeContextActive.current && params.draftId ? { draftId: params.draftId } : {}), ...(routeContextActive.current && params.scenarioKey ? { scenarioKey: params.scenarioKey } : {}) }) }); setId(current.id); } if (!current) throw new Error('会话尚未加载，请稍后重试'); return api<Conversation>(`/conversations/${current.id}/messages`, token, { method: 'POST', body: JSON.stringify({ content: input.trim(), requestId: `message-${Date.now()}-${Math.random().toString(36).slice(2)}`, version: current.version, attachmentIds: pendingAttachments.map(file => file.id) }) }); }, onSuccess: data => { followBottom.current = true; client.setQueryData(['conversation', token, data.id], data); setInput(''); setPendingAttachments([]); setError(''); void client.invalidateQueries({ queryKey: ['conversations', token] }); }, onError: e => { setError(e.message); void conversation.refetch(); } });
+ const attach = useMutation({ mutationFn: async () => {
+  if (!token) throw new Error('请先登录');
+  if (pendingAttachments.length >= 3) throw new Error('每条消息最多附带 3 个文件');
+  const picked = await DocumentPicker.getDocumentAsync({ type: ['text/plain', 'text/markdown', 'text/csv', 'application/json', 'application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'], copyToCacheDirectory: true, multiple: false });
+  if (picked.canceled) return null;
+  const asset = picked.assets[0];
+  if (!asset || !asset.size || asset.size > 2000000) throw new Error('请选择不超过 2 MB 的文本、PDF 或 DOCX 文件');
+  const mimeType = ({ txt: 'text/plain', md: 'text/markdown', csv: 'text/csv', json: 'application/json', pdf: 'application/pdf', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' } as Record<string, string>)[asset.name.split('.').pop()?.toLowerCase() ?? ''];
+  if (!mimeType) throw new Error('支持 TXT、Markdown、CSV、JSON、PDF 和 DOCX 文件');
+  const contentBase64 = await FileSystem.readAsStringAsync(asset.uri, { encoding: FileSystem.EncodingType.Base64 });
+  let current = conversation.data;
+  if (!id) { current = await api<Conversation>('/conversations', token, { method: 'POST', body: JSON.stringify({ mode, ...(routeContextActive.current && params.templateKey ? { templateKey: params.templateKey } : {}), ...(routeContextActive.current && params.planId ? { planId: params.planId } : {}), ...(routeContextActive.current && params.serviceOfferingId ? { serviceOfferingId: params.serviceOfferingId } : {}), ...(routeContextActive.current && params.externalServiceId ? { externalServiceId: params.externalServiceId } : {}), ...(routeContextActive.current && params.draftId ? { draftId: params.draftId } : {}), ...(routeContextActive.current && params.scenarioKey ? { scenarioKey: params.scenarioKey } : {}) }) }); client.setQueryData(['conversation', token, current.id], current); setId(current.id); }
+  if (!current) throw new Error('会话尚未加载，请稍后重试');
+  const requestId = `document-${Date.now()}-${Math.random().toString(36).slice(2)}`; const artifact = await api<{ id: string }>('/artifacts', token, { method: 'POST', body: JSON.stringify({ fileName: asset.name, mimeType, contentBase64, requestId }) }); const file = await api<Attachment>(`/conversations/${current.id}/artifact-attachments`, token, { method: 'POST', body: JSON.stringify({ artifactId: artifact.id, requestId }) }); return { ...file, conversationId: current.id };
+ }, onSuccess: file => { if (file && useAuthStore.getState().token === token) { setPendingAttachments(files => [...files, file]); void client.invalidateQueries({ queryKey: ['conversation', token, file.conversationId] }); } setError(''); }, onError: e => setError(e.message) });
+ const saveDraft = useMutation({ mutationFn: async () => {
+  let current = conversation.data;
+  if (!id) { current = await api<Conversation>('/conversations', token, { method: 'POST', body: JSON.stringify({ mode: 'PLAN', ...(routeContextActive.current && params.templateKey ? { templateKey: params.templateKey } : {}), ...(routeContextActive.current && params.planId ? { planId: params.planId } : {}), ...(routeContextActive.current && params.serviceOfferingId ? { serviceOfferingId: params.serviceOfferingId } : {}), ...(routeContextActive.current && params.externalServiceId ? { externalServiceId: params.externalServiceId } : {}), ...(routeContextActive.current && params.draftId ? { draftId: params.draftId } : {}), ...(routeContextActive.current && params.scenarioKey ? { scenarioKey: params.scenarioKey } : {}) }) }); setId(current.id); }
+  if (!current) throw new Error('会话尚未加载');
+  return api<Conversation>(`/conversations/${current.id}/draft-input`, token, { method: 'PUT', body: JSON.stringify({ version: current.version, content: input }) });
+ }, onSuccess: data => { client.setQueryData(['conversation', token, data.id], data); setError(''); void client.invalidateQueries({ queryKey: ['creation-drafts', token] }); }, onError: e => { setError(e.message); void conversation.refetch(); } });
+ const restore = useMutation({ mutationFn: () => api<Conversation>('/conversations', token, { method: 'POST', body: JSON.stringify({ mode: 'PLAN', ...(routeContextActive.current && params.draftId ? { draftId: params.draftId } : {}), ...(routeContextActive.current && params.scenarioKey ? { scenarioKey: params.scenarioKey } : {}), ...(routeContextActive.current && params.templateKey ? { templateKey: params.templateKey } : {}), ...(routeContextActive.current && params.planId ? { planId: params.planId } : {}), ...(routeContextActive.current && params.serviceOfferingId ? { serviceOfferingId: params.serviceOfferingId } : {}), ...(routeContextActive.current && params.externalServiceId ? { externalServiceId: params.externalServiceId } : {}) }) }), onSuccess: data => { client.setQueryData(['conversation', token, data.id], data); setId(data.id); setMode('PLAN'); const value = data.creationDraft?.goal.constraints.userInput ?? data.creationDraft?.goal.description; if (typeof value === 'string' && value !== '待补充计划需求') setInput(value); }, onError: e => setError(e.message) });
+ const restoreStarted = useRef<string | null>(null);
+ const newConversation = useMutation({
+  mutationFn: () => api<Conversation>('/conversations', token, emptyConversationRequest(actualMode)),
+  onSuccess: data => {
+   if (useAuthStore.getState().token !== token) return;
+   routeContextActive.current = false;
+   restoreStarted.current = null;
+   modeWorkspaces.current = {};
+   followBottom.current = true;
+   client.setQueryData(['conversation', token, data.id], data);
+   setId(data.id); setMode(data.mode); setInput(''); setPendingAttachments([]); setError(''); setHistoryOpen(false);
+   void client.invalidateQueries({ queryKey: ['conversations', token] });
+  },
+  onError: failure => setError(failure.message),
+ });
+ useEffect(() => { if (token && mode === 'PLAN' && !id && !restore.isPending && !newConversation.isPending && restoreStarted.current !== [token, params.draftId, params.templateKey, params.scenarioKey, params.planId, params.serviceOfferingId, params.externalServiceId].join('|')) { restoreStarted.current = [token, params.draftId, params.templateKey, params.scenarioKey, params.planId, params.serviceOfferingId, params.externalServiceId].join('|'); restore.mutate(); } }, [token, params.draftId, params.templateKey, params.scenarioKey, params.planId, params.serviceOfferingId, params.externalServiceId, mode, id, newConversation.isPending]);
+ useEffect(() => { if (conversation.data?.creationDraft?.state === 'ACTIVE' && !conversation.data.creationDraft.proposalMessageId && !input) { const saved = conversation.data.creationDraft.goal.constraints.userInput; if (typeof saved === 'string') setInput(saved); } }, [conversation.data?.id]);
+ const confirm = useMutation({ mutationFn: () => api<{ planId: string }>(`/conversations/${id}/confirm-plan`, token, { method: 'POST', body: JSON.stringify({ version: conversation.data?.version, confirmed: true }) }), onSuccess: data => { void client.invalidateQueries({ queryKey: ['plan-library'] }); void client.invalidateQueries({ queryKey: ['timeline'] }); router.push(`/plans/${data.planId}` as never); }, onError: e => setError(e.message) });
+ const confirmAction = useMutation({ mutationFn: (messageId: string) => api<{ id: string }>(`/conversations/${id}/confirm-action`, token, { method: 'POST', body: JSON.stringify({ messageId, version: conversation.data?.version, confirmed: true }) }), onSuccess: data => { void client.invalidateQueries({ queryKey: ['once-requests', token, id] }); void client.invalidateQueries({ queryKey: ['timeline'] }); router.push(`/once-request?id=${data.id}` as never); }, onError: e => setError(e.message) });
+ const promote = useMutation({ mutationFn: () => api<Conversation>(`/conversations/${id}/promote`, token, { method: 'POST', body: JSON.stringify({ version: conversation.data?.version }) }), onSuccess: data => { client.setQueryData(['conversation', token, data.id], data); delete modeWorkspaces.current.TEMPORARY; routeContextActive.current = false; setMode('PLAN'); void client.invalidateQueries({ queryKey: ['conversations', token] }); }, onError: e => setError(e.message) });
+ function changeMode(next: 'TEMPORARY' | 'PLAN') { if (actualMode === next || newConversation.isPending || send.isPending || attach.isPending || saveDraft.isPending || restore.isPending) return; modeWorkspaces.current[actualMode] = { id, input, attachments: pendingAttachments }; const saved = modeWorkspaces.current[next]; routeContextActive.current = false; restoreStarted.current = null; setMode(next); setId(saved?.id ?? null); setInput(saved?.input ?? ''); setPendingAttachments(saved?.attachments ?? []); setError(''); }
+ const actualMode = conversation.data?.mode ?? mode;
+ return <SafeAreaView edges={['top']} style={{ flex: 1 }}><KeyboardAvoidingView style={{ flex: 1 }} enabled={Platform.OS === 'ios'} behavior={conversationKeyboardBehavior(Platform.OS)}><View style={[ui.line, { paddingHorizontal: 12, paddingVertical: 6 }]}><Pressable accessibilityRole="button" accessibilityLabel="历史会话" disabled={newConversation.isPending || send.isPending || attach.isPending || saveDraft.isPending || restore.isPending} style={ui.back} onPress={() => setHistoryOpen(true)}><Ionicons name="time-outline" size={22} color="#61718C" /></Pressable><View style={{ flex: 1, minWidth: 0 }}><SegmentedControl value={actualMode} options={[{value:'TEMPORARY',label:'临时'},{value:'PLAN',label:'计划'}]} onChange={changeMode} /></View><Pressable accessibilityRole="button" accessibilityLabel="新会话" disabled={!token || newConversation.isPending || send.isPending || attach.isPending || saveDraft.isPending || restore.isPending || confirm.isPending || confirmAction.isPending || promote.isPending} style={ui.back} onPress={() => newConversation.mutate()}>{newConversation.isPending ? <ActivityIndicator size="small" color="#287BFF" /> : <Ionicons name="chatbubble-outline" size={22} color="#287BFF" />}<Text style={{ fontSize: 10, color: '#287BFF' }}>新会话</Text></Pressable></View><ScrollView ref={scroll} contentContainerStyle={ui.content} keyboardShouldPersistTaps="handled" scrollEventThrottle={16} onScroll={({ nativeEvent }) => { followBottom.current = shouldFollowConversation(nativeEvent.contentSize.height, nativeEvent.layoutMeasurement.height, nativeEvent.contentOffset.y); }} onContentSizeChange={() => { if (followBottom.current) scroll.current?.scrollToEnd({ animated: true }); }}>{!token ? <Button label="登录后使用会话" onPress={() => router.push('/auth/login' as never)} /> : config.isError ? <Button secondary label="AI 配置读取失败，点击重试" onPress={() => void config.refetch()} /> : !config.isLoading && !config.data?.configured ? <Card title="还没有配置 AI 服务"><Text style={ui.detail}>配置 DeepSeek 后，可以使用会话、AI 创建计划和智能整理功能。</Text><Button label="配置 DeepSeek" onPress={() => router.push('/ai-service' as never)} /></Card> : null}{(params.serviceOfferingId || params.externalServiceId) && !id ? <Card title="已选择服务上下文"><Text style={ui.detail}>服务记录将由后端读取。描述你的目标，AI 会分析服务是否能补足所需步骤，发起服务仍需另行确认。</Text></Card> : null}{actualMode === 'PLAN' && token ? <Button secondary label={saveDraft.isPending ? '保存中…' : '保存计划需求'} disabled={newConversation.isPending || saveDraft.isPending || send.isPending || attach.isPending || saveDraft.isPending || restore.isPending || !input.trim()} onPress={() => saveDraft.mutate()} /> : null}{conversation.data?.creationDraft ? <Text style={ui.detail}>计划需求草案 · {conversation.data.creationDraft.state === 'COMPLETED' ? '已确认' : '已保存'}</Text> : null}{draftGaps.data && actualMode === 'PLAN' ? <Card title="需求与能力缺口"><Button secondary label="补充资源" onPress={() => router.push({pathname:'/resources',params:{returnConversationId:id,returnMode:'plan'}} as never)} /><Text style={ui.detail}>{[...new Set(draftGaps.data.reasons.map(reason => presentation.reason(reason)))].join('、') || '暂无待补充项；真实运行仍需经过权限、审批与验证。'}</Text>{draftGaps.data.capabilityGaps.map(gap => <Text key={gap.capabilityKey} style={ui.detail}>所需资源 · {gap.reasons.map(reason => presentation.reason(reason)).join('、')}</Text>)}{draftGaps.data.serviceOptions.map(option => <Button key={option.sourceRef.id} secondary label={option.title} onPress={() => router.push(option.primaryAction.path as never)} />)}</Card> : draftGaps.isError ? <Button secondary label="缺口读取失败，重试" onPress={() => void draftGaps.refetch()} /> : null}{params.templateKey && !id ? <Card title="从模板创建计划"><Text style={ui.detail}>已保留选择的模板。描述你的需求，AI 会检查所需信息与资源。</Text></Card> : null}{!id ? <><Card title={actualMode === 'PLAN' ? '你想让什么事情持续运行？' : '现在想让我帮你做什么？'}><Text style={ui.detail}>{actualMode === 'PLAN' ? '描述目标和周期，AI 提出计划草案，由你确认后创建。' : '这是一段临时会话，可以帮助你解答、分析和整理。'}</Text></Card>{(actualMode === 'PLAN' ? ['持续跟进家庭补给', '每周总结工作进展', '长期整理收支', '定期提醒重要事项'] : ['总结文件', '整理今天安排', '查找信息', '生成清单']).map(title => <Pressable key={title} style={[ui.card, ui.line]} onPress={() => setInput(title)}><View style={ui.icon}><Ionicons name="sparkles" size={23} color="#287BFF" /></View><Text style={[ui.title, { flex: 1 }]}>{title}</Text><Ionicons name="chevron-forward" size={21} color="#61718C" /></Pressable>)}</> : conversation.isLoading ? <ActivityIndicator color="#287BFF" /> : conversation.isError ? <Button secondary label="会话读取失败，点击重试" onPress={() => void conversation.refetch()} /> : conversation.data?.messages.map(message => <Card key={message.id}><Text style={{ color: '#287BFF', fontWeight: '600' }}>{message.role === 'user' ? '我' : '懒人装甲'}</Text><ConversationMessage content={message.content} />{message.contextRefs?.filter(ref => ref.type === 'ConversationAttachment').map(ref => <Text key={ref.id} style={ui.detail}>附件：{conversation.data?.attachments.find(file => file.id === ref.id)?.fileName ?? '文件'}</Text>)}{message.structuredPayload?.actionProposal ? <View style={{ gap: 8 }}><Text style={ui.title}>一次性操作草案 · {message.structuredPayload.actionProposal.name}</Text><Text style={ui.detail}>确认后进入能力检查与执行审批，运行结果由后端验证。</Text>{message.id === conversation.data?.messages.filter(item => item.role === 'assistant').at(-1)?.id && actualMode === 'TEMPORARY' ? <Button label="确认本次操作" disabled={newConversation.isPending || confirmAction.isPending || send.isPending || attach.isPending} onPress={() => confirmAction.mutate(message.id)} /> : <Text style={ui.detail}>历史操作草案</Text>}</View> : null}{message.structuredPayload?.proposal ? <View style={{ gap: 8 }}><Text style={ui.title}>计划草案 · {message.structuredPayload.proposal.intentSummary}</Text><Text style={ui.detail}>所需能力：{message.structuredPayload.proposal.requiredCapabilities.map(value => presentation.capability(value)).join('、') || '等待资源检查'}</Text><Text style={ui.detail}>{message.structuredPayload.proposal.missingRequirements.map(value => presentation.reason(value)).join('\n')}</Text>{message.id !== conversation.data?.messages.filter(item => item.role === 'assistant').at(-1)?.id || conversation.data?.status === 'PLAN_CONFIRMED' ? <Text style={ui.detail}>历史草案</Text> : actualMode === 'PLAN' ? <Button label={conversation.data?.planId ? '确认生成新版本' : '确认创建计划'} disabled={newConversation.isPending || confirm.isPending || saveDraft.isPending || restore.isPending || send.isPending} onPress={() => confirm.mutate()} /> : <Button secondary label="设为计划" disabled={newConversation.isPending || promote.isPending || saveDraft.isPending || restore.isPending || send.isPending} onPress={() => promote.mutate()} />}</View> : null}</Card>)}{onceRequests.data?.map(task => <Card key={task.id} title="一次性运行"><Text style={ui.detail}>{presentation.reason(task.status)}</Text><Button secondary label="查看本次运行" onPress={() => router.push(`/once-request?id=${task.id}` as never)} /></Card>)}{send.isPending ? <ActivityIndicator color="#287BFF" /> : null}{error ? <Text style={ui.error}>{presentation.error(error)}</Text> : null}</ScrollView>{pendingAttachments.length ? <View style={{ paddingHorizontal: 18 }}><Text style={ui.detail}>文档附件 · 已提取文字，每份会话读取前 16000 字符</Text>{pendingAttachments.map(file => <Pressable key={file.id} onPress={() => setPendingAttachments(files => files.filter(item => item.id !== file.id))}><Text style={ui.detail}>{file.fileName} · 移除</Text></Pressable>)}</View> : null}<View style={[ui.card, ui.line, { marginHorizontal: 14, marginBottom: 12 }]}><Pressable accessibilityLabel="添加文档附件" disabled={newConversation.isPending || attach.isPending || send.isPending || !token} onPress={() => attach.mutate()}><Ionicons name="attach" size={25} color="#61718C" /></Pressable><TextInput accessibilityLabel="会话需求" value={input} onChangeText={setInput} placeholder={actualMode === 'PLAN' ? '描述长期计划需求' : '问我任何临时需求'} multiline maxLength={12000} scrollEnabled editable={!newConversation.isPending} style={[ui.input, { flex: 1, minWidth: 0, minHeight: 36, maxHeight: 112, textAlignVertical: 'top', backgroundColor: 'transparent', borderWidth: 0 }]} /><Pressable accessibilityLabel="语音输入" onPress={async () => { try { const text = await startSystemSpeechRecognition('zh-CN'); if (text) setInput(text); } catch { setError('当前无法使用语音输入'); } }}><Ionicons name="mic-outline" size={25} color="#61718C" /></Pressable><Pressable accessibilityLabel="发送" disabled={newConversation.isPending || saveDraft.isPending || restore.isPending || send.isPending || attach.isPending || !input.trim() || !token || !config.data?.configured} onPress={() => send.mutate()}><Ionicons name="send" size={27} color="#287BFF" /></Pressable></View></KeyboardAvoidingView><Modal visible={historyOpen} transparent animationType="slide" onRequestClose={() => setHistoryOpen(false)}><View style={{ flex: 1, backgroundColor: 'rgba(20,35,60,0.3)', justifyContent: 'flex-end' }}><View style={[ui.card, { maxHeight: '80%', padding: 14, backgroundColor: 'rgba(228,239,251,0.96)' }]}><Text style={ui.title}>{actualMode === 'PLAN' ? '计划会话' : '临时会话'}历史</Text><ScrollView>{history.data?.filter(item => item.mode === actualMode).map(item => <Pressable key={item.id} style={ui.row} disabled={newConversation.isPending || send.isPending || attach.isPending || saveDraft.isPending || restore.isPending} onPress={() => { routeContextActive.current = false; followBottom.current = true; setInput(''); setId(item.id); setPendingAttachments([]); setMode(item.mode); setHistoryOpen(false); }}><Text numberOfLines={2} style={[ui.label, { flex: 1, minWidth: 0, fontSize: 14 }]}>{presentation.text(item.title, '新会话')}</Text><Text style={ui.detail}>{item.mode === 'PLAN' ? '计划' : '临时'}</Text></Pressable>)}</ScrollView>{history.isError ? <Button secondary label="读取失败，重试" onPress={() => void history.refetch()} /> : null}<Button secondary label="关闭" onPress={() => setHistoryOpen(false)} /></View></View></Modal></SafeAreaView>; }

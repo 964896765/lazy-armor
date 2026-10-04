@@ -1,16 +1,25 @@
 import { Tabs, usePathname } from 'expo-router';
-import { StyleSheet, View } from 'react-native';
+import { Keyboard, StyleSheet, View } from 'react-native';
+import { useEffect, useState } from 'react';
 import { GlobalActionBar } from '../../src/v6-shell';
 import { isSecondaryWorkspacePath } from '../../src/information-architecture';
 
 export default function TabsLayout() {
   const pathname = usePathname();
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  useEffect(() => {
+    const shown = Keyboard.addListener('keyboardDidShow', () => setKeyboardVisible(true));
+    const hidden = Keyboard.addListener('keyboardDidHide', () => setKeyboardVisible(false));
+    return () => { shown.remove(); hidden.remove(); };
+  }, []);
   const secondaryPage = isSecondaryWorkspacePath(pathname);
   return (
     <View style={styles.container}>
       <View style={styles.scene}>
-        <Tabs initialRouteName="index" tabBar={() => null} screenOptions={{ headerShown: false }}>
-          <Tabs.Screen name="index" options={{ title: '首页' }} />
+        <Tabs initialRouteName="index" tabBar={() => null} screenOptions={{ headerShown: false, sceneStyle: { backgroundColor: 'transparent' } }}>
+          <Tabs.Screen name="index" options={{ href: null }} />
+          <Tabs.Screen name="schedule" options={{ title: '日程' }} />
+          <Tabs.Screen name="resources" options={{ href: null }} />
           <Tabs.Screen name="plans" options={{ title: '计划' }} />
           <Tabs.Screen name="private" options={{ href: null }} />
           <Tabs.Screen name="services" options={{ href: null }} />
@@ -28,7 +37,7 @@ export default function TabsLayout() {
           <Tabs.Screen name="permissions" options={{ href: null }} />
         </Tabs>
       </View>
-      {!secondaryPage ? <GlobalActionBar /> : null}
+      {!secondaryPage && !keyboardVisible ? <GlobalActionBar /> : null}
     </View>
   );
 }

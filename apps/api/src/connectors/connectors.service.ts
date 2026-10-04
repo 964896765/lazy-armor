@@ -38,7 +38,7 @@ export class ConnectorsService {
     const connector = this.registry.get(key);
     const metadata = connector.metadata();
     const capabilities = connector.capabilities();
-    const connectable = metadata.authentication.type !== 'none' && metadata.productionStatus !== 'DISABLED';
+    const connectable = (metadata.authentication.type !== 'none' || metadata.key === 'public_http_json') && metadata.productionStatus !== 'DISABLED';
     return {
       key: metadata.key,
       name: metadata.name,

@@ -12,6 +12,7 @@ import { ObservabilityService } from '../observability/observability.service';
 import { UsageService } from '../usage/usage.service';
 import { ConnectorRateLimitCoordinator } from '../infrastructure/connector-rate-limit-coordinator.service';
 import { ProviderCircuitBreakerService } from '../infrastructure/provider-circuit-breaker.service';
+import { publicJsonUrl } from '../connectors/public-json.connector';
 import type {
   CompleteOAuthConnectionDto,
   CreateConnectionDto,
@@ -35,6 +36,10 @@ export class ConnectionsService {
   ) {}
 
   async create(userId: string, input: CreateConnectionDto) {
+    if (input.connectorId === 'public_http_json') {
+      if (!input.credentials || Object.keys(input.credentials).some(key => key !== 'endpoint')) throw new BadRequestException('公开 JSON 接口只接受 endpoint，不接受密钥');
+      try { publicJsonUrl(input.credentials.endpoint); } catch { throw new BadRequestException('请填写无密钥、无查询参数的公开 HTTPS JSON 地址'); }
+    }
     const adapter = this.getAdapter(input.connectorId);
     const catalog = await this.requireCatalog(input.connectorId);
     if (adapter.metadata().authentication?.type === 'oauth2') {

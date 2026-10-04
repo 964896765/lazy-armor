@@ -342,7 +342,7 @@ export function planCenterStatusLabel(kind: string, status: string): string {
       case 'prepared':
         return '发布前已准备好';
       default:
-        return '已准备当前内容';
+        return '暂未取得运行状态';
     }
   }
   if (kind === 'daily_summary') {
@@ -352,7 +352,7 @@ export function planCenterStatusLabel(kind: string, status: string): string {
       case 'summary_ready':
         return '摘要已准备好';
       default:
-        return '已按当前策略整理';
+        return '暂未取得运行状态';
     }
   }
   if (kind === 'logistics') {
@@ -363,7 +363,7 @@ export function planCenterStatusLabel(kind: string, status: string): string {
       case 'exception':
         return '需要留意';
       default:
-        return '已完成本轮检查';
+        return '暂未取得运行状态';
     }
   }
   if (kind === 'household') {
@@ -373,10 +373,10 @@ export function planCenterStatusLabel(kind: string, status: string): string {
       case 'low_stock':
         return '该准备补货了';
       default:
-        return '已完成本轮检查';
+        return '暂未取得运行状态';
     }
   }
-  return '已按当前计划处理';
+  return '暂未取得运行状态';
 }
 
 export function triggerSummary(triggerType: string, config: Record<string, unknown> | null | undefined): string {

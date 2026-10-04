@@ -18,6 +18,12 @@ const envSchema = z.object({
     }
   }, 'CREDENTIAL_MASTER_KEY must be a base64-encoded 32-byte key'),
   CREDENTIAL_STORE_PATH: z.string().default('.data/credentials'),
+  DEEPSEEK_SERVER_DEV_ENABLED: z.enum(['0', '1']).optional(),
+  AGENT_MODEL_PROVIDER: z.string().optional(),
+  AGENT_MODEL_BASE_URL: z.string().optional(),
+  AGENT_MODEL_NAME: z.string().optional(),
+  AGENT_MODEL_API_KEY: z.string().optional(),
+  MCP_EXECUTION_BINDINGS_JSON: z.string().optional(),
   GMAIL_OAUTH_CLIENT_ID: z.string().trim().optional(),
   GMAIL_OAUTH_CLIENT_SECRET: z.string().trim().optional(),
   GMAIL_OAUTH_REDIRECT_URI: z.string().trim().optional(),

@@ -11,6 +11,7 @@
       "icon": "./assets/icon.png"
     },
     "android": {
+      "softwareKeyboardLayoutMode": "resize",
       "package": "com.lazyarmor.app",
       "versionCode": 1,
       "icon": "./assets/icon.png",

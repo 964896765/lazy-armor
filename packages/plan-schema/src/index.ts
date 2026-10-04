@@ -624,3 +624,6 @@ export {
 } from './action-recipe';
 export * from './verification-runtime';
 export * from './terminal-follow-up';
+
+export * from './consumer-projections';
+export { actionProposalSchema, compileActionProposal, type ActionProposal } from './action-proposal';

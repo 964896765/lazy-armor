@@ -100,6 +100,6 @@ export const OUTBOX_SERVICE = 'OUTBOX_SERVICE';
     { provide: OUTBOX_SERVICE, useExisting: OutboxService },
   ],
   // Public extension surface; Runner and verification behavior stay unchanged.
-  exports: [ActionAdapter, VerificationPolicyRegistry, ExecutionDispatchService, ExecutionsService, ExecutionWorker, ExecutionQueueReconciler, ExecutionApprovalGate, ExecutionStateService, ExecutionStepStateService, ExecutionEventService, ExecutionPolicyService, FallbackExecutor, ExecutionResultResolver, RuntimeConnectionGuard, ConditionEvaluator, SnapshotSanitizer, SideEffectOperationsService, OutboxService, SideEffectCoordinator, OutboxWorker, EXECUTION_WORKER, EXECUTION_RECONCILER, EXECUTION_STATE_SERVICE, EXECUTION_POLICY_SERVICE, FALLBACK_EXECUTOR, OUTBOX_WORKER, SIDE_EFFECT_COORDINATOR, SIDE_EFFECT_OPERATIONS_SERVICE, OUTBOX_SERVICE],
+  exports: [ReconciliationService, ActionAdapter, VerificationPolicyRegistry, ExecutionDispatchService, ExecutionsService, ExecutionWorker, ExecutionQueueReconciler, ExecutionApprovalGate, ExecutionStateService, ExecutionStepStateService, ExecutionEventService, ExecutionPolicyService, FallbackExecutor, ExecutionResultResolver, RuntimeConnectionGuard, ConditionEvaluator, SnapshotSanitizer, SideEffectOperationsService, OutboxService, SideEffectCoordinator, OutboxWorker, EXECUTION_WORKER, EXECUTION_RECONCILER, EXECUTION_STATE_SERVICE, EXECUTION_POLICY_SERVICE, FALLBACK_EXECUTOR, OUTBOX_WORKER, SIDE_EFFECT_COORDINATOR, SIDE_EFFECT_OPERATIONS_SERVICE, OUTBOX_SERVICE],
 })
 export class ExecutionModule {}

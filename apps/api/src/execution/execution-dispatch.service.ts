@@ -1,5 +1,5 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { actionIntents, actionAdapterBindings, connectors, executionSteps, executions, planActions, plans, strategyRuntimeBindings, strategyRuntimeWakeups } from '@lazy-armor/database';
+import { conversationOnceRequests, actionIntents, actionAdapterBindings, connectors, executionSteps, executions, planActions, plans, strategyRuntimeBindings, strategyRuntimeWakeups } from '@lazy-armor/database';
 import { ACTION_ADAPTER_REVISION, TERMINAL_FOLLOW_UP_RULES, buildActionIntent, catalogHash, definitionHash,
   requiresTerminalHandoffProof, riskMaximum, terminalFollowUpRule, buildVerificationContract, verificationContractHash,
   actionResolutionContractHash, type ActionResolutionContract, type ContextRiskSignal, type RiskLevel } from '@lazy-armor/plan-schema';
@@ -45,19 +45,27 @@ export class ExecutionDispatchService {
     private readonly verificationPolicies: VerificationPolicyRegistry,
   ) {}
 
-  async dispatchManual(userId: string, planId: string, requestId: string, triggerPayload: Record<string, unknown>, resolutionDecisionIds?: string[]) {
+  async dispatchManual(userId: string, planId: string, requestId: string, triggerPayload: Record<string, unknown>, resolutionDecisionIds?: string[], expectedVersionId?: string) {
     if (requestId.startsWith('strategy:')) throw new ConflictException('Strategy execution identity is server-owned');
-    return this.dispatch(userId, planId, requestId, triggerPayload, resolutionDecisionIds);
+    return this.dispatch(userId, planId, requestId, triggerPayload, resolutionDecisionIds, undefined, expectedVersionId);
   }
 
   async dispatchStrategy(userId: string, planId: string, wakeupId: string) {
     return this.dispatch(userId, planId, `strategy:${wakeupId}`, {}, undefined, wakeupId);
   }
+  async dispatchActionProposal(userId: string, taskId: string, resolutionDecisionIds: string[]) {
+    const task = (await this.db.select().from(conversationOnceRequests).where(and(eq(conversationOnceRequests.id, taskId), eq(conversationOnceRequests.userId, userId))).limit(1))[0];
+    if (!task?.proposalMessageId) throw new ConflictException('Confirmed ActionProposal request required');
+    const actions = await this.db.select().from(planActions).where(eq(planActions.planVersionId, task.planVersionId));
+    for (const action of actions) if (!action.connectionId) await this.resolver.resolveLocalNotification(userId, task.planVersionId, `once:${task.id}:local:${action.id}`);
+    return this.dispatch(userId, task.planId, `once:${task.id}`, task.triggerPayload, resolutionDecisionIds, undefined, task.planVersionId, task.id);
+  }
 
-  private async dispatch(userId: string, planId: string, requestId: string, triggerPayload: Record<string, unknown>, resolutionDecisionIds?: string[], wakeupId?: string) {
+  private async dispatch(userId: string, planId: string, requestId: string, triggerPayload: Record<string, unknown>, resolutionDecisionIds?: string[], wakeupId?: string, expectedVersionId?: string, onceTaskId?: string) {
     const resolvedDispatchInputHash = resolutionDecisionIds ? catalogHash({ planId, requestId, triggerPayload: this.sanitizer.sanitize(triggerPayload), resolutionDecisionIds: [...resolutionDecisionIds].sort() }) : null;
     const duplicate = await this.findDuplicate(userId, requestId);
     if (duplicate) {
+      if (duplicate.planId !== planId || (expectedVersionId && duplicate.planVersionId !== expectedVersionId)) throw new ConflictException('Execution request identity does not match the selected plan version');
       if (wakeupId && (duplicate.planId !== planId || (duplicate.resolvedRiskSnapshotJson?.terminalHandoffProof as TerminalHandoffProof | undefined)?.wakeupId !== wakeupId)) throw new ConflictException('Strategy execution identity conflict');
       return this.replayResolved(duplicate, resolvedDispatchInputHash);
     }
@@ -74,9 +82,16 @@ export class ExecutionDispatchService {
         const planRows = await tx.select().from(plans).where(and(eq(plans.id, planId), eq(plans.userId, userId))).limit(1).for('update');
         const plan = planRows[0];
         if (!plan) throw new NotFoundException('Plan not found');
-        if (plan.status !== 'active') throw new ConflictException('Only active plans can create Executions');
-        if (!plan.activeVersionId) throw new ConflictException('Plan has no active version');
-        pinnedVersionId = plan.activeVersionId;
+        if (plan.executionScope === 'ONCE') {
+          const task = onceTaskId ? (await tx.select().from(conversationOnceRequests).where(and(eq(conversationOnceRequests.id, onceTaskId), eq(conversationOnceRequests.userId, userId))).for('update'))[0] : null;
+          if (!task?.proposalMessageId || task.planId !== planId || task.planVersionId !== plan.currentVersionId || requestId !== `once:${task.id}` || plan.status !== 'draft') throw new ConflictException('One-time execution requires the frozen confirmed proposal');
+          pinnedVersionId = task.planVersionId;
+        } else {
+          if (onceTaskId || plan.status !== 'active') throw new ConflictException('Only active plans can create Executions');
+          if (!plan.activeVersionId) throw new ConflictException('Plan has no active version');
+          pinnedVersionId = plan.activeVersionId;
+        }
+        if (expectedVersionId && pinnedVersionId !== expectedVersionId) throw new ConflictException('Plan version changed after confirmation; select the current version again');
         const handoff = wakeupId ? await this.resolveHandoff(userId, planId, wakeupId, tx) : undefined;
         if (handoff) {
           if ('triggerPayload' in handoff) {
@@ -88,6 +103,7 @@ export class ExecutionDispatchService {
         }
         if (resolutions.some((resolution) => resolution.row.planVersionId !== pinnedVersionId || resolution.requirement.operation !== 'execute')) throw new ConflictException('Resolution must authorize an execute capability on the active PlanVersion');
         const assembled = await this.assembler.assembleById(userId, planId, pinnedVersionId, tx);
+        if (onceTaskId && (assembled.definition.triggers.some(trigger => trigger.triggerType !== 'manual') || assembled.definition.approvalPolicy?.type !== 'always')) throw new ConflictException('One-time proposal must retain manual trigger and per-run approval');
         if (assembled.computedHash !== assembled.version.definitionHash) throw new ConflictException('PLAN_DEFINITION_INTEGRITY_ERROR');
         const requiresHandoff = requiresServerOwnedTerminalHandoff(assembled.definition.actions);
         if (!handoff && requiresHandoff) {
@@ -185,6 +201,7 @@ export class ExecutionDispatchService {
     } catch (error) {
       const raced = await this.findDuplicate(userId, requestId);
       if (raced) {
+        if (raced.planId !== planId || (expectedVersionId && raced.planVersionId !== expectedVersionId)) throw new ConflictException('Execution request identity does not match the selected plan version');
         if (wakeupId && (raced.planId !== planId || (raced.resolvedRiskSnapshotJson?.terminalHandoffProof as TerminalHandoffProof | undefined)?.wakeupId !== wakeupId)) throw new ConflictException('Strategy execution identity conflict');
         return this.replayResolved(raced, resolvedDispatchInputHash);
       }
