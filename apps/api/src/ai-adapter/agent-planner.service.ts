@@ -1,5 +1,7 @@
+import {LocalAcquisitionService} from '../consumer/local-acquisition.service';
+import type {AcquisitionCoverage} from '@lazy-armor/plan-schema';
 import { createHash } from 'node:crypto';
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import {
   PLAN_STRATEGIES,
   compileScenarioPlan,
@@ -59,6 +61,7 @@ export interface PlannerResult {
 }
 
 export interface PlannerRuntimeFacts {
+  acquisitionCoverage?:readonly AcquisitionCoverage[];
   domain: string | null;
   scenarios: AgentScenarioRef[];
   truths: CompiledTruthRef[];
@@ -82,6 +85,7 @@ export class AgentPlannerService {
     private readonly mcp: McpServerRegistryService,
     private readonly audit: AuditService,
     private readonly lazyArmorTools: LazyArmorMcpToolService,
+    @Optional() private readonly acquisitions?:LocalAcquisitionService,
   ) {}
 
   async plan(userId: string, intent: string, options: { audit?: boolean; workContext?: 'TEMPORARY' | 'PLAN'; contextSources?: Array<{ label: string; content: string }> } = {}): Promise<PlannerResult> {
@@ -95,6 +99,7 @@ export class AgentPlannerService {
     const skillBodies = this.skills.listRuntimeAgentSkills().map((skill) => ({ name: skill.name, instruction: skill.bodyMarkdown }));
     const context = this.compiler.compile({
       intent,
+      acquisitionCoverage:facts.acquisitionCoverage,
       domain: facts.domain,
       scenarios: facts.scenarios,
       truths: facts.truths,
@@ -178,7 +183,9 @@ export class AgentPlannerService {
       reasons: capability.reasons,
     }));
     const tools = this.mcp.listEnabledTools();
-    return { domain, scenarios, truths, capabilities, tools };
+    const coverage=this.acquisitions?await this.acquisitions.coverage(userId):null;
+    const acquisitionCoverage:AcquisitionCoverage[]|undefined=coverage?.sources.map(round=>({sourceId:round.sourceId,factKey:round.capability,state:round.state as AcquisitionCoverage['state'],observedAt:round.observedAt?.toISOString()??null,evidenceRefs:round.evidenceRefsJson,reason:round.reason}));
+    return { domain, scenarios, truths, capabilities, tools, acquisitionCoverage:acquisitionCoverage?.length?acquisitionCoverage:undefined };
   }
 
   /** Pure fail-closed validation of model output against collected runtime facts. */

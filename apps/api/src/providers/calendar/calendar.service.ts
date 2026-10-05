@@ -43,6 +43,7 @@ export class GoogleCalendarService implements OnModuleInit {
     this.sessions(); const connection = await this.connections.get(userId, connectionId);
     if (connection.connectorId !== 'google_calendar') throw new ForbiddenException('An owned Google Calendar connection is required');
     const read = await this.connections.invokeConsumerRead(userId, connectionId, { capability: 'READ_CALENDAR_EVENT', input, requestId: `calendar-read:${connectionId}:${Date.now()}` });
+    if (!Array.isArray(read.data?.events)) throw new ServiceUnavailableException('CALENDAR_READ_EVIDENCE_INVALID');
     const result = [];
     for (const event of Array.isArray(read.data.events) ? read.data.events : []) {
       const payload = event as Record<string, JsonValue>; const hash = realityValueHash(payload);
@@ -52,6 +53,6 @@ export class GoogleCalendarService implements OnModuleInit {
       const truth = []; for (const candidate of observation.candidates) truth.push(await this.pipeline.confirmCandidate(userId, candidate.id, { verifiedBy: 'authenticated_provider_read', verificationMethod: 'READ_BACK' }));
       result.push({ ...observation, truth });
     }
-    return { observations: result };
+    return { observations: result, nextPageToken: typeof read.data.nextPageToken==='string'?read.data.nextPageToken:null };
   }
 }

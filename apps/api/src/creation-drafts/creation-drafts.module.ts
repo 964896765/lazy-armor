@@ -9,6 +9,6 @@ import { CreationDraftsService } from './creation-drafts.service';
   imports: [FactDemandsModule, RuntimeCatalogModule],
   controllers: [CreationDraftsController],
   providers: [CreationDraftsService, DraftGapProjectionService],
-  exports: [CreationDraftsService],
+  exports: [CreationDraftsService, DraftGapProjectionService],
 })
 export class CreationDraftsModule {}

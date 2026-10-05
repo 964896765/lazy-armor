@@ -40,9 +40,10 @@ export function resolveAppEnv(): MobileAppEnv {
 
 export async function api<T>(path: string, token?: string, init?: RequestInit): Promise<T> {
   const controller = new AbortController();
-  const timeoutMs = /\/conversations\/[^/]+\/messages$/.test(path) || path.startsWith('/ai-service/test') ? 65000 : path.startsWith('/artifacts') || /\/conversations\/[^/]+\/confirm-action$/.test(path) ? 25000 : path.startsWith('/service-media') ? 20000 : path.startsWith('/connections') || /\/conversations\/[^/]+\/run-once$/.test(path) ? 15000 : 3000;
+  const timeoutMs = (path.startsWith('/auth/code/') || path === '/auth/refresh') ? 12000 : /\/conversations\/[^/]+\/messages$/.test(path) || path.startsWith('/ai-service/test') ? 65000 : path.startsWith('/artifacts') || /\/conversations\/[^/]+\/confirm-action$/.test(path) ? 25000 : path.startsWith('/service-media') ? 20000 : path.startsWith('/connections') || /\/conversations\/[^/]+\/run-once$/.test(path) ? 15000 : 3000;
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   const abortFromCaller = () => controller.abort();
+  if(init?.signal?.aborted)controller.abort();
   init?.signal?.addEventListener('abort', abortFromCaller, { once: true });
   try {
     const response = await fetch(`${API_URL}/api${path}`, {

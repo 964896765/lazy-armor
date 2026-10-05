@@ -34,8 +34,12 @@ describe.sequential('P0-6 Extended Risk, Approval, Authorization, Notification a
   let connectorKey: string;
   let connectionId: string;
   const unique = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const previousApprovalTtl = process.env.TEST_APPROVAL_TTL_MS;
 
   beforeAll(async () => {
+    // This suite tests revocation, not wall-clock expiry during DB operations.
+    // The expiry case below sets its own persisted deadline explicitly.
+    process.env.TEST_APPROVAL_TTL_MS = '60000';
     process.env.NODE_ENV = 'test';
     process.env.DATABASE_URL ??= 'mysql://lazy_armor:lazy_armor_dev@127.0.0.1:3307/lazy_armor';
     process.env.REDIS_URL ??= 'redis://127.0.0.1:6379';
@@ -59,7 +63,7 @@ describe.sequential('P0-6 Extended Risk, Approval, Authorization, Notification a
     connectionId = (await request(app.getHttpServer()).post('/api/connections').set(auth(userA.token)).send({ connectorId: connectorKey, externalAccountName: 'P0-6 extended test' }).expect(201)).body.id;
     await request(app.getHttpServer()).put(`/api/connections/${connectionId}/permissions`).set(auth(userA.token)).send({ permissions: [{ capability: 'TEST_R2_INTERNAL', granted: true }, { capability: 'TEST_R3_EXTERNAL', granted: true }] }).expect(200);
   });
-  afterAll(async () => { await pool?.end(); await app?.close(); });
+  afterAll(async () => { await pool?.end(); await app?.close(); if(previousApprovalTtl===undefined)delete process.env.TEST_APPROVAL_TTL_MS;else process.env.TEST_APPROVAL_TTL_MS=previousApprovalTtl; });
 
   async function register(email: string): Promise<Session> {
     const result = await request(app.getHttpServer()).post('/api/auth/register').send({ email, password: 'correct-horse-battery-staple', displayName: email.split('@')[0] }).expect(201);

@@ -7,3 +7,8 @@ export class ResolveFactDemandsDto {
   @IsObject() goal!: ScenarioGoalSpec;
   @IsObject() subject!: ScenarioResourceSubject;
 }
+
+export class AcquireFactDemandsDto extends ResolveFactDemandsDto {
+ @IsInt() @Min(0) scopeStart!:number;
+ @IsInt() @Min(1) scopeEnd!:number;
+}

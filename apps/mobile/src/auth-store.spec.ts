@@ -57,6 +57,15 @@ describe('native session restart and rotation', () => {
     expect(useAuthStore.getState()).toMatchObject({ token: 'new-access', refreshToken: 'new-refresh', hydrated: true });
   });
 
+  it('shares concurrent hydration and never reloads an already rotated in-memory session',async()=>{
+    mocks.loadAccessToken.mockResolvedValue('old-access');mocks.loadRefreshToken.mockResolvedValue('old-refresh');
+    mocks.api.mockResolvedValue({accessToken:'new-access',refreshToken:'new-refresh',expiresIn:900});
+    await Promise.all([useAuthStore.getState().hydrate(),useAuthStore.getState().hydrate()]);
+    await useAuthStore.getState().hydrate();
+    expect(mocks.loadRefreshToken).toHaveBeenCalledOnce();expect(mocks.api).toHaveBeenCalledOnce();
+    expect(useAuthStore.getState().refreshToken).toBe('new-refresh');
+  });
+
   it('clears revoked refresh credentials after restart', async () => {
     mocks.loadAccessToken.mockResolvedValue('expired-access');
     mocks.loadRefreshToken.mockResolvedValue('revoked-refresh');

@@ -1,3 +1,4 @@
+import { HeaderIconButton } from '../../src/header-icon-button';
 import { SegmentedControl, ErrorState, LoadingState } from '../../src/consumer-ui';
 import { ConsumerPresentationMapper as presentation } from '../../src/consumer-presentation';
 import { useQuery } from '@tanstack/react-query';
@@ -10,7 +11,7 @@ import type { ResourceProjection } from '@lazy-armor/plan-schema';
 import { api } from '../../src/api';
 import { useAuthStore } from '../../src/auth-store';
 import { Button, ui } from '../../src/editor-ui';
-import { useRuntimeSettings } from '../../src/runtime-settings';
+import { LocalResourceList } from '../../src/local-resource-list';
 
 const tabs = [{ kind: 'LOCAL', label: '本机' }, { kind: 'CLOUD', label: '云端' }, { kind: 'DEVICE', label: '其它设备' }, { kind: 'INTERFACE', label: '接口' }] as const;
 
@@ -18,29 +19,17 @@ export default function Resources() {
  const params=useLocalSearchParams<{returnConversationId?:string;returnMode?:string}>();
  const token = useAuthStore(s => s.token);
  const [kind, setKind] = useState<ResourceProjection['kind']>('LOCAL');
- const runtime = useRuntimeSettings();
- const [nativeError, setNativeError] = useState('');
  const [showMore, setShowMore] = useState(false);
  const [addOpen, setAddOpen] = useState(false);
  const query = useQuery({ queryKey: ['resources', token], queryFn: () => api<ResourceProjection[]>('/consumer/resources', token), enabled: Boolean(token) });
- useEffect(() => {
-  const refresh = () => { void useRuntimeSettings.getState().refresh().then(() => setNativeError('')).catch(() => setNativeError('本机授权状态读取失败，请重试')); };
-  refresh();
-  const listener = AppState.addEventListener('change', state => { if (state === 'active') { refresh(); void query.refetch(); } });
-  return () => listener.remove();
- }, [token]);
  const resources = (query.data ?? []).filter(item => item.kind === kind && (showMore || item.status !== '不可用'));
  const moreCount = (query.data ?? []).filter(item => item.kind === kind && item.status === '不可用').length;
  return <SafeAreaView edges={['top']} style={{ flex: 1 }}><ScrollView contentContainerStyle={ui.content}>
-  <View style={ui.line}><View style={{ flex: 1, minWidth: 0 }}><SegmentedControl value={kind} options={tabs.map(tab => ({value:tab.kind,label:tab.label}))} onChange={setKind}/></View><Pressable accessibilityRole="button" accessibilityLabel="添加资源" style={ui.back} onPress={() => kind === 'CLOUD' ? setAddOpen(true) : router.push((kind === 'DEVICE' ? '/connected-devices' : kind === 'INTERFACE' ? '/add-interface' : '/connections/add') as never)}><Ionicons name="add" size={24} color="#2589FF" /></Pressable></View>
+  <View style={ui.line}><Text style={[ui.pageTitle,{textAlign:'left'}]}>资源</Text><HeaderIconButton label="添加资源" icon="add" onPress={() => kind === 'CLOUD' ? setAddOpen(true) : router.push((kind === 'DEVICE' ? '/connected-devices' : kind === 'INTERFACE' ? '/add-interface' : '/connections/add') as never)}/></View><Text style={ui.detail}>管理计划所需的数据、设备与接口；授权后按需使用。</Text>
+  <SegmentedControl value={kind} options={tabs.map(tab=>({value:tab.kind,label:tab.label}))} onChange={setKind}/>
   {params.returnConversationId ? <Button secondary label="返回计划会话" onPress={()=>router.replace({pathname:'/chat',params:{mode:params.returnMode??'plan',conversationId:params.returnConversationId}} as never)}/> : null}
   {kind === 'LOCAL' ? <>
-   <Text style={ui.detail}>本机授权与系统能力</Text>
-   {nativeError ? <Text style={ui.error}>{nativeError}</Text> : !runtime.ready ? <ActivityIndicator /> : [
-    { title: '消息获取', detail: '读取已授权的系统通知', enabled: runtime.acquisition },
-    { title: '消息通知', detail: '向本机发送消息提醒', enabled: runtime.notifications },
-    { title: '后台服务', detail: '允许本机任务在后台运行', enabled: runtime.background },
-   ].map(item => <Pressable key={item.title} style={ui.listRow} onPress={() => router.push('/settings' as never)}><View style={[ui.line, { justifyContent: 'space-between' }]}><Text style={ui.title}>{item.title}</Text><Text style={{ color: '#287BFF' }}>{item.enabled ? '已开启' : '开启'} ›</Text></View><Text style={ui.detail}>{item.detail}</Text></Pressable>)}
+   <LocalResourceList/>
   </> : !token ? <Button label="登录后连接资源" onPress={() => router.push('/auth/login' as never)} /> : query.isLoading ? <LoadingState /> : query.isError ? <ErrorState onRetry={() => void query.refetch()} /> : <>
    {resources.map(item => <Pressable key={item.resourceId} style={ui.listRow} onPress={() => router.push(item.primaryAction.path as never)}><View style={[ui.line, { justifyContent: 'space-between' }]}><Text style={ui.title}>{presentation.text(item.name,'资源')}</Text><Text style={{ color: '#287BFF' }}>{item.status} ›</Text></View><Text style={ui.detail}>{presentation.text(item.summary)}</Text>{item.reasons.length ? <Text style={ui.detail}>{item.reasons.map(reason => presentation.reason(reason)).join(' · ')}</Text> : null}</Pressable>)}
    {!resources.length ? <View style={ui.listRow}><Text style={ui.detail}>{kind === 'DEVICE' ? '暂无已认证设备' : kind === 'INTERFACE' ? '暂无已添加接口' : '暂无云端连接'}</Text></View> : null}

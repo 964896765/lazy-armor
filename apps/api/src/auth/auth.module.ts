@@ -1,3 +1,5 @@
+import { LocalLoginCodeDeliveryProvider } from './local-login-code-delivery.provider';
+import { LoginCodeService } from './login-code.service';
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
@@ -14,7 +16,7 @@ import { PasswordResetDeliveryService } from './password-reset-delivery.service'
     useFactory: (config: ConfigService) => ({ secret: config.getOrThrow<string>('JWT_SECRET'), signOptions: { expiresIn: '1h' } }),
   })],
   controllers: [AuthController],
-  providers: [AuthService, PasswordResetDeliveryService, { provide: APP_GUARD, useClass: AuthGuard }],
+  providers: [LocalLoginCodeDeliveryProvider, LoginCodeService, AuthService, PasswordResetDeliveryService, { provide: APP_GUARD, useClass: AuthGuard }],
   exports: [AuthService],
 })
 export class AuthModule {}

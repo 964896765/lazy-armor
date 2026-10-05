@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { conversationOnceRequests, consumerConversations, consumerMessages, executions, plans, planVersions, planActions, users } from '@lazy-armor/database';
 import { compileActionProposal, canonicalStringify, projectConsumerOutcome } from '@lazy-armor/plan-schema';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, isNull } from 'drizzle-orm';
 import { createHash } from 'node:crypto';
 import { newId } from '@lazy-armor/shared';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
@@ -21,7 +21,7 @@ export class ConversationOnceService {
   if (!input.confirmed) throw new BadRequestException('请先确认一次性操作草案');
   const task = await this.db.transaction(async tx => {
    await tx.select({ id: users.id }).from(users).where(and(eq(users.id, userId), eq(users.status, 'active'))).for('update');
-   const conversation = (await tx.select().from(consumerConversations).where(and(eq(consumerConversations.id, conversationId), eq(consumerConversations.userId, userId))).for('update'))[0];
+   const conversation = (await tx.select().from(consumerConversations).where(and(eq(consumerConversations.id, conversationId), eq(consumerConversations.userId, userId), isNull(consumerConversations.deletedAt))).for('update'))[0];
    if (!conversation) throw new NotFoundException('会话不存在');
    const prior = (await tx.select().from(conversationOnceRequests).where(and(eq(conversationOnceRequests.userId, userId), eq(conversationOnceRequests.proposalMessageId, input.messageId))))[0];
    if (prior) { if (prior.conversationId !== conversationId) throw new ConflictException('提案不属于当前会话'); return prior; }
@@ -62,7 +62,7 @@ export class ConversationOnceService {
   const inputHash = createHash('sha256').update(canonicalStringify({ conversationId, planId: input.planId, planVersionId: input.planVersionId, triggerPayload: input.triggerPayload })).digest('hex');
   const task = await this.db.transaction(async tx => {
    if (!(await tx.select({ id: users.id }).from(users).where(and(eq(users.id, userId), eq(users.status, 'active'))).for('update'))[0]) throw new NotFoundException('账号不可用');
-   const conversation = (await tx.select().from(consumerConversations).where(and(eq(consumerConversations.id, conversationId), eq(consumerConversations.userId, userId))).for('update'))[0];
+   const conversation = (await tx.select().from(consumerConversations).where(and(eq(consumerConversations.id, conversationId), eq(consumerConversations.userId, userId), isNull(consumerConversations.deletedAt))).for('update'))[0];
    if (!conversation) throw new NotFoundException('会话不存在');
    const prior = (await tx.select().from(conversationOnceRequests).where(and(eq(conversationOnceRequests.userId, userId), eq(conversationOnceRequests.requestId, input.requestId))))[0];
    if (prior) { if (prior.inputHash !== inputHash) throw new ConflictException('同一运行请求不能改变计划版本或输入'); return prior; }
@@ -91,7 +91,7 @@ export class ConversationOnceService {
   return this.get(userId, task.id);
  }
  async list(userId: string, conversationId: string) {
-  if (!(await this.db.select({ id: consumerConversations.id }).from(consumerConversations).where(and(eq(consumerConversations.id, conversationId), eq(consumerConversations.userId, userId))).limit(1))[0]) throw new NotFoundException('会话不存在');
+  if (!(await this.db.select({ id: consumerConversations.id }).from(consumerConversations).where(and(eq(consumerConversations.id, conversationId), eq(consumerConversations.userId, userId), isNull(consumerConversations.deletedAt))).limit(1))[0]) throw new NotFoundException('会话不存在');
   const rows = await this.db.select({ id: conversationOnceRequests.id }).from(conversationOnceRequests).where(and(eq(conversationOnceRequests.userId, userId), eq(conversationOnceRequests.conversationId, conversationId))).orderBy(desc(conversationOnceRequests.createdAt));
   return Promise.all(rows.map(row => this.get(userId, row.id)));
  }

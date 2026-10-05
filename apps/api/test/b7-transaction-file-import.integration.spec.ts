@@ -43,8 +43,11 @@ describe.sequential('B7 transaction file import through Reality Pipeline', { tim
 
     // 候选以 PENDING 状态落地，等待用户确认，不自动成为可信事实。
     const [candidates] = await pool.query<RowDataPacket[]>('SELECT status, fact_key, subject_key FROM candidate_facts WHERE user_id=UUID_TO_BIN(?)', [owner.userId]);
-    expect(candidates).toHaveLength(2);
-    for (const candidate of candidates) {
+    const transactions = candidates.filter(candidate => candidate.fact_key === 'finance.transaction.amount');
+    expect(transactions).toHaveLength(2);
+    expect(candidates.filter(candidate => candidate.fact_key === 'artifact.content')).toHaveLength(1);
+    for (const candidate of candidates) expect(candidate.status).toBe('PENDING');
+    for (const candidate of transactions) {
       expect(candidate.status).toBe('PENDING');
       expect(candidate.fact_key).toBe('finance.transaction.amount');
       expect(candidate.subject_key).toMatch(/^finance\.transaction:local_file:account:cash-account:txn-/);

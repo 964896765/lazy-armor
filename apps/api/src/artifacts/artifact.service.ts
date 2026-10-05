@@ -1,3 +1,4 @@
+import {RealityPipelineService} from '../reality-pipeline/reality-pipeline.service';
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { artifacts, users } from '@lazy-armor/database';
 import { and, eq } from 'drizzle-orm';
@@ -8,7 +9,7 @@ import { ArtifactExtractorService } from './artifact-extractor.service';
 import { AuditService } from '../audit/audit.service';
 @Injectable()
 export class ArtifactService {
- constructor(@Inject(DATABASE) private readonly db: InjectedDatabase, private readonly extractor: ArtifactExtractorService, private readonly audit: AuditService) {}
+ constructor(@Inject(DATABASE) private readonly db: InjectedDatabase, private readonly extractor: ArtifactExtractorService, private readonly audit: AuditService,private readonly reality:RealityPipelineService) {}
  async import(userId: string, input: { fileName: string; mimeType: string; contentBase64: string; requestId: string }) {
   if (input.contentBase64.length % 4 || !/^[A-Za-z0-9+/]*={0,2}$/.test(input.contentBase64)) throw new BadRequestException('文件编码无效');
   const bytes = Buffer.from(input.contentBase64, 'base64'); if (!bytes.length || bytes.length > 2_000_000 || /[\x00-\x1f/\\]/.test(input.fileName)) throw new BadRequestException('文件名称无效或文件超过 2 MB');
@@ -20,9 +21,10 @@ export class ArtifactService {
    await tx.select({ id: users.id }).from(users).where(eq(users.id, userId)).for('update');
    const replay = (await tx.select().from(artifacts).where(and(eq(artifacts.userId, userId), eq(artifacts.requestId, input.requestId))))[0];
    if (replay) { if (replay.sourceSha256 !== sourceSha256 || replay.fileName !== input.fileName || replay.mimeType !== input.mimeType) throw new ConflictException('文件请求标识已用于不同内容'); return replay; }
-   const artifact = { id: newId(), userId, requestId: input.requestId, fileName: input.fileName, mimeType: input.mimeType, sizeBytes: bytes.length, sourceSha256, sourceBase64: input.contentBase64, extractorKey: extracted.extractorKey, extractionStatus: 'EXTRACTED', extractedText: extracted.text, extractedSha256: extracted.contentSha256, extractionMetadata: extracted.metadata, createdAt: new Date() };
+   const artifact = { id: newId(), userId, requestId: input.requestId, fileName: input.fileName, mimeType: input.mimeType, sizeBytes: bytes.length, sourceSha256, sourceBase64: input.contentBase64, extractorKey: extracted.extractorKey, extractionStatus: extracted.metadata.extractionPending?'PENDING':'EXTRACTED', extractedText: extracted.text, extractedSha256: extracted.contentSha256, extractionMetadata: extracted.metadata, createdAt: new Date() };
    await tx.insert(artifacts).values(artifact);
-   await this.audit.append({ actorType: 'user', actorUserId: userId, userId, action: 'ARTIFACT_EXTRACTED', resourceType: 'artifact', resourceId: artifact.id, correlationId: artifact.id, after: { sourceSha256, extractorKey: artifact.extractorKey, status: 'EXTRACTED', provenance: 'UNVERIFIED' }, source: 'api', result: 'success' }, tx);
+   await this.reality.ingest(userId,{sourceMode:'FILE',providerKey:'user-artifact',externalEventKey:`artifact:${artifact.id}`,parserKey:'generic.artifact-content.v1',resourceHint:'Artifact',payload:{id:artifact.id,sourceSha256,fileName:artifact.fileName,mimeType:artifact.mimeType,extractionStatus:artifact.extractionStatus,extractedText:artifact.extractedText,evidenceRefs:[`artifact:${artifact.id}`]},evidenceHash:sourceSha256,observedAt:artifact.createdAt.toISOString()},0,tx);
+   await this.audit.append({ actorType: 'user', actorUserId: userId, userId, action: 'ARTIFACT_EXTRACTED', resourceType: 'artifact', resourceId: artifact.id, correlationId: artifact.id, after: { sourceSha256, extractorKey: artifact.extractorKey, status: artifact.extractionStatus, provenance: 'UNVERIFIED' }, source: 'api', result: 'success' }, tx);
    return artifact;
   });
   return this.project(row);

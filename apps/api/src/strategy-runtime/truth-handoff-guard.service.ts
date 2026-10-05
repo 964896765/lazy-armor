@@ -1,9 +1,9 @@
 import { ForbiddenException, Inject, Injectable } from '@nestjs/common';
 import {
   plans, planVersions, strategyRuntimeBindings, strategyRuntimeDecisions, strategyRuntimeWakeups,
-  truthFactDependencies, truthRecords, truthRecordVersions,
+  truthFactDependencies, truthRecords, truthRecordVersions,planCreationContracts,truthProvenance,sourceObservations,localCapabilityStates,trustedDevices,deviceAppConnections,appReadSessions,appReadSessionEvents,
 } from '@lazy-armor/database';
-import { catalogHash, realityValueHash, type CompiledStrategyRuntime } from '@lazy-armor/plan-schema';
+import { catalogHash, realityValueHash,localCapabilityAvailability,normalizeLocalSourceId, type CompiledStrategyRuntime } from '@lazy-armor/plan-schema';
 import { and, eq } from 'drizzle-orm';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
 
@@ -74,6 +74,34 @@ export class TruthHandoffGuard {
       .innerJoin(truthRecords, and(eq(truthRecords.id, truthRecordVersions.truthRecordId), eq(truthRecords.userId, userId)))
       .where(eq(truthRecordVersions.id, wakeup.truthRecordVersionId)).limit(1).for('update'))[0];
     if (!truth || truth.record.status !== 'verified' || truth.record.revokedAt || truth.record.currentVersionId !== truth.version.id || truth.record.subjectKey !== wakeup.subjectKey || truth.version.valueHash !== realityValueHash(truth.version.valueJson)) return reject();
+    boundary='FROZEN_SOURCE';
+    const sourceContract=(await tx.select().from(planCreationContracts).where(and(eq(planCreationContracts.userId,userId),eq(planCreationContracts.planVersionId,version.id))).limit(1).for('update'))[0];
+    if(sourceContract){
+      const facts=sourceContract.factDemandsJson as Array<{demandId:string;factKey:string}>;
+      const selections=sourceContract.sourceSelectionJson as Array<{demandId:string;factKey?:string;selectedSourceId:string|null;selectedSource?:{kind?:string;connectionId?:string|null;trustedDeviceId?:string|null;deviceAppConnectionId?:string|null;truthRecordId?:string|null;truthVersionId?:string|null}}>;
+      const selected=selections.find(source=>(source.factKey??facts.find(fact=>fact.demandId===source.demandId)?.factKey)===wakeup.factKey);
+      if(!selected?.selectedSourceId||!selected.selectedSource)return reject();
+      const evidence=(await tx.select({provenance:truthProvenance,observation:sourceObservations}).from(truthProvenance).leftJoin(sourceObservations,and(eq(sourceObservations.id,truthProvenance.observationId),eq(sourceObservations.userId,userId))).where(eq(truthProvenance.truthRecordVersionId,truth.version.id)).limit(1))[0];
+      const source=selected.selectedSource;
+      if(source.kind==='NATIVE_DEVICE'){
+        const nativeId=evidence?.observation?.payloadJson.nativeSourceId;
+        if(typeof nativeId!=='string'||normalizeLocalSourceId(nativeId)!==selected.selectedSourceId||!source.trustedDeviceId)return reject();
+        const device=(await tx.select().from(trustedDevices).where(and(eq(trustedDevices.id,source.trustedDeviceId),eq(trustedDevices.userId,userId))).limit(1).for('update'))[0];
+        const grant=(await tx.select().from(localCapabilityStates).where(and(eq(localCapabilityStates.trustedDeviceId,source.trustedDeviceId),eq(localCapabilityStates.userId,userId),eq(localCapabilityStates.capability,'calendar.read'))).limit(1).for('update'))[0];
+        if(!device||device.status!=='active'||device.revokedAt||!grant||localCapabilityAvailability({key:grant.capability,userGrant:grant.userGrant,systemPermission:grant.systemPermission as never,health:grant.health as never,checkedAt:grant.checkedAt.getTime()},Date.now())!=='AVAILABLE')return reject();
+      }else if(source.kind==='PROVIDER_CONNECTION'){
+        if(!source.connectionId||evidence?.observation?.connectionId!==source.connectionId)return reject();
+      }else if(source.kind==='INTERNAL_FACT'||source.kind==='MANUAL_INPUT'){
+        if(source.truthRecordId!==truth.record.id||source.truthVersionId!==truth.version.id)return reject();
+      }else if(source.kind==='TRUSTED_DEVICE'){
+        if(!source.trustedDeviceId||!source.deviceAppConnectionId||!evidence?.observation)return reject();
+        const session=(await tx.select({id:appReadSessions.id}).from(appReadSessions).innerJoin(appReadSessionEvents,and(eq(appReadSessionEvents.sessionId,appReadSessions.id),eq(appReadSessionEvents.observationId,evidence.observation.id),eq(appReadSessionEvents.userId,userId))).where(and(eq(appReadSessions.userId,userId),eq(appReadSessions.deviceAppConnectionId,source.deviceAppConnectionId))).limit(1))[0];
+        const device=(await tx.select().from(trustedDevices).where(and(eq(trustedDevices.id,source.trustedDeviceId),eq(trustedDevices.userId,userId))).limit(1).for('update'))[0];
+        const app=(await tx.select().from(deviceAppConnections).where(and(eq(deviceAppConnections.id,source.deviceAppConnectionId),eq(deviceAppConnections.userId,userId),eq(deviceAppConnections.trustedDeviceId,source.trustedDeviceId))).limit(1).for('update'))[0];
+        const grant=(await tx.select().from(localCapabilityStates).where(and(eq(localCapabilityStates.userId,userId),eq(localCapabilityStates.trustedDeviceId,source.trustedDeviceId),eq(localCapabilityStates.capability,'notification.read'))).limit(1).for('update'))[0];
+        if(!session||!device||device.status!=='active'||device.revokedAt||app?.enabled!==1||!app.modesJson.includes('notification_read')||!grant||localCapabilityAvailability({key:grant.capability,userGrant:grant.userGrant,systemPermission:grant.systemPermission as never,health:grant.health as never,checkedAt:grant.checkedAt.getTime()},Date.now())!=='AVAILABLE')return reject();
+      }else return reject();
+    }
     const valueJson = truth.version.valueJson as Record<string, unknown>;
     const proof: TruthHandoffProof = {
       schema: 'truth-handoff.v1', wakeupId, bindingId: binding.id, decisionId: decision.id, decisionHash: decision.decisionHash,

@@ -130,6 +130,7 @@ describe.sequential('B6 device.consumables FactDemand source resolution', { time
 
     const truthVersionId = ownerResult.body.demands[0].selectedSource.truthVersionId;
     await pool.query('UPDATE truth_record_versions SET created_at=DATE_SUB(UTC_TIMESTAMP(6),INTERVAL 2 DAY) WHERE id=UUID_TO_BIN(?)', [truthVersionId]);
+    await pool.query('UPDATE truth_provenance SET observed_at=DATE_SUB(UTC_TIMESTAMP(6),INTERVAL 2 DAY) WHERE truth_record_version_id=UUID_TO_BIN(?)', [truthVersionId]);
     const stale = await request(app.getHttpServer()).get(`/api/planning/offers/plans/${chosen.body.planId}/availability`)
       .set(auth(owner.token)).expect(200);
     expect(stale.body.assessment).toMatchObject({ state: 'REFRESH_REQUIRED' });
@@ -137,6 +138,7 @@ describe.sequential('B6 device.consumables FactDemand source resolution', { time
       .set(auth(owner.token)).send({}).expect(201);
     expect(staleReplacement.body.replacementOffer.status).toBe('UNAVAILABLE');
     await pool.query('UPDATE truth_record_versions SET created_at=UTC_TIMESTAMP(6) WHERE id=UUID_TO_BIN(?)', [truthVersionId]);
+    await pool.query('UPDATE truth_provenance SET observed_at=UTC_TIMESTAMP(6) WHERE truth_record_version_id=UUID_TO_BIN(?)', [truthVersionId]);
 
     await request(app.getHttpServer()).post('/api/runtime/fact-demands/resolve').set(auth(stranger.token)).send(body()).expect(400);
 

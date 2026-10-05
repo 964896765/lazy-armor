@@ -14,7 +14,7 @@ describe('app integration catalog', () => {
   });
 
   it('marks only reviewed generic operations as currently implemented', () => {
-    expect(GENERIC_APP_CAPABILITIES.filter((item) => item.availability === 'available').map((item) => item.mode)).toEqual(['open_app', 'notification_read']);
+    expect(GENERIC_APP_CAPABILITIES.filter((item) => item.availability === 'available').map((item) => item.mode)).toEqual(['open_app', 'receive_share', 'notification_read']);
     expect(isGenericDeviceAppMode('open_app')).toBe(true);
     expect(isGenericDeviceAppMode('deep_link')).toBe(false);
   });

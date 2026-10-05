@@ -45,6 +45,8 @@ describe.sequential('VNext FactDemand and user-scoped Source Resolver', { timeou
        VALUES(UUID_TO_BIN(UUID()),UUID_TO_BIN(?),UUID_TO_BIN(?),?,'online',UTC_TIMESTAMP(6),UTC_TIMESTAMP(6))`,
       [owner.userId, trustedDeviceId, `device-${unique}`],
     );
+    await pool.query(`INSERT INTO local_capability_states(id,user_id,trusted_device_id,capability,manifest_version,user_grant,system_permission,health,checked_at,evidence_ref,updated_at)
+      VALUES(UUID_TO_BIN(UUID()),UUID_TO_BIN(?),UUID_TO_BIN(?),'notification.read','android-local-v2',1,'GRANTED','HEALTHY',UTC_TIMESTAMP(6),'isolated-fixture:notification-grant',UTC_TIMESTAMP(6))`,[owner.userId,trustedDeviceId]);
   });
 
   afterAll(async () => { await pool?.end(); await app?.close(); });

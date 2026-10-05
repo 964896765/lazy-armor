@@ -17,6 +17,7 @@ interface AuthState {
 }
 
 const REFRESH_FALLBACK_SECONDS = 900;
+let hydrateInFlight:Promise<void>|null=null;
 let refreshInFlight: Promise<boolean> | null = null;
 function tokenExpiresAt(tokens: SessionTokens): number {
   const seconds = tokens.expiresIn;
@@ -35,10 +36,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ token: tokens.accessToken, refreshToken: tokens.refreshToken, tokenExpiresAt: tokenExpiresAt(tokens), hydrated: true, onboardingRequired });
   },
   hydrate: async () => {
-    const [token, refreshToken, onboardingRequired] = await Promise.all([loadAccessToken(), loadRefreshToken(), loadOnboardingRequired()]);
-    set({ token, refreshToken, tokenExpiresAt: undefined, hydrated: true, onboardingRequired: Boolean(token && onboardingRequired) });
-    if (!refreshToken) return;
-    await get().refreshSession();
+    if(get().hydrated)return;
+    if(hydrateInFlight)return hydrateInFlight;
+    hydrateInFlight=(async()=>{
+      const [token,refreshToken,onboardingRequired]=await Promise.all([loadAccessToken(),loadRefreshToken(),loadOnboardingRequired()]);
+      // A login that completed while storage was being read owns the session.
+      if(get().hydrated)return;
+      set({token,refreshToken,tokenExpiresAt:undefined,hydrated:true,onboardingRequired:Boolean(token&&onboardingRequired)});
+      if(refreshToken)await get().refreshSession();
+    })();
+    try{await hydrateInFlight;}finally{hydrateInFlight=null;}
   },
   refreshSession: async () => {
     if (refreshInFlight) return refreshInFlight;

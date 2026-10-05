@@ -11,5 +11,5 @@ export function emptyConversationRequest(mode: 'TEMPORARY' | 'PLAN') {
 }
 
 export function conversationKeyboardBehavior(platform: string) {
-  return platform === 'ios' ? 'padding' as const : undefined;
+  return platform === 'ios' ? 'padding' as const : platform === 'android' ? 'height' as const : undefined;
 }

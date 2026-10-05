@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { isSecondaryWorkspacePath, PRIMARY_ENTRIES, SECONDARY_PAGES } from './information-architecture';
 
 describe('information architecture', () => {
-  it('keeps exactly the eight agreed primary entries', () => {
-    expect(PRIMARY_ENTRIES.map((entry) => entry.label)).toEqual(['我', '首页', '计划', '资源', '服务', '消息', '问一问', '待处理']);
+  it('keeps exactly the five agreed primary entries', () => {
+    expect(PRIMARY_ENTRIES.map((entry) => entry.label)).toEqual(['日程', '计划', '会话', '资源', '服务']);
   });
 
   it('assigns every primary entry a secondary-page catalog', () => {

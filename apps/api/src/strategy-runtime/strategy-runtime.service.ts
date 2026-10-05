@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { ModuleRef } from '@nestjs/core';
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import {
   CONDITION_AST_SCHEMA_VERSION, OPERATOR_REGISTRY, OPERATOR_REGISTRY_REVISION, PLAN_EXECUTION_LIFECYCLE,
@@ -7,7 +8,7 @@ import {
 } from '@lazy-armor/plan-schema';
 import {
   plans, planVersions, strategyRuntimeBindings, strategyRuntimeDecisions, strategyRuntimeWakeups,
-  truthFactDependencies, truthRecords, truthRecordVersions,
+  truthFactDependencies, truthRecords, truthRecordVersions, planCreationContracts,
 } from '@lazy-armor/database';
 import { newId } from '@lazy-armor/shared';
 import { and, desc, eq, isNull, lt, or, sql } from 'drizzle-orm';
@@ -21,7 +22,21 @@ type TruthChangeInput = { truthRecordVersionId: string; factKey: string; resourc
 
 @Injectable()
 export class StrategyRuntimeService {
-  constructor(@Inject(DATABASE) private readonly db: InjectedDatabase, private readonly audit: AuditService) {}
+  constructor(@Inject(DATABASE) private readonly db: InjectedDatabase, private readonly audit: AuditService, private readonly moduleRef:ModuleRef) {}
+
+  /** Revalidate frozen source authority before an existing runtime can decide. */
+  private async assertFrozenSource(userId:string,planVersionId:string,factKey:string,truthVersionId:string){
+    const contract=(await this.db.select().from(planCreationContracts).where(and(eq(planCreationContracts.userId,userId),eq(planCreationContracts.planVersionId,planVersionId))).limit(1))[0];
+    if(!contract)return; // Existing pre-V8 contracts retain their established execution contract.
+    const facts=contract.factDemandsJson as Array<{demandId:string;factKey:string}>;
+    const selections=contract.sourceSelectionJson as Array<{demandId:string;factKey?:string;selectedSourceId:string|null}>;
+    const pins=Object.fromEntries(selections.map(source=>[source.factKey??facts.find(fact=>fact.demandId===source.demandId)?.factKey??source.demandId,source.selectedSourceId]));
+    // Resolve lazily: the existing Reality pipeline publishes into this runtime.
+    const {FactDemandResolverService}=await import('../fact-demands/fact-demand-resolver.service');
+    const resolved=await this.moduleRef.get(FactDemandResolverService,{strict:false}).resolve(userId,{scenarioKey:contract.scenarioKey,scenarioRevision:contract.scenarioRevision,goal:contract.goalJson as never,subject:contract.subjectJson as never},pins);
+    const demand=resolved.demands.find(demand=>demand.factKey===factKey);
+    if(resolved.contractHash!==contract.contractHash||!demand?.sourceCurrentlyUsable||demand.state!=='SATISFIED'||!demand.truthEvidence.some(truth=>truth.verified&&truth.truthVersionId===truthVersionId))throw new ConflictException('Frozen plan source evidence is unavailable or changed');
+  }
 
   operators() {
     return { schemaVersion: CONDITION_AST_SCHEMA_VERSION, revision: OPERATOR_REGISTRY_REVISION, operators: OPERATOR_REGISTRY };
@@ -187,7 +202,7 @@ export class StrategyRuntimeService {
     return created;
   }
 
-  async enqueueScheduleWakeup(userId: string, bindingId: string, executor: StrategyRuntimeExecutor = this.db) {
+  async enqueueScheduleWakeup(userId: string, bindingId: string, executor: StrategyRuntimeExecutor = this.db, scheduledAt=new Date()) {
     const binding = (await executor.select().from(strategyRuntimeBindings)
       .where(and(eq(strategyRuntimeBindings.id, bindingId), eq(strategyRuntimeBindings.userId, userId)))
       .limit(1))[0];
@@ -216,7 +231,7 @@ export class StrategyRuntimeService {
     // deterministic EXISTS condition. Without one there is nothing to evaluate.
     if (!truth) return null;
     const cronExpression = runtime.triggerProfile.schedule?.cronExpression ?? 'schedule';
-    const scheduleKey = `schedule:${cronExpression}:${new Date().toISOString().slice(0, 10)}`;
+    const scheduleKey = `schedule:${cronExpression}:${scheduledAt.toISOString().slice(0,16)}`;
     const wakeupKey = hash({ bindingId, scheduleKey });
     const id = newId();
     try {
@@ -265,14 +280,14 @@ export class StrategyRuntimeService {
       .innerJoin(strategyRuntimeBindings, eq(strategyRuntimeBindings.id, strategyRuntimeWakeups.bindingId))
       .where(and(eq(strategyRuntimeWakeups.id, wakeupId), eq(strategyRuntimeWakeups.userId, userId))).limit(1))[0];
     if (!row) throw new NotFoundException('Strategy runtime wakeup not found');
-    const persisted = await this.findDecision(userId, wakeupId);
-    if (persisted) return this.decisionResponse(persisted);
-
     const truth = (await this.db.select({ version: truthRecordVersions, record: truthRecords })
       .from(truthRecordVersions)
       .innerJoin(truthRecords, and(eq(truthRecords.id, truthRecordVersions.truthRecordId), eq(truthRecords.userId, userId)))
       .where(eq(truthRecordVersions.id, row.wakeup.truthRecordVersionId)).limit(1))[0];
     if (!truth) throw new ConflictException('Wakeup TruthVersion is unavailable');
+    await this.assertFrozenSource(userId,row.binding.planVersionId,row.wakeup.factKey,truth.version.id);
+    const persisted = await this.findDecision(userId, wakeupId);
+    if (persisted) return this.decisionResponse(persisted);
     const previous = (await this.db.select().from(truthRecordVersions)
       .where(and(
         eq(truthRecordVersions.truthRecordId, truth.version.truthRecordId),

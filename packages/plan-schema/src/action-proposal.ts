@@ -1,5 +1,7 @@
 import { z } from 'zod';
-import { ACTION_DEFINITIONS, ACTION_TYPES, PLAN_DOMAINS, normalizePlanDefinition, type PlanDefinitionInput } from './index';
+import { ACTION_TYPES } from './action-types';
+import { PLAN_DOMAINS } from './domain-catalog';
+import { ACTION_DEFINITIONS, normalizePlanDefinition, type PlanDefinitionInput } from './index';
 
 /** Proposed data only. The server owns scheduling, approval policy and execution. */
 export const actionProposalSchema = z.object({

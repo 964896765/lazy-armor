@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { SCENARIO_DEFINITIONS } from '@lazy-armor/plan-schema';
 import { ConsumerService } from '../src/consumer/consumer.service';
 function service(rows:unknown[][]=[]){
- const db={select:()=>({from:()=>({where:()=>Promise.resolve(rows.shift()??[])})})};
+ const db={select:()=>{const data=rows.shift()??[];const chain={from:()=>chain,where:()=>chain,orderBy:()=>chain,limit:()=>Promise.resolve(data),then:(resolve:(value:unknown[])=>unknown)=>Promise.resolve(data).then(resolve)};return chain;}};
  const connections={list:vi.fn().mockResolvedValue([])};
  const devices={list:vi.fn().mockResolvedValue([])};
  const connectors={listPublic:vi.fn().mockResolvedValue([])};

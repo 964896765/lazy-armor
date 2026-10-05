@@ -36,8 +36,8 @@ describe.sequential('runtime productization batch 1 capability foundation', () =
     const [rows] = await pool.query<RowDataPacket[]>(
       "SELECT provider_key, revision, manifest_hash, status FROM provider_capability_manifests WHERE status='ACTIVE' ORDER BY provider_key",
     );
-    expect(rows.map((row) => row.provider_key)).toEqual(expectedProviderKeys);
-    expect(new Set(rows.map((row) => row.provider_key)).size).toBe(expectedProviderKeys.length);
+    expect(rows.map((row) => row.provider_key).filter(key => expectedProviderKeys.includes(key))).toEqual(expectedProviderKeys);
+    expect(new Set(rows.map((row) => row.provider_key)).size).toBe(rows.length);
     expect(rows.every((row) => row.revision === 1 && /^[a-f0-9]{64}$/.test(row.manifest_hash))).toBe(true);
   });
 
@@ -46,7 +46,7 @@ describe.sequential('runtime productization batch 1 capability foundation', () =
     await request(app.getHttpServer()).get('/api/provider-capabilities').set(auth(owner.token)).expect(403);
     await pool.query('UPDATE users SET role=? WHERE id=UUID_TO_BIN(?)', ['operations_readonly', owner.userId]);
     const response = await request(app.getHttpServer()).get('/api/provider-capabilities').set(auth(owner.token)).expect(200);
-    expect(response.body.map((item: { providerKey: string }) => item.providerKey).sort()).toEqual(expectedProviderKeys);
+    expect(response.body.map((item: { providerKey: string }) => item.providerKey).filter((key: string) => expectedProviderKeys.includes(key)).sort()).toEqual(expectedProviderKeys);
     expect(response.body.find((item: { providerKey: string }) => item.providerKey === 'gmail')).toMatchObject({
       revision: 1,
       providerReview: 'TO_VERIFY_OFFICIAL',

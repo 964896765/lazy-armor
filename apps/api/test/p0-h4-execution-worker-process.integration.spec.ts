@@ -116,7 +116,7 @@ describe.sequential('P0-H4 execution worker true-process reliability', { timeout
   });
 
   it('starts a standalone execution worker, serves /live and /ready, and consumes queued executions', async () => {
-    const worker = await startExecutionWorker(3011);
+    const worker = await startExecutionWorker();
     const live = await fetchJson(`http://127.0.0.1:${worker.probePort}/live`);
     expect(live).toMatchObject({
       status: 'ok',
@@ -432,7 +432,7 @@ async function waitForExecutionStatus(app: INestApplication, token: string, exec
     if (row.status === status) return row;
     await sleep(200);
   }
-  throw new Error(`Execution did not reach ${status}`);
+  throw new Error(`Execution did not reach ${status}. Last detail: ${JSON.stringify(await detail(app, token, executionId))}. Worker logs: ${activeWorkers.map(worker => worker.output.join('')).join('\n')}`);
 }
 
 async function waitForExecutionLease(executionId: string, predicate: (row: ExecutionLeaseRow) => boolean, timeoutMs = 10_000) {

@@ -50,6 +50,13 @@ describe('API environment resolution', () => {
 });
 describe('request deadlines', () => {
  afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
+ it('waits for a committed refresh rotation instead of abandoning its response after three seconds', async () => {
+  vi.useFakeTimers(); let requestSignal: AbortSignal | undefined;
+  vi.stubGlobal('fetch', vi.fn((_url, init) => { requestSignal = init.signal; return new Promise(resolve => setTimeout(() => resolve({ ok: true, status: 200, json: async () => ({ accessToken: 'new-access', refreshToken: 'new-refresh' }) }), 5000)); }));
+  const result = api('/auth/refresh', undefined, { method: 'POST' });
+  await vi.advanceTimersByTimeAsync(4000); expect(requestSignal?.aborted).toBe(false);
+  await vi.advanceTimersByTimeAsync(1000); expect(await result).toEqual({ accessToken: 'new-access', refreshToken: 'new-refresh' });
+ });
  it('allows a slow AI response beyond the ordinary request deadline', async () => {
   vi.useFakeTimers(); let requestSignal: AbortSignal | undefined;
   vi.stubGlobal('fetch', vi.fn((_url, init) => { requestSignal = init.signal; return new Promise(resolve => setTimeout(() => resolve({ ok: true, status: 200, json: async () => ({ answer: 'ready' }) }), 5000)); }));

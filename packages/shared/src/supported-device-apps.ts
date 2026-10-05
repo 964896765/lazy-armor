@@ -22,7 +22,7 @@ export interface AppIntegrationCatalogEntry {
 
 export const GENERIC_APP_CAPABILITIES: readonly AppIntegrationCapability[] = Object.freeze([
   { mode: 'open_app', label: '打开应用', description: '仅在你主动操作时打开该应用。', requiresUserPermission: false, availability: 'available' },
-  { mode: 'receive_share', label: '接收分享内容', description: '后续可由你主动从其他应用分享内容到懒人装甲。', requiresUserPermission: true, availability: 'planned' },
+  { mode: 'receive_share', label: '接收分享内容', description: '由你主动分享原文或文件；来源内容仍需核实。', requiresUserPermission: true, availability: 'available' },
   { mode: 'notification_read', label: '读取指定通知', description: '仅在你单独授权后，把该应用通知作为待核实的信息来源。', requiresUserPermission: true, availability: 'available' },
 ]);
 

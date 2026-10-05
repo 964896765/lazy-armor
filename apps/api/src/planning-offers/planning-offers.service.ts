@@ -1,3 +1,5 @@
+import {localCapabilityAvailability,LOCAL_RUNTIME_CAPABILITY_MAP,localCapabilitySourceId} from '@lazy-armor/plan-schema';
+import {localCapabilityStates} from '@lazy-armor/database';
 import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { connectionCapabilityGrants, connectionPermissions, connections, connectorCapabilities, deviceAppConnections,
   deviceHeartbeats, planCreationContracts, planOfferSnapshots, plans, providerCapabilityHealth, trustedDevices,
@@ -51,7 +53,12 @@ export class PlanningOffersService {
     const request = persistentPlanOfferRequestSchema.parse(raw);
     const contract = scenarioContractV2ByKey(request.scenarioKey);
     if (!contract || contract.scenario.revision !== request.scenarioRevision) throw new NotFoundException('Scenario Contract V2 not available');
-    const resolved = await this.factDemands.resolve(userId, request);
+    const discovered = await this.factDemands.resolve(userId, request);
+    // Freeze the same source scope that choose() will revalidate. Including
+    // unrelated candidates here makes an unchanged selected source invalidate
+    // its own offer when the pinned resolution drops those candidates.
+    const pins = Object.fromEntries(discovered.demands.map(demand => [demand.factKey, demand.selectedSourceId]));
+    const resolved = await this.factDemands.resolve(userId, request, pins);
     const compiled = this.compile(request, this.catalog.getScenario(request.scenarioKey).defaultStrategy);
     const offer = buildPersistentPlanOffer({ request, demands: resolved.demands, contractHash: contract.definitionHash,
       strategyKey: compiled.strategy, planDefinitionHash: definitionHash(compiled.definition), generatedAt: resolved.evaluatedAt });
@@ -82,7 +89,8 @@ export class PlanningOffersService {
     const factRequest = persistentPlanOfferRequestSchema.parse({ scenarioKey: preview.scenarioKey,
       scenarioRevision: preview.scenarioRevision, goal: preview.goalJson, subject: preview.subjectJson });
     // User-scoped database evidence only; no provider network request is held under the row lock.
-    const current = await this.factDemands.resolve(userId, factRequest);
+    const pins=Object.fromEntries((preview.sourceResolutionJson as Array<{demandId:string;factKey?:string;selectedSourceId:string|null}>).map(source=>[source.factKey??(preview.factDemandsJson as Array<{demandId:string;factKey:string}>).find(demand=>demand.demandId===source.demandId)?.factKey??source.demandId,source.selectedSourceId]));
+    const current = await this.factDemands.resolve(userId, factRequest,pins);
     const compiled = this.compile(factRequest, offer.strategyKey);
     const currentHash = buildPersistentPlanOffer({ request: factRequest, demands: current.demands,
       contractHash: current.contractHash, strategyKey: compiled.strategy,
@@ -243,17 +251,23 @@ export class PlanningOffersService {
         if ('for' in healthQuery) healthQuery = healthQuery.for('update') as typeof healthQuery;
         const health = (await healthQuery)[0];
         if (health && (health.status !== 'HEALTHY' || (health.validUntil && health.validUntil <= now))) return false;
+      } else if(selection.kind==='NATIVE_DEVICE'){
+        const localKey=Object.keys(LOCAL_RUNTIME_CAPABILITY_MAP).find(key=>LOCAL_RUNTIME_CAPABILITY_MAP[key]===selection.capabilityKey);
+        if(!localKey||selection.sourceId!==localCapabilitySourceId(selection.trustedDeviceId!,localKey))return false;
+        const row=(await tx.select({grant:localCapabilityStates,device:trustedDevices}).from(localCapabilityStates).innerJoin(trustedDevices,and(eq(localCapabilityStates.trustedDeviceId,trustedDevices.id),eq(trustedDevices.userId,userId))).where(and(eq(localCapabilityStates.userId,userId),eq(localCapabilityStates.trustedDeviceId,selection.trustedDeviceId!),eq(localCapabilityStates.capability,localKey))).limit(1).for('update'))[0];
+        if(!row||row.device.status!=='active'||row.device.revokedAt||localCapabilityAvailability({key:localKey,userGrant:row.grant.userGrant,systemPermission:row.grant.systemPermission as never,health:row.grant.health as never,checkedAt:row.grant.checkedAt.getTime()},now.getTime())!=='AVAILABLE')return false;
       } else if (selection.kind === 'TRUSTED_DEVICE') {
         const appId = selection.deviceAppConnectionId!;
-        let query = tx.select({ app: deviceAppConnections, device: trustedDevices, heartbeat: deviceHeartbeats })
+        let query = tx.select({ app: deviceAppConnections, device: trustedDevices, heartbeat: deviceHeartbeats,nativeGrant:localCapabilityStates })
           .from(deviceAppConnections).innerJoin(trustedDevices, and(eq(deviceAppConnections.trustedDeviceId, trustedDevices.id),
             eq(trustedDevices.userId, userId))).leftJoin(deviceHeartbeats, and(eq(deviceHeartbeats.trustedDeviceId, trustedDevices.id),
-            eq(deviceHeartbeats.userId, userId))).where(and(eq(deviceAppConnections.id, appId), eq(deviceAppConnections.userId, userId))).limit(1);
+            eq(deviceHeartbeats.userId, userId))).leftJoin(localCapabilityStates,and(eq(localCapabilityStates.trustedDeviceId,trustedDevices.id),eq(localCapabilityStates.userId,userId),eq(localCapabilityStates.capability,'notification.read'))).where(and(eq(deviceAppConnections.id, appId), eq(deviceAppConnections.userId, userId))).limit(1);
         if ('for' in query) query = query.for('update') as typeof query;
         const row = (await query)[0];
         if (!row || row.device.id !== selection.trustedDeviceId || row.app.enabled !== 1 || !row.app.modesJson.includes('notification_read') || row.device.status !== 'active'
           || row.device.revokedAt || row.heartbeat?.onlineState !== 'online' || !row.heartbeat.lastHeartbeatAt
           || now.getTime() - row.heartbeat.lastHeartbeatAt.getTime() > 30_000) return false;
+        if(!row.nativeGrant||localCapabilityAvailability({key:row.nativeGrant.capability,userGrant:row.nativeGrant.userGrant,systemPermission:row.nativeGrant.systemPermission as never,health:row.nativeGrant.health as never,checkedAt:row.nativeGrant.checkedAt.getTime()},now.getTime())!=='AVAILABLE')return false;
       } else if (selection.kind === 'MANUAL_INPUT' || selection.kind === 'INTERNAL_FACT') {
         const row = (await tx.select({ record: truthRecords, version: truthRecordVersions, provenance: truthProvenance })
           .from(truthRecords).innerJoin(truthRecordVersions, and(eq(truthRecordVersions.id, selection.truthVersionId!),

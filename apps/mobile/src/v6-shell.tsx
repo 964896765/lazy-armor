@@ -15,13 +15,13 @@ interface Profile { displayName: string; status: string }
 interface AttentionItem { status: 'OPEN' | 'COMPLETED' }
 
 const PAGE_TITLES: Readonly<Record<string, string>> = {
-  '/plans': '计划', '/chat': '聊天', '/private': '资源', '/services': '服务', '/messages': '消息', '/attention': '待处理',
+  '/plans': '计划', '/chat': '会话', '/resources': '资源', '/services': '服务', '/messages': '消息', '/attention': '待处理',
 };
 
 const DRAWER_ITEMS: readonly { icon: IconName; label: string; path: string }[] = [
   { icon: 'person-outline', label: '账号与登录', path: '/security-center' },
-  { icon: 'settings-outline', label: '应用设置', path: '/feature-placeholder?feature=preferences' },
-  { icon: 'extension-puzzle-outline', label: '资源管理', path: '/private' },
+  { icon: 'settings-outline', label: '应用设置', path: '/settings' },
+  { icon: 'extension-puzzle-outline', label: '资源管理', path: '/resources' },
   { icon: 'shield-checkmark-outline', label: '数据与隐私', path: '/feature-placeholder?feature=personal-privacy' },
   { icon: 'help-circle-outline', label: '帮助与反馈', path: '/feature-placeholder?feature=help' },
   { icon: 'information-circle-outline', label: '关于懒人装甲', path: '/feature-placeholder?feature=about' },

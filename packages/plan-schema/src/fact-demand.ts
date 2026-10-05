@@ -1,3 +1,4 @@
+import { sourceResolverRank, type SourceResolverDimensions } from './source-resolver';
 import { z } from 'zod';
 import { catalogHash, type RealityLevel } from './runtime-catalog';
 import {
@@ -27,11 +28,14 @@ export const factDemandRequestSchema = z.object({
 export type FactDemandRequest = z.infer<typeof factDemandRequestSchema>;
 
 export interface SourceCandidateEvidence {
+  resolverEvidence?:SourceResolverDimensions;
   sourceId: string;
   kind: SourceSelectionKind;
   providerKey: string;
   connectionId: string | null;
   sourceMode: string;
+  /** Declared manifest modes; choose compatibility independently for each demand. */
+  supportedSourceModes?: readonly string[];
   capabilityKey: string | null;
   trustedDeviceId: string | null;
   deviceAppConnectionId: string | null;
@@ -51,6 +55,9 @@ export interface SourceCandidateEvidence {
 }
 
 export interface FactTruthEvidence {
+  normalizedValue?:unknown;
+  sourceIds?:readonly string[];
+  sourceConnectionId?:string|null;
   truthRecordId: string;
   truthVersionId: string;
   factKey: string;
@@ -110,6 +117,7 @@ export function buildFactDemandProjections(input: {
   request: FactDemandRequest;
   contract: ScenarioContractV2;
   sources: readonly SourceCandidateEvidence[];
+  sourcePins?: Readonly<Record<string, string | null>>;
   truths: readonly FactTruthEvidence[];
   evaluatedAt: string;
 }): readonly FactDemandProjection[] {
@@ -123,8 +131,13 @@ export function buildFactDemandProjections(input: {
   const now = new Date(input.evaluatedAt);
   if (Number.isNaN(now.getTime())) throw new Error('FactDemand evaluatedAt must be an ISO timestamp');
   return Object.freeze(input.contract.factDemands.map((definition) => {
+    const pin = input.sourcePins?.[definition.factKey];
+    const pinnedSource = pin ? input.sources.find(source => source.sourceId === pin) : null;
     const relevantTruths = input.truths.filter((truth) => truth.factKey === definition.factKey
-      && truth.subjectKey === request.subject.subjectKey);
+      && truth.subjectKey === request.subject.subjectKey && definition.acceptedSourceModes.includes(truth.sourceMode as never)
+      && (pin === undefined || Boolean(pin && ((truth.sourceIds ?? []).includes(pin)
+        || pinnedSource?.connectionId && truth.sourceConnectionId === pinnedSource.connectionId
+        || pin === `${truth.sourceMode === 'MANUAL' ? 'manual' : 'internal'}:${truth.truthRecordId}:${truth.truthVersionId}`))));
     // A confirmed Truth is internally addressable whatever its original evidence
     // mode was. Its original mode is still checked against the Scenario Contract,
     // so a notification can only appear here after it has gone through candidate
@@ -162,10 +175,14 @@ export function buildFactDemandProjections(input: {
         discovered: false, ownedByUser: true, implemented: true, authorized: true, deviceOnline: true, healthy: true,
         contractCompatible: true, estimatedLatencyMs: null, costClass: 'FREE', evidenceRefs: [], reasonCodes: ['MANUAL_INPUT_REQUIRED'],
       }] : [];
-    const compatibleSources = [...input.sources, ...truthSources, ...manualPending].filter((source) => source.contractCompatible
-      && (definition.acceptedSourceCapabilities.includes(source.capabilityKey ?? '')
-        || definition.acceptedSourceModes.includes(source.sourceMode as never)));
-    const freshTruths = relevantTruths.filter((truth) => now.getTime() - new Date(truth.createdAt).getTime() <= definition.maximumAgeSeconds * 1000);
+    const compatibleSources = [...input.sources, ...truthSources, ...manualPending].map((source) => {
+      if (!source.supportedSourceModes) return source;
+      const mode = source.supportedSourceModes.find(mode => definition.acceptedSourceModes.includes(mode as never));
+      return { ...source, sourceMode: mode ?? source.sourceMode, contractCompatible: source.contractCompatible && Boolean(mode) };
+    }).filter((source) => (pin === undefined || source.sourceId === pin) && source.contractCompatible
+      && definition.acceptedSourceModes.includes(source.sourceMode as never)
+      && (definition.acceptedSourceCapabilities.includes(source.capabilityKey ?? '') || STANDALONE_TRUTH_SOURCE_MODES.has(source.sourceMode)));
+    const freshTruths = relevantTruths.filter((truth) => new Date(truth.observedAt).getTime()<=now.getTime() && now.getTime() - new Date(truth.observedAt).getTime() <= definition.maximumAgeSeconds * 1000);
     const verifiedTruths = freshTruths.filter((truth) => truth.verified
       && REALITY_RANK[truth.realityLevel] >= REALITY_RANK[definition.minimumReality]);
     const conflict = relevantTruths.some((truth) => truth.conflict)
@@ -173,15 +190,14 @@ export function buildFactDemandProjections(input: {
     const rankedSources = compatibleSources.map((source) => {
       const identityComplete = source.kind === 'PROVIDER_CONNECTION' ? Boolean(source.connectionId && source.capabilityKey)
         : source.kind === 'TRUSTED_DEVICE' ? Boolean(source.trustedDeviceId && source.deviceAppConnectionId && source.capabilityKey)
+          : source.kind === 'NATIVE_DEVICE' ? Boolean(source.trustedDeviceId&&source.capabilityKey&&source.connectionId===null&&source.deviceAppConnectionId===null&&source.sourceId===`local:${source.trustedDeviceId}:${source.capabilityKey}`)
           : Boolean(source.truthRecordId && source.truthVersionId);
       const usable = identityComplete && source.discovered && source.ownedByUser && source.implemented && source.authorized
         && source.deviceOnline && source.healthy && source.contractCompatible;
-      const matchingTruth = relevantTruths.filter((truth) => truth.sourceProviderKey === source.providerKey);
+      const matchingTruth = relevantTruths.filter((truth) => (truth.sourceIds??[]).includes(source.sourceId) || (source.connectionId!==null&&truth.sourceConnectionId===source.connectionId) || (source.truthRecordId===truth.truthRecordId && source.truthVersionId===truth.truthVersionId));
       const acquired = matchingTruth.length > 0;
       const verified = matchingTruth.some((truth) => verifiedTruths.includes(truth));
-      const rank = (usable ? 1_000 : 0) + (verified ? 500 : acquired ? 200 : 0)
-        + (source.sourceMode === 'OFFICIAL_API' ? 80 : source.sourceMode === 'WEBHOOK' ? 70 : source.sourceMode === 'NOTIFICATION' ? 50 : 30)
-        - Math.min(source.estimatedLatencyMs ?? 0, 60_000) / 1_000;
+      const rank = sourceResolverRank(source,usable,verified,acquired);
       return Object.freeze({ ...source, rank, usable, acquired, verified });
     }).sort((left, right) => right.rank - left.rank || left.sourceId.localeCompare(right.sourceId));
     const selected = rankedSources.find((source) => source.usable) ?? null;

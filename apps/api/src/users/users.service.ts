@@ -30,7 +30,7 @@ export class UsersService {
       timezone: profiles.timezone,
       locale: profiles.locale,
       settings: profiles.preferencesJson,
-    }).from(users).innerJoin(profiles, eq(users.id, profiles.userId)).innerJoin(authIdentities, eq(users.id, authIdentities.userId)).where(eq(users.id, userId)).limit(1);
+    }).from(users).innerJoin(profiles, eq(users.id, profiles.userId)).leftJoin(authIdentities, eq(users.id, authIdentities.userId)).where(eq(users.id, userId)).limit(1);
     if (!rows[0]) throw new NotFoundException('User not found');
     return {
       ...rows[0],

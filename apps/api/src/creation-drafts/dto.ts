@@ -11,3 +11,8 @@ export class SaveCreationDraftDto {
   @IsOptional() @IsString() @Length(1, 160) selectedOfferKey?: string | null;
   @IsOptional() @IsInt() @Min(0) version?: number;
 }
+
+export class SelectDraftSourcesDto {
+ @IsInt() @Min(1) version!:number;
+ @IsArray() sourceChoices!:unknown[];
+}

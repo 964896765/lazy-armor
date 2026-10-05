@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { PLAN_DOMAIN_CATALOG, catalogTemplateCount, coreTemplateIntent } from './plan-domain-catalog';
+import { PLAN_DOMAIN_CATALOG, catalogTemplateCount } from '../../../packages/plan-schema/src/product-catalog';
+import { coreTemplateIntent } from './plan-domain-catalog';
 
 describe('plan domain catalog', () => {
   it('contains the complete 13-domain product taxonomy in display order', () => {

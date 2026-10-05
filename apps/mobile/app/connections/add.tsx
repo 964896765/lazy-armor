@@ -13,7 +13,7 @@ import { deviceInstallationId } from '../../src/device-installation-id';
 import { deviceBoundApi, ensureTrustedDevice } from '../../src/trusted-device-api';
 import { ActionButton, EmptyState, Surface, WorkspaceHeader, colors, radius, spacing, typography } from '../../src/design';
 
-interface DeviceAppConnection { id: string; packageName: string; displayName: string; enabled: boolean; modes: DeviceAppConnectionMode[] }
+interface DeviceAppConnection { trustedDeviceId?:string; id: string; packageName: string; displayName: string; enabled: boolean; modes: DeviceAppConnectionMode[] }
 type ConnectionKind = 'mobile_app' | 'online_service' | 'device';
 
 export default function AddConnectionPage() {
@@ -33,7 +33,8 @@ export default function AddConnectionPage() {
       const trustedDevice = await ensureTrustedDevice(token);
       const request = createDeviceAppConnectionRequest(deviceId, trustedDevice.id, app);
       if (!request) throw new Error('当前应用的发现或设备证明信息不完整。');
-      return deviceBoundApi<DeviceAppConnection>('/device-app-connections', token, { method: 'POST', body: JSON.stringify(request) });
+      const prior=(existing.data??[]).find(row=>row.packageName===app.packageName&&row.trustedDeviceId===trustedDevice.id);
+      return deviceBoundApi<DeviceAppConnection>(prior?`/device-app-connections/${prior.id}/discovery`:'/device-app-connections',token,{method:'POST',body:JSON.stringify(request)});
     },
     onSuccess: async () => {
       await Promise.all([
@@ -100,7 +101,7 @@ function ConnectionPreview({ app, alreadyAdded, pending, hasError, onAdd }: { ap
     <Text style={styles.previewIntro}>确认前会由这台设备的安全密钥完成一次证明。基础连接只保存你确认的应用快照，并且只能在你主动操作时打开应用。它不会读取该应用内容或通知。</Text>
     {integration ? <Text style={styles.adapterNote}>此应用可在后续获得额外适配；额外读取或操作仍需单独说明与授权。</Text> : <Text style={styles.adapterNote}>这是通用应用连接。即使没有专属适配，也可以安全地加入你的空间导航。</Text>}
     <View style={styles.capabilityList}>{operations.map((operation, index) => <OperationRow key={operation.mode} operation={operation} last={index === operations.length - 1} />)}</View>
-    <View style={styles.previewAction}>{alreadyAdded ? <Text style={styles.addedText}>此应用已添加到当前设备。请返回连接中心管理它。</Text> : <ActionButton label={pending ? '正在添加…' : '确认添加'} onPress={onAdd} disabled={pending} />}</View>
+    <View style={styles.previewAction}>{<ActionButton label={pending?'正在确认…':alreadyAdded?'刷新当前安装证据':'确认添加'} onPress={onAdd} disabled={pending}/>}</View>
     {hasError ? <Text style={styles.error}>暂时无法添加，账号和设备没有被修改。请稍后再试。</Text> : null}
   </Surface><Text style={styles.safetyText}>添加连接不等于授予所有权限。通知读取、页面跳转或任何外部操作都需要单独说明、单独授权并验证结果。</Text></View>;
 }

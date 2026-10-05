@@ -53,7 +53,7 @@ export class DeviceTasksController {
   async complete(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() input: CompleteDeviceTaskDto, @Headers() headers: IncomingHttpHeaders) {
     const requestPath = `/device-tasks/${id}/complete`;
     const signed = await this.trustedDevices.assertSignedRequest(user.id, deviceEnvelope(headers), 'POST', requestPath, input);
-    return this.deviceTasks.complete(user.id, signed.trustedDeviceId, signed.deviceId, id, input.claimToken, input.result);
+    return this.deviceTasks.complete(user.id, signed.trustedDeviceId, signed.deviceId, id, input.claimToken, input.result,deviceEnvelope(headers).requestId);
   }
 
   @Post(':id/fail')

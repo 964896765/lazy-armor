@@ -1,3 +1,4 @@
+import {localCapabilityStates} from '@lazy-armor/database';
 import { createHash } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import { MobileNotificationReceiptsService } from '../src/device-apps/mobile-notification-receipts.service';
@@ -10,11 +11,11 @@ const event = {
   eventId: 'a'.repeat(64), contentHash: 'b'.repeat(64), sourcePackage: 'com.example.localbank', postedAt: now.toISOString(), capturedAt: now.toISOString(), hasTitle: true, hasText: true, candidateKind: 'unknown' as const, candidateResource: null, candidateConfidence: 0, amountMinor: null, currency: null, parserVersion: 'generic-notification-v1' as const,
 };
 
-function fixture(results: unknown[][] = [[connection], []]) {
+function fixture(results: unknown[][] = [[connection], []],nativeGrant:Record<string,unknown>={}) {
   let call = 0;
   const values = vi.fn(async () => undefined);
   const db = {
-    select: vi.fn(() => ({ from: vi.fn(() => ({ where: vi.fn(() => ({ limit: vi.fn(async () => results[call++] ?? []) })) })) })),
+    select: vi.fn(() => ({ from: vi.fn((table) => ({ where: vi.fn(() => ({ limit: vi.fn(async () => table===localCapabilityStates?[{capability:'notification.read',userGrant:true,systemPermission:'GRANTED',health:'HEALTHY',checkedAt:new Date(),...nativeGrant}]:results[call++] ?? []) })) })) })),
     insert: vi.fn(() => ({ values })),
   };
   const audit = { append: vi.fn(async () => undefined) };
@@ -27,6 +28,7 @@ function fixture(results: unknown[][] = [[connection], []]) {
 }
 
 describe('generic mobile notification receipt policy', () => {
+  it('rejects disabled local user grant even when an App source is enabled',async()=>{const {service,values}=fixture(undefined,{userGrant:false});await expect(service.receive('user-1','connection-1',event,'trusted-device-1')).rejects.toThrow('not authorized');expect(values).not.toHaveBeenCalled();});
   it('records only minimal generic evidence from a user-authorized app source', async () => {
     const { service, values, notifications, telemetry, trustedDevices } = fixture();
     const response = await service.receive('user-1', 'connection-1', event, 'trusted-device-1');

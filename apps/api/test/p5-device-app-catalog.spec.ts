@@ -1,3 +1,4 @@
+import {deviceAppConnections,localCapabilityStates} from '@lazy-armor/database';
 import { describe, expect, it, vi } from 'vitest';
 import { DeviceAppsService } from '../src/device-apps/device-apps.service';
 
@@ -22,11 +23,11 @@ function fixture() {
     insert: vi.fn(() => ({ values })),
     update: vi.fn(() => ({ set: updateSet })),
     select: vi.fn(() => ({
-      from: vi.fn(() => ({
-        where: vi.fn(() => ({
-          limit: vi.fn(async () => [inserted]),
-          orderBy: vi.fn(async () => inserted ? [inserted] : []),
-        })),
+      from: vi.fn((table:unknown) => ({
+        where: vi.fn(() => {
+          const rows=table===deviceAppConnections?(inserted?[inserted]:[]):table===localCapabilityStates?[]:[{id:'trusted-device-1',status:'active',revokedAt:null}];
+          return Object.assign(Promise.resolve(rows),{limit:vi.fn(async()=>rows),orderBy:vi.fn(async()=>rows)});
+        }),
       })),
     })),
   };
@@ -43,6 +44,10 @@ describe('Generic App Connection safety policy', () => {
       userId: 'user-1', deviceId: 'device-1', trustedDeviceId: 'trusted-device-1', packageName: 'com.example.localbank', displayName: '本地银行', connectionType: 'generic', integrationKey: null, versionName: '1.2.3', versionCode: 1203, launchable: 1, discoveryFingerprint: 'a'.repeat(64), modesJson: ['open_app'], trustLevel: 'key_proven',
     }));
     expect(response).toMatchObject({ packageName: 'com.example.localbank', displayName: '本地银行', connectionType: 'generic', launchable: true, modes: ['open_app'] });
+    expect(response.capabilities.find(c=>c.key==='open_app')?.status).toBe('AVAILABLE');
+    expect(response.capabilities.find(c=>c.key==='notification_read')?.status).toBe('DISABLED');
+    expect(response.capabilities.find(c=>c.key==='structured_read')?.status).toBe('UNAVAILABLE');
+    expect(response.capabilities.find(c=>c.key==='execute')?.status).toBe('UNSUPPORTED');
     expect(audit.append).toHaveBeenCalledWith(expect.objectContaining({ action: 'DEVICE_APP_CONNECTION_CREATED', source: 'api', result: 'success', userId: 'user-1' }));
     expect(trustedDevices.assertActive).toHaveBeenCalledWith('user-1', 'trusted-device-1', 'device-1');
   });
@@ -50,17 +55,23 @@ describe('Generic App Connection safety policy', () => {
   it('records a catalog match as optional enhancement rather than an admission requirement', async () => {
     const { service, values } = fixture();
     await service.create('user-1', { ...genericDiscoveredApp, packageName: 'com.google.android.gm', displayName: 'Gmail', discoveryFingerprint: 'b'.repeat(64) }, 'trusted-device-1');
-    expect(values).toHaveBeenCalledWith(expect.objectContaining({ connectionType: 'enhanced', integrationKey: 'gmail' }));
+    expect(values).toHaveBeenCalledWith(expect.objectContaining({ connectionType: 'generic', integrationKey: 'gmail' }));
   });
 
-  it('allows notification reading only as an explicit generic operation, while unimplemented sharing stays closed', async () => {
+  it('allows notification reading only as an explicit generic operation, and generic Share transport cannot imply a healthy source', async () => {
     const { service, values } = fixture();
     await expect(service.create('user-1', { ...genericDiscoveredApp, launchable: false }, 'trusted-device-1')).rejects.toThrow('Only a launchable');
-    await expect(service.create('user-1', { ...genericDiscoveredApp, modes: ['receive_share'] }, 'trusted-device-1')).rejects.toThrow('not currently available');
+    const shared=await service.create('user-1',{...genericDiscoveredApp,modes:['receive_share']},'trusted-device-1');expect(shared.capabilities.find(c=>c.key==='receive_share')?.status).toBe('DISABLED');
     await expect(service.create('user-1', { ...genericDiscoveredApp, modes: ['notification_read'] }, 'trusted-device-1')).resolves.toMatchObject({ modes: ['notification_read'] });
-    expect(values).toHaveBeenCalledTimes(1);
+    expect(values).toHaveBeenCalledTimes(2);
   });
 
+  it('refreshes signed installation evidence without enabling new app permissions',async()=>{
+    const {service,updateSet}=fixture();const created=await service.create('user-1',genericDiscoveredApp,'trusted-device-1');
+    await expect(service.refreshDiscovery('user-1',created.id,{...genericDiscoveredApp,packageName:'test.other'},'trusted-device-1')).rejects.toThrow('Discovery must match');
+    await service.refreshDiscovery('user-1',created.id,{...genericDiscoveredApp,launchable:false},'trusted-device-1');
+    expect(updateSet).toHaveBeenCalledWith(expect.objectContaining({launchable:0}));expect(updateSet.mock.calls[0][0]).not.toHaveProperty('modesJson');
+  });
   it('keeps a revoked trusted device from re-enabling its bound app connection', async () => {
     const { service, updateSet, trustedDevices } = fixture();
     const created = await service.create('user-1', genericDiscoveredApp, 'trusted-device-1');

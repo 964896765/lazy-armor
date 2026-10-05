@@ -25,6 +25,12 @@ export class DeviceAppsController {
     return this.deviceApps.create(user.id, input, signedDevice.trustedDeviceId);
   }
 
+  @Post(':id/discovery')
+  async refreshDiscovery(@CurrentUser() user:AuthenticatedUser,@Param('id') id:string,@Body() input:CreateDeviceAppConnectionDto,@Headers() headers:IncomingHttpHeaders){
+    const signed=await this.trustedDevices.assertSignedRequest(user.id,deviceEnvelope(headers),'POST',`/device-app-connections/${id}/discovery`,input);
+    return this.deviceApps.refreshDiscovery(user.id,id,input,signed.trustedDeviceId);
+  }
+
   @Get('notification-receipts')
   listPendingNotificationReceipts(@CurrentUser() user: AuthenticatedUser) { return this.notificationReceipts.listPending(user.id); }
 

@@ -1,14 +1,14 @@
 import { createHash } from 'node:crypto';
 import { canonicalStringify, type JsonValue } from './index';
 
-export const SOURCE_MODES = ['OFFICIAL_API', 'WEBHOOK', 'NOTIFICATION', 'SHARE', 'APP_READ_SESSION', 'FILE', 'MANUAL', 'INTERNAL'] as const;
-export const PARSER_KEYS = ['generic.transaction.v1', 'generic.shipment-status.v1', 'generic.connection-health.v1', 'generic.device-status.v1', 'generic.bill-reminder.v1', 'mobile-notification-billing.v1', 'generic.email-message.v1', 'generic.calendar-event.v1', 'generic.repository-resource.v1', 'generic.repository-resource.v2', 'generic.document-resource.v1', 'generic.consumable-remaining.v1', 'generic.household-supply.v1', 'generic.feishu-resource.v1', 'generic.dingtalk-resource.v1', 'generic.wecom-resource.v1', 'generic.structured-read.v1'] as const;
+export const SOURCE_MODES = ['OFFICIAL_API', 'WEBHOOK', 'NOTIFICATION', 'SHARE', 'APP_READ_SESSION', 'FILE', 'MANUAL', 'INTERNAL', 'NATIVE_OS'] as const;
+export const PARSER_KEYS = ['generic.transaction.v1', 'generic.shipment-status.v1', 'generic.connection-health.v1', 'generic.device-status.v1', 'generic.bill-reminder.v1', 'mobile-notification-billing.v1', 'generic.email-message.v1', 'generic.calendar-event.v1', 'generic.repository-resource.v1', 'generic.repository-resource.v2', 'generic.document-resource.v1', 'generic.consumable-remaining.v1', 'generic.household-supply.v1', 'generic.feishu-resource.v1', 'generic.dingtalk-resource.v1', 'generic.wecom-resource.v1', 'generic.structured-read.v1', 'native.calendar-event.v1','generic.external-reference.v1','generic.artifact-content.v1'] as const;
 export type SourceMode = typeof SOURCE_MODES[number];
 export type ParserKey = typeof PARSER_KEYS[number];
 
 export const REALITY_ADAPTER_REGISTRY = Object.freeze([
   ...PARSER_KEYS.map((key) => Object.freeze({ key, kind: 'PARSER' as const, revision: 1 as const, status: 'ACTIVE' as const })),
-  ...['money.v1', 'transaction-reconciliation.v1', 'shipment-status.v1', 'connection-health.v1', 'device-status.v1', 'bill-reminder.v1', 'email-message.v1', 'calendar-event.v1', 'repository-resource.v1', 'repository-resource.v2', 'document-resource.v1', 'consumable-remaining.v1', 'household-supply.v1', 'feishu-resource.v1', 'dingtalk-resource.v1', 'wecom-resource.v1', 'structured-read.v1'].map((key) => Object.freeze({ key, kind: 'NORMALIZER' as const, revision: 1 as const, status: 'ACTIVE' as const })),
+  ...['money.v1', 'transaction-reconciliation.v1', 'shipment-status.v1', 'connection-health.v1', 'device-status.v1', 'bill-reminder.v1', 'email-message.v1', 'calendar-event.v1', 'repository-resource.v1', 'repository-resource.v2', 'document-resource.v1', 'consumable-remaining.v1', 'household-supply.v1', 'feishu-resource.v1', 'dingtalk-resource.v1', 'wecom-resource.v1', 'structured-read.v1', 'native-calendar-event.v1','external-reference.v1','artifact-content.v1'].map((key) => Object.freeze({ key, kind: 'NORMALIZER' as const, revision: 1 as const, status: 'ACTIVE' as const })),
 ]);
 
 export interface SourceObservationInput {
@@ -20,10 +20,10 @@ export interface SourceObservationInput {
 }
 
 export interface NormalizedFactDraft {
-  resourceType: 'finance.transaction' | 'shipment' | 'digital_account.connection' | 'DeviceStatus' | 'Bill' | 'EmailMessage' | 'CalendarEvent' | 'Repository' | 'Issue' | 'PullRequest' | 'Workflow' | 'Page' | 'DataSource' | 'FeishuResource' | 'DingTalkResource' | 'WeComResource' | 'StructuredRead' | 'device.consumable' | 'household.supply';
-  resourceKey: string; subjectKey: string; factKey: 'finance.transaction.amount' | 'shipment.status' | 'digital_account.connection.health' | 'device_status.status.state' | 'bill.bill.state' | 'email_message.metadata' | 'email_message.body' | 'email_message.labels' | 'calendar_event.schedule' | 'repository.metadata' | 'issue.state' | 'pull_request.state' | 'workflow.run_status' | 'page.properties' | 'data_source.schema' | 'feishu.resource.state' | 'dingtalk.resource.state' | 'wecom.resource.state' | 'structured_read.field' | 'device.consumable.remaining_days' | 'household.supply.remaining_days';
+  resourceType: 'ExternalReference' | 'Artifact' | 'finance.transaction' | 'shipment' | 'digital_account.connection' | 'DeviceStatus' | 'Bill' | 'EmailMessage' | 'CalendarEvent' | 'Repository' | 'Issue' | 'PullRequest' | 'Workflow' | 'Page' | 'DataSource' | 'FeishuResource' | 'DingTalkResource' | 'WeComResource' | 'StructuredRead' | 'device.consumable' | 'household.supply';
+  resourceKey: string; subjectKey: string; factKey: 'external_reference.content' | 'artifact.content' | 'calendar_event.meetings.state' | 'finance.transaction.amount' | 'shipment.status' | 'digital_account.connection.health' | 'device_status.status.state' | 'bill.bill.state' | 'email_message.metadata' | 'email_message.body' | 'email_message.labels' | 'calendar_event.schedule' | 'repository.metadata' | 'issue.state' | 'pull_request.state' | 'workflow.run_status' | 'page.properties' | 'data_source.schema' | 'feishu.resource.state' | 'dingtalk.resource.state' | 'wecom.resource.state' | 'structured_read.field' | 'device.consumable.remaining_days' | 'household.supply.remaining_days';
   value: Record<string, JsonValue>; confidence: number; normalizerKey: string;
-  freshnessPolicyKey: 'transaction.default' | 'shipment.status' | 'connection.health' | 'device.status' | 'bill.reminder' | 'email.message' | 'calendar.event' | 'repository.resource' | 'repository.resource.v2' | 'document.resource.v1' | 'feishu.resource' | 'dingtalk.resource' | 'wecom.resource' | 'structured.read' | 'consumable.remaining' | 'household.supply';
+  freshnessPolicyKey: 'external.reference' | 'artifact.content' | 'transaction.default' | 'shipment.status' | 'connection.health' | 'device.status' | 'bill.reminder' | 'email.message' | 'calendar.event' | 'repository.resource' | 'repository.resource.v2' | 'document.resource.v1' | 'feishu.resource' | 'dingtalk.resource' | 'wecom.resource' | 'structured.read' | 'consumable.remaining' | 'household.supply';
   conflictPolicyKey: 'latest_verified_then_observed' | 'latest_verified_then_observed.v2';
   compatibilityResourceKey?: string;
 }
@@ -34,6 +34,8 @@ export interface RealityPolicyDefinition {
 
 const policy = (key: string, kind: RealityPolicyDefinition['kind'], definition: Record<string, JsonValue>): RealityPolicyDefinition => ({ key, revision: 1, kind, definition });
 export const REALITY_POLICY_REGISTRY: readonly RealityPolicyDefinition[] = Object.freeze([
+  policy('external.reference','FRESHNESS',{ttlSeconds:86400,onStale:'refresh'}),
+  policy('artifact.content','FRESHNESS',{ttlSeconds:31536000,onStale:'retain_historical'}),
   policy('semantic-identity.v1', 'DEDUPE', { fields: ['userId', 'resourceType', 'resourceKey', 'subjectKey', 'factKey', 'valueHash'] }),
   policy('transaction.default', 'FRESHNESS', { ttlSeconds: 31536000, onStale: 'retain_historical' }),
   policy('shipment.status', 'FRESHNESS', { ttlSeconds: 86400, onStale: 'refresh' }),
@@ -81,6 +83,13 @@ const optionalEnum = <T extends readonly string[]>(value: JsonValue | undefined,
 };
 
 export function parseAndNormalizeObservation(input: SourceObservationInput): NormalizedFactDraft[] {
+  if(input.parserKey==='generic.external-reference.v1'||input.parserKey==='generic.artifact-content.v1'){
+    const reference=input.parserKey==='generic.external-reference.v1';
+    const id=requireString(input.payload,'id');const evidenceHash=requireString(input.payload,'sourceSha256');
+    if(!/^[a-f0-9-]{36}$/i.test(id)||!/^[a-f0-9]{64}$/.test(evidenceHash))throw new Error('Reference requires immutable artifact identity');
+    const subjectKey=`${reference?'external-reference':'artifact'}:${id}`;
+    return [{resourceType:reference?'ExternalReference':'Artifact',resourceKey:subjectKey,subjectKey,factKey:reference?'external_reference.content':'artifact.content',value:input.payload,confidence:1,normalizerKey:reference?'external-reference.v1':'artifact-content.v1',freshnessPolicyKey:reference?'external.reference':'artifact.content',conflictPolicyKey:'latest_verified_then_observed.v2'}];
+  }
   if (input.parserKey === 'generic.document-resource.v1') {
     if (!input.connectionId) throw new Error('Document resource observation requires connectionId');
     const type = requireString(input.payload, 'resourceType'); const id = requireString(input.payload, 'resourceId'); const workspaceId = requireString(input.payload, 'workspaceId');
@@ -175,6 +184,19 @@ export function parseAndNormalizeObservation(input: SourceObservationInput): Nor
     return [{ resourceType: type as keyof typeof keys, resourceKey: subjectKey, subjectKey, factKey: keys[type as keyof typeof keys], value: input.payload,
       confidence: 1, normalizerKey: versioned ? 'repository-resource.v2' : 'repository-resource.v1',
       freshnessPolicyKey: versioned ? 'repository.resource.v2' : 'repository.resource', conflictPolicyKey: versioned ? 'latest_verified_then_observed.v2' : 'latest_verified_then_observed' }];
+  }
+  if (input.parserKey === 'native.calendar-event.v1') {
+    if(input.sourceMode!=='NATIVE_OS'||input.connectionId||!input.deviceId)throw new Error('Native calendar requires signed native device provenance');
+    const id=requireString(input.payload,'id');const calendarId=requireString(input.payload,'calendarId');
+    const begin=input.payload.startAt,end=input.payload.endAt,status=input.payload.status;
+    if(typeof begin!=='number'||typeof end!=='number'||!Number.isFinite(begin)||!Number.isFinite(end)||end<begin||typeof input.payload.title!=='string'||!['SCHEDULED','CANCELLED','TENTATIVE'].includes(String(status)))throw new Error('Invalid native calendar evidence');
+    const subjectKey=`local:${input.deviceId}:calendar:${calendarId}:${id}:${begin}`;
+    const allDay=input.payload.allDay===true;
+    const start:Record<string,string>=allDay?{date:new Date(begin).toISOString().slice(0,10)}:{dateTime:new Date(begin).toISOString()};
+    const endPoint:Record<string,string>=allDay?{date:new Date(end).toISOString().slice(0,10)}:{dateTime:new Date(end).toISOString()};
+    const value={eventId:id,calendarId,title:input.payload.title,allDay,start,end:endPoint,status:status==='CANCELLED'?'cancelled':status==='TENTATIVE'?'tentative':'confirmed',nativeStatus:status};
+    return [{resourceType:'CalendarEvent',resourceKey:subjectKey,subjectKey,factKey:'calendar_event.schedule',value,confidence:1,normalizerKey:'native-calendar-event.v1',freshnessPolicyKey:'calendar.event',conflictPolicyKey:'latest_verified_then_observed'},
+    {resourceType:'CalendarEvent',resourceKey:subjectKey,subjectKey,factKey:'calendar_event.meetings.state',value:{...value,state:status},confidence:1,normalizerKey:'native-calendar-event.v1',freshnessPolicyKey:'calendar.event',conflictPolicyKey:'latest_verified_then_observed'}];
   }
   if (input.parserKey === 'generic.calendar-event.v1') {
     if (!input.connectionId) throw new Error('Calendar observation requires connectionId');

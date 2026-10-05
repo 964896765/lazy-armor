@@ -43,6 +43,28 @@ function project(sources: SourceCandidateEvidence[], truths: FactTruthEvidence[]
 }
 
 describe('FactDemand contract and deterministic Source Resolution', () => {
+  it('honors a frozen source even when another ranks higher and never falls back after revoke', () => {
+    const selected = source({sourceId:'connection:chosen:READ_SHIPMENT',connectionId:'chosen'});
+    const other = source();
+    const pins = { 'shipment.status': selected.sourceId };
+    const input = {request,contract,sources:[other,selected],truths:[truth()],evaluatedAt:now,sourcePins:pins};
+    const demand = buildFactDemandProjections(input)[0]!;
+    expect(demand.selectedSourceId).toBe(selected.sourceId);
+    expect(demand.dataVerified).toBe(false);
+    const revoked = buildFactDemandProjections({...input,sources:[other,{...selected,authorized:false}]})[0]!;
+    expect(revoked.selectedSourceId).toBeNull();
+    expect(revoked.state).toBe('NEEDS_PERMISSION');
+  });
+  it('selects declared source modes per demand without inferring a provider mode', () => {
+    const multiple = { ...contract, factDemands: [
+      { ...contract.factDemands[0]!, acceptedSourceModes: ['OFFICIAL_API'] },
+      { ...contract.factDemands[0]!, acceptedSourceModes: ['WEBHOOK'] },
+    ] } as ScenarioContractV2;
+    const results = buildFactDemandProjections({ request, contract: multiple, sources: [source({ supportedSourceModes: ['OFFICIAL_API', 'WEBHOOK'] })], truths: [], evaluatedAt: now });
+    expect(results.map(result => result.candidateSources[0]?.sourceMode)).toEqual(['OFFICIAL_API', 'WEBHOOK']);
+    const unsupported = buildFactDemandProjections({ request, contract: multiple, sources: [source({ supportedSourceModes: ['OFFICIAL_API'] })], truths: [], evaluatedAt: now });
+    expect(unsupported[1]!.candidateSources).toHaveLength(0);
+  });
   it('rejects an illegal object, intent, scenario revision, and client-injected fact fields', () => {
     expect(() => buildFactDemandProjections({ request: { ...request, subject: { resourceType: 'transaction', subjectKey: 'x' } }, contract, sources: [], truths: [], evaluatedAt: now })).toThrow('ResourceSubject type');
     expect(() => buildFactDemandProjections({ request: { ...request, goal: { ...request.goal, intent: 'PAY_ORDER' } }, contract, sources: [], truths: [], evaluatedAt: now })).toThrow('Goal intent');
@@ -54,7 +76,7 @@ describe('FactDemand contract and deterministic Source Resolution', () => {
     ['NEEDS_SOURCE', []],
     ['SOURCE_NOT_IMPLEMENTED', [source({ implemented: false })]],
     ['NEEDS_PERMISSION', [source({ authorized: false })]],
-    ['DEVICE_OFFLINE', [source({ sourceMode: 'NOTIFICATION', capabilityKey: null, deviceOnline: false })]],
+    ['DEVICE_OFFLINE', [source({ sourceMode: 'NOTIFICATION', capabilityKey: 'READ_SHIPMENT', deviceOnline: false })]],
     ['PROVIDER_UNHEALTHY', [source({ healthy: false })]],
     ['PENDING_ACQUISITION', [source()]],
   ] as const)('keeps source failure state %s explicit', (expected, sources) => {
@@ -75,7 +97,7 @@ describe('FactDemand contract and deterministic Source Resolution', () => {
   });
 
   it('marks old data stale, fresh unverified data pending verification, and identical duplicates non-conflicting', () => {
-    expect(project([source()], [truth({ createdAt: '2026-09-23T00:00:00.000Z' })]).state).toBe('STALE');
+    expect(project([source()], [truth({ observedAt: '2026-09-23T00:00:00.000Z',createdAt: '2026-09-23T00:00:00.000Z' })]).state).toBe('STALE');
     expect(project([source()], [truth({ verified: false, realityLevel: 'CLAIMED' })]).state).toBe('NEEDS_VERIFICATION');
     const duplicate = project([source()], [truth(), truth({ truthRecordId: 'truth-2', truthVersionId: 'truth-version-2' })]);
     expect(duplicate.state).toBe('SATISFIED');

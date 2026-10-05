@@ -4,14 +4,15 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { Alert, Image, Pressable, Text, View } from 'react-native';
+import { Alert, Image, Text, View } from 'react-native';
 import { api } from '../src/api';
 import { useAuthStore } from '../src/auth-store';
-import { Button, Card, EditorPage, Field, ui } from '../src/editor-ui';
-const domains = [{ value: 'life', label: '生活' }, { value: 'family', label: '家庭' }, { value: 'travel', label: '出行' }, { value: 'health', label: '健康' }, { value: 'work', label: '工作' }, { value: 'other', label: '其他' }];
+import { Button, EditorPage, Field, ui } from '../src/editor-ui';
+import {newServiceOfferingForm,serviceOfferingPayload,ServiceOfferingFields} from '../src/service-offering-form';
+import {serviceDeliveryLabels,servicePriceLabels} from '@lazy-armor/plan-schema/service-offering';
 export default function PublishService() {
  const token = useAuthStore(s => s.token); const client = useQueryClient();
- const [title, setTitle] = useState(''); const [summary, setSummary] = useState(''); const [contact, setContact] = useState(''); const [area, setArea] = useState(''); const [imageUrl, setImageUrl] = useState(''); const [price, setPrice] = useState(''); const [domain, setDomain] = useState('life'); const [deliveryMode, setDeliveryMode] = useState('LOCAL'); const [error, setError] = useState('');
+ const [form,setForm]=useState(newServiceOfferingForm);const [imageUrl,setImageUrl]=useState('');const [error,setError]=useState('');
  const [imageMedia, setImageMedia] = useState<{ id: string; uri: string } | null>(null);
  const upload = useMutation({ mutationFn: async () => {
   const picked = await DocumentPicker.getDocumentAsync({ type: ['image/jpeg', 'image/png', 'image/webp'], copyToCacheDirectory: true, multiple: false });
@@ -22,16 +23,22 @@ export default function PublishService() {
   return { id: result.id, uri: asset.uri };
  }, onSuccess: image => { if (image) { setImageMedia(image); setImageUrl(''); } setError(''); }, onError: e => setError(e.message) });
  const [requestId] = useState(() => `publish-${Date.now()}-${Math.random().toString(36).slice(2)}`);
- const publish = useMutation({ mutationFn: () => {
-  let priceMinor: number | undefined;
-  if (price.trim()) { if (!/^\d{1,6}(\.\d{1,2})?$/.test(price.trim())) throw new Error('请输入有效价格，最多两位小数'); const [whole, cents = ''] = price.trim().split('.'); priceMinor = Number(whole) * 100 + Number(cents.padEnd(2, '0')); }
-  return api('/service-offerings', token, { method: 'POST', body: JSON.stringify({ requestId, title, summary, contact, serviceArea: area, domain, deliveryMode, priceMinor, ...(imageMedia ? { imageMediaId: imageMedia.id } : {}), ...(imageUrl.trim() ? { imageUrl: imageUrl.trim() } : {}), confirmed: true }) });
- }, onSuccess: async () => { await client.invalidateQueries({ queryKey: ['service-offerings'] }); await client.invalidateQueries({ queryKey: ['service-provider-profile'] }); router.canGoBack() ? router.back() : router.replace('/services' as never); }, onError: e => setError(e.message) });
+ const publish = useMutation({ mutationFn: (status:'PUBLISHED'|'DRAFT'='PUBLISHED') => {
+  const fields=serviceOfferingPayload(form);
+  return api('/service-offerings', token, { method: 'POST', body: JSON.stringify({ requestId, status, ...fields, ...(imageMedia ? { imageMediaId: imageMedia.id } : {}), ...(imageUrl.trim() ? { imageUrl: imageUrl.trim() } : {}), confirmed: true }) });
+ }, onSuccess: async () => { await client.invalidateQueries({ queryKey: ['service-offerings'] }); await client.invalidateQueries({ queryKey: ['service-provider-profile'] }); await client.invalidateQueries({queryKey:['my-service-offerings']}); router.canGoBack() ? router.back() : router.replace('/services' as never); }, onError: e => setError(e.message) });
  return <EditorPage title="发布内部服务">{!token ? <Button label="登录后发布服务" onPress={() => router.push('/auth/login' as never)} /> : <>
-  <Card><Field label="服务名称" value={title} onChange={setTitle} max={160} /><Field label="服务说明" value={summary} onChange={setSummary} max={600} multiline /><Field label="服务图片链接（选填）" value={imageUrl} onChange={value => { setImageUrl(value); if (value.trim()) setImageMedia(null); }} max={1000} placeholder="公开 HTTPS 图片地址" />
-   <Button secondary label={upload.isPending ? '上传中…' : '从手机选择服务图片'} disabled={upload.isPending || publish.isPending} onPress={() => upload.mutate()} />{imageMedia ? <><Image source={{ uri: imageMedia.uri }} style={{ width: '100%', height: 160 }} resizeMode="contain" /><Button secondary label="移除图片" onPress={() => setImageMedia(null)} /></> : null}<Text style={ui.detail}>图片确认发布后公开展示，上传时会去除定位等元数据。</Text><Text style={ui.label}>服务分类</Text><View style={[ui.line, { flexWrap: 'wrap' }]}>{domains.map(item => <Pressable key={item.value} style={[ui.pill, domain === item.value && { backgroundColor: '#BDD9FF' }]} onPress={() => setDomain(item.value)}><Text>{item.label}</Text></Pressable>)}</View>
-   <Text style={ui.label}>服务方式</Text><View style={ui.line}>{[{ value: 'LOCAL', label: '上门服务' }, { value: 'REMOTE', label: '远程服务' }].map(item => <Pressable key={item.value} style={[ui.pill, deliveryMode === item.value && { backgroundColor: '#BDD9FF' }]} onPress={() => setDeliveryMode(item.value)}><Text>{item.label}</Text></Pressable>)}</View>
-   <Field label={deliveryMode === 'LOCAL' ? '服务区域' : '交付范围'} value={area} onChange={setArea} max={300} placeholder={deliveryMode === 'LOCAL' ? '例如：所在城市与服务区域' : '例如：线上交付'} /><Field label="价格（元，选填）" value={price} onChange={setPrice} max={10} placeholder="留空表示费用需协商" /><Field label="公开联系方式" value={contact} onChange={setContact} max={160} />
-  </Card>{error ? <Text style={ui.error}>{presentation.error(error)}</Text> : null}<Button label={publish.isPending ? '发布中…' : '确认发布服务'} disabled={publish.isPending || upload.isPending || !title.trim() || !summary.trim() || !area.trim() || !contact.trim()} onPress={() => Alert.alert('确认公开发布？', `${title}\n${deliveryMode === 'LOCAL' ? '上门' : '远程'} · ${area}\n公开联系方式：${contact}\n费用：${price.trim() ? price + ' 元' : '需协商'}`, [{ text: '取消' }, { text: '确认发布', onPress: () => publish.mutate() }])} />
+  <ServiceOfferingFields value={form} onChange={setForm} imageFields={<>
+   <Field label="服务图片链接（选填）" value={imageUrl} onChange={value=>{setImageUrl(value);if(value.trim())setImageMedia(null);}} max={1000} placeholder="公开 HTTPS 图片地址"/>
+   <Button secondary label={upload.isPending?'上传中…':'从手机选择服务图片'} disabled={upload.isPending||publish.isPending} onPress={()=>upload.mutate()}/>
+   {imageMedia?<><Image source={{uri:imageMedia.uri}} style={{width:'100%',height:160}} resizeMode="contain"/><Button secondary label="移除图片" onPress={()=>setImageMedia(null)}/></>:null}
+   <Text style={ui.detail}>图片确认发布后公开展示，上传时会去除定位等元数据。</Text>
+  </>}/>
+  <View style={{gap:8,paddingTop:16}}><Text style={ui.title}>发布</Text><Button secondary label="保存草稿" disabled={publish.isPending||upload.isPending} onPress={()=>publish.mutate('DRAFT')}/>
+  {error?<Text style={ui.error}>{presentation.error(error)}</Text>:null}
+  <Button label={publish.isPending?'发布中…':'确认发布服务'} disabled={publish.isPending||upload.isPending} onPress={()=>{
+   try{serviceOfferingPayload(form);setError('');}catch(e){setError(e instanceof Error?e.message:String(e));return;}
+   Alert.alert('确认公开发布？',`${form.title}\n${form.deliveryMode?serviceDeliveryLabels[form.deliveryMode]:''}\n公开联系方式：${form.contact}\n费用：${servicePriceLabels[form.priceMode]}${['FIXED','STARTING_FROM'].includes(form.priceMode)?' '+form.price+' 元':''}`,[{text:'取消'},{text:'确认发布',onPress:()=>publish.mutate('PUBLISHED')}]);
+  }}/></View>
  </>}</EditorPage>;
 }

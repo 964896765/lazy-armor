@@ -1,10 +1,14 @@
+import {z} from 'zod';
+import {ModuleRef} from '@nestjs/core';
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { creationDrafts, planOfferSnapshots } from '@lazy-armor/database';
+import { consumerConversations, creationDrafts, planOfferSnapshots, planCreationContracts } from '@lazy-armor/database';
 import {
+  buildPersistentPlanOffer, catalogHash, definitionHash, persistentPlanOfferRequestSchema,compileScenarioPlan,
+  coreProductTemplateByKey,
   CREATION_DRAFT_CONTRACT_VERSION,
   assessPlanAvailability,
   buildSourceSelection,
-  creationDraftInputSchema,
+  creationDraftInputSchema,creationDraftSourceChoiceSchema,
   scenarioContractV2ByKey,
   scenarioByKey,
   type CreationDraft,
@@ -33,6 +37,7 @@ export class CreationDraftsService {
   constructor(
     @Inject(DATABASE) private readonly db: InjectedDatabase,
     private readonly factDemands: FactDemandResolverService,
+    private readonly moduleRef:ModuleRef,
   ) {}
 
   async upsert(userId: string, raw: SaveCreationDraftDto): Promise<CreationDraft> {
@@ -96,20 +101,25 @@ export class CreationDraftsService {
     return this.toEntity((await this.findById(draftId))!);
   }
 
-  async bindConversation(userId: string, conversationId: string, tx: PlanExecutor, input: { draftId?: string; scenarioKey?: string } = {}) {
+  async bindConversation(userId: string, conversationId: string, tx: PlanExecutor, input: { draftId?: string; scenarioKey?: string; productTemplateKey?:string } = {}) {
     const now = new Date();
     if (input.draftId) {
       const row = (await tx.select().from(creationDrafts).where(and(eq(creationDrafts.draftId, input.draftId), eq(creationDrafts.userId, userId))).for('update'))[0];
       if (!row) throw new NotFoundException('CreationDraft not found');
       if (row.state !== 'ACTIVE' || row.expiresAt <= now) throw new ConflictException('CreationDraft is not active');
-      if (row.conversationId) return { draftId: row.draftId, conversationId: row.conversationId };
+      if (row.conversationId) {
+        const linked = (await tx.select().from(consumerConversations).where(eq(consumerConversations.id, row.conversationId)))[0];
+        if (!linked || linked.deletedAt) throw new ConflictException('Conversation has been deleted');
+        return { draftId: row.draftId, conversationId: row.conversationId };
+      }
       await tx.update(creationDrafts).set({ scopeKey: `conversation:${conversationId}`, conversationId, updatedAt: now, version: row.version + 1 }).where(eq(creationDrafts.draftId, row.draftId));
       return { draftId: row.draftId, conversationId };
     }
     const scenario = input.scenarioKey ? scenarioByKey(input.scenarioKey) : null;
     if (input.scenarioKey && !scenario) throw new NotFoundException('Scenario not found');
+    const productTemplate=input.productTemplateKey?coreProductTemplateByKey(input.productTemplateKey):null;
     const draftId = newId();
-    await tx.insert(creationDrafts).values({ draftId, userId, scopeKey: `conversation:${conversationId}`, conversationId, scenarioKey: scenario?.key ?? '__pending__', scenarioRevision: scenario?.revision ?? 1, stage: 1, goalJson: { intent: 'DESCRIBE_REQUIREMENT', description: '待补充计划需求', constraints: {} }, subjectJson: null, sourceChoicesJson: [], selectedOfferKey: null, version: 1, state: 'ACTIVE', createdAt: now, updatedAt: now, expiresAt: new Date(now.getTime() + CREATION_DRAFT_TTL_MS) });
+    await tx.insert(creationDrafts).values({ draftId, userId, scopeKey: `conversation:${conversationId}`, conversationId, scenarioKey: scenario?.key ?? '__pending__', scenarioRevision: scenario?.revision ?? 1, stage: 1, goalJson: { intent: 'DESCRIBE_REQUIREMENT', description: productTemplate?.intent ?? '待补充计划需求', constraints: productTemplate ? {productTemplateKey:productTemplate.key,productCatalogVersion:'1',candidateScenarioKeys:productTemplate.scenarioMapping.scenarioKeys.join(',')} : {} }, subjectJson: null, sourceChoicesJson: [], selectedOfferKey: null, version: 1, state: 'ACTIVE', createdAt: now, updatedAt: now, expiresAt: new Date(now.getTime() + CREATION_DRAFT_TTL_MS) });
     return { draftId, conversationId };
   }
 
@@ -131,6 +141,31 @@ export class CreationDraftsService {
     const row = (await tx.select().from(creationDrafts).where(and(eq(creationDrafts.draftId, draftId), eq(creationDrafts.userId, userId))).for('update'))[0];
     if (!row || row.state !== 'ACTIVE' || row.expiresAt <= new Date() || row.proposalMessageId !== messageId) throw new ConflictException('CreationDraft changed or expired; regenerate the proposal');
     await tx.update(creationDrafts).set({ state: 'COMPLETED', version: row.version + 1, updatedAt: new Date() }).where(eq(creationDrafts.draftId, draftId));
+  }
+
+  /** Freeze the confirmed draft sources against this exact immutable PlanVersion. */
+  async freezeConversationSources(userId:string,draftId:string,created:{planId:string;planVersionId:string;definition:import('@lazy-armor/plan-schema').PlanDefinition},tx:PlanExecutor) {
+    const row=(await tx.select().from(creationDrafts).where(and(eq(creationDrafts.draftId,draftId),eq(creationDrafts.userId,userId))).for('update'))[0];
+    if(!row||row.state!=='COMPLETED')throw new ConflictException('请先确认当前计划草案');
+    const choices=row.sourceChoicesJson as unknown as CreationDraftSourceChoice[];
+    const parsed=persistentPlanOfferRequestSchema.safeParse({scenarioKey:row.scenarioKey,scenarioRevision:row.scenarioRevision,goal:row.goalJson,subject:row.subjectJson});
+    if(!parsed.success){if(choices.length)throw new ConflictException('来源选择缺少有效需求合同');return null;}
+    const pins=Object.fromEntries(choices.map(choice=>[choice.factKey,choice.selection.sourceId]));
+    const resolved=await this.factDemands.resolve(userId,parsed.data,pins);
+    if(choices.some(choice=>!resolved.demands.some(demand=>demand.demandId===choice.demandId&&demand.selectedSourceId===choice.selection.sourceId&&demand.sourceCurrentlyUsable)))throw new ConflictException('已选来源发生变化，请重新确认');
+    const selected=resolved.demands.map(demand=>({demandId:demand.demandId,factKey:demand.factKey,selectedSourceId:demand.selectedSourceId,selectedSource:demand.selectedSource}));
+    const scenario=scenarioByKey(row.scenarioKey);
+    if(!scenario)throw new ConflictException('需求合同已变化');
+    const offer=buildPersistentPlanOffer({request:parsed.data,demands:resolved.demands,contractHash:resolved.contractHash,strategyKey:scenario.defaultStrategy,planDefinitionHash:definitionHash(created.definition),generatedAt:resolved.evaluatedAt});
+    const now=new Date(),snapshotId=newId(),contractId=newId();
+    await tx.insert(planOfferSnapshots).values({id:snapshotId,userId,offerKey:catalogHash({draftId,planVersionId:created.planVersionId}),scenarioKey:row.scenarioKey,scenarioRevision:row.scenarioRevision,contractHash:resolved.contractHash,offerHash:catalogHash(offer),preconditionHash:offer.preconditionHash,goalJson:row.goalJson,subjectJson:row.subjectJson!,factDemandsJson:resolved.demands as unknown as Record<string,unknown>[],sourceResolutionJson:selected as unknown as Record<string,unknown>[],offerJson:offer as unknown as Record<string,unknown>,status:'CHOSEN',expiresAt:new Date(offer.expiresAt),chosenAt:now,invalidatedAt:null,createdAt:now});
+    await tx.insert(planCreationContracts).values({id:contractId,userId,planId:created.planId,planVersionId:created.planVersionId,offerSnapshotId:snapshotId,idempotencyKey:`draft:${draftId}:${created.planVersionId}`,scenarioKey:row.scenarioKey,scenarioRevision:row.scenarioRevision,contractHash:resolved.contractHash,confirmationHash:catalogHash({draftId,draftVersion:row.version,definitionHash:definitionHash(created.definition),selected}),goalJson:row.goalJson,subjectJson:row.subjectJson!,factDemandsJson:resolved.demands as unknown as Record<string,unknown>[],sourceSelectionJson:selected as unknown as Record<string,unknown>[],offerJson:offer as unknown as Record<string,unknown>,createdAt:now});
+    const compiled=compileScenarioPlan({scenarioKey:row.scenarioKey,scenarioRevision:row.scenarioRevision,strategy:scenario.defaultStrategy,subjectKey:parsed.data.subject.subjectKey,name:created.definition.name,mode:'DRAFT',readiness:{manualInputAvailable:true,observationPipelineAvailable:true,executionPipelineAvailable:true}});
+    if(definitionHash(compiled.definition)===definitionHash(created.definition)){
+      const {StrategyRuntimeService}=await import('../strategy-runtime/strategy-runtime.service');
+      await this.moduleRef.get(StrategyRuntimeService,{strict:false}).bindInTransaction(userId,{planVersionId:created.planVersionId,scenarioKey:row.scenarioKey,scenarioRevision:row.scenarioRevision,strategy:scenario.defaultStrategy,subjectKey:parsed.data.subject.subjectKey},tx);
+    }
+    return {contractId,sourceSelections:selected};
   }
 
   async list(userId: string): Promise<CreationDraft[]> {
@@ -175,7 +210,7 @@ export class CreationDraftsService {
         let current: Awaited<ReturnType<FactDemandResolverService['resolve']>> | null;
         try {
           current = await this.factDemands.resolve(userId, { scenarioKey: draft.scenarioKey,
-            scenarioRevision: draft.scenarioRevision, goal, subject });
+            scenarioRevision: draft.scenarioRevision, goal, subject },Object.fromEntries(choices.map(choice=>[choice.factKey,choice.selection.sourceId])));
         } catch {
           current = null;
         }
@@ -227,6 +262,23 @@ export class CreationDraftsService {
     await this.db.update(creationDrafts).set({ state: 'DISCARDED', updatedAt: new Date() })
       .where(eq(creationDrafts.draftId, draft.draftId));
     return this.toEntity((await this.findById(draft.draftId))!);
+  }
+
+  async selectSources(userId:string,draftId:string,version:number,rawChoices:unknown[]){
+    const draft=await this.get(userId,draftId);
+    if(draft.state!=='ACTIVE'||Date.parse(draft.expiresAt)<=Date.now())throw new ConflictException('计划草案已失效');
+    if(draft.version!==version)throw new ConflictException('草案已更新，请刷新后选择来源');
+    if(!draft.subject)throw new BadRequestException('请先明确计划关联对象');
+    const parsed=z.array(creationDraftSourceChoiceSchema).min(1).max(50).safeParse(rawChoices);
+    if(!parsed.success)throw new BadRequestException("请选择有效的数据来源");
+    const inputs=parsed.data;
+    if(new Set(inputs.map(choice=>choice.demandId)).size!==inputs.length)throw new BadRequestException('同一需求只能选择一个来源');
+    const existing=new Map(draft.sourceChoices.map(choice=>[choice.demandId,{demandId:choice.demandId,sourceId:choice.selection.sourceId}]));
+    for(const input of inputs)existing.set(input.demandId,input);
+    const choices=await this.resolveSourceChoices(userId,draft.scenarioKey,draft.scenarioRevision,draft.goal,draft.subject,[...existing.values()]);
+    const [result]=await this.db.update(creationDrafts).set({sourceChoicesJson:choices as unknown as Record<string,unknown>[],selectedOfferKey:null,stage:Math.max(draft.stage,3),version:version+1,updatedAt:new Date()}).where(and(eq(creationDrafts.draftId,draftId),eq(creationDrafts.userId,userId),eq(creationDrafts.version,version),eq(creationDrafts.state,'ACTIVE')));
+    if(result.affectedRows!==1)throw new ConflictException('草案已更新，请刷新后选择来源');
+    return this.get(userId,draftId);
   }
 
   private requireNoSourceChoices(sourceChoices: readonly CreationDraftSourceChoiceInput[] | undefined): CreationDraftSourceChoice[] {

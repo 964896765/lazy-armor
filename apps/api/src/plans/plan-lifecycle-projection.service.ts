@@ -74,7 +74,7 @@ export class PlanLifecycleProjectionService {
         scenarioRevision: creationContract.scenarioRevision,
         goal: creationContract.goal,
         subject: creationContract.subject,
-      })) : Promise.resolve(null),
+      }), Object.fromEntries((creationContract.sourceSelection as Array<{demandId:string;factKey?:string;selectedSourceId:string|null}>).map(source=>[source.factKey??(creationContract.factDemands as Array<{demandId:string;factKey:string}>).find(demand=>demand.demandId===source.demandId)?.factKey??source.demandId,source.selectedSourceId]))) : Promise.resolve(null),
       latestExecution ? this.lifecycleRead.forExecution(userId, latestExecution.id) : Promise.resolve(null),
     ]);
 

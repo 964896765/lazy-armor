@@ -20,6 +20,18 @@
     "./outcome": {
       "types": "./src/consumer-outcome.ts",
       "default": "./dist/consumer-outcome.js"
+    },
+    "./share": {
+      "types": "./src/share-text-parser.ts",
+      "default": "./dist/share-text-parser.js"
+    },
+    "./local-capabilities": {
+      "types": "./src/local-capabilities.ts",
+      "default": "./dist/local-capabilities.js"
+    },
+    "./service-offering": {
+      "types": "./src/service-offering.ts",
+      "default": "./dist/service-offering.js"
     }
   },
   "scripts": {

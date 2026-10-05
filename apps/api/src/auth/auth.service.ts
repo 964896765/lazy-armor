@@ -1,7 +1,7 @@
 import { ForbiddenException, HttpException, Inject, Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import { authIdentities, authSessions, passwordResetTokens, profiles, userMemberships, users } from '@lazy-armor/database';
+import { loginIdentifiers, authIdentities, authSessions, passwordResetTokens, profiles, userMemberships, users } from '@lazy-armor/database';
 import { newId } from '@lazy-armor/shared';
 import { compare, hash } from 'bcryptjs';
 import { createHash, randomBytes } from 'node:crypto';
@@ -107,6 +107,27 @@ export class AuthService {
       throw error;
     }
     return this.issueTokens(userId, null);
+  }
+
+  async loginVerified(kind:'phone'|'email', identifier:string, context:RequestContext) {
+    const now=new Date();
+    let firstLogin=false;
+    const userId=await this.db.transaction(async tx=>{
+      const known=(await tx.select({userId:loginIdentifiers.userId}).from(loginIdentifiers).where(and(eq(loginIdentifiers.kind,kind),eq(loginIdentifiers.identifier,identifier))).limit(1))[0];
+      const legacy=kind==='email'?(await tx.select({userId:authIdentities.userId}).from(authIdentities).where(eq(authIdentities.email,identifier)).limit(1))[0]:undefined;
+      let id=known?.userId??legacy?.userId;
+      if(!id){firstLogin=true;id=newId();await tx.insert(users).values({id,status:'active',role:'user',createdAt:now,updatedAt:now});
+        await tx.insert(profiles).values({id:newId(),userId:id,displayName:kind==='phone'?'手机用户':'邮箱用户',timezone:'Asia/Shanghai',locale:'zh-CN',createdAt:now,updatedAt:now});
+        await tx.insert(userMemberships).values({id:newId(),userId:id,membershipPlanKey:'free',status:'active',startedAt:now,currentPeriodStart:now,cancelAtPeriodEnd:0,provider:'internal',createdAt:now,updatedAt:now});
+      }
+      const user=(await tx.select().from(users).where(eq(users.id,id)).limit(1))[0];
+      if(user?.status!=='active')throw new UnauthorizedException('账号暂不可用');
+      if(!known)await tx.insert(loginIdentifiers).values({id:newId(),userId:id,kind,identifier,verifiedAt:now,createdAt:now,updatedAt:now});
+      if(legacy)await tx.update(authIdentities).set({emailVerifiedAt:now,updatedAt:now}).where(eq(authIdentities.userId,id));
+      return id;
+    });
+    await this.audit.append({actorType:'user',actorUserId:userId,userId,action:'LOGIN_CODE_VERIFIED',resourceType:'auth',resourceId:userId,source:'api',result:'success',changeSummary:'Verified passwordless login'});
+    return {...await this.issueTokens(userId,{ip:context.ip,userAgent:context.userAgent}),firstLogin};
   }
 
   async login(input: LoginDto, context: RequestContext): Promise<TokenPair> {

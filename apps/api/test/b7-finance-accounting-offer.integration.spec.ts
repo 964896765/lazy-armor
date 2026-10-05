@@ -51,7 +51,8 @@ describe.sequential('B7 finance.accounting persistent offer loop', { timeout: 90
     const offer = await request(app.getHttpServer()).post('/api/planning/offers/v2').set(auth(owner.token)).send(body).expect(201);
     expect(offer.body.status).toBe('AVAILABLE');
 
-    const chosen = await request(app.getHttpServer()).post(`/api/planning/offers/${offer.body.id}/choose`).set(auth(owner.token)).send({ idempotencyKey: `choose-${unique}` }).expect(201);
+    const chosen = await request(app.getHttpServer()).post(`/api/planning/offers/${offer.body.id}/choose`).set(auth(owner.token)).send({ idempotencyKey: `choose-${unique}` });
+    expect(chosen.status, JSON.stringify(chosen.body)).toBe(201);
     expect(chosen.body.planId).toBeTruthy();
     expect(chosen.body.planVersionId).toBeTruthy();
 

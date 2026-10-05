@@ -1,8 +1,9 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { conversationOnceRequests, actionIntents, actionAdapterBindings, connectors, executionSteps, executions, planActions, plans, strategyRuntimeBindings, strategyRuntimeWakeups } from '@lazy-armor/database';
+import {ModuleRef} from '@nestjs/core';
+import { conversationOnceRequests, actionIntents, actionAdapterBindings, connectors, executionSteps, executions, planActions, plans, strategyRuntimeBindings, strategyRuntimeWakeups,planCreationContracts,localCapabilityStates,trustedDevices } from '@lazy-armor/database';
 import { ACTION_ADAPTER_REVISION, TERMINAL_FOLLOW_UP_RULES, buildActionIntent, catalogHash, definitionHash,
   requiresTerminalHandoffProof, riskMaximum, terminalFollowUpRule, buildVerificationContract, verificationContractHash,
-  actionResolutionContractHash, type ActionResolutionContract, type ContextRiskSignal, type RiskLevel } from '@lazy-armor/plan-schema';
+  actionResolutionContractHash,localCapabilityAvailability, type ActionResolutionContract, type ContextRiskSignal, type RiskLevel } from '@lazy-armor/plan-schema';
 import { newId } from '@lazy-armor/shared';
 import { and, asc, eq } from 'drizzle-orm';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
@@ -42,6 +43,7 @@ export class ExecutionDispatchService {
     private readonly resolver: CapabilityResolverService,
     private readonly terminalGuard: TerminalHandoffGuard,
     private readonly truthGuard: TruthHandoffGuard,
+    private readonly moduleRef:ModuleRef,
     private readonly verificationPolicies: VerificationPolicyRegistry,
   ) {}
 
@@ -92,6 +94,25 @@ export class ExecutionDispatchService {
           pinnedVersionId = plan.activeVersionId;
         }
         if (expectedVersionId && pinnedVersionId !== expectedVersionId) throw new ConflictException('Plan version changed after confirmation; select the current version again');
+        const sourceContract=(await tx.select().from(planCreationContracts).where(and(eq(planCreationContracts.userId,userId),eq(planCreationContracts.planVersionId,pinnedVersionId))).limit(1).for('update'))[0];
+        if(sourceContract){
+          const facts=sourceContract.factDemandsJson as Array<{demandId:string;factKey:string}>;
+          const selected=sourceContract.sourceSelectionJson as Array<{demandId:string;factKey?:string;selectedSourceId:string|null}>;
+          const pins=Object.fromEntries(selected.map(source=>[source.factKey??facts.find(fact=>fact.demandId===source.demandId)?.factKey??source.demandId,source.selectedSourceId]));
+          const {FactDemandResolverService}=await import('../fact-demands/fact-demand-resolver.service');
+          const current=await this.moduleRef.get(FactDemandResolverService,{strict:false}).resolve(userId,{scenarioKey:sourceContract.scenarioKey,scenarioRevision:sourceContract.scenarioRevision,goal:sourceContract.goalJson as never,subject:sourceContract.subjectJson as never},pins);
+          if(current.contractHash!==sourceContract.contractHash||current.demands.some(demand=>demand.required&&(!demand.sourceCurrentlyUsable||demand.state!=='SATISFIED')))throw new ConflictException('Frozen plan sources or required Truth need reconfirmation');
+          for(const demand of current.demands.filter(demand=>demand.required)){
+            const source=demand.selectedSource;
+            if(source?.kind!=='NATIVE_DEVICE'&&source?.kind!=='TRUSTED_DEVICE')continue;
+            if(!source.trustedDeviceId)throw new ConflictException('Frozen device source unavailable');
+            const device=(await tx.select().from(trustedDevices).where(and(eq(trustedDevices.id,source.trustedDeviceId),eq(trustedDevices.userId,userId))).limit(1).for('update'))[0];
+            const capability=source.kind==='NATIVE_DEVICE'?'calendar.read':'notification.read';
+            const grant=(await tx.select().from(localCapabilityStates).where(and(eq(localCapabilityStates.userId,userId),eq(localCapabilityStates.trustedDeviceId,source.trustedDeviceId),eq(localCapabilityStates.capability,capability))).limit(1).for('update'))[0];
+            if(!device||device.status!=='active'||device.revokedAt||!grant||localCapabilityAvailability({key:grant.capability,userGrant:grant.userGrant,systemPermission:grant.systemPermission as never,health:grant.health as never,checkedAt:grant.checkedAt.getTime()},Date.now())!=='AVAILABLE')throw new ConflictException('Frozen device grant changed before execution');
+          }
+          await this.audit.append({actorType:'system',userId,action:'PLAN_FROZEN_SOURCES_REVALIDATED',resourceType:'plan_version',resourceId:pinnedVersionId,correlationId:id,source:'system',result:'success',after:{contractId:sourceContract.id,sourcePins:pins,truthVersionIds:current.demands.flatMap(demand=>demand.truthEvidence.filter(truth=>truth.verified).map(truth=>truth.truthVersionId))},changeSummary:'Existing dispatch revalidated frozen sources and required Truth before canonical Risk and Execution'},tx);
+        }
         const handoff = wakeupId ? await this.resolveHandoff(userId, planId, wakeupId, tx) : undefined;
         if (handoff) {
           if ('triggerPayload' in handoff) {

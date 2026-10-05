@@ -1,6 +1,7 @@
+import {localCapabilityAvailability} from '@lazy-armor/plan-schema';
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
-import { deviceAppConnections, mobileNotificationReceipts } from '@lazy-armor/database';
+import { localCapabilityStates,deviceAppConnections, mobileNotificationReceipts } from '@lazy-armor/database';
 import { newId } from '@lazy-armor/shared';
 import { and, eq } from 'drizzle-orm';
 import { AuditService } from '../audit/audit.service';
@@ -49,6 +50,11 @@ export class MobileNotificationReceiptsService {
       throw error;
     }
     await this.assertConnectionAllowsSource(connection, input.sourcePackage, userId, connectionId);
+    const grant=(await this.db.select().from(localCapabilityStates).where(and(eq(localCapabilityStates.userId,userId),eq(localCapabilityStates.trustedDeviceId,signedTrustedDeviceId),eq(localCapabilityStates.capability,'notification.read'))).limit(1))[0];
+    if(!grant||localCapabilityAvailability({key:grant.capability,userGrant:grant.userGrant,systemPermission:grant.systemPermission as never,health:grant.health as never,checkedAt:grant.checkedAt.getTime()},Date.now())!=='AVAILABLE'){
+      await this.block(userId,connectionId,'LOCAL_NOTIFICATION_GRANT_REQUIRED');
+      throw new ForbiddenException('Native notification source is not authorized or healthy');
+    }
     await this.assertNormalizedCandidate(input, userId, connectionId);
     const postedAt = new Date(input.postedAt);
     const capturedAt = new Date(input.capturedAt);

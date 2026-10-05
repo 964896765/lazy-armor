@@ -88,9 +88,11 @@ export class DailySummaryService {
   async resolveInternal(userId: string, config: Record<string, unknown>, context: DailySummaryContext) {
     const emailConnectionId = typeof config.emailConnectionId === 'string' ? config.emailConnectionId : null;
     const calendarConnectionId = typeof config.calendarConnectionId === 'string' ? config.calendarConnectionId : null;
+    const acquisitionCoverage:Array<{sourceId:string;factKey:string;state:string;observedAt:string|null;evidenceRefs:string[];reason:string}>=[];
+    const read=async(connectionId:string,sourceType:'email'|'calendar')=>{const rows=await this.syncConnectionSource(userId,{connectionId,sourceType});const failed=rows.some(row=>row.sourceId.startsWith('connection-issue:'));acquisitionCoverage.push({sourceId:'connection:'+connectionId,factKey:sourceType,state:failed?'UNAVAILABLE':'UNKNOWN',observedAt:failed?null:new Date().toISOString(),evidenceRefs:[],reason:failed?'本轮读取失败，不能判断是否有数据':'已读取，尚需统一 Acquisition 证据验证'});return rows;};
     const remoteCandidates = [
-      ...(emailConnectionId ? await this.syncConnectionSource(userId, { connectionId: emailConnectionId, sourceType: 'email' }) : []),
-      ...(calendarConnectionId ? await this.syncConnectionSource(userId, { connectionId: calendarConnectionId, sourceType: 'calendar' }) : []),
+      ...(emailConnectionId ? await read(emailConnectionId,'email') : []),
+      ...(calendarConnectionId ? await read(calendarConnectionId,'calendar') : []),
     ];
     const includedSources = this.readIncludedSources(config.includedSources ?? context.includedSources);
     const rows = await this.db.select().from(importantItemCandidates)
@@ -98,6 +100,7 @@ export class DailySummaryService {
       .orderBy(desc(importantItemCandidates.createdAt));
     return this.enrichContext({
       ...context,
+      acquisitionCoverage,
       importantItemCandidates: [...remoteCandidates, ...rows.map((row) => this.candidateResponse(row))].filter((row) => includedSources.length === 0 || includedSources.includes(row.sourceType)),
       includedSources,
       lookAheadHours: typeof config.lookAheadHours === 'number' ? config.lookAheadHours : context.lookAheadHours,
@@ -166,6 +169,8 @@ export class DailySummaryService {
     }, {});
     return {
       generatedAt: reference.toISOString(),
+      acquisitionCoverage:Array.isArray(enriched.acquisitionCoverage)?enriched.acquisitionCoverage:[],
+      coverageComplete:Array.isArray(enriched.acquisitionCoverage)&&enriched.acquisitionCoverage.length>0&&(enriched.acquisitionCoverage as Array<{state:string}>).every(item=>['VERIFIED_PRESENT','VERIFIED_EMPTY'].includes(item.state)),
       mustHandleCount: buckets.mustHandle.length,
       shouldHandleCount: buckets.shouldHandle.length,
       ignoredCount: buckets.ignored.length,
@@ -288,6 +293,7 @@ export class DailySummaryService {
         requestId: `daily-summary-sync:${input.sourceType}:${Date.now()}`,
         input: input.input ?? {},
       });
+      if(!result.ok||!Array.isArray(input.sourceType==='email'?result.data.messages:result.data.events))throw new Error('来源未返回经过识别的读取结果');
       if (input.sourceType === 'email') {
         return Promise.all(((result.data.messages as Array<Record<string, unknown>> | undefined) ?? []).map((item) => this.createCandidate(userId, {
           sourceType: 'email',

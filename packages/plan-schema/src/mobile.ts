@@ -45,3 +45,12 @@ export {
   type AppReadProfile,
   type StructuredReadOutcome,
 } from './structured-read';
+
+export * from './local-resource-projection';
+
+export * from './acquisition';
+export * from './state-assessment';
+export * from './source-resolver';
+
+export * from './work-item';
+export * from './local-capabilities';

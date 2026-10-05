@@ -48,7 +48,7 @@ export interface ScenarioContractV2 {
     maximumAgeSeconds: number;
     minimumReality: RealityLevel;
     acceptedSourceCapabilities: readonly string[];
-    acceptedSourceModes: readonly ('OFFICIAL_API' | 'WEBHOOK' | 'NOTIFICATION' | 'SHARE' | 'APP_READ_SESSION' | 'FILE' | 'MANUAL' | 'INTERNAL')[];
+    acceptedSourceModes: readonly ('OFFICIAL_API' | 'WEBHOOK' | 'NOTIFICATION' | 'SHARE' | 'APP_READ_SESSION' | 'FILE' | 'MANUAL' | 'INTERNAL' | 'NATIVE_OS')[];
     refreshPolicy: 'ON_STALE' | 'ON_CHANGE' | 'MANUAL_ONLY';
     verificationRequirements: readonly ('SOURCE_EVIDENCE' | 'USER_CONFIRMATION' | 'READ_BACK')[];
     conflictPolicy: 'LATEST_VERIFIED_THEN_OBSERVED' | 'REQUIRE_CONFIRMATION';
@@ -67,11 +67,28 @@ export interface ScenarioContractV2 {
     rawEvidenceRetention: 'SOURCE_POLICY' | 'EPHEMERAL' | 'NOT_STORED';
   }>;
   unsupportedConditions: readonly string[];
+  subjectRequirements:Readonly<{types:readonly string[];required:boolean;ownershipRequired:true}>;
+  sourceModes:readonly string[];
+  decisionPolicies:readonly Readonly<{kind:'STATE_CHANGE'|'EXPIRY'|'THRESHOLD'|'SEMANTIC_ADVISORY';requiresVerifiedFacts:true;executionAuthority:false}>[];
+  trigger:Readonly<{modes:readonly string[];requiresFreshCoverage:true}>;
+  risk:Readonly<{floor:string;authority:'RiskEngine';canAutoApprove:false}>;
+  verification:Readonly<{authority:'Verification';requirements:readonly string[]}>;
+  fallback:Readonly<{unknown:'ASK_USER';conflict:'RECONCILE';unavailable:'REFRESH_SOURCE'}>;
   definitionHash: string;
 }
 
-function defineContract(input: Omit<ScenarioContractV2, 'contractVersion' | 'definitionHash'>): ScenarioContractV2 {
-  const content = { contractVersion: SCENARIO_CONTRACT_VERSION, ...input };
+type ExtendedContractKeys='subjectRequirements'|'sourceModes'|'decisionPolicies'|'trigger'|'risk'|'verification'|'fallback';
+function defineContract(input: Omit<ScenarioContractV2, 'contractVersion' | 'definitionHash' | ExtendedContractKeys> & Partial<Pick<ScenarioContractV2,ExtendedContractKeys>>): ScenarioContractV2 {
+  const scenario=scenarioDefinitionByKey(input.scenario.key);if(!scenario)throw new Error('Unknown scenario');
+  const content = { contractVersion: SCENARIO_CONTRACT_VERSION,
+    subjectRequirements:{types:input.goal.requiredSubjectTypes,required:true,ownershipRequired:true as const},
+    sourceModes:[...new Set(input.factDemands.flatMap(demand=>demand.acceptedSourceModes))],
+    decisionPolicies:[{kind:'STATE_CHANGE' as const,requiresVerifiedFacts:true as const,executionAuthority:false as const}],
+    trigger:{modes:scenario.triggerProfile.modes,requiresFreshCoverage:true as const},
+    risk:{floor:scenario.defaultRiskFloor,authority:'RiskEngine' as const,canAutoApprove:false as const},
+    verification:{authority:'Verification' as const,requirements:scenario.verificationRequirements},
+    fallback:{unknown:'ASK_USER' as const,conflict:'RECONCILE' as const,unavailable:'REFRESH_SOURCE' as const},
+    ...input };
   return Object.freeze({ ...content, definitionHash: catalogHash(content) });
 }
 
@@ -89,7 +106,43 @@ if (!financeAccounting) throw new Error('Golden scenario finance.accounting is n
  * revision (or a V2-only scenario) and must never change that scenario's
  * definition/hash.
  */
+
+interface GoldenContractSpec {key:string;intent:string;decision:'STATE_CHANGE'|'EXPIRY'|'THRESHOLD'|'SEMANTIC_ADVISORY';privacy:'PERSONAL'|'SENSITIVE'|'HIGHLY_SENSITIVE';}
+function resourceContract(key:string,spec?:GoldenContractSpec):ScenarioContractV2 {
+ const scenario=scenarioByKey(key);if(!scenario)throw new Error('Unknown scenario');
+ return defineContract({scenario:{key:scenario.key,revision:scenario.revision},
+ governance:{state:'CONTRACT_COMPLETE',realSourceVerified:false,realActionVerified:false,evidenceRefs:[]},
+ goal:{supportedIntents:[spec?.intent??'MONITOR_RESOURCE_CHANGES'],requiredSubjectTypes:scenario.primaryResourceTypes},
+ factDemands:scenario.requiredFacts.map(factKey=>({factKey,subjectType:scenario.primaryResourceTypes[0],required:true,maximumAgeSeconds:scenario.freshnessPolicy.maximumAgeSeconds,minimumReality:scenario.minimumReality,
+ acceptedSourceCapabilities:scenario.sourceRequirements.map(item=>item.capabilityKey),acceptedSourceModes:spec?.key==='work.meetings'?['OFFICIAL_API','NOTIFICATION','FILE','MANUAL','NATIVE_OS']:['OFFICIAL_API','NOTIFICATION','FILE','MANUAL'],refreshPolicy:'ON_STALE',verificationRequirements:['SOURCE_EVIDENCE','USER_CONFIRMATION'],conflictPolicy:'LATEST_VERIFIED_THEN_OBSERVED',missingPolicy:'BLOCK_PLAN_OFFER'})),
+ actionDemands:scenario.actionRequirements.map(item=>({intentKey:'NOTIFY_RESOURCE_CHANGE',capabilityKey:item.capabilityKey,resourceType:item.resourceType,requiresUserConfirmation:true,verification:['AUDIT_RECORD','READ_BACK_OR_CALLBACK']})),
+ decisionPolicies:[{kind:spec?.decision??'THRESHOLD',requiresVerifiedFacts:true,executionAuthority:false}],
+ privacy:{classes:[spec?.privacy??'PERSONAL'],purpose:'仅使用已授权、带证据的资源状态，变化提醒仍经过现有风险、审批与验证链',rawEvidenceRetention:'SOURCE_POLICY'},
+ unsupportedConditions:['尚无真实来源验收证据，不宣称自动运行能力','缺少对象、事实、可用能力或授权时阻止激活与执行'],
+ });
+}
+
+const GOLDEN_CONTRACT_SPECS:readonly GoldenContractSpec[]=[
+ {key:'work.meetings',intent:'REMIND_CALENDAR_EVENT',decision:'EXPIRY',privacy:'PERSONAL'},
+ {key:'work.email',intent:'SUMMARIZE_WORK_EMAIL',decision:'SEMANTIC_ADVISORY',privacy:'SENSITIVE'},
+ {key:'daily_life.appointment',intent:'FOLLOW_SERVICE_APPOINTMENT',decision:'STATE_CHANGE',privacy:'PERSONAL'},
+ {key:'finance.bill',intent:'SUMMARIZE_VERIFIED_BILLS',decision:'SEMANTIC_ADVISORY',privacy:'SENSITIVE'},
+ {key:'finance.subscription',intent:'REMIND_SUBSCRIPTION_EXPIRY',decision:'EXPIRY',privacy:'SENSITIVE'},
+ {key:'finance.refund',intent:'FOLLOW_REFUND_STATUS',decision:'STATE_CHANGE',privacy:'SENSITIVE'},
+ {key:'finance.budget',intent:'ASSESS_BUDGET_THRESHOLD',decision:'THRESHOLD',privacy:'SENSITIVE'},
+ {key:'health.medication',intent:'REMIND_MEDICATION_SCHEDULE',decision:'EXPIRY',privacy:'HIGHLY_SENSITIVE'},
+ {key:'health.follow_up',intent:'PREPARE_FOLLOW_UP_VISIT',decision:'EXPIRY',privacy:'HIGHLY_SENSITIVE'},
+ {key:'family.member_affairs',intent:'COORDINATE_FAMILY_SCHEDULE',decision:'EXPIRY',privacy:'PERSONAL'},
+ {key:'work.tasks',intent:'FOLLOW_WORK_DEADLINE',decision:'EXPIRY',privacy:'PERSONAL'},
+ {key:'travel.itinerary',intent:'FOLLOW_TRAVEL_ITINERARY',decision:'STATE_CHANGE',privacy:'PERSONAL'},
+ {key:'identity_docs.validity',intent:'REMIND_DOCUMENT_EXPIRY',decision:'EXPIRY',privacy:'HIGHLY_SENSITIVE'},
+ {key:'housing.lease',intent:'REMIND_LEASE_EXPIRY',decision:'EXPIRY',privacy:'SENSITIVE'},
+];
+
 export const SCENARIO_CONTRACT_V2_REGISTRY: readonly ScenarioContractV2[] = Object.freeze([
+ ...GOLDEN_CONTRACT_SPECS.map(spec=>resourceContract(spec.key,spec)),
+  resourceContract('family.family_supply'),
+  resourceContract('daily_life.errands'),
   defineContract({
     scenario: Object.freeze({ key: delivery.key, revision: delivery.revision }),
     governance: Object.freeze({

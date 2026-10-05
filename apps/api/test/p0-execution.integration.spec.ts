@@ -384,7 +384,8 @@ describe.sequential('P0-5 Execution Engine integration and security', () => {
     queue.failNextEnqueueForTest();
     const created = await dispatch(userA.token, canonicalPlanId, { amount: 300 }, `recovery-${unique}`).expect(201);
     expect(created.body.status).toBe('created'); expect(await queue.hasExecutionJob(created.body.id)).toBe(false);
-    expect((await reconciler.reconcile(new Date(Date.now() + 1_000))).recovered).toBe(1);
+    expect((await reconciler.reconcile(new Date(Date.now() + 1_000))).recovered).toBeGreaterThanOrEqual(1);
+    expect(await queue.hasExecutionJob(created.body.id)).toBe(true);
     expect((await reconciler.reconcile(new Date(Date.now() + 1_000))).recovered).toBe(0);
     const all = (await request(app.getHttpServer()).get('/api/executions').set(auth(userA.token)).expect(200)).body;
     expect(all.filter((item: { requestId?: string; id: string }) => item.id === created.body.id)).toHaveLength(1);

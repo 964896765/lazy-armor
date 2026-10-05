@@ -12,7 +12,7 @@ interface TrustedDevice {
   id: string; deviceId: string; trustLevel: string; status: 'active' | 'revoked'; lastProvedAt: string; revokedAt: string | null;
   online: boolean; onlineState: string; lastHeartbeatAt: string | null;
 }
-interface DeviceAppConnection { id: string; trustedDeviceId: string | null; displayName: string; packageName: string; versionName: string | null; enabled: boolean; modes: string[]; lastSeenAt: string | null }
+interface DeviceAppConnection { id: string; trustedDeviceId: string | null; displayName: string; packageName: string; versionName: string | null; enabled: boolean; modes: string[]; lastSeenAt: string | null; capabilities?:{key:string;status:string}[] }
 interface AppReadSession { id: string; trustedDeviceId: string; targetPackage: string; modes: string[]; status: string; lastHeartbeatAt: string | null; expiresAt: string; terminalReason: string | null }
 
 export default function TrustedDeviceDetailPage() {
@@ -44,6 +44,7 @@ export default function TrustedDeviceDetailPage() {
         <RuntimeKeyValue label="安装标识" value={item.packageName} />
         <RuntimeKeyValue label="应用版本" value={item.versionName || '未上报'} />
         <RuntimeKeyValue label="用户授权" value={item.enabled ? item.modes.join('、') : '已停用'} />
+        {item.capabilities?.map(cap=><RuntimeKeyValue key={cap.key} label={cap.key} value={cap.status}/>)}
         <RuntimeKeyValue label="最近出现" value={item.lastSeenAt ? displayTime(item.lastSeenAt) : '尚未上报'} last />
       </RuntimeCard>)}</RuntimeCard></RuntimeSection>
       <RuntimeSection title="最近读取会话"><RuntimeCard>{activeSession ? <>

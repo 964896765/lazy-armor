@@ -17,6 +17,7 @@
 export const SOURCE_SELECTION_KINDS = [
   'PROVIDER_CONNECTION',
   'TRUSTED_DEVICE',
+  'NATIVE_DEVICE',
   'MANUAL_INPUT',
   'INTERNAL_FACT',
 ] as const;
@@ -79,6 +80,7 @@ export function sourceIdNamespace(kind: SourceSelectionKind): string {
   switch (kind) {
     case 'PROVIDER_CONNECTION': return 'connection';
     case 'TRUSTED_DEVICE': return 'device-app';
+    case 'NATIVE_DEVICE': return 'local';
     case 'MANUAL_INPUT': return 'manual';
     case 'INTERNAL_FACT': return 'internal';
   }
@@ -99,6 +101,11 @@ export function isSourceSelection(value: unknown): value is SourceSelection {
       return typeof candidate.connectionId === 'string' && Boolean(candidate.connectionId)
         && typeof candidate.capabilityKey === 'string' && Boolean(candidate.capabilityKey)
         && candidate.sourceId === `connection:${candidate.connectionId}:${candidate.capabilityKey}`;
+    case 'NATIVE_DEVICE':
+      return typeof candidate.trustedDeviceId==='string' && Boolean(candidate.trustedDeviceId)
+        && typeof candidate.capabilityKey==='string' && Boolean(candidate.capabilityKey)
+        && candidate.deviceAppConnectionId===null && candidate.connectionId===null
+        && candidate.sourceId===`local:${candidate.trustedDeviceId}:${candidate.capabilityKey}`;
     case 'TRUSTED_DEVICE':
       return typeof candidate.trustedDeviceId === 'string' && Boolean(candidate.trustedDeviceId)
         && typeof candidate.deviceAppConnectionId === 'string' && Boolean(candidate.deviceAppConnectionId)

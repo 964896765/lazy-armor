@@ -1,3 +1,4 @@
+import { ACTION_TYPES } from './action-types';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { PLAN_DOMAINS } from './domain-catalog';
@@ -134,7 +135,7 @@ export {
 export const SOURCE_TYPES = ['manual', 'email', 'calendar', 'notification', 'file', 'webhook', 'internal', 'commerce', 'device', 'vehicle', 'billing', 'content_platform'] as const;
 export const TRIGGER_TYPES = ['manual', 'schedule', 'event', 'webhook', 'threshold', 'date_before', 'date_after', 'data_changed'] as const;
 export const CONDITION_OPERATORS = ['EQ', 'NE', 'GT', 'GTE', 'LT', 'LTE', 'IN', 'NOT_IN', 'CONTAINS', 'CHANGED', 'PERCENT_CHANGE_GT', 'TIME_RANGE', 'EXISTS', 'NOT_EXISTS'] as const;
-export const ACTION_TYPES = ['record', 'classify', 'summarize', 'compare', 'notify', 'create_draft', 'create_task', 'archive', 'sync', 'generate_content', 'prepare_publish', 'publish', 'prepare_purchase', 'create_order', 'update_internal_record', 'request_approval'] as const;
+export { ACTION_TYPES } from './action-types';
 export const PLAN_STATES = ['draft', 'ready', 'active', 'paused', 'degraded', 'blocked', 'archived'] as const;
 export const AUTOMATION_LEVELS = ['L0', 'L1', 'L2', 'L3', 'L4'] as const;
 export const RISK_LEVELS = ['R0', 'R1', 'R2', 'R3', 'R4'] as const;
@@ -627,3 +628,21 @@ export * from './terminal-follow-up';
 
 export * from './consumer-projections';
 export { actionProposalSchema, compileActionProposal, type ActionProposal } from './action-proposal';
+
+export * from './product-catalog';
+
+export * from './local-resource-projection';
+
+export * from './acquisition';
+export * from './state-assessment';
+export * from './source-resolver';
+
+export * from './work-item';
+export * from './local-capabilities';
+export * from './truth-assessment-rules';
+
+export * from './share-text-parser';
+
+export * from './app-resource-capability';
+
+export * from "./service-offering";

@@ -17,7 +17,7 @@ describe('Scenario Contract V2 compatibility sidecar', () => {
 
   it('defines the delivery golden contract without claiming real verification', () => {
     const contract = scenarioContractV2ByKey('daily_life.delivery')!;
-    expect(SCENARIO_CONTRACT_V2_REGISTRY).toHaveLength(4);
+    expect(SCENARIO_CONTRACT_V2_REGISTRY).toHaveLength(20);
     expect(() => assertScenarioContractV2(contract)).not.toThrow();
     expect(contract.governance).toMatchObject({
       state: 'DETERMINISTIC_SANDBOX',
@@ -79,3 +79,5 @@ describe('Scenario Contract V2 compatibility sidecar', () => {
     });
   });
 });
+
+it('keeps twenty reviewed contracts subordinate to the canonical risk and verification authorities',()=>{expect(SCENARIO_CONTRACT_V2_REGISTRY).toHaveLength(20);for(const contract of SCENARIO_CONTRACT_V2_REGISTRY){expect(()=>assertScenarioContractV2(contract)).not.toThrow();expect(contract.risk.authority).toBe('RiskEngine');expect(contract.risk.canAutoApprove).toBe(false);expect(contract.verification.authority).toBe('Verification');expect(contract.governance.realSourceVerified).toBe(false);expect(contract.governance.realActionVerified).toBe(false);}});

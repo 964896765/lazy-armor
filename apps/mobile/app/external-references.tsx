@@ -1,0 +1,13 @@
+import {useState,useCallback} from 'react';
+import {useFocusEffect} from 'expo-router';
+import {EXTERNAL_REFERENCE_KINDS,type ExternalReferenceKind} from '@lazy-armor/plan-schema/share';
+import {referenceKindLabels,referenceDomainLabels} from '../src/external-reference-views';
+import {EXTERNAL_REFERENCE_DOMAINS,type ExternalReferenceDomain} from '@lazy-armor/plan-schema/share';
+import {View} from 'react-native';
+import {useQuery} from '@tanstack/react-query';
+import {router} from 'expo-router';
+import {Pressable,Text} from 'react-native';
+import {api} from '../src/api';
+import {useAuthStore} from '../src/auth-store';
+import {Button,EditorPage,ui} from '../src/editor-ui';
+export default function References(){const [kind,setKind]=useState<ExternalReferenceKind|'ALL'>('ALL');const [domain,setDomain]=useState<ExternalReferenceDomain|'ALL'>('ALL');const [domainOpen,setDomainOpen]=useState(false);const token=useAuthStore(s=>s.token);const q=useQuery({queryKey:['external-references',token],enabled:!!token,queryFn:()=>api<Array<{id:string;kind:ExternalReferenceKind;domain:ExternalReferenceDomain|null;title:string;sourceUrl:string}>>('/external-references',token)});useFocusEffect(useCallback(()=>{void q.refetch();},[token]));return <EditorPage title="我的外部引用"><Button label="分享或粘贴" onPress={()=>router.push('/add-external-reference')}/><View style={[ui.line,{flexWrap:'wrap'}]}>{(['ALL',...EXTERNAL_REFERENCE_KINDS] as const).map(value=><Pressable key={value} onPress={()=>setKind(value)} style={[ui.pill,kind===value&&{backgroundColor:'#BDD9FF'}]}><Text>{({ALL:'全部',SERVICE:'服务',PRODUCT:'商品',PLACE:'地点',CONTENT:'内容',OTHER:'其他',DOCUMENT:'文档',EVENT:'事件'})[value]}</Text></Pressable>)}</View><Pressable style={ui.listRow} onPress={()=>setDomainOpen(value=>!value)}><Text>领域：{domain==='ALL'?'全部':referenceDomainLabels[domain]} ▾</Text></Pressable>{domainOpen?<View style={[ui.line,{flexWrap:'wrap'}]}>{(['ALL',...EXTERNAL_REFERENCE_DOMAINS] as const).map(value=><Pressable key={value} style={ui.pill} onPress={()=>{setDomain(value);setDomainOpen(false);}}><Text>{value==='ALL'?'全部':referenceDomainLabels[value]}</Text></Pressable>)}</View>:null}{q.isError?<Text style={ui.error}>读取失败，请重试</Text>:null}{q.data?.filter(ref=>(kind==='ALL'||ref.kind===kind)&&(domain==='ALL'||ref.domain===domain)).map(ref=><Pressable key={ref.id} style={ui.listRow} onPress={()=>router.push({pathname:'/external-reference-detail',params:{id:ref.id}} as never)}><Text style={ui.label}>{ref.title}</Text><Text style={ui.detail}>{referenceKindLabels[ref.kind]}{ref.domain?' · '+referenceDomainLabels[ref.domain]:''} · {ref.sourceUrl}</Text></Pressable>)}</EditorPage>;}

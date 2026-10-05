@@ -1,3 +1,4 @@
+import {AcquisitionModule} from '../acquisition/acquisition.module';
 import { Module, forwardRef } from '@nestjs/common';
 import { AuditModule } from '../audit/audit.module';
 import { RealityPipelineModule } from '../reality-pipeline/reality-pipeline.module';
@@ -7,7 +8,7 @@ import { DeviceTasksController } from './device-tasks.controller';
 import { DeviceTasksService } from './device-tasks.service';
 
 @Module({
-  imports: [AuditModule, RealityPipelineModule, TrustedDevicesModule, forwardRef(() => StructuredReadModule)],
+  imports: [AcquisitionModule,AuditModule, RealityPipelineModule, TrustedDevicesModule, forwardRef(() => StructuredReadModule)],
   controllers: [DeviceTasksController],
   providers: [DeviceTasksService],
   exports: [DeviceTasksService],

@@ -1,3 +1,5 @@
+import { LoginCodeService } from './login-code.service';
+import { RequestLoginCodeDto, VerifyLoginCodeDto } from './dto';
 import { Body, Controller, Headers, Ip, Post } from '@nestjs/common';
 import { Public } from '../common/auth-context';
 import { AuthService } from './auth.service';
@@ -6,7 +8,10 @@ import { CurrentUser, type AuthenticatedUser } from '../common/auth-context';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly auth: AuthService) {}
+  constructor(private readonly auth: AuthService,private readonly codes:LoginCodeService) {}
+  @Public() @Post(['code/request','code/send']) requestCode(@Body() input:RequestLoginCodeDto,@Ip() ip:string){return this.codes.request(input,ip);}
+  @Public() @Post('code/verify') async verifyCode(@Body() input:VerifyLoginCodeDto,@Ip() ip:string,@Headers('user-agent') userAgent?:string){const identifier=await this.codes.verify(input,ip);return this.auth.loginVerified(input.kind,identifier,{ip,userAgent});}
+
 
   @Public()
   @Post('register')

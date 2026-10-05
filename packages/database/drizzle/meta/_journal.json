@@ -484,6 +484,55 @@
       "when": 1791021600000,
       "tag": "0068_file_import_artifact",
       "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1791032400000,
+      "tag": "0069_passwordless_identifiers",
+      "breakpoints": true
+    },
+    {
+      "idx": 70,
+      "version": "7",
+      "when": 1791036000000,
+      "tag": "0070_acquisition_rounds",
+      "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1791118800000,
+      "tag": "0071_local_capability_states",
+      "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1791122400000,
+      "tag": "0072_conversation_history",
+      "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1791136800000,
+      "tag": "0073_external_reference_kinds",
+      "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1791169200000,
+      "tag": "0074_external_reference_domain",
+      "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1791171000000,
+      "tag": "0075_service_offering_fulfillment",
+      "breakpoints": true
     }
   ]
 }

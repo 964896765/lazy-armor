@@ -13,7 +13,7 @@ describe('RuntimeCatalogRegistryService Scenario Contract V2', () => {
   });
 
   it('does not fabricate a V2 contract for an existing unreviewed scenario', () => {
-    expect(service.getScenario('finance.bill').key).toBe('finance.bill');
-    expect(() => service.getScenarioContractV2('finance.bill')).toThrow(NotFoundException);
+    expect(service.getScenario('finance.balance').key).toBe('finance.balance');
+    expect(() => service.getScenarioContractV2('finance.balance')).toThrow(NotFoundException);
   });
 });

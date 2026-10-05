@@ -1,6 +1,11 @@
+import {plainToInstance} from 'class-transformer';
+import {validate} from 'class-validator';
+import {LocalAcquisitionService} from '../consumer/local-acquisition.service';
+import {LocalAcquisitionDto} from '../consumer/local-acquisition.dto';
+import {localCapabilityAvailability} from '@lazy-armor/plan-schema';
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException, forwardRef } from '@nestjs/common';
 import { createHash } from 'node:crypto';
-import { auditLogs, candidateFacts, deviceAppConnections, deviceHeartbeats, deviceTasks, readEvidence, sourceObservations, truthRecords } from '@lazy-armor/database';
+import { localCapabilityStates,auditLogs, candidateFacts, deviceAppConnections, deviceHeartbeats, deviceTasks, readEvidence, sourceObservations, truthRecords } from '@lazy-armor/database';
 import { realityValueHash, type JsonValue, type ParserKey, type SourceMode, type SourceObservationInput } from '@lazy-armor/plan-schema';
 import { newId } from '@lazy-armor/shared';
 import { and, desc, eq, gte, inArray, lt } from 'drizzle-orm';
@@ -27,12 +32,14 @@ const STRUCTURED_READ_TASK_TYPES = new Set(['APP_STRUCTURED_READ', 'SCREEN_CAPTU
 // 服务器允许的 DeviceTask 类型注册表：enqueue 与 complete 都必须校验。
 // 未注册类型在入队时拒绝，在 complete 时不得置 SUCCEEDED。
 const ALLOWED_DEVICE_TASK_TYPES = new Set<string>([
+  'NATIVE_CALENDAR_READ',
   ...Object.keys(DEVICE_TASK_REALITY_SPEC),
   ...STRUCTURED_READ_TASK_TYPES,
   ...AWAITING_DEVICE_EVIDENCE_TASK_TYPES,
 ]);
 
 type DeviceTaskReality =
+  | {acquisitionId:string;acquisitionState:string;truthRecordIds:string[]}
   | { observationId: string; candidateId: string | null; truth: Awaited<ReturnType<RealityPipelineService['confirmCandidate']>> | null }
   | { observationId: string; candidateIds: string[]; truthRecordIds: string[] };
 
@@ -46,22 +53,30 @@ export class DeviceTasksService {
   constructor(
     @Inject(DATABASE) private readonly db: InjectedDatabase,
     private readonly audit: AuditService,
+    private readonly acquisition:LocalAcquisitionService,
     private readonly pipeline: RealityPipelineService,
     private readonly trustedDevices: TrustedDevicesService,
     @Inject(forwardRef(() => StructuredReadService)) private readonly structuredRead: StructuredReadService,
   ) {}
 
-  async enqueue(userId: string, trustedDeviceId: string, taskType: string, factKey: string, resourceType: string, payload: Record<string, unknown>) {
+  async enqueue(userId: string, trustedDeviceId: string, taskType: string, factKey: string, resourceType: string, payload: Record<string, unknown>, acquisitionKey?:string) {
     if (!ALLOWED_DEVICE_TASK_TYPES.has(taskType)) throw new BadRequestException(`Unsupported device task type: ${taskType}`);
     const device = await this.trustedDevices.assertActive(userId, trustedDeviceId);
+    if(taskType==='NATIVE_CALENDAR_READ'){
+      if(factKey!=='calendar_event.meetings.state'||resourceType!=='CalendarEvent'||typeof payload.scopeStart!=='number'||typeof payload.scopeEnd!=='number'||!Number.isFinite(payload.scopeStart)||!Number.isFinite(payload.scopeEnd)||payload.scopeEnd<=payload.scopeStart||payload.scopeEnd-payload.scopeStart>31*86400000)throw new BadRequestException('Invalid native calendar task scope');
+      const grant=(await this.db.select().from(localCapabilityStates).where(and(eq(localCapabilityStates.userId,userId),eq(localCapabilityStates.trustedDeviceId,trustedDeviceId),eq(localCapabilityStates.capability,'calendar.read'))).limit(1))[0];
+      if(!grant||localCapabilityAvailability({key:grant.capability,userGrant:grant.userGrant,systemPermission:grant.systemPermission as never,health:grant.health as never,checkedAt:grant.checkedAt.getTime()},Date.now())!=='AVAILABLE')throw new ForbiddenException('Native calendar capability is not available');
+    }
     const status = AWAITING_DEVICE_EVIDENCE_TASK_TYPES.has(taskType) ? 'AWAITING_DEVICE_EVIDENCE' : 'PENDING';
     const now = new Date();
-    const id = newId();
-    await this.db.insert(deviceTasks).values({
+    const keyHash=acquisitionKey?createHash('sha256').update(`${userId}:${trustedDeviceId}:${taskType}:${acquisitionKey}`).digest('hex'):null;
+    const id = keyHash?`${keyHash.slice(0,8)}-${keyHash.slice(8,12)}-5${keyHash.slice(13,16)}-8${keyHash.slice(17,20)}-${keyHash.slice(20,32)}`:newId();
+    if(acquisitionKey){const prior=(await this.db.select().from(deviceTasks).where(and(eq(deviceTasks.id,id),eq(deviceTasks.userId,userId))).limit(1))[0];if(prior){if(realityValueHash(prior.payloadJson)!==realityValueHash(payload))throw new ConflictException('Acquisition request payload changed');return this.toResponse(prior);}}
+    try { await this.db.insert(deviceTasks).values({
       id, userId, trustedDeviceId: device.id, deviceId: device.deviceId, taskType, factKey, resourceType,
       payloadJson: payload, status, claimToken: null, claimedAt: null, leaseExpiresAt: null,
       resultJson: null, resultHash: null, errorCode: null, createdAt: now, updatedAt: now, completedAt: null,
-    });
+    }); } catch(error) { if(!acquisitionKey)throw error;const prior=(await this.db.select().from(deviceTasks).where(and(eq(deviceTasks.id,id),eq(deviceTasks.userId,userId))).limit(1))[0];if(!prior||realityValueHash(prior.payloadJson)!==realityValueHash(payload))throw error;return this.toResponse(prior); }
     await this.audit.append({
       actorType: 'system', actorUserId: null, action: 'DEVICE_TASK_ENQUEUED', resourceType: 'device_task', resourceId: id,
       userId, correlationId: id, changeSummary: `Enqueued ${taskType} edge device task`, source: 'api', result: 'success',
@@ -104,7 +119,7 @@ export class DeviceTasksService {
     return { id: taskId, claimToken, leaseExpiresAt: leaseExpiresAt.toISOString() };
   }
 
-  async complete(userId: string, trustedDeviceId: string, deviceId: string, taskId: string, claimToken: string, result: Record<string, unknown>) {
+  async complete(userId: string, trustedDeviceId: string, deviceId: string, taskId: string, claimToken: string, result: Record<string, unknown>,proofRequestId?:string) {
     const resultHash = realityValueHash(result);
     const outcome = await this.db.transaction(async (tx) => {
       // Atomic ownership boundary: lock the task row so recoverExpired/claim
@@ -121,7 +136,14 @@ export class DeviceTasksService {
       }
       const spec = DEVICE_TASK_REALITY_SPEC[task.taskType];
       let reality: DeviceTaskReality | null = null;
-      if (STRUCTURED_READ_TASK_TYPES.has(task.taskType)) {
+      if(task.taskType==='NATIVE_CALENDAR_READ'){
+        if(!proofRequestId)throw new ForbiddenException('Signed native read proof is required');
+        const input=plainToInstance(LocalAcquisitionDto,result);
+        if((await validate(input,{whitelist:true,forbidNonWhitelisted:true})).length)throw new BadRequestException('Invalid native acquisition evidence');
+        if(input.capability!=='calendar.read'||input.scopeStart!==task.payloadJson.scopeStart||input.scopeEnd!==task.payloadJson.scopeEnd)throw new BadRequestException('Native read scope does not match task');
+        const receipt=await this.acquisition.receive(userId,trustedDeviceId,proofRequestId,input,tx);
+        reality={acquisitionId:receipt.id,acquisitionState:receipt.state,truthRecordIds:'truthIds' in receipt?receipt.truthIds:[]};
+      } else if (STRUCTURED_READ_TASK_TYPES.has(task.taskType)) {
         try {
           reality = await this.structuredRead.ingestDeviceResult(userId, task, result, tx, claimToken);
         } catch (error) {
@@ -346,6 +368,7 @@ function sha256(value: string) { return createHash('sha256').update(value).diges
 
 function hasVerifiedReality(reality: DeviceTaskReality | null): boolean {
   if (!reality) return false;
+  if('acquisitionId' in reality)return reality.acquisitionState==='VERIFIED_EMPTY'||reality.acquisitionState==='VERIFIED_PRESENT'&&reality.truthRecordIds.length>0;
   // recordEvidence path confirms a single candidate into Truth; a non-null
   // candidateId is only returned once `confirmCandidate` has materialized Truth.
   if ('candidateId' in reality) return reality.candidateId !== null;
@@ -355,6 +378,7 @@ function hasVerifiedReality(reality: DeviceTaskReality | null): boolean {
 }
 
 function deviceTaskVerificationError(reality: DeviceTaskReality | null): string {
+  if(reality&&'acquisitionId' in reality)return 'NATIVE_ACQUISITION_'+reality.acquisitionState;
   if (reality && 'candidateIds' in reality && reality.candidateIds.length > 0 && reality.truthRecordIds.length === 0) {
     return 'NEEDS_CONFIRMATION';
   }

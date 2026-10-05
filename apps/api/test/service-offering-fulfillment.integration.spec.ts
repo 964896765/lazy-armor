@@ -1,0 +1,23 @@
+import type { INestApplication } from '@nestjs/common';
+import type { Pool } from 'mysql2/promise';
+import request from 'supertest';
+import {afterAll,beforeAll,describe,it,expect} from 'vitest';
+import {auth,bootP2App,register,type Session} from './p2-test-helpers';
+import {readFileSync} from 'node:fs';
+describe.sequential('ServiceOffering canonical fulfillment',{timeout:90000},()=>{
+ let app:INestApplication,pool:Pool,owner:Session,other:Session;
+ beforeAll(async()=>{const key=`fulfillment-${Date.now()}`;({app,pool}=await bootP2App(key));owner=await register(app,`${key}@example.com`,'Owner');other=await register(app,`${key}-other@example.com`,'Other');});
+ afterAll(async()=>{await app?.close();await pool?.end();});
+ const base=()=>({requestId:`mode-${crypto.randomUUID()}`,title:'Isolated contract service',summary:'Contract only',serviceType:'repair',domain:'asset',contact:'test',confirmed:true,status:'DRAFT',priceMode:'NEGOTIABLE'});
+ const fields={ONSITE:{serviceArea:'area'},AT_LOCATION:{serviceAddress:'address'},REMOTE:{remoteInstructions:'online'},LOGISTICS:{serviceArea:'area',shippingInstructions:'shipping',shippingFeeRules:'fee'},OTHER:{deliveryInstructions:'explanation'}};
+ for(const [deliveryMode,extra] of Object.entries(fields))it(`persists ${deliveryMode} and idempotent retry`,async()=>{const input={...base(),deliveryMode,...extra};const post=()=>request(app.getHttpServer()).post('/api/service-offerings').set(auth(owner.token)).send(input);const first=(await post().expect(201)).body;expect(first.deliveryModes).toEqual([deliveryMode]);expect(first.domain).toBe('asset');expect(first.serviceType).toBe('repair');expect((await post().expect(201)).body.id).toBe(first.id);});
+ it('rejects missing delivery fields, invalid price combinations and unknown modes',async()=>{for(const extra of [{deliveryMode:'OTHER'},{deliveryMode:'LOGISTICS',serviceArea:'area'},{deliveryMode:'UNKNOWN'},{deliveryMode:'REMOTE',remoteInstructions:'online',priceMode:'FIXED'},{deliveryMode:'REMOTE',remoteInstructions:'online',priceMode:'FREE',priceMinor:1}])await request(app.getHttpServer()).post('/api/service-offerings').set(auth(owner.token)).send({...base(),...extra}).expect(400);});
+ it('switches fields and prices while preserving ownership and concurrency',async()=>{let row=(await request(app.getHttpServer()).post('/api/service-offerings').set(auth(owner.token)).send({...base(),deliveryMode:'ONSITE',serviceArea:'old',priceMode:'FIXED',priceMinor:1234}).expect(201)).body;
+ const update={title:row.title,summary:row.summary,contact:row.contact,status:'DRAFT',confirmed:true,expectedUpdatedAt:row.updatedAt,deliveryMode:'REMOTE',remoteInstructions:'online',priceMode:'FREE'};
+ await request(app.getHttpServer()).post(`/api/my-service-offerings/${row.id}`).set(auth(other.token)).send(update).expect(403);
+ const changed=(await request(app.getHttpServer()).post(`/api/my-service-offerings/${row.id}`).set(auth(owner.token)).send(update).expect(201)).body;expect(changed.serviceArea).toBeNull();expect(changed.priceMinMinor).toBeNull();expect(changed.priceMode).toBe('FREE');
+ await request(app.getHttpServer()).post(`/api/my-service-offerings/${row.id}`).set(auth(owner.token)).send(update).expect(409);
+ for(const priceMode of ['STARTING_FROM','NEGOTIABLE','FIXED']){row=(await request(app.getHttpServer()).post(`/api/my-service-offerings/${row.id}`).set(auth(owner.token)).send({...update,expectedUpdatedAt:row.updatedAt===update.expectedUpdatedAt?changed.updatedAt:row.updatedAt,priceMode,...(['FIXED','STARTING_FROM'].includes(priceMode)?{priceMinor:0}:{})}).expect(201)).body;expect(row.priceMode).toBe(priceMode);}
+ });
+ it('migrates legacy modes without guessing unknown rows or zero prices',async()=>{const conn=await pool.getConnection();try{await conn.query('CREATE TEMPORARY TABLE legacy_fulfillment (id INT, delivery_mode VARCHAR(24), service_area VARCHAR(300), price_min_minor INT)');await conn.query("INSERT INTO legacy_fulfillment VALUES (1,'LOCAL','area',0),(2,'REMOTE','online',NULL),(3,'UNKNOWN','unknown',5)");const sql=readFileSync('../../packages/database/drizzle/0075_service_offering_fulfillment.sql','utf8').replaceAll('`service_offerings`','`legacy_fulfillment`');for(const statement of sql.split('--> statement-breakpoint'))await conn.query(statement);const [rows]=await conn.query<any[]>('SELECT * FROM legacy_fulfillment ORDER BY id');expect(rows[0].delivery_mode).toBe('ONSITE');expect(rows[0].price_mode).toBe('STARTING_FROM');expect(rows[1].remote_instructions).toBe('online');expect(rows[1].service_area).toBeNull();expect(rows[2].delivery_mode).toBe('UNKNOWN');expect(rows[2].delivery_modes).toBeNull();}finally{conn.release();}});
+});

@@ -11,7 +11,7 @@ import {
 
 // Runner 只 dispatch 服务器注册表中真正由本机执行的结构化读取类型。
 // 其他类型（如 APP_READ_SESSION 由 app-read-session 流程处理）不在此 dispatch。
-export const RUNNER_EXECUTABLE_TASK_TYPES = new Set(['APP_STRUCTURED_READ', 'SCREEN_CAPTURE_FOR_READ']);
+export const RUNNER_EXECUTABLE_TASK_TYPES = new Set(['APP_STRUCTURED_READ', 'SCREEN_CAPTURE_FOR_READ', 'NATIVE_CALENDAR_READ']);
 
 export interface RunnerState {
   taskId: string;

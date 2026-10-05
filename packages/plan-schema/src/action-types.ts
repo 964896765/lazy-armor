@@ -1,0 +1,1 @@
+export const ACTION_TYPES = ['record', 'classify', 'summarize', 'compare', 'notify', 'create_draft', 'create_task', 'archive', 'sync', 'generate_content', 'prepare_publish', 'publish', 'prepare_purchase', 'create_order', 'update_internal_record', 'request_approval'] as const;

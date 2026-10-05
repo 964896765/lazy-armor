@@ -1,7 +1,9 @@
+import { SegmentedControl } from '../../src/consumer-ui';
+import { ConsumerPresentationMapper as presentation } from '../../src/consumer-presentation';
 import { useMutation } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { Link, router } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api, resolveAppEnv } from '../../src/api';
@@ -12,30 +14,23 @@ import type { SessionTokens } from '../../src/secure-token-store';
 type LoginMode = 'phone' | 'email';
 
 export default function LoginPage() {
-  const setSession = useAuthStore((state) => state.setSession);
-  const [mode, setMode] = useState<LoginMode>('phone');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [phone, setPhone] = useState('');
-  const login = useMutation({
-    mutationFn: () => api<SessionTokens>('/auth/login', undefined, { method: 'POST', body: JSON.stringify({ email: normalizeLoginIdentifier(email, resolveAppEnv()), password }) }),
-    onSuccess: async (tokens) => { await setSession(tokens, { onboardingRequired: true }); router.replace('/onboarding' as never); },
-  });
-  return <AuthPage title={mode === 'phone' ? '你的手机号码是？' : '使用邮箱登录'} subtitle={mode === 'phone' ? '目前支持中国大陆手机号' : '输入已注册的邮箱和密码'}>
-    <View style={styles.modeTabs}><Pressable onPress={() => setMode('phone')} style={[styles.modeTab, mode === 'phone' && styles.modeTabActive]}><Text style={[styles.modeText, mode === 'phone' && styles.modeTextActive]}>手机号</Text></Pressable><Pressable onPress={() => setMode('email')} style={[styles.modeTab, mode === 'email' && styles.modeTabActive]}><Text style={[styles.modeText, mode === 'email' && styles.modeTextActive]}>邮箱</Text></Pressable></View>
-    {mode === 'phone' ? <>
-      <View style={styles.phoneField}><Text style={styles.countryCode}>+86</Text><View style={styles.verticalRule} /><TextInput style={styles.phoneInput} accessibilityLabel="手机号码" keyboardType="phone-pad" autoComplete="tel" maxLength={11} placeholder="请输入手机号码" placeholderTextColor="#85909D" value={phone} onChangeText={setPhone} /></View>
-      <Text style={styles.notice}>短信服务尚未配置，暂时不能发送真实验证码。请切换到邮箱登录。</Text>
-      <Pressable disabled style={[styles.submit, styles.submitDisabled]}><Text style={styles.submitDisabledText}>发送验证码</Text></Pressable>
-    </> : <>
-      <TextInput style={styles.input} accessibilityLabel="邮箱" autoCapitalize="none" autoComplete="email" keyboardType="email-address" placeholder="邮箱地址" placeholderTextColor="#85909D" value={email} onChangeText={setEmail} />
-      <TextInput style={styles.input} accessibilityLabel="密码" autoComplete="current-password" secureTextEntry placeholder="密码" placeholderTextColor="#85909D" value={password} onChangeText={setPassword} />
-      {login.isError ? <Text style={styles.error}>没有登录成功，请检查邮箱和密码后重试。</Text> : null}
-      <Pressable accessibilityRole="button" onPress={() => login.mutate()} disabled={login.isPending || !email.trim() || !password} style={[styles.submit, (login.isPending || !email.trim() || !password) && styles.submitDisabled]}><Text style={[styles.submitText, (login.isPending || !email.trim() || !password) && styles.submitDisabledText]}>{login.isPending ? '登录中…' : '登录'}</Text></Pressable>
-      <Link href={'/auth/forgot-password' as never} style={styles.textLink}>忘记密码？</Link>
-    </>}
-    <View style={styles.footer}><Text style={styles.footerText}>第一次使用？</Text><Link href={'/auth/register' as never} style={styles.strongLink}>创建账号</Link></View>
-  </AuthPage>;
+ const setSession=useAuthStore(s=>s.setSession);
+ const [mode,setMode]=useState<LoginMode>('phone');const [identifier,setIdentifier]=useState('');const [code,setCode]=useState('');
+ const [localDelivery,setLocalDelivery]=useState(false);
+ const [sentTo,setSentTo]=useState('');const [retryAt,setRetryAt]=useState(0);const [now,setNow]=useState(Date.now());
+ useEffect(()=>{const timer=setInterval(()=>setNow(Date.now()),1000);return()=>clearInterval(timer);},[]);
+ const request=useMutation({mutationFn:()=>api<{sent:boolean;retryAfterSeconds:number;delivery?:string}>('/auth/code/request',undefined,{method:'POST',body:JSON.stringify({kind:mode,identifier})}),onSuccess:result=>{if(result.sent){setLocalDelivery(result.delivery==='LOCAL_DEVELOPMENT');setSentTo(mode+':'+identifier.trim());setRetryAt(Date.now()+result.retryAfterSeconds*1000);}}});
+ const login=useMutation({mutationFn:()=>api<SessionTokens & {firstLogin:boolean}>('/auth/code/verify',undefined,{method:'POST',body:JSON.stringify({kind:mode,identifier,code})}),onSuccess:async tokens=>{await setSession(tokens,{onboardingRequired:tokens.firstLogin});router.replace((tokens.firstLogin?'/onboarding':'/schedule') as never);}});
+ const remaining=Math.max(0,Math.ceil((retryAt-now)/1000));
+ const changeMode=(value:string)=>{setMode(value as LoginMode);setIdentifier('');setCode('');setSentTo('');request.reset();login.reset();};
+ return <AuthPage title="验证码登录" subtitle="首次验证成功将自动创建账号">
+  <SegmentedControl value={mode} options={[{value:'phone',label:'手机号'},{value:'email',label:'邮箱'}]} onChange={changeMode}/>
+  <TextInput style={styles.input} accessibilityLabel={mode==='phone'?'手机号码':'邮箱'} keyboardType={mode==='phone'?'phone-pad':'email-address'} autoCapitalize="none" autoComplete={mode==='phone'?'tel':'email'} placeholder={mode==='phone'?'中国大陆手机号':'邮箱地址'} value={identifier} onChangeText={setIdentifier}/>
+  <View style={{flexDirection:'row',gap:10,alignItems:'center'}}><TextInput style={[styles.input,{flex:1}]} accessibilityLabel="验证码" keyboardType="number-pad" autoComplete="sms-otp" maxLength={6} placeholder="6 位验证码" value={code} onChangeText={setCode}/><Pressable accessibilityRole="button" disabled={request.isPending||remaining>0||!identifier.trim()} onPress={()=>request.mutate()} style={{padding:10}}><Text style={styles.strongLink}>{request.isPending?'发送中…':remaining>0?remaining+' 秒后重试':'获取验证码'}</Text></Pressable></View>
+  {sentTo===mode+':'+identifier.trim()?<Text style={styles.notice}>{localDelivery?'开发验证码已生成，请查看本地后端控制台。':'验证码已发送，请在 5 分钟内输入。'}</Text>:null}
+  {request.isError||login.isError?<Text style={styles.error}>{presentation.error(request.error??login.error)}</Text>:null}
+  <Pressable accessibilityRole="button" disabled={login.isPending||!identifier.trim()||!/^\d{6}$/.test(code)} onPress={()=>login.mutate()} style={[styles.submit,(login.isPending||!/^\d{6}$/.test(code))&&styles.submitDisabled]}><Text style={styles.submitText}>{login.isPending?'验证中…':'验证并登录'}</Text></Pressable>
+ </AuthPage>;
 }
 
 export function AuthPage({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) {

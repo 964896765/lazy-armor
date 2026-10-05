@@ -2,7 +2,7 @@ import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Res } from '@nestjs/
 import type { Response } from 'express';
 import { CurrentUser, Public, type AuthenticatedUser } from '../common/auth-context';
 import { ServicesCatalogService } from './services-catalog.service';
-import { PublishServiceDto, ServiceMediaDto } from './dto';
+import { PublishServiceDto, ServiceMediaDto, UpdateServiceOfferingDto } from './dto';
 import { ServiceMediaService } from './service-media.service';
 
 @Controller()
@@ -13,6 +13,10 @@ export class ServicesCatalogController {
 
   @Get('service-offerings')
   list() { return this.catalog.listPublished(); }
+  @Get('my-service-offerings')
+  mine(@CurrentUser() user: AuthenticatedUser) { return this.catalog.listOwned(user.id); }
+  @Post('my-service-offerings/:id')
+  update(@CurrentUser() user: AuthenticatedUser, @Param('id', ParseUUIDPipe) id: string, @Body() input: UpdateServiceOfferingDto) { return this.catalog.updateOwned(user.id, id, input); }
 
   @Get('service-provider-profile')
   profile(@CurrentUser() user: AuthenticatedUser) { return this.catalog.profileForUser(user.id); }

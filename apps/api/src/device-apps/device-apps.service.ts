@@ -1,5 +1,6 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { deviceAppConnections } from '@lazy-armor/database';
+import {appCapabilityAvailability,localCapabilityAvailability} from '@lazy-armor/plan-schema';
+import { deviceAppConnections,localCapabilityStates,trustedDevices } from '@lazy-armor/database';
 import { deviceAppCapabilities, deviceAppCatalogMetadata, deviceAppIntegration, isGenericDeviceAppMode, newId, type DeviceAppConnectionMode } from '@lazy-armor/shared';
 import { and, desc, eq } from 'drizzle-orm';
 import { AuditService } from '../audit/audit.service';
@@ -7,7 +8,7 @@ import { DATABASE, type InjectedDatabase } from '../common/database.module';
 import { TrustedDevicesService } from '../trusted-devices/trusted-devices.service';
 import type { CreateDeviceAppConnectionDto, UpdateDeviceAppConnectionDto } from './dto';
 
-const IMPLEMENTED_MODES = new Set<DeviceAppConnectionMode>(['open_app', 'notification_read']);
+const IMPLEMENTED_MODES = new Set<DeviceAppConnectionMode>(['open_app', 'notification_read','receive_share']);
 
 @Injectable()
 export class DeviceAppsService {
@@ -21,7 +22,7 @@ export class DeviceAppsService {
     const rows = await this.db.select().from(deviceAppConnections)
       .where(eq(deviceAppConnections.userId, userId))
       .orderBy(desc(deviceAppConnections.updatedAt));
-    return rows.map((row) => this.toResponse(row));
+    return Promise.all(rows.map((row) => this.toResponse(row)));
   }
 
   async create(userId: string, input: CreateDeviceAppConnectionDto, signedTrustedDeviceId: string) {
@@ -43,7 +44,7 @@ export class DeviceAppsService {
         trustedDeviceId: trustedDevice.id,
         packageName,
         displayName,
-        connectionType: integration ? 'enhanced' : 'generic',
+        connectionType: 'generic',
         integrationKey: integration?.integrationKey ?? null,
         versionName: input.versionName?.trim() || null,
         versionCode: input.versionCode ?? null,
@@ -68,11 +69,21 @@ export class DeviceAppsService {
       resourceId: id,
       userId,
       correlationId: id,
-      changeSummary: integration ? `Created a device-reported app connection with optional adapter ${integration.integrationKey}` : 'Created a device-reported generic app connection',
+      changeSummary: integration ? `Created a generic discovered app with an inactive catalog hint ${integration.integrationKey}` : 'Created a device-reported generic app connection',
       source: 'api',
       result: 'success',
     });
     return this.get(userId, id);
+  }
+
+  async refreshDiscovery(userId:string,id:string,input:CreateDeviceAppConnectionDto,signedDeviceId:string){
+    const row=await this.getRow(userId,id);
+    if(row.trustedDeviceId!==signedDeviceId||input.trustedDeviceId!==signedDeviceId||input.deviceId!==row.deviceId||input.packageName!==row.packageName)throw new ForbiddenException('Discovery must match the existing app and device');
+    await this.trustedDevices.assertActive(userId,signedDeviceId,row.deviceId);
+    const now=new Date();
+    await this.db.update(deviceAppConnections).set({launchable:input.launchable?1:0,versionName:input.versionName??null,versionCode:input.versionCode??null,discoveryFingerprint:input.discoveryFingerprint,lastSeenAt:now,updatedAt:now}).where(and(eq(deviceAppConnections.id,id),eq(deviceAppConnections.userId,userId)));
+    await this.audit.append({actorType:'user',actorUserId:userId,userId,action:'DEVICE_APP_DISCOVERY_REFRESHED',resourceType:'device_app_connection',resourceId:id,source:'api',result:'success',after:{installed:input.launchable,discoveryFingerprint:input.discoveryFingerprint},changeSummary:'Refreshed signed device discovery; user grants remain independently managed'});
+    return this.get(userId,id);
   }
 
   async update(userId: string, id: string, input: UpdateDeviceAppConnectionDto) {
@@ -129,18 +140,33 @@ export class DeviceAppsService {
     return unique;
   }
 
-  private toResponse(row: typeof deviceAppConnections.$inferSelect) {
+  private async toResponse(row: typeof deviceAppConnections.$inferSelect) {
     const catalog = deviceAppCatalogMetadata(row.packageName);
     const installed = row.launchable === 1;
     const authorized = row.enabled === 1 && row.modesJson.length > 0;
-    const healthy = Boolean(row.trustLevel);
+    const device=row.trustedDeviceId?(await this.db.select().from(trustedDevices).where(and(eq(trustedDevices.id,row.trustedDeviceId),eq(trustedDevices.userId,row.userId))).limit(1))[0]:undefined;
+    const states=row.trustedDeviceId?await this.db.select().from(localCapabilityStates).where(and(eq(localCapabilityStates.trustedDeviceId,row.trustedDeviceId),eq(localCapabilityStates.userId,row.userId))):[];
+    const active=device?.status==='active'&&!device.revokedAt;
+    const native=states.find(s=>s.capability==='notification.read');
+    const healthy=!!active;
+    const now=Date.now();
+    const capabilities=['open_app','notification_read','receive_share','deep_link','app_read_session','structured_read','vision','execute'].map(key=>{
+     const notification=key==='notification_read';const open=key==='open_app';const share=key==='receive_share';const state=share?states.find(s=>s.capability==='share.read'):native;
+     const implemented=open||notification||share;
+     const permission=notification||share?state?.systemPermission??'UNKNOWN':open?'GRANTED':'UNKNOWN';
+     const userGrant=row.enabled===1&&row.modesJson.includes(key as DeviceAppConnectionMode)&&(!(notification||share)||state?.userGrant===true);
+     const checkedAt=notification||share?state&&row.lastSeenAt?Math.min(state.checkedAt.getTime(),row.lastSeenAt.getTime()):null:open?row.lastSeenAt?.getTime()??null:null;
+     const evidenceRefs=(notification||share)&&state?[state.evidenceRef,`discovery:${row.discoveryFingerprint}`]:open?[`discovery:${row.discoveryFingerprint}`]:[];
+     const evidence={installed:installed&&!!active,systemPermission:permission as 'GRANTED'|'DENIED'|'UNKNOWN',userGrant,adapterImplemented:implemented,healthy:!!active&&(!(notification||share)||state?.health==='HEALTHY'),checkedAt,evidenceRefs,...(key==='execute'?{restricted:'UNSUPPORTED' as const}:{})};
+     return {key,acquisitionMode:({open_app:'OPEN_APP',notification_read:'NOTIFICATION',receive_share:'SHARE',deep_link:'DEEP_LINK',app_read_session:'APP_READ_SESSION',structured_read:'STRUCTURED_READ',vision:'ARTIFACT/VISION'} as Record<string,string>)[key]??null,...evidence,status:appCapabilityAvailability(evidence,now)};
+    });
     return {
       id: row.id,
       deviceId: row.deviceId,
       trustedDeviceId: row.trustedDeviceId,
       packageName: row.packageName,
       displayName: row.displayName,
-      connectionType: row.connectionType,
+      connectionType: 'generic',
       integrationKey: row.integrationKey,
       versionName: row.versionName,
       versionCode: row.versionCode,
@@ -150,12 +176,13 @@ export class DeviceAppsService {
       trustLevel: row.trustLevel,
       lastSeenAt: row.lastSeenAt?.toISOString() ?? null,
       updatedAt: row.updatedAt.toISOString(),
+      capabilities,
       capability: {
         installed,
         supported: catalog.supported,
         authorized,
         healthy,
-        available: installed && catalog.supported && authorized && healthy,
+        availabilityScope:'PER_OPERATION_ONLY',
         sourceCapabilities: catalog.sourceCapabilities,
         actionCapabilities: catalog.actionCapabilities,
         riskClass: catalog.riskClass,

@@ -23,8 +23,8 @@ describe('conversation content', () => {
     expect(JSON.parse(emptyConversationRequest('PLAN').body)).toEqual({ mode: 'PLAN' });
   });
 
-  it('lets Android resize the window without a second keyboard height subtraction', () => {
-    expect(conversationKeyboardBehavior('android')).toBeUndefined();
+  it('uses explicit avoidance for Android edge-to-edge keyboards', () => {
+    expect(conversationKeyboardBehavior('android')).toBe('height');
     expect(conversationKeyboardBehavior('web')).toBeUndefined();
     expect(conversationKeyboardBehavior('ios')).toBe('padding');
   });

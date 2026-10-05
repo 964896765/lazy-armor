@@ -1,7 +1,10 @@
 import { useRuntimeSettings } from './runtime-settings';
-import { AppState } from 'react-native';
+import { AppState,NativeModules } from 'react-native';
 import { useEffect } from 'react';
-import { executeStructuredRead } from './android-structured-read-executor';
+import { executeDeviceTask } from './android-device-task-executor';
+import {syncLocalCapabilities} from './local-capability-client';
+import {deviceBoundApi} from './trusted-device-api';
+import type {ResourceProjection} from '@lazy-armor/plan-schema';
 import { api } from './api';
 import { useAuthStore } from './auth-store';
 import { DeviceTaskRunner, secureRunnerStateStore } from './device-task-runner';
@@ -11,8 +14,11 @@ import { ensureTrustedDevice } from './trusted-device-api';
 async function assertDeviceTaskRunnerReady(token: string): Promise<boolean> {
   try {
     await useRuntimeSettings.getState().refresh();
-    if (!useRuntimeSettings.getState().background) return false;
     await ensureTrustedDevice(token);
+    await syncLocalCapabilities(token);
+    const resources=await deviceBoundApi<ResourceProjection[]>('/consumer/resources',token,{method:'GET'});
+    if(resources.some(row=>row.kind==='LOCAL'&&row.capabilityState?.key==='calendar.read'&&row.capabilityState.availability==='AVAILABLE'))return true;
+    if (!useRuntimeSettings.getState().background) return false;
     const connections = await api<Array<{ enabled: boolean }>>('/device-app-connections', token);
     return connections.some((connection) => connection.enabled === true);
   } catch {
@@ -23,7 +29,7 @@ async function assertDeviceTaskRunnerReady(token: string): Promise<boolean> {
 const runner = new DeviceTaskRunner({
   token: () => useAuthStore.getState().token ?? null,
   state: secureRunnerStateStore,
-  executeStructuredRead,
+  executeStructuredRead:executeDeviceTask,
 });
 
 const lifecycle = new DeviceTaskRunnerLifecycle({ runner, assertReady: assertDeviceTaskRunnerReady });
@@ -36,6 +42,7 @@ export function useDeviceTaskRunnerLifecycle() {
   useEffect(() => {
     if (!hydrated) return;
     const current = token ?? null;
+    if(!current)void NativeModules.LazyArmorDeviceBridge?.clearLocalCapabilityAccount?.();
     void lifecycle.sync(current);
     const subscription = AppState.addEventListener('change', (state) => {
       lifecycle.onAppState(state === 'active');

@@ -17,6 +17,9 @@ import java.security.MessageDigest
  */
 class LazyArmorNotificationListener : NotificationListenerService() {
   companion object {
+    @Volatile private var listenerConnected=false
+    fun clearPreviews(context:Context){context.getSharedPreferences(PREFERENCES,Context.MODE_PRIVATE).edit().remove(QUEUE_KEY).commit()}
+    fun clearAccountState(context:Context){context.getSharedPreferences(PREFERENCES,Context.MODE_PRIVATE).edit().remove(QUEUE_KEY).remove(ENABLED_PACKAGES_KEY).commit()}
     private const val PREFERENCES = "lazy_armor_notification_source"
     private const val QUEUE_KEY = "notification_preview_queue"
     private const val ENABLED_PACKAGES_KEY = "enabled_notification_packages"
@@ -25,6 +28,7 @@ class LazyArmorNotificationListener : NotificationListenerService() {
     fun status(context: Context): JSONObject {
       val result = JSONObject()
       result.put("accessGranted", notificationAccessGranted(context))
+      result.put("connected",listenerConnected)
       result.put("enabledPackageCount", enabledPackages(context).size)
       result.put("pendingCount", readQueue(context).length())
       return result
@@ -92,7 +96,11 @@ class LazyArmorNotificationListener : NotificationListenerService() {
     private fun sha256(value: String): String = MessageDigest.getInstance("SHA-256").digest(value.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
   }
 
+  override fun onListenerConnected(){super.onListenerConnected();listenerConnected=true}
+  override fun onListenerDisconnected(){listenerConnected=false;super.onListenerDisconnected()}
+  override fun onDestroy(){listenerConnected=false;super.onDestroy()}
   override fun onNotificationPosted(notification: StatusBarNotification) {
+    if(!LocalCapabilityManifest.activeGrant(applicationContext,"notification.read"))return
     if (!enabledPackages(applicationContext).contains(notification.packageName)) return
     if (!getSharedPreferences("lazy_armor_runtime_settings", Context.MODE_PRIVATE).getBoolean("acquisition", true)) return
     val extras = notification.notification.extras ?: return
