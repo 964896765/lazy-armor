@@ -26,6 +26,19 @@ describe.sequential('consumer surface ownership and security', { timeout: 90000 
   expect(promoted.body.id).toBe(created.body.id); expect(promoted.body.mode).toBe('PLAN'); expect(promoted.body.version).toBe(1);
   await request(app.getHttpServer()).post(`/api/conversations/${created.body.id}/confirm-plan`).set(auth(owner.token)).send({ version: 1, confirmed: true }).expect(400);
  });
+ it('lists owned archived conversations, excludes active and deleted records', async () => {
+  const create=async()=> (await request(app.getHttpServer()).post('/api/conversations').set(auth(owner.token)).send({mode:'TEMPORARY',title:'归档验证'}).expect(201)).body;
+  const archived=await create(); const active=await create(); const deleted=await create();
+  await request(app.getHttpServer()).post(`/api/conversations/${archived.id}/history`).set(auth(owner.token)).send({version:0,action:'ARCHIVE'}).expect(201);
+  await request(app.getHttpServer()).post(`/api/conversations/${deleted.id}/history`).set(auth(owner.token)).send({version:0,action:'ARCHIVE'}).expect(201);
+  await request(app.getHttpServer()).post(`/api/conversations/${deleted.id}/history`).set(auth(owner.token)).send({version:1,action:'DELETE'}).expect(201);
+  const rows=(await request(app.getHttpServer()).get('/api/conversations/archived').set(auth(owner.token)).expect(200)).body;
+  expect(rows.map((row:{id:string})=>row.id)).toContain(archived.id);
+  expect(rows.map((row:{id:string})=>row.id)).not.toContain(active.id);
+  expect(rows.map((row:{id:string})=>row.id)).not.toContain(deleted.id);
+  expect((await request(app.getHttpServer()).get('/api/conversations/archived').set(auth(other.token)).expect(200)).body).toEqual([]);
+  await request(app.getHttpServer()).get(`/api/conversations/${archived.id}`).set(auth(owner.token)).expect(200);
+ });
  it('isolates same-scenario conversation drafts and saves requirements without AI credentials', async () => {
   const create = () => request(app.getHttpServer()).post('/api/conversations').set(auth(owner.token)).send({ mode: 'PLAN', scenarioKey: 'daily_life.delivery' }).expect(201);
   const first = (await create()).body; const second = (await create()).body;
@@ -57,6 +70,19 @@ describe.sequential('consumer surface ownership and security', { timeout: 90000 
   const confirmed = await request(app.getHttpServer()).post(`/api/conversations/${created.body.id}/confirm-plan`).set(auth(owner.token)).send({version:proposed.body.version,confirmed:true}).expect(201);
   const plan = await request(app.getHttpServer()).get(`/api/plans/${confirmed.body.planId}`).set(auth(owner.token)).expect(200);
   expect(plan.body.status).toBe('draft');expect(plan.body.activeVersionId).toBeNull();
+ });
+ it('rolls back calendar Plan confirmation when the CreationDraft has no valid frozen demand contract', async () => {
+  // Isolated malformed model-output contract; never real Plan acceptance evidence.
+  const created = await request(app.getHttpServer()).post('/api/conversations').set(auth(owner.token)).send({mode:'PLAN'}).expect(201);
+  const proposed = await request(app.getHttpServer()).post(`/api/conversations/${created.body.id}/messages`).set(auth(owner.token)).send({version:0,requestId:'missing-calendar-contract',content:'每天帮我总结重要事项'}).expect(201);
+  const definition={name:'Isolated missing Calendar contract',domain:'general',automationLevel:'L2',approvalPolicy:{type:'always'},sources:[{sourceType:'manual',config:{},sortOrder:0}],triggers:[{triggerType:'schedule',config:{cronExpression:'0 9 * * *',timezone:'Asia/Shanghai'},sortOrder:0}],conditions:[],actions:[{actionType:'publish',requiredCapability:'calendar.event.create',config:{visibility:'private',calendarEvent:{calendarId:'1',title:'Isolated contract only',start:{dateTime:'2026-10-08T09:00:00+08:00',timeZone:'Asia/Shanghai'},end:{dateTime:'2026-10-08T09:10:00+08:00',timeZone:'Asia/Shanghai'},attendees:[],sendUpdates:'none'}},stepOrder:0}]};
+  await pool.query("UPDATE consumer_messages SET structured_payload=JSON_SET(structured_payload,'$.proposal.draftDefinition',CAST(? AS JSON)) WHERE id=UUID_TO_BIN(?)",[JSON.stringify(definition),proposed.body.messages.at(-1).id]);
+  const [before]=await pool.query<any[]>("SELECT COUNT(*) n FROM plans WHERE user_id=UUID_TO_BIN(?)",[owner.userId]);
+  await request(app.getHttpServer()).post(`/api/conversations/${created.body.id}/confirm-plan`).set(auth(owner.token)).send({version:proposed.body.version,confirmed:true}).expect(409);
+  const current=(await request(app.getHttpServer()).get(`/api/conversations/${created.body.id}`).set(auth(owner.token)).expect(200)).body;
+  expect(current.planId).toBeNull();expect(current.status).toBe('ACTIVE');
+  const [rows]=await pool.query<any[]>("SELECT COUNT(*) n FROM plans WHERE user_id=UUID_TO_BIN(?)",[owner.userId]);
+  expect(rows[0].n).toBe(before[0].n);
  });
  it('stores concrete external references under the owning user', async () => {
   const created = await request(app.getHttpServer()).post('/api/external-services').set(auth(owner.token)).send({ title: '具体服务', summary: '预约服务', sourceUrl: 'https://example.com/service/123', sourcePlatform: 'example.com', category: '生活', importMethod: 'MANUAL' }).expect(201);
@@ -101,6 +127,7 @@ describe.sequential('consumer surface ownership and security', { timeout: 90000 
  it('fails closed on impossible timeline dates', async () => {
   await request(app.getHttpServer()).get('/api/timeline?date=2026-02-30').set(auth(owner.token)).expect(400);
   const timeline = await request(app.getHttpServer()).get('/api/timeline?date=2026-10-03').set(auth(other.token)).expect(200); expect(timeline.body).toEqual([]);
+  const all=await request(app.getHttpServer()).get('/api/timeline?date=all').set(auth(other.token)).expect(200);expect(all.body).toEqual([]);
  });
  it('stores bounded text evidence with ownership, replay protection and message references', async () => {
   const plannerSpy = vi.spyOn(app.get(AgentPlannerService), 'plan');

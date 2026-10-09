@@ -1,8 +1,8 @@
 import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { createHash, randomBytes, verify } from 'node:crypto';
-import { deviceAppConnections, deviceHeartbeats, trustedDeviceChallenges, trustedDeviceRequestProofs, trustedDeviceRequestSessions, trustedDevices } from '@lazy-armor/database';
+import { runtimeTargets,deviceAppConnections, deviceHeartbeats, trustedDeviceChallenges, trustedDeviceRequestProofs, trustedDeviceRequestSessions, trustedDevices } from '@lazy-armor/database';
 import { newId } from '@lazy-armor/shared';
-import { and, desc, eq, gt, inArray, isNull } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, isNull,sql } from 'drizzle-orm';
 import { AuditService } from '../audit/audit.service';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
 import type { CreateTrustedDeviceChallengeDto, VerifyTrustedDeviceChallengeDto } from './dto';
@@ -78,10 +78,11 @@ export class TrustedDevicesService {
         throw new ConflictException('A different active key already controls this device identity; revoke it before enrolling a replacement key');
       }
       trustedDeviceId = existing.id;
-      await this.db.update(trustedDevices).set({
-        keyId: challenge.keyId, publicKeySpki: challenge.publicKeySpki, publicKeyFingerprint: challenge.publicKeyFingerprint,
-        trustLevel: TRUST_LEVEL, status: 'active', lastProvedAt: now, revokedAt: null, updatedAt: now,
-      }).where(eq(trustedDevices.id, trustedDeviceId));
+      await this.db.transaction(async tx=>{
+        await tx.update(trustedDevices).set({keyId:challenge.keyId,publicKeySpki:challenge.publicKeySpki,publicKeyFingerprint:challenge.publicKeyFingerprint,trustLevel:TRUST_LEVEL,status:'active',lastProvedAt:now,revokedAt:null,updatedAt:now}).where(eq(trustedDevices.id,trustedDeviceId));
+        // Same active key proving a fresh request session is not a new authorization.
+        if(existing.status!=='active'||existing.publicKeyFingerprint!==challenge.publicKeyFingerprint)await tx.update(runtimeTargets).set({authorityEpoch:sql`${runtimeTargets.authorityEpoch}+1`,updatedAt:now}).where(and(eq(runtimeTargets.userId,userId),eq(runtimeTargets.backingRef,trustedDeviceId),eq(runtimeTargets.targetType,'ANDROID_DEVICE')));
+      });
     } else {
       trustedDeviceId = newId();
       await this.db.insert(trustedDevices).values({
@@ -132,6 +133,13 @@ export class TrustedDevicesService {
     if (current.status === 'revoked') return this.toResponse(current);
     const now = new Date();
     await this.db.transaction(async (tx) => {
+      // Source publication locks device before app/grant/target. Revocation must
+      // take the same first lock so neither path observes a partial authority change.
+      const locked=(await tx.select().from(trustedDevices).where(and(eq(trustedDevices.id,id),eq(trustedDevices.userId,userId))).limit(1).for('update'))[0];
+      if(!locked)throw new NotFoundException('Trusted device not found');
+      if(locked.status==='revoked')return;
+      await tx.select().from(deviceAppConnections).where(and(eq(deviceAppConnections.userId,userId),eq(deviceAppConnections.trustedDeviceId,id))).for('update');
+      await tx.update(runtimeTargets).set({authorityEpoch:sql`${runtimeTargets.authorityEpoch}+1`,health:'UNAVAILABLE',onlineState:'OFFLINE',updatedAt:now}).where(and(eq(runtimeTargets.userId,userId),eq(runtimeTargets.backingRef,id),eq(runtimeTargets.targetType,'ANDROID_DEVICE')));
       await tx.update(trustedDevices).set({ status: 'revoked', revokedAt: now, updatedAt: now }).where(and(eq(trustedDevices.id, id), eq(trustedDevices.userId, userId)));
       await tx.update(trustedDeviceRequestSessions).set({ revokedAt: now }).where(and(eq(trustedDeviceRequestSessions.userId, userId), eq(trustedDeviceRequestSessions.trustedDeviceId, id), isNull(trustedDeviceRequestSessions.revokedAt)));
       await tx.update(deviceAppConnections).set({ enabled: 0, modesJson: ['open_app'], updatedAt: now })
@@ -176,4 +184,14 @@ function sha256Base64(value: string) { return createHash('sha256').update(Buffer
 function hash(value: unknown) { return createHash('sha256').update(JSON.stringify(value)).digest('hex'); }
 function isSha256(value: string) { return /^[a-f0-9]{64}$/.test(value); }
 function isBase64(value: string) { return /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value); }
-function isDuplicate(error: unknown) { return typeof error === 'object' && error !== null && 'code' in error && (error as { code?: string }).code === 'ER_DUP_ENTRY'; }
+function isDuplicate(error: unknown) {
+  // Drizzle wraps the driver's duplicate-key error in cause. Preserve the
+  // explicit replay rejection at the signed-request boundary in either form.
+  let current = error;
+  for (let depth = 0; depth < 5 && current && typeof current === 'object'; depth += 1) {
+    const candidate = current as { code?: string; cause?: unknown };
+    if (candidate.code === 'ER_DUP_ENTRY') return true;
+    current = candidate.cause;
+  }
+  return false;
+}

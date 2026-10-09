@@ -3,6 +3,8 @@ package com.lazyarmor.app
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.os.Build
+import android.os.SystemClock
 import android.provider.Settings
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
@@ -17,21 +19,63 @@ import java.security.MessageDigest
  */
 class LazyArmorNotificationListener : NotificationListenerService() {
   companion object {
-    @Volatile private var listenerConnected=false
-    fun clearPreviews(context:Context){context.getSharedPreferences(PREFERENCES,Context.MODE_PRIVATE).edit().remove(QUEUE_KEY).commit()}
-    fun clearAccountState(context:Context){context.getSharedPreferences(PREFERENCES,Context.MODE_PRIVATE).edit().remove(QUEUE_KEY).remove(ENABLED_PACKAGES_KEY).commit()}
     private const val PREFERENCES = "lazy_armor_notification_source"
     private const val QUEUE_KEY = "notification_preview_queue"
     private const val ENABLED_PACKAGES_KEY = "enabled_notification_packages"
     private const val MAX_QUEUE_SIZE = 50
+    private const val REBIND_INTERVAL_MS = 30_000L
+    @Volatile private var connectedListener: LazyArmorNotificationListener? = null
+    private var lastRebindRequestedAt = -REBIND_INTERVAL_MS
+
+    fun clearPreviews(context: Context) {
+      context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE).edit().remove(QUEUE_KEY).apply()
+    }
+
+    fun clearAccountState(context: Context) {
+      context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE).edit().remove(QUEUE_KEY).remove(ENABLED_PACKAGES_KEY).apply()
+    }
+
+    fun snapshotSource(context: Context, sourcePackage: String, start: Long, end: Long): JSONArray {
+      check(context.getSharedPreferences("lazy_armor_runtime_settings", Context.MODE_PRIVATE).getBoolean("acquisition", true)) { "ACQUISITION_DISABLED" }
+      check(notificationAccessGranted(context) && LocalCapabilityManifest.activeGrant(context, "notification.read")) { "NOTIFICATION_ACCESS_REQUIRED" }
+      check(enabledPackages(context).contains(sourcePackage)) { "NOTIFICATION_SOURCE_NOT_AUTHORIZED" }
+      val listener = connectedListener ?: throw IllegalStateException("NOTIFICATION_LISTENER_NOT_CONNECTED")
+      val active = listener.activeNotifications ?: throw IllegalStateException("NOTIFICATION_SNAPSHOT_UNAVAILABLE")
+      for (notification in active.filter { it.packageName == sourcePackage }) listener.onNotificationPosted(notification)
+      val selected = JSONArray()
+      val queue = readQueue(context)
+      for (index in 0 until queue.length()) {
+        val item = queue.optJSONObject(index) ?: continue
+        if (item.optString("sourcePackage") == sourcePackage && item.optLong("postedAt") >= start && item.optLong("postedAt") < end) selected.put(item)
+      }
+      return selected
+    }
 
     fun status(context: Context): JSONObject {
+      val accessGranted = notificationAccessGranted(context)
+      val acquisitionEnabled = context.getSharedPreferences("lazy_armor_runtime_settings", Context.MODE_PRIVATE).getBoolean("acquisition", true)
+      requestRebindIfNeeded(context, accessGranted, acquisitionEnabled)
       val result = JSONObject()
-      result.put("accessGranted", notificationAccessGranted(context))
-      result.put("connected",listenerConnected)
+      result.put("accessGranted", accessGranted)
+      result.put("connected", connectedListener != null)
+      result.put("acquisitionEnabled", acquisitionEnabled)
       result.put("enabledPackageCount", enabledPackages(context).size)
       result.put("pendingCount", readQueue(context).length())
       return result
+    }
+
+    @Synchronized
+    private fun requestRebindIfNeeded(context: Context, accessGranted: Boolean, acquisitionEnabled: Boolean) {
+      if (Build.VERSION.SDK_INT < 24 || !accessGranted || !acquisitionEnabled || connectedListener != null
+        || !LocalCapabilityManifest.activeGrant(context, "notification.read")) return
+      val now = SystemClock.elapsedRealtime()
+      if (now - lastRebindRequestedAt < REBIND_INTERVAL_MS) return
+      lastRebindRequestedAt = now
+      try {
+        NotificationListenerService.requestRebind(ComponentName(context, LazyArmorNotificationListener::class.java))
+      } catch (_: Exception) {
+        // Recovery is best effort; only onListenerConnected establishes health.
+      }
     }
 
     fun setNotificationSourceEnabled(context: Context, packageName: String, enabled: Boolean): Boolean {
@@ -76,6 +120,10 @@ class LazyArmorNotificationListener : NotificationListenerService() {
 
     private fun appendPreview(context: Context, preview: JSONObject) {
       val queue = readQueue(context)
+      for (index in 0 until queue.length()) {
+        val old = queue.optJSONObject(index) ?: continue
+        if (old.optString("eventId") == preview.optString("eventId") && old.optString("contentHash") == preview.optString("contentHash")) return
+      }
       val retained = JSONArray()
       val startIndex = maxOf(0, queue.length() - (MAX_QUEUE_SIZE - 1))
       for (index in startIndex until queue.length()) retained.put(queue.optJSONObject(index))
@@ -96,11 +144,8 @@ class LazyArmorNotificationListener : NotificationListenerService() {
     private fun sha256(value: String): String = MessageDigest.getInstance("SHA-256").digest(value.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
   }
 
-  override fun onListenerConnected(){super.onListenerConnected();listenerConnected=true}
-  override fun onListenerDisconnected(){listenerConnected=false;super.onListenerDisconnected()}
-  override fun onDestroy(){listenerConnected=false;super.onDestroy()}
   override fun onNotificationPosted(notification: StatusBarNotification) {
-    if(!LocalCapabilityManifest.activeGrant(applicationContext,"notification.read"))return
+    if (!LocalCapabilityManifest.activeGrant(applicationContext, "notification.read")) return
     if (!enabledPackages(applicationContext).contains(notification.packageName)) return
     if (!getSharedPreferences("lazy_armor_runtime_settings", Context.MODE_PRIVATE).getBoolean("acquisition", true)) return
     val extras = notification.notification.extras ?: return
@@ -128,5 +173,15 @@ class LazyArmorNotificationListener : NotificationListenerService() {
     preview.put("parserVersion", candidate.parserVersion)
     preview.put("status", "received_unclassified")
     appendPreview(applicationContext, preview)
+  }
+
+  override fun onListenerConnected() {
+    super.onListenerConnected()
+    connectedListener = this
+  }
+
+  override fun onListenerDisconnected() {
+    connectedListener = null
+    super.onListenerDisconnected()
   }
 }

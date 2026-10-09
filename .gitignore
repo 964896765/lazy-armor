@@ -20,3 +20,7 @@ artifacts/android/*.aab
 artifacts/android/*.apks
 artifacts/android/build-artifact-metadata.json
 artifacts/backup-restore/*.sql
+
+# Local acceptance captures, runtime snapshots, bundles and APK backups.
+# Existing tracked evidence remains tracked; new captures stay on this machine.
+/artifacts/

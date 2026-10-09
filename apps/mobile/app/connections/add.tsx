@@ -5,6 +5,7 @@ import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { ActivityIndicator, FlatList, Image, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { ui } from '../../src/editor-ui';
 import { api } from '../../src/api';
 import { useAuthStore } from '../../src/auth-store';
 import { createDeviceAppConnectionRequest } from '../../src/device-app-api-contract';
@@ -16,7 +17,7 @@ import { ActionButton, EmptyState, Surface, WorkspaceHeader, colors, radius, spa
 interface DeviceAppConnection { trustedDeviceId?:string; id: string; packageName: string; displayName: string; enabled: boolean; modes: DeviceAppConnectionMode[] }
 type ConnectionKind = 'mobile_app' | 'online_service' | 'device';
 
-export default function AddConnectionPage() {
+export function PhoneAppDiscoveryPage() {
   const token = useAuthStore((store) => store.token);
   const client = useQueryClient();
   const [kind, setKind] = useState<ConnectionKind>('mobile_app');
@@ -24,8 +25,9 @@ export default function AddConnectionPage() {
   const [search, setSearch] = useState('');
   const discovery = useQuery({ queryKey: ['rail-discovered-device-apps'], queryFn: discoverLaunchableApps, enabled: Boolean(token), staleTime: 5 * 60_000 });
   const existing = useQuery({ queryKey: ['device-app-connections', token], queryFn: () => api<DeviceAppConnection[]>('/device-app-connections', token), enabled: Boolean(token) });
+  const currentDevice=useQuery({queryKey:['current-trusted-device',token],enabled:Boolean(token),queryFn:()=>ensureTrustedDevice(token!)});
   const selected = useMemo(() => (discovery.data ?? []).find((app) => app.packageName === selectedPackage) ?? null, [discovery.data, selectedPackage]);
-  const alreadyAdded = selected ? (existing.data ?? []).some((item) => item.packageName === selected.packageName) : false;
+  const alreadyAdded = selected ? (existing.data ?? []).some((item) => item.packageName === selected.packageName&&item.trustedDeviceId===currentDevice.data?.id) : false;
   const add = useMutation({
     mutationFn: async (app: DiscoveredDeviceApp) => {
       if (!token) throw new Error('AUTH_REQUIRED');
@@ -41,20 +43,17 @@ export default function AddConnectionPage() {
         client.invalidateQueries({ queryKey: ['device-app-connections', token] }),
         client.invalidateQueries({ queryKey: ['rail-device-app-connections', token] }),
       ]);
-      router.replace('/connections' as never);
+      router.replace('/phone-apps' as never);
     },
   });
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <View style={styles.content}>
-        <WorkspaceHeader title="添加连接" subtitle="选择要交给懒人装甲的来源" onBack={() => router.back()} />
+        <View style={ui.header}><Pressable accessibilityLabel="返回" style={ui.back} onPress={()=>router.back()}><Ionicons name="chevron-back" size={26} color="#172033"/></Pressable><Text style={ui.pageTitle}>添加手机应用</Text><View style={ui.back}/></View>
         {!token ? <Surface><EmptyState icon="log-in-outline" title="请先登录" description="添加连接前需要确认这是你的账号与设备。" action={{ label: '去登录', onPress: () => router.push('/auth/login' as never) }} /></Surface> : null}
         {token ? <>
-          <View style={styles.kindTabs}>{([['mobile_app', '手机应用'], ['online_service', '在线服务'], ['device', '设备与资料']] as const).map(([value, label]) => <Pressable key={value} accessibilityRole="button" onPress={() => setKind(value)} style={[styles.kindTab, kind === value && styles.kindTabSelected]}><Text style={[styles.kindText, kind === value && styles.kindTextSelected]}>{label}</Text></Pressable>)}</View>
-          {kind === 'mobile_app' ? <MobileAppDiscovery selected={selected} search={search} onSearch={setSearch} apps={discovery.data ?? []} discoveryLoading={discovery.isLoading} discoveryError={discovery.isError} onSelect={setSelectedPackage} /> : null}
-          {kind === 'online_service' ? <ScrollView contentContainerStyle={styles.secondaryContent}><ConnectionTypePlaceholder title="在线服务" description="Google 邮箱、日历与文件服务通过正式授权页面连接。" actionLabel="选择在线服务" onPress={() => router.replace('/connections' as never)} /></ScrollView> : null}
-          {kind === 'device' ? <ScrollView contentContainerStyle={styles.secondaryContent}><ConnectionTypePlaceholder title="设备与资料" description="设备、车辆和家庭资料由你主动添加；每项读取和操作都会单独说明。" actionLabel="管理我的资料" onPress={() => router.push('/devices' as never)} /></ScrollView> : null}
+          <MobileAppDiscovery selected={selected} search={search} onSearch={setSearch} apps={discovery.data ?? []} discoveryLoading={discovery.isLoading} discoveryError={discovery.isError} onSelect={setSelectedPackage} />
         </> : null}
       </View>
       <Modal visible={Boolean(selected)} transparent animationType="slide" onRequestClose={() => setSelectedPackage(null)}>
@@ -107,15 +106,15 @@ function ConnectionPreview({ app, alreadyAdded, pending, hasError, onAdd }: { ap
 }
 
 function OperationRow({ operation, last }: { operation: AppIntegrationCapability; last: boolean }) {
-  return <View style={[styles.capabilityRow, !last && styles.rowDivider]}><View style={styles.capabilityCopy}><Text style={styles.capabilityName}>{operation.label}</Text><Text style={styles.capabilityDescription}>{operation.description}</Text><Text style={styles.capabilityMeta}>{operation.availability === 'available' ? '当前可用' : '后续支持'}{operation.requiresUserPermission ? ' · 需单独授权' : ''}</Text></View></View>;
+  return <View style={[styles.capabilityRow, !last && styles.rowDivider]}><View style={styles.capabilityCopy}><Text style={styles.capabilityName}>{operation.label}</Text><Text style={styles.capabilityDescription}>{operation.description}</Text><Text style={styles.capabilityMeta}>{operation.availability === 'available' ? '基础支持，确认后检查授权' : '待接入'}{operation.requiresUserPermission ? ' · 需单独授权' : ''}</Text></View></View>;
 }
 
 function ConnectionTypePlaceholder({ title, description, actionLabel, onPress }: { title: string; description: string; actionLabel: string; onPress: () => void }) { return <Surface style={styles.placeholder}><Text style={styles.placeholderTitle}>{title}</Text><Text style={styles.placeholderCopy}>{description}</Text><View style={styles.previewAction}><ActionButton label={actionLabel} onPress={onPress} /></View></Surface>; }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#FFFFFF' },
-  page: { flex: 1, backgroundColor: '#FFFFFF' },
-  content: { flex: 1, paddingHorizontal: spacing.lg, paddingTop: spacing.md },
+  safeArea: { flex: 1, backgroundColor: 'transparent' },
+  page: { flex: 1, backgroundColor: 'transparent' },
+  content: { flex: 1, paddingHorizontal: 12, paddingTop: 0 },
   kindTabs: { flexDirection: 'row', backgroundColor: '#EEF1F5', padding: 3, borderRadius: radius.md, marginTop: spacing.md, marginBottom: spacing.md },
   kindTab: { flex: 1, minHeight: 36, justifyContent: 'center', alignItems: 'center', borderRadius: radius.sm, paddingHorizontal: 3 },
   kindTabSelected: { backgroundColor: colors.surface, shadowColor: '#101828', shadowOpacity: 0.06, shadowRadius: 4, elevation: 1 },
@@ -129,7 +128,7 @@ const styles = StyleSheet.create({
   sectionTitle: { ...typography.section, color: colors.text, marginTop: spacing.md, marginBottom: spacing.sm },
   loading: { alignItems: 'center', paddingVertical: spacing.xl, gap: spacing.md },
   loadingText: { ...typography.caption, color: colors.textSecondary },
-  catalog: { flex: 1, backgroundColor: colors.surface },
+  catalog: { flex: 1, backgroundColor: 'transparent' },
   catalogContent: { paddingBottom: spacing.md },
   appRow: { minHeight: 62, flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.md },
   appRowSelected: { backgroundColor: colors.accentSoft },
@@ -161,3 +160,5 @@ const styles = StyleSheet.create({
   placeholderCopy: { ...typography.body, color: colors.textSecondary, marginTop: spacing.sm, lineHeight: 21 },
   pressed: { backgroundColor: '#F7F8FA' },
 });
+
+export default PhoneAppDiscoveryPage;

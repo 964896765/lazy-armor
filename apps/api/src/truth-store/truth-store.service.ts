@@ -6,7 +6,8 @@ import { resolveMobileCandidateSpec, type JsonValue, type ParserKey } from '@laz
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { AuditService } from '../audit/audit.service';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
-import { RealityPipelineService } from '../reality-pipeline/reality-pipeline.service';
+import { RealityPipelineService, type RealityExecutor } from '../reality-pipeline/reality-pipeline.service';
+import { lockNotificationReceiptSource } from '../strategy-runtime/notification-receipt-source.guard';
 
 interface CandidateSnapshot {
   schema?: unknown;
@@ -22,9 +23,11 @@ interface CandidateSnapshot {
 export class TruthStoreService {
   constructor(@Inject(DATABASE) private readonly db: InjectedDatabase, private readonly audit: AuditService, private readonly realityPipeline: RealityPipelineService) {}
 
-  async confirmMobileReceipt(userId: string, receipt: typeof mobileNotificationReceipts.$inferSelect) {
+  async confirmMobileReceipt(userId: string, receipt: typeof mobileNotificationReceipts.$inferSelect, parentTx?:RealityExecutor):Promise<Awaited<ReturnType<RealityPipelineService['confirmCandidate']>>|ReturnType<TruthStoreService['completedResponse']>> {
+    if(!parentTx)return this.db.transaction(tx=>this.confirmMobileReceipt(userId,receipt,tx));
+    if(receipt.snapshotJson.sourceBinding)await lockNotificationReceiptSource(parentTx,userId,receipt);
     const candidate = this.candidateSpecFrom(receipt);
-    const existing = await this.findByReceipt(this.db, userId, receipt.id);
+    const existing = await this.findByReceipt(parentTx, userId, receipt.id);
     if (existing) return this.completedResponse(existing);
 
     // A receipt is only an audit record; the fact must always flow through the
@@ -36,11 +39,11 @@ export class TruthStoreService {
       externalEventKey: receipt.id, parserKey: candidate.parserId, resourceHint: candidate.resourceHint,
       payload: candidate.payload, evidenceHash,
       observedAt: receipt.receivedAt.toISOString(), occurredAt: receipt.postedAt.toISOString(),
-    });
+    },0,parentTx);
     const candidateId = normalized.candidates[0]?.id;
     if (!candidateId) throw new ConflictException('Notification observation produced no candidate fact');
-    const result = await this.realityPipeline.confirmCandidate(userId, candidateId, { sourceReceiptId: receipt.id, verifiedBy: 'user_confirmation', verificationMethod: 'user_confirmation_after_device_key_proof' });
-    await this.audit.append({ actorType: 'user', actorUserId: userId, action: 'TRUTH_RECORD_VERIFIED', resourceType: 'truth_record', resourceId: result.id, userId, correlationId: receipt.id, changeSummary: 'Confirmed a mobile fact through the generic reality pipeline adapter', source: 'api', result: 'success' });
+    const result = await this.realityPipeline.confirmCandidate(userId, candidateId, { sourceReceiptId: receipt.id, verifiedBy: 'user_confirmation', verificationMethod: 'user_confirmation_after_device_key_proof' },0,parentTx);
+    await this.audit.append({ actorType: 'user', actorUserId: userId, action: 'TRUTH_RECORD_VERIFIED', resourceType: 'truth_record', resourceId: result.id, userId, correlationId: receipt.id, changeSummary: 'Confirmed a mobile fact through the generic reality pipeline adapter', source: 'api', result: 'success' },parentTx);
     return result;
   }
 

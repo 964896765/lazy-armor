@@ -8,7 +8,7 @@ import {
   truthProvenance, truthRecords, truthRecordVersions,
 } from '@lazy-armor/database';
 import { newId } from '@lazy-armor/shared';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
 import { createHash } from 'node:crypto';
 import { AuditService } from '../audit/audit.service';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
@@ -84,7 +84,13 @@ export class RealityPipelineService implements OnModuleInit {
     if (!observation) throw new ConflictException('Observation could not be materialized');
     const candidates = [];
     for (const draft of drafts) {
-      const dedupeKey = candidateDedupeKey(userId, draft);
+      // A native snapshot is a new observation even when the event did not
+      // change. Content-only dedupe would reuse the previous read's provenance
+      // and leave its Truth stale. Replays still share the observation identity.
+      // Keep the separately versioned Provider resource contract unchanged.
+      const semanticKey = candidateDedupeKey(userId, draft);
+      const dedupeKey = input.sourceMode === 'NATIVE_OS' && ['native.calendar-event.v1','native.calendar-event-absence.v1'].includes(input.parserKey)
+        ? catalogHash({ semanticKey, observationId: observation.id }) : semanticKey;
       let candidate = (await db.select().from(candidateFacts).where(and(eq(candidateFacts.userId, userId), eq(candidateFacts.dedupeKey, dedupeKey))).limit(1))[0];
       if (!candidate) {
         const id = newId();
@@ -186,12 +192,16 @@ export class RealityPipelineService implements OnModuleInit {
     for (const item of REALITY_ADAPTER_REGISTRY) {
       const hash = catalogHash(item); const old = (await this.db.select({ hash: realityAdapterDefinitions.definitionHash }).from(realityAdapterDefinitions).where(and(eq(realityAdapterDefinitions.adapterKey, item.key), eq(realityAdapterDefinitions.revision, item.revision))).limit(1))[0];
       if (old) { if (old.hash !== hash) throw new Error(`Reality adapter revision is immutable: ${item.key}@${item.revision}`); continue; }
-      await this.db.insert(realityAdapterDefinitions).values({ id: newId(), adapterKey: item.key, adapterKind: item.kind, revision: item.revision, definitionHash: hash, status: item.status, definitionJson: item, createdAt: new Date() });
+      await this.db.insert(realityAdapterDefinitions).values({ id: newId(), adapterKey: item.key, adapterKind: item.kind, revision: item.revision, definitionHash: hash, status: item.status, definitionJson: item, createdAt: new Date() }).onDuplicateKeyUpdate({set:{id:sql`${realityAdapterDefinitions.id}`}});
+      const committed=(await this.db.select({hash:realityAdapterDefinitions.definitionHash}).from(realityAdapterDefinitions).where(and(eq(realityAdapterDefinitions.adapterKey,item.key),eq(realityAdapterDefinitions.revision,item.revision))).limit(1))[0];
+      if(committed?.hash!==hash)throw new Error(`Reality adapter revision is immutable: ${item.key}@${item.revision}`);
     }
     for (const item of REALITY_POLICY_REGISTRY) {
       const hash = catalogHash(item); const old = (await this.db.select({ hash: realityPolicyDefinitions.definitionHash }).from(realityPolicyDefinitions).where(and(eq(realityPolicyDefinitions.policyKey, item.key), eq(realityPolicyDefinitions.revision, item.revision))).limit(1))[0];
       if (old) { if (old.hash !== hash) throw new Error(`Reality policy revision is immutable: ${item.key}@${item.revision}`); continue; }
-      await this.db.insert(realityPolicyDefinitions).values({ id: newId(), policyKey: item.key, policyKind: item.kind, revision: item.revision, definitionHash: hash, status: 'ACTIVE', definitionJson: item as unknown as Record<string, unknown>, createdAt: new Date() });
+      await this.db.insert(realityPolicyDefinitions).values({ id: newId(), policyKey: item.key, policyKind: item.kind, revision: item.revision, definitionHash: hash, status: 'ACTIVE', definitionJson: item as unknown as Record<string, unknown>, createdAt: new Date() }).onDuplicateKeyUpdate({set:{id:sql`${realityPolicyDefinitions.id}`}});
+      const committed=(await this.db.select({hash:realityPolicyDefinitions.definitionHash}).from(realityPolicyDefinitions).where(and(eq(realityPolicyDefinitions.policyKey,item.key),eq(realityPolicyDefinitions.revision,item.revision))).limit(1))[0];
+      if(committed?.hash!==hash)throw new Error(`Reality policy revision is immutable: ${item.key}@${item.revision}`);
     }
   }
 }

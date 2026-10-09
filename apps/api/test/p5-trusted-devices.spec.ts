@@ -109,4 +109,20 @@ describe('trusted device signed request envelope', () => {
     const { service } = requestFixture({ proofError: duplicate });
     await expect(service.assertSignedRequest('user-1', envelope(input), 'POST', '/device-app-connections', input)).rejects.toThrow('already processed');
   });
+
+  it('returns an explicit conflict for a replay when Drizzle wraps the driver error', async () => {
+    const driver = Object.assign(new Error('duplicate'), { code: 'ER_DUP_ENTRY' });
+    const wrapped = new Error('Failed query', { cause: driver });
+    const input = { packageName: 'com.example.app' };
+    const { service } = requestFixture({ proofError: wrapped });
+    await expect(service.assertSignedRequest('user-1', envelope(input), 'POST', '/device-app-connections', input))
+      .rejects.toMatchObject({ status: 409, message: expect.stringContaining('already processed') });
+  });
+
+  it('does not disguise an unrelated database failure as a replay conflict', async () => {
+    const wrapped = new Error('Failed query', { cause: Object.assign(new Error('unavailable'), { code: 'ECONNRESET' }) });
+    const input = { packageName: 'com.example.app' };
+    const { service } = requestFixture({ proofError: wrapped });
+    await expect(service.assertSignedRequest('user-1', envelope(input), 'POST', '/device-app-connections', input)).rejects.toBe(wrapped);
+  });
 });

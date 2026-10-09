@@ -53,8 +53,8 @@ export class TemporaryAuthorizationService {
     return result!;
   }
 
-  async match(input: { userId: string; planVersionId: string; connectionId: string | null; capabilityKey: string | null; actionType: string | null; risk: RiskLevel; amountMinor: number | null; currency: string | null }) {
-    if (input.risk === 'R4') return null;
+  async match(input: { userId: string; planVersionId: string | null; connectionId: string | null; capabilityKey: string | null; actionType: string | null; risk: RiskLevel; amountMinor: number | null; currency: string | null }) {
+    if (input.risk === 'R4' || !input.planVersionId) return null;
     const now = new Date();
     const candidates = await this.db.select().from(temporaryAuthorizations).where(and(
       eq(temporaryAuthorizations.userId, input.userId), eq(temporaryAuthorizations.planVersionId, input.planVersionId),

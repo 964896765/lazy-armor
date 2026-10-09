@@ -116,6 +116,7 @@ export class ProfilesService {
     await this.db.transaction(async (tx) => {
       const current = (await tx.select().from(recurringItemProfiles).where(and(eq(recurringItemProfiles.id, id), eq(recurringItemProfiles.userId, userId))).limit(1).for('update'))[0];
       if (!current) throw new NotFoundException('Recurring item profile not found');
+      if (current.sourceType === 'user_event') throw new BadRequestException('Use the versioned USER_EVENT lifecycle');
       let nextDueAt = current.nextDueAt;
       let status = 'completed';
       if (current.recurrenceDays) {

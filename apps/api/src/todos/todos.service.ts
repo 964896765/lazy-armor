@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { approvalRequests, connections, connectors, executions, planVersions, reconciliationCases } from '@lazy-armor/database';
+import { approvalRequests, connections, connectors, executions, plans, planVersions, reconciliationCases, strategyRuntimeBindings, strategyRuntimeWakeups } from '@lazy-armor/database';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
 
@@ -39,14 +39,26 @@ export class TodosService {
   constructor(@Inject(DATABASE) private readonly db: InjectedDatabase) {}
 
   async list(userId: string): Promise<TodoItem[]> {
-    const [approvalRows, executionRows, reconciliationRows, issueRows] = await Promise.all([
+    const [approvalRows, executionRows, reconciliationRows, issueRows, resourceWaits] = await Promise.all([
       this.approvals(userId),
       this.executionList(userId),
       this.reconciliations(userId),
       this.connectionIssues(userId),
+      this.db.select({id:strategyRuntimeWakeups.id,createdAt:strategyRuntimeWakeups.createdAt,planId:plans.id,planName:planVersions.name})
+        .from(strategyRuntimeWakeups)
+        .innerJoin(strategyRuntimeBindings,eq(strategyRuntimeBindings.id,strategyRuntimeWakeups.bindingId))
+        .innerJoin(planVersions,eq(planVersions.id,strategyRuntimeWakeups.planVersionId))
+        .innerJoin(plans,and(eq(plans.id,planVersions.planId),eq(plans.activeVersionId,planVersions.id)))
+        .where(and(eq(strategyRuntimeWakeups.userId,userId),eq(plans.userId,userId),eq(plans.status,'active'),eq(strategyRuntimeWakeups.handoffStatus,'PENDING'),eq(strategyRuntimeWakeups.handoffReason,'WAITING_RESOURCE')))
+        .orderBy(desc(strategyRuntimeWakeups.createdAt)).limit(500),
     ]);
 
     const items: TodoItem[] = [];
+    for (const row of resourceWaits) items.push({
+      id:`resource-wait:${row.id}`,type:'EXCEPTION',sourceId:row.id,
+      summary:'执行资源需要授权或恢复，请检查资源状态；本次尚未写入',priority:'P1',status:'OPEN',createdAt:row.createdAt.toISOString(),
+      planId:row.planId,planName:row.planName,executionId:null,approvalRequestId:null,reconciliationCaseId:null,connectionId:null,
+    });
 
     for (const row of approvalRows) {
       const open = row.status === 'pending';
@@ -133,7 +145,7 @@ export class TodosService {
       actionSummary: approvalRequests.actionSummary,
       createdAt: approvalRequests.createdAt,
     }).from(approvalRequests)
-      .innerJoin(planVersions, eq(approvalRequests.planVersionId, planVersions.id))
+      .leftJoin(planVersions, eq(approvalRequests.planVersionId, planVersions.id))
       .where(eq(approvalRequests.userId, userId))
       .orderBy(desc(approvalRequests.createdAt))
       .limit(500);
@@ -149,7 +161,7 @@ export class TodosService {
       resultSummary: executions.resultSummary,
       createdAt: executions.createdAt,
     }).from(executions)
-      .innerJoin(planVersions, eq(executions.planVersionId, planVersions.id))
+      .leftJoin(planVersions, eq(executions.planVersionId, planVersions.id))
       .where(eq(executions.userId, userId))
       .orderBy(desc(executions.createdAt))
       .limit(500);
@@ -165,7 +177,7 @@ export class TodosService {
       createdAt: reconciliationCases.createdAt,
     }).from(reconciliationCases)
       .innerJoin(executions, eq(reconciliationCases.executionId, executions.id))
-      .innerJoin(planVersions, eq(executions.planVersionId, planVersions.id))
+      .leftJoin(planVersions, eq(executions.planVersionId, planVersions.id))
       .where(eq(reconciliationCases.userId, userId))
       .orderBy(desc(reconciliationCases.createdAt))
       .limit(500);
@@ -186,8 +198,8 @@ export class TodosService {
 
 interface ExecutionTodoRow {
   id: string;
-  planId: string;
-  planName: string;
+  planId: string | null;
+  planName: string | null;
   status: string;
   resultSummary: string | null;
   createdAt: Date;

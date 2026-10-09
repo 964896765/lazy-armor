@@ -7,9 +7,9 @@ describe('V6 global navigation shell', () => {
     expect(PRIMARY_DESTINATIONS.map((item) => item.path)).toEqual(['/schedule', '/plans', '/chat', '/resources', '/services']);
   });
 
-  it('keeps messages and attention as header utilities', () => {
-    expect(UTILITY_DESTINATIONS.map((item) => item.label)).toEqual(['消息', '待处理']);
-    expect(UTILITY_DESTINATIONS.map((item) => item.path)).toEqual(['/messages', '/attention']);
+  it('uses schedule search instead of separate business utilities', () => {
+    expect(UTILITY_DESTINATIONS.map((item) => item.label)).toEqual(['搜索']);
+    expect(UTILITY_DESTINATIONS.map((item) => item.path)).toEqual(['/schedule-search']);
   });
 
   it('selects the home tab only on the exact root path', () => {
@@ -34,6 +34,6 @@ describe('V6 global navigation shell', () => {
   it('keeps the four UiSpace mapping untouched by navigation', () => {
     // 导航只是展示层；19 领域与四大空间的映射已在 ui-space 中单一维护。
     expect(PRIMARY_DESTINATIONS).toHaveLength(5);
-    expect(UTILITY_DESTINATIONS).toHaveLength(2);
+    expect(UTILITY_DESTINATIONS).toHaveLength(1);
   });
 });

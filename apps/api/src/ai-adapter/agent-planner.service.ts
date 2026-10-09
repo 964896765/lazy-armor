@@ -1,4 +1,9 @@
+import { userEventInputSchema, userEventExternalSyncIntentSchema, type UserEventExternalSyncIntent, type UserEventInput } from '@lazy-armor/plan-schema';
 import {LocalAcquisitionService} from '../consumer/local-acquisition.service';
+import {ModuleRef} from '@nestjs/core';
+import { notificationFactQuerySchema } from '../consumer/notification-fact-query.contract';
+import {LocalCapabilitiesService} from '../consumer/local-capabilities.service';
+import {compileScheduledCalendarAuthoring,compileNotificationWatchAuthoring,canonicalCapabilityId, type ScheduledCalendarAuthoring, type NotificationWatchAuthoring} from '@lazy-armor/plan-schema';
 import type {AcquisitionCoverage} from '@lazy-armor/plan-schema';
 import { createHash } from 'node:crypto';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
@@ -31,6 +36,8 @@ import { LazyArmorMcpToolService } from '../mcp/lazy-armor-mcp-tools';
 export const AGENT_MODEL = Symbol('AGENT_MODEL');
 
 export interface AgentPlanProposal {
+  notificationWatch?: NotificationWatchAuthoring;
+  scheduledCalendar?: ScheduledCalendarAuthoring;
   proposalId: string;
   intentSummary: string;
   domain: string | null;
@@ -50,6 +57,11 @@ export interface AgentPlanProposal {
 }
 
 export interface PlannerResult {
+  factQuery?: import('../consumer/notification-fact-query.contract').NotificationFactQuery;
+  externalSync?: UserEventExternalSyncIntent | null;
+  sourceTruthRefs?: string[];
+  sourceTruthVersions?: Array<{truthId:string;versionId:string}>;
+  userEvent?: UserEventInput;
   actionProposal?: import('@lazy-armor/plan-schema').ActionProposal;
   proposalId: string;
   result: AgentPlannerResultKind | 'PLANNER_OUTPUT_INVALID';
@@ -86,6 +98,7 @@ export class AgentPlannerService {
     private readonly audit: AuditService,
     private readonly lazyArmorTools: LazyArmorMcpToolService,
     @Optional() private readonly acquisitions?:LocalAcquisitionService,
+    @Optional() private readonly moduleRef?:ModuleRef,
   ) {}
 
   async plan(userId: string, intent: string, options: { audit?: boolean; workContext?: 'TEMPORARY' | 'PLAN'; contextSources?: Array<{ label: string; content: string }> } = {}): Promise<PlannerResult> {
@@ -111,6 +124,7 @@ export class AgentPlannerService {
     });
     const output = await this.model.complete({ userId: options.userId, workContext: options.workContext, intent, context, systemPolicy: '见 SYSTEM_POLICY section', allowedResults: [...AGENT_PLANNER_RESULTS] });
     const validation = this.validateOutput(output, facts, intent);
+    if (output.notificationWatch && options.workContext !== 'PLAN') { validation.valid = false; validation.errors.push('Persistent notification watch requires Plan context'); }
     if (output.result === 'ACTION_PROPOSAL' && options.workContext !== 'TEMPORARY') { validation.valid = false; validation.errors.push('ActionProposal requires temporary conversation context'); }
 
     const result: PlannerResult = {
@@ -119,7 +133,15 @@ export class AgentPlannerService {
       validationErrors: validation.errors,
       warnings: [...context.warnings, ...output.warnings],
     };
+    if(output.result==='PLAN_DRAFT'&&output.scenarioKey===null){
+      result.result='CLARIFICATION_REQUIRED';
+      result.clarification={missingRequirements:['请补充要安排的事项、日期时间及使用的日历，以确定计划场景。']};
+    }
     if (validation.valid) {
+      if (output.factQuery && output.result === 'ANSWER' && options.workContext === 'TEMPORARY') {
+        result.factQuery = output.factQuery;
+      }
+      if (output.result === 'USER_EVENT_DRAFT') { result.userEvent = userEventInputSchema.parse(output.userEvent); result.sourceTruthRefs = output.selectedTruthRefs; result.sourceTruthVersions = facts.truths.filter(t=>output.selectedTruthRefs.includes(t.truthId) && t.truthVersionId).map(t=>({truthId:t.truthId,versionId:t.truthVersionId!})); result.externalSync = output.externalSync ? userEventExternalSyncIntentSchema.parse(output.externalSync) : null; result.answer = { explanation: output.explanation }; }
       if (output.result === 'ANSWER') result.answer = { explanation: output.explanation };
       if (output.result === 'CLARIFICATION_REQUIRED') result.clarification = { missingRequirements: output.missingRequirements };
       if (output.result === 'PLAN_DRAFT') result.proposal = validation.proposal!;
@@ -139,6 +161,8 @@ export class AgentPlannerService {
           changeSummary: `Agent planner ${intent.slice(0, 80)} -> ${result.result}`,
           after: {
             plannerRunId: proposalId,
+            scheduledCalendarParameters:output.scheduledCalendar??null,
+            notificationWatchParameters:output.notificationWatch??null,
             userId: options.userId,
             modelProvider: modelId,
             modelName: modelId,
@@ -174,7 +198,7 @@ export class AgentPlannerService {
     }
     const scenarios = top.map((scenario) => ({ ...scenario, readinessState: readinessByKey.get(scenario.key) ?? 'CATALOG_ONLY' }));
     const truths = await this.collectTruthRefs(userId);
-    const capabilities = (await this.readiness.projectCapabilities(userId)).map((capability) => ({
+    const capabilities:AgentCapabilityRef[] = (await this.readiness.projectCapabilities(userId)).map((capability) => ({
       key: capability.capabilityKey,
       connectionId: capability.connectionId,
       providerKey: capability.providerKey,
@@ -182,7 +206,15 @@ export class AgentPlannerService {
       usable: capability.usable,
       reasons: capability.reasons,
     }));
+    if(this.moduleRef){
+      const native=await this.moduleRef.get(LocalCapabilitiesService,{strict:false}).project(userId);
+      for(const row of native){const state=row.capabilityState;const key=state?canonicalCapabilityId(state.key):null;if(state&&key)capabilities.push({key,providerKey:'android-native',usable:state.availability==='AVAILABLE',reasons:row.reasons});}
+    }
     const tools = this.mcp.listEnabledTools();
+    if(this.moduleRef){
+      const {PersistentNotificationPlanService}=await import('../consumer/persistent-notification-plan.service');
+      for(const source of await this.moduleRef.get(PersistentNotificationPlanService,{strict:false}).sources(userId))capabilities.push({key:'app.notification.read',connectionId:source.connectionId,trustedDeviceId:source.trustedDeviceId,providerKey:source.sourcePackage,usable:false,reasons:['SOURCE_IDENTITY_ONLY']});
+    }
     const coverage=this.acquisitions?await this.acquisitions.coverage(userId):null;
     const acquisitionCoverage:AcquisitionCoverage[]|undefined=coverage?.sources.map(round=>({sourceId:round.sourceId,factKey:round.capability,state:round.state as AcquisitionCoverage['state'],observedAt:round.observedAt?.toISOString()??null,evidenceRefs:round.evidenceRefsJson,reason:round.reason}));
     return { domain, scenarios, truths, capabilities, tools, acquisitionCoverage:acquisitionCoverage?.length?acquisitionCoverage:undefined };
@@ -191,6 +223,10 @@ export class AgentPlannerService {
   /** Pure fail-closed validation of model output against collected runtime facts. */
   validateOutput(output: AgentModelOutput, facts: PlannerRuntimeFacts, intent: string): { valid: boolean; errors: string[]; proposal?: AgentPlanProposal } {
     const errors: string[] = [];
+    if(output.notificationWatch&&(output.result!=='PLAN_DRAFT'||output.scheduledCalendar||output.factQuery||output.userEvent||output.actionProposal||output.externalSync))errors.push('Notification watch is a persistent read-only Recipe parameter contract');
+    if (output.factQuery && (!notificationFactQuerySchema.safeParse(output.factQuery).success || output.result !== 'ANSWER'
+      || output.actionProposal || output.userEvent || output.draftDefinition || output.toolRequirements.length
+      || output.requiredCapabilities.length || output.requiredFacts.length)) errors.push('Fact query must be a bounded read-only ANSWER requirement');
     if (!AGENT_PLANNER_RESULTS.includes(output.result)) {
       errors.push(`Model result ${output.result} is not allowed; only ${AGENT_PLANNER_RESULTS.join('/')}`);
     }
@@ -199,6 +235,26 @@ export class AgentPlannerService {
       if (serialized.includes(marker)) errors.push(`Model output contains forbidden action marker ${marker}`);
     }
 
+    if (output.result === 'USER_EVENT_DRAFT') {
+      const parsed = userEventInputSchema.safeParse(output.userEvent);
+      if (!parsed.success) errors.push('Invalid internal personal-item time contract');
+      else if (Date.parse(parsed.data.reminderAt) <= Date.now()) errors.push('Internal reminder must be scheduled in the future');
+      if (output.scenarioKey !== null || output.scenarioRevision !== null || output.strategyKey !== null || output.domain !== null || output.draftDefinition !== null || output.actionProposal || output.scheduledCalendar || output.requiredFacts.length || output.requiredCapabilities.length || output.selectedSkillIds.length || output.toolRequirements.length) errors.push('Internal personal item cannot carry Plan or external execution authority');
+      const knownTruths=new Set(facts.truths.map(t=>t.truthId));
+      if (output.selectedTruthRefs.some(ref=>!knownTruths.has(ref) || !facts.truths.find(t=>t.truthId===ref)?.truthVersionId)) errors.push('Personal-item source must reference owned verified Truth supplied in context');
+      const requestsSync = /(同时|同步|加入|加到|写入).{0,16}(手机日历|系统日历|Google|Outlook|飞书日历)/i.test(intent);
+      if (requestsSync && !output.externalSync) errors.push('Explicit external sync cannot be silently omitted');
+      if (output.externalSync) {
+        if (!requestsSync || !userEventExternalSyncIntentSchema.safeParse(output.externalSync).success) errors.push('External sync requires explicit user intent and a supported proposal contract');
+        if (/Google|Outlook|飞书日历/i.test(intent)) errors.push('Only explicit phone calendar synchronization is currently supported');
+        const duration = intent.match(/(?:持续|时长|占用)\s*(\d+)\s*(分钟|小时)/);
+        const explicitMinutes = duration ? Number(duration[1]) * (duration[2] === '小时' ? 60 : 1) : /(?:持续|时长|占用)\s*半小时/.test(intent) ? 30 : null;
+        if (explicitMinutes === null || explicitMinutes !== output.externalSync.durationMinutes) errors.push('External calendar duration must match an explicit user-provided duration; clarify unsupported wording');
+      }
+      return { valid: errors.length === 0, errors };
+    }
+    if (output.externalSync) errors.push('External sync intent requires USER_EVENT_DRAFT');
+    if (output.userEvent) errors.push('Internal personal-item parameters require USER_EVENT_DRAFT');
     const capabilityKeys = new Set(facts.capabilities.map((capability) => capability.key));
     const toolKeys = new Set(facts.tools.filter((tool) => tool.enabled).map((tool) => `${tool.serverId}/${tool.toolName}`));
     const truthIds = new Set(facts.truths.map((truth) => truth.truthId));
@@ -209,6 +265,8 @@ export class AgentPlannerService {
     for (const tool of this.lazyArmorTools.listTools()) agentToolNames.add(tool.name);
 
     let compiled: CompiledScenarioPlan | null = null;
+    let calendar:ReturnType<typeof compileScheduledCalendarAuthoring>|null=null;
+    let watch:ReturnType<typeof compileNotificationWatchAuthoring>|null=null;
     if (output.result === 'ACTION_PROPOSAL') {
       try {
         const action = compileActionProposal(output.actionProposal).proposal;
@@ -217,6 +275,7 @@ export class AgentPlannerService {
       } catch { errors.push('ActionProposal does not satisfy the canonical action contract'); }
     }
     if (output.result === 'PLAN_DRAFT') {
+      if(!output.scheduledCalendar&&(output.requiredCapabilities.includes('calendar.event.create')||/(创建|添加|写入).*(日历|日程)|(日历|日程).*(创建|添加|写入)/.test(intent)))errors.push('Calendar creation requires the registered scheduled Calendar Recipe parameter contract');
       const scenario = output.scenarioKey ? scenarioByKey(output.scenarioKey) : null;
       if (!scenario) errors.push(`Scenario ${output.scenarioKey} does not exist`);
       else {
@@ -224,7 +283,24 @@ export class AgentPlannerService {
         const strategyValid = output.strategyKey !== null && PLAN_STRATEGIES.some((strategy) => strategy.key === output.strategyKey);
         if (!strategyValid) errors.push(`Strategy ${output.strategyKey} does not exist`);
         for (const capabilityKey of [...scenario.sourceRequirements, ...scenario.actionRequirements].map((requirement) => requirement.capabilityKey)) knownCapabilityKeys.add(capabilityKey);
-        if (errors.length === 0 && output.strategyKey) {
+        if(output.scheduledCalendar){
+          try {
+            calendar=compileScheduledCalendarAuthoring(output.scenarioKey,output.scheduledCalendar,output.intentSummary);
+            if(output.draftDefinition!==null||output.toolRequirements.length)throw new Error('Recipe parameters cannot include free-form actions or tools');
+            if(output.strategyKey!==calendar.strategy)throw new Error('Recipe strategy mismatch');
+            if(!facts.truths.some(t=>t.resourceType==='CalendarEvent'&&t.subjectKey===calendar!.subject.subjectKey&&t.subjectKey.split(':')[3]===calendar!.parameters.calendarEvent.calendarId))throw new Error('Calendar observation scope is not an owned discovered resource');
+            for(const key of calendar.requiredCapabilities)knownCapabilityKeys.add(key);
+          } catch(error){errors.push(error instanceof Error?error.message:'Calendar authoring contract invalid');}
+        }
+        if(output.notificationWatch){
+          try{
+            watch=compileNotificationWatchAuthoring(output.scenarioKey,output.notificationWatch,output.intentSummary);
+            if(output.draftDefinition!==null||output.toolRequirements.length||output.selectedTruthRefs.length||output.selectedSkillIds.length||output.strategyKey!==watch.strategy)throw new Error('Notification watch requires only its controlled Recipe parameters');
+            if(!facts.capabilities.some(c=>c.key==='app.notification.read'&&c.connectionId===watch!.parameters.connectionId&&c.trustedDeviceId===watch!.parameters.trustedDeviceId&&c.providerKey===watch!.parameters.sourcePackage))throw new Error('Notification source is not an owned discovered source');
+            for(const key of watch.requiredCapabilities)knownCapabilityKeys.add(key);
+          }catch(error){errors.push(error instanceof Error?error.message:'Notification watch authoring contract invalid');}
+        }
+        if (errors.length === 0 && output.strategyKey && !calendar && !watch) {
           try {
             compiled = compileScenarioPlan({ scenarioKey: scenario.key, scenarioRevision: scenario.revision, strategy: output.strategyKey as StrategyKey, name: output.intentSummary || scenario.label, mode: 'DRAFT' });
           } catch (error) {
@@ -263,14 +339,16 @@ export class AgentPlannerService {
       intentSummary: output.intentSummary,
       domain: output.domain,
       scenarioKey: output.scenarioKey,
-      scenarioRevision: output.scenarioRevision,
+      scenarioRevision: watch?watch.scenarioRevision:calendar?calendar.scenarioRevision:output.scenarioRevision,
       strategyKey: output.strategyKey,
-      requiredFacts: output.requiredFacts,
+      requiredFacts: watch?watch.requiredFacts:calendar?[...calendar.requiredFacts]:output.requiredFacts,
       selectedTruthRefs: output.selectedTruthRefs,
-      requiredCapabilities: output.requiredCapabilities,
+      requiredCapabilities: watch?watch.requiredCapabilities:calendar?calendar.requiredCapabilities:output.requiredCapabilities,
       selectedSkillIds: output.selectedSkillIds,
       toolRequirements: output.toolRequirements,
-      draftDefinition: compiled ? compiled.definition as unknown as Record<string, unknown> : null,
+      draftDefinition: watch?watch.definition as unknown as Record<string,unknown>:calendar?calendar.definition as unknown as Record<string,unknown>:compiled ? compiled.definition as unknown as Record<string, unknown> : null,
+      ...(watch?{notificationWatch:watch.parameters}:{}),
+      ...(calendar?{scheduledCalendar:calendar.parameters}:{}),
       explanation: output.explanation,
       missingRequirements: output.missingRequirements,
       warnings: output.warnings,
@@ -285,6 +363,8 @@ export class AgentPlannerService {
       const value = (truth.currentVersion?.value ?? {}) as Record<string, unknown>;
       const provenance = Array.isArray(truth.provenance) ? truth.provenance[0] as Record<string, unknown> | undefined : undefined;
       return {
+        subjectKey:typeof value.subjectKey==='string'?value.subjectKey:undefined,
+        resourceType:typeof value.resourceType==='string'?value.resourceType:undefined,
         truthId: truth.id,
         truthVersionId: typeof truth.currentVersionId === 'string' ? truth.currentVersionId : null,
         factKey: typeof value.factKey === 'string' ? value.factKey : String(truth.resourceKey),

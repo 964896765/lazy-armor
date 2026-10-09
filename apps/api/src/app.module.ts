@@ -1,3 +1,4 @@
+import {RuntimeTargetsModule} from './runtime-targets/runtime-targets.module';
 import { ConsumerModule } from './consumer/consumer.module';
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
@@ -90,6 +91,7 @@ import { ServicesCatalogModule } from './services-catalog/services-catalog.modul
     StudyModule,
     DeviceModule,
     TrustedDevicesModule,
+    RuntimeTargetsModule,
     TruthStoreModule,
     DeviceAppsModule,
     DeviceTasksModule,

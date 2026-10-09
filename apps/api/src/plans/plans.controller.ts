@@ -5,6 +5,7 @@ import { PlansService } from './plans.service';
 import { LifecycleReadService } from './lifecycle-read.service';
 import { CursorPageDto } from '../common/cursor-pagination';
 import { PlanLifecycleProjectionService } from './plan-lifecycle-projection.service';
+import { PlanControlProjectionService } from './plan-control-projection.service';
 
 @Controller('plans')
 export class PlansController {
@@ -12,12 +13,14 @@ export class PlansController {
     private readonly plans: PlansService,
     private readonly lifecycleRead: LifecycleReadService,
     private readonly planLifecycle: PlanLifecycleProjectionService,
+    private readonly planControl: PlanControlProjectionService,
   ) {}
 
   @Post() create(@CurrentUser() user: AuthenticatedUser, @Body() input: PlanDefinitionDto) { return this.plans.create(user.id, input); }
   @Get() list(@CurrentUser() user: AuthenticatedUser) { return this.plans.list(user.id); }
   @Get('page') listPage(@CurrentUser() user: AuthenticatedUser, @Query() query: CursorPageDto) { return this.plans.listPage(user.id, query); }
   @Get(':id') get(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) { return this.plans.get(user.id, id); }
+  @Get(':id/control-projection') control(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) { return this.planControl.forPlan(user.id, id); }
   @Get(':id/lifecycle') async lifecycle(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
     // Ownership is established by the canonical plan query before the read model runs.
     await this.plans.get(user.id, id);

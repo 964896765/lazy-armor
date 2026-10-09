@@ -1,6 +1,7 @@
 import { ACTION_TYPES } from './action-types';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
+import { calendarEventCreateSchema, calendarEventUpdateSchema, calendarEventDeleteSchema } from './calendar-write';
 import { PLAN_DOMAINS } from './domain-catalog';
 
 export {
@@ -236,7 +237,7 @@ const sourceConfigSchemas: Record<SourceType, z.ZodTypeAny> = {
 const cronExpression = z.string().trim().refine((value) => value.split(/\s+/).length === 5, 'cronExpression must contain exactly 5 fields');
 const triggerConfigSchemas: Record<TriggerType, z.ZodTypeAny> = {
   manual: strictEmpty,
-  schedule: z.object({ cronExpression, timezone: z.string().min(1).max(64) }).strict(),
+  schedule: z.object({ cronExpression, timezone: z.string().min(1).max(64),firstRunAt:z.string().datetime({offset:true}).optional() }).strict(),
   event: z.object({ eventType: shortText }).strict(),
   webhook: z.object({ eventType: shortText }).strict(),
   threshold: z.object({ fieldPath, direction: z.enum(['above', 'below']), value: z.union([z.string(), z.number().finite()]) }).strict(),
@@ -306,6 +307,8 @@ const actionConfigSchemas: Record<ActionType, z.ZodTypeAny> = {
   }).strict(),
   publish: z.object({
     visibility: z.enum(['private', 'unlisted', 'public']),
+    calendarEvent: calendarEventCreateSchema.optional(),
+    calendarMutation: z.union([calendarEventUpdateSchema, calendarEventDeleteSchema]).optional(),
     handoffTarget: z.object({
       ruleKey: shortText,
       ruleRevision: z.number().int().positive(),
@@ -646,3 +649,16 @@ export * from './share-text-parser';
 export * from './app-resource-capability';
 
 export * from "./service-offering";
+export * from './runtime-target';
+export * from './capability-identity';
+export * from './capability-invocation';
+export * from './runtime-task';
+export * from './runtime-result';
+export * from './calendar-write';
+export * from './runtime-action-binding';
+export * from './scheduled-calendar-authoring';
+export * from './notification-watch-authoring';
+
+export * from './user-event';
+export * from './user-event-sync';
+export * from './runtime-authority-source';

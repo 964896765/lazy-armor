@@ -1,6 +1,7 @@
 import type {AcquisitionCoverage} from '@lazy-armor/plan-schema';
 import { Injectable } from '@nestjs/common';
 import { PRODUCT_DOMAINS, SCENARIO_DEFINITIONS } from '@lazy-armor/plan-schema';
+import { SCHEDULED_CALENDAR_RECIPE, NOTIFICATION_WATCH_RECIPE } from '@lazy-armor/plan-schema';
 
 /**
  * R7 Agent Context Compiler. Context assembly only — not a second Agent Engine.
@@ -35,6 +36,8 @@ export const DEFAULT_CONTEXT_BUDGET: ContextBudgetLimits = Object.freeze({
 });
 
 export interface CompiledTruthRef {
+  subjectKey?: string;
+  resourceType?: string;
   truthId: string;
   truthVersionId: string | null;
   factKey: string;
@@ -46,6 +49,7 @@ export interface CompiledTruthRef {
 }
 
 export interface AgentCapabilityRef {
+  trustedDeviceId?: string;
   connectionId?: string;
   providerKey?: string;
   operation?: string;
@@ -100,7 +104,8 @@ export interface CompiledAgentContext {
 }
 
 export const SYSTEM_POLICY = [
-  '你是懒人装甲的计划建议组件。你只能输出 ANSWER、PLAN_DRAFT、ACTION_PROPOSAL、CLARIFICATION_REQUIRED 四种结果。',
+  '你是懒人装甲的计划建议组件。你只能输出 ANSWER、PLAN_DRAFT、ACTION_PROPOSAL、USER_EVENT_DRAFT、CLARIFICATION_REQUIRED 五种结果。',
+  'USER_EVENT_DRAFT 是一次性内部个人事项建议；用户提供的事项标题和时间可作为输入，不是外部现实事实。它不得附带Scenario/Plan/外部能力或声明已经创建；必须等待用户确认。',
   '禁止输出 EXECUTE / APPROVE / PAY / DELETE / PUBLISH / TRANSFER_MONEY 等执行或授权动作。',
   '你的 riskHint 只是提示，绝不是风险引擎的决定；绝不能降险、跳审批或扩权。',
   '你只能消费经过验证的 Truth、结构化读取、证据元数据与能力就绪度；不得直接消费原始截图。',
@@ -121,6 +126,7 @@ const DOMAIN_KEYWORDS: Readonly<Record<string, string[]>> = Object.freeze({
 @Injectable()
 export class AgentContextCompiler {
   inferDomain(intent: string): string | null {
+    if(/日历|日程/.test(intent))return 'work';
     const normalized = intent.toLowerCase();
     for (const [domain, keywords] of Object.entries(DOMAIN_KEYWORDS)) {
       if (keywords.some((keyword) => normalized.includes(keyword.toLowerCase()))) return domain;
@@ -170,7 +176,12 @@ export class AgentContextCompiler {
       {
         kind: 'TRUSTED_RUNTIME_METADATA',
         title: 'TRUSTED RUNTIME METADATA',
-        content: JSON.stringify({ acquisitionCoverage, domain: input.domain, scenarios, truths, capabilities: input.capabilities, tools, evidence }),
+        content: JSON.stringify({ acquisitionCoverage, domain: input.domain, scenarios, truths, capabilities: input.capabilities, tools, evidence,
+          authoringNow:new Date(now).toISOString(),recipes:[{...SCHEDULED_CALENDAR_RECIPE,scenarioRevision:SCENARIO_DEFINITIONS.find(s=>s.key===SCHEDULED_CALENDAR_RECIPE.scenarioKey)?.revision},NOTIFICATION_WATCH_RECIPE],
+          notificationSources:input.capabilities.filter(c=>c.key==='app.notification.read'&&c.connectionId&&c.trustedDeviceId).map(c=>({connectionId:c.connectionId,trustedDeviceId:c.trustedDeviceId,sourcePackage:c.providerKey,usable:c.usable,reasons:c.reasons,identityOnly:true})),
+          // Resource identity remains useful for authoring even when its facts are stale.
+          calendarSubjects:input.truths.filter(t=>t.resourceType==='CalendarEvent'&&t.subjectKey?.startsWith('local:')).map(t=>({subjectKey:t.subjectKey,calendarId:t.subjectKey!.split(':')[3],reality:'RESOURCE_IDENTITY_ONLY'})),
+        }),
       },
     ];
     for (const skill of skills) {

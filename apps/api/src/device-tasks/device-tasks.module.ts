@@ -1,3 +1,5 @@
+import {CapabilityInvocationsModule} from '../capability-invocations/capability-invocations.module';
+import {RuntimeTargetsModule} from '../runtime-targets/runtime-targets.module';
 import {AcquisitionModule} from '../acquisition/acquisition.module';
 import { Module, forwardRef } from '@nestjs/common';
 import { AuditModule } from '../audit/audit.module';
@@ -8,7 +10,7 @@ import { DeviceTasksController } from './device-tasks.controller';
 import { DeviceTasksService } from './device-tasks.service';
 
 @Module({
-  imports: [AcquisitionModule,AuditModule, RealityPipelineModule, TrustedDevicesModule, forwardRef(() => StructuredReadModule)],
+  imports: [CapabilityInvocationsModule,RuntimeTargetsModule,AcquisitionModule,AuditModule, RealityPipelineModule, TrustedDevicesModule, forwardRef(() => StructuredReadModule)],
   controllers: [DeviceTasksController],
   providers: [DeviceTasksService],
   exports: [DeviceTasksService],

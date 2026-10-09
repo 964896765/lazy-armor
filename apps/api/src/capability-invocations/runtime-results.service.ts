@@ -1,0 +1,65 @@
+import {ConflictException,ForbiddenException,Inject,Injectable,NotFoundException} from '@nestjs/common';
+import {ConfigService} from '@nestjs/config';
+import {runtimeResults,runtimeResultDeliveries,capabilityInvocations,runtimeTargets,executionSteps,verificationEvidence,deviceTasks,invocationRuntimeLinks,acquisitionRounds} from '@lazy-armor/database';
+import {canonicalStringify,runtimeResultDeliveryState} from '@lazy-armor/plan-schema';
+import {newId} from '@lazy-armor/shared';
+import {createHash,createHmac,timingSafeEqual} from 'node:crypto';
+import {and,eq,gt,isNull,or,asc,ne} from 'drizzle-orm';
+import {DATABASE,type InjectedDatabase} from '../common/database.module';
+import {RuntimeTargetsService} from '../runtime-targets/runtime-targets.service';
+type Tx=Parameters<Parameters<InjectedDatabase['transaction']>[0]>[0];
+type Result=typeof runtimeResults.$inferSelect;
+const hash=(x:unknown)=>createHash('sha256').update(canonicalStringify(x)).digest('hex');
+const digest=(x:string)=>createHash('sha256').update(x).digest('hex');
+const content=(r:Pick<Result,'invocationId'|'targetId'|'authorityEpoch'|'payloadRef'|'evidenceRefs'|'executionState'>)=>({invocationId:r.invocationId,targetId:r.targetId,authorityEpoch:r.authorityEpoch,payloadRef:r.payloadRef,evidenceRefs:r.evidenceRefs,executionState:r.executionState});
+@Injectable()
+export class RuntimeResultsService {
+ constructor(@Inject(DATABASE) private readonly db:InjectedDatabase,private readonly targets:RuntimeTargetsService,private readonly config:ConfigService){}
+ // Terminal state and durable result are committed atomically. No client/executor-supplied verification.
+ async captureExecution(tx:Tx,userId:string,executionId:string,state:string){
+  const invocations=await tx.select().from(capabilityInvocations).where(and(eq(capabilityInvocations.userId,userId),eq(capabilityInvocations.executionId,executionId)));
+  for(const invocation of invocations){
+   const proofs=invocation.actionIntentId?await tx.select().from(verificationEvidence).where(and(eq(verificationEvidence.userId,userId),eq(verificationEvidence.actionIntentId,invocation.actionIntentId))):[];
+   const stepOutputs=invocation.actionIntentId?await tx.select({stepId:executionSteps.id,output:executionSteps.outputSnapshotJson,status:executionSteps.status,errorCode:executionSteps.errorCode}).from(executionSteps).where(and(eq(executionSteps.executionId,executionId),eq(executionSteps.actionIntentId,invocation.actionIntentId))):[];
+   const unknown=stepOutputs.some(step=>step.errorCode==='OUTCOME_UNKNOWN');
+   const payload={invocationId:invocation.id,targetId:invocation.targetId,authorityEpoch:invocation.authorityEpoch,payloadRef:`execution:${executionId}:intent:${invocation.actionIntentId}:sha256:${hash(stepOutputs)}`,evidenceRefs:[...new Set([...proofs.map(p=>p.id),...stepOutputs.flatMap(step=>Array.isArray(step.output?.truthRefs)?step.output.truthRefs.filter((ref):ref is string=>typeof ref==='string'&&ref.startsWith('truth:')):[])])].sort(),executionState:unknown?'OUTCOME_UNKNOWN':state.toUpperCase()};
+   const resultHash=hash(payload),prior=(await tx.select().from(runtimeResults).where(eq(runtimeResults.invocationId,invocation.id)).for('update'))[0];if(prior){if(prior.resultHash!==resultHash)throw new ConflictException('RESULT_HASH_CONFLICT');continue;}
+   const id=newId(),now=new Date(),token=this.ackToken(id,resultHash,userId);
+   await tx.insert(runtimeResults).values({...payload,id,userId,resultHash,verificationState:unknown?'OUTCOME_UNKNOWN':proofs.some(p=>p.resultState==='SUCCEEDED')?'VERIFIED':state==='partially_succeeded'?'OUTCOME_UNKNOWN':'UNVERIFIED',deliveryAttempt:0,lastDeliveredAt:null,ackTokenHash:digest(token),ackAt:null,createdAt:now,expiresAt:null});
+  }
+ }
+ async captureNativeCalendar(tx:Tx,userId:string,taskId:string,acquisitionId:string){
+  const link=(await tx.select().from(invocationRuntimeLinks).where(and(eq(invocationRuntimeLinks.runtimeKind,'DEVICE_TASK'),eq(invocationRuntimeLinks.runtimeRef,taskId))))[0];if(!link)return;
+  const invocation=(await tx.select().from(capabilityInvocations).where(and(eq(capabilityInvocations.id,link.invocationId),eq(capabilityInvocations.userId,userId))))[0];
+  const task=(await tx.select().from(deviceTasks).where(and(eq(deviceTasks.id,taskId),eq(deviceTasks.userId,userId))))[0];
+  const receipt=(await tx.select().from(acquisitionRounds).where(and(eq(acquisitionRounds.id,acquisitionId),eq(acquisitionRounds.userId,userId))))[0];
+  if(!invocation||invocation.capabilityId!=='calendar.event.read'||!task||task.status!=='SUCCEEDED'||!receipt||!['VERIFIED_PRESENT','VERIFIED_EMPTY'].includes(receipt.state)||receipt.trustedDeviceId!==task.trustedDeviceId||receipt.contentHash!==task.resultJson?.contentHash)throw new ConflictException('NATIVE_RESULT_VERIFICATION_REQUIRED');
+  const payload={invocationId:invocation.id,targetId:invocation.targetId,authorityEpoch:invocation.authorityEpoch,payloadRef:`device-task:${taskId}:sha256:${hash(task.resultJson)}`,evidenceRefs:[`acquisition:${receipt.id}`,...receipt.evidenceRefsJson].sort(),executionState:'SUCCEEDED'};
+  const resultHash=hash(payload),prior=(await tx.select().from(runtimeResults).where(eq(runtimeResults.invocationId,invocation.id)).for('update'))[0];
+  if(prior){if(prior.resultHash!==resultHash)throw new ConflictException('RESULT_HASH_CONFLICT');return;}
+  const id=newId(),now=new Date();
+  await tx.insert(runtimeResults).values({...payload,id,userId,resultHash,verificationState:'VERIFIED',deliveryAttempt:0,lastDeliveredAt:null,ackTokenHash:digest(this.ackToken(id,resultHash,userId)),ackAt:null,createdAt:now,expiresAt:null});
+ }
+ async captureNativeNotification(tx:Tx,userId:string,taskId:string,acquisitionId:string){
+  const link=(await tx.select().from(invocationRuntimeLinks).where(and(eq(invocationRuntimeLinks.runtimeKind,'DEVICE_TASK'),eq(invocationRuntimeLinks.runtimeRef,taskId))))[0];
+  if(!link)throw new ConflictException('PLAN_NOTIFICATION_INVOCATION_REQUIRED');
+  const invocation=(await tx.select().from(capabilityInvocations).where(and(eq(capabilityInvocations.id,link.invocationId),eq(capabilityInvocations.userId,userId))))[0];
+  const task=(await tx.select().from(deviceTasks).where(and(eq(deviceTasks.id,taskId),eq(deviceTasks.userId,userId))))[0];
+  const receipt=(await tx.select().from(acquisitionRounds).where(and(eq(acquisitionRounds.id,acquisitionId),eq(acquisitionRounds.userId,userId))))[0];
+  if(!invocation||invocation.capabilityId!=='app.notification.read'||!invocation.planVersionId||!task||task.status!=='SUCCEEDED'||!receipt||!['VERIFIED_PRESENT','VERIFIED_EMPTY'].includes(receipt.state)||receipt.capability!=='notification.read'||receipt.trustedDeviceId!==task.trustedDeviceId||receipt.contentHash!==task.resultJson?.contentHash)throw new ConflictException('NOTIFICATION_RESULT_VERIFICATION_REQUIRED');
+  const payload={invocationId:invocation.id,targetId:invocation.targetId,authorityEpoch:invocation.authorityEpoch,payloadRef:`device-task:${taskId}:sha256:${hash(task.resultJson)}`,evidenceRefs:[`acquisition:${receipt.id}`,...receipt.evidenceRefsJson].sort(),executionState:'SUCCEEDED'};
+  const resultHash=hash(payload),prior=(await tx.select().from(runtimeResults).where(eq(runtimeResults.invocationId,invocation.id)).for('update'))[0];
+  if(prior){if(prior.resultHash!==resultHash)throw new ConflictException('RESULT_HASH_CONFLICT');return;}
+  const id=newId(),now=new Date();
+  await tx.insert(runtimeResults).values({...payload,id,userId,resultHash,verificationState:'VERIFIED',deliveryAttempt:0,lastDeliveredAt:null,ackTokenHash:digest(this.ackToken(id,resultHash,userId)),ackAt:null,createdAt:now,expiresAt:null});
+ }
+ async payload(userId:string,id:string){const row=(await this.db.select().from(runtimeResults).where(and(eq(runtimeResults.id,id),eq(runtimeResults.userId,userId))))[0];if(!row)throw new NotFoundException('Runtime result not found');this.integrity(row);const invocation=(await this.db.select().from(capabilityInvocations).where(and(eq(capabilityInvocations.id,row.invocationId),eq(capabilityInvocations.userId,userId))))[0];if(invocation&&['calendar.event.read','app.notification.read'].includes(invocation.capabilityId)&&!invocation.executionId){const link=(await this.db.select().from(invocationRuntimeLinks).where(and(eq(invocationRuntimeLinks.invocationId,invocation.id),eq(invocationRuntimeLinks.runtimeKind,'DEVICE_TASK'))))[0];const task=link&&(await this.db.select().from(deviceTasks).where(and(eq(deviceTasks.id,link.runtimeRef),eq(deviceTasks.userId,userId))))[0];if(!task||row.payloadRef!==`device-task:${task.id}:sha256:${hash(task.resultJson)}`)throw new ConflictException('RESULT_PAYLOAD_HASH_MISMATCH');return {resultId:id,resultHash:row.resultHash,payload:task.resultJson};}if(!invocation?.executionId||!invocation.actionIntentId)throw new ConflictException('Result payload adapter unavailable');const payload=await this.db.select({stepId:executionSteps.id,output:executionSteps.outputSnapshotJson,status:executionSteps.status,errorCode:executionSteps.errorCode}).from(executionSteps).where(and(eq(executionSteps.executionId,invocation.executionId),eq(executionSteps.actionIntentId,invocation.actionIntentId)));if(row.payloadRef!==`execution:${invocation.executionId}:intent:${invocation.actionIntentId}:sha256:${hash(payload)}`)throw new ConflictException('RESULT_PAYLOAD_HASH_MISMATCH');return {resultId:id,resultHash:row.resultHash,payload};}
+ async resume(userId:string,after=0){if(!Number.isSafeInteger(after)||after<0)throw new ConflictException('Invalid resume cursor');await this.targets.refresh(userId);const rows=await this.db.select({result:runtimeResults,target:runtimeTargets}).from(runtimeResults).innerJoin(runtimeTargets,eq(runtimeResults.targetId,runtimeTargets.id)).where(and(eq(runtimeResults.userId,userId),or(gt(runtimeResults.resumeCursor,after),and(isNull(runtimeResults.ackAt),eq(runtimeResults.authorityEpoch,runtimeTargets.authorityEpoch),ne(runtimeTargets.health,'UNAVAILABLE'))))).orderBy(asc(runtimeResults.resumeCursor)).limit(100);return rows.map(({result:r,target:t})=>({...this.response(r),fenced:r.authorityEpoch!==t.authorityEpoch||t.health==='UNAVAILABLE'}));}
+ async deliver(userId:string,id:string){await this.targets.refresh(userId);return this.db.transaction(async tx=>{const row=await this.lock(tx,userId,id);await this.fence(tx,row);this.integrity(row);const token=this.ackToken(row.id,row.resultHash,userId);if(digest(token)!==row.ackTokenHash)throw new ConflictException('ACK_SIGNING_KEY_CHANGED');const now=new Date(),attempt=row.deliveryAttempt+1;await tx.update(runtimeResults).set({deliveryAttempt:attempt,lastDeliveredAt:now}).where(eq(runtimeResults.id,id));await tx.insert(runtimeResultDeliveries).values({id:newId(),resultId:id,attempt,deliveredAt:now});return {...this.response({...row,deliveryAttempt:attempt,lastDeliveredAt:now}),ackToken:token};});}
+ async acknowledge(userId:string,id:string,input:{ackToken:string;resultHash:string;authorityEpoch:number}){await this.targets.refresh(userId);return this.db.transaction(async tx=>{const row=await this.lock(tx,userId,id);await this.fence(tx,row);this.integrity(row);if(input.resultHash!==row.resultHash||input.authorityEpoch!==row.authorityEpoch)throw new ConflictException('RESULT_ACK_MISMATCH');const supplied=Buffer.from(digest(input.ackToken),'hex'),expected=Buffer.from(row.ackTokenHash??'','hex');if(supplied.length!==expected.length||!timingSafeEqual(supplied,expected))throw new ForbiddenException('Invalid ACK token');if(!row.lastDeliveredAt)throw new ConflictException('Result has not been delivered');if(!row.ackAt){row.ackAt=new Date();await tx.update(runtimeResults).set({ackAt:row.ackAt}).where(eq(runtimeResults.id,id));}return this.response(row);});}
+ private async lock(tx:Tx,userId:string,id:string){const row=(await tx.select().from(runtimeResults).where(and(eq(runtimeResults.id,id),eq(runtimeResults.userId,userId))).for('update'))[0];if(!row)throw new NotFoundException('Runtime result not found');return row;}
+ private async fence(tx:Tx,row:Result){const target=(await tx.select().from(runtimeTargets).where(and(eq(runtimeTargets.id,row.targetId),eq(runtimeTargets.userId,row.userId))).for('update'))[0];if(!target||target.authorityEpoch!==row.authorityEpoch)throw new ConflictException('STALE_AUTHORITY_EPOCH');if(target.health==='UNAVAILABLE')throw new ConflictException('TARGET_UNAVAILABLE');if(row.expiresAt&&row.expiresAt<=new Date())throw new ConflictException('RESULT_EXPIRED');}
+ private integrity(row:Result){if(hash(content(row))!==row.resultHash)throw new ConflictException('RESULT_INTEGRITY_ERROR');}
+ private ackToken(id:string,resultHash:string,userId:string){return createHmac('sha256',this.config.getOrThrow<string>('JWT_SECRET')).update(`runtime-result-ack-v1:${userId}:${id}:${resultHash}`).digest('hex');}
+ private response(row:Result){const {ackTokenHash,...rest}=row;return {...rest,deliveryState:runtimeResultDeliveryState({ackAt:row.ackAt?.toISOString()??null,lastDeliveredAt:row.lastDeliveredAt?.toISOString()??null}),resumeCursor:String(row.resumeCursor)};}
+}

@@ -1,8 +1,13 @@
 import {createHash} from 'node:crypto';
+import { ModuleRef } from '@nestjs/core';
+import { plainToInstance } from 'class-transformer';
+import { validate } from 'class-validator';
+import { CreateMobileNotificationReceiptDto } from '../device-apps/notification-receipt.dto';
+import { MobileNotificationReceiptsService } from '../device-apps/mobile-notification-receipts.service';
 import {localCapabilitySourceId,canonicalStringify,localCapabilityAvailability} from '@lazy-armor/plan-schema';
 import {RealityPipelineService,type RealityExecutor} from '../reality-pipeline/reality-pipeline.service';
 import {BadRequestException,Inject,Injectable} from '@nestjs/common';
-import {acquisitionRounds,localCapabilityStates,trustedDevices,artifacts} from '@lazy-armor/database';
+import {acquisitionRounds,localCapabilityStates,trustedDevices,artifacts,deviceAppConnections} from '@lazy-armor/database';
 import {artifactAcquisitionItemSchema,artifactReceiptMatchesCapability} from './artifact-acquisition-contract';
 import {newId} from '@lazy-armor/shared';
 import {and,desc,eq} from 'drizzle-orm';
@@ -11,7 +16,7 @@ import {AuditService} from '../audit/audit.service';
 import type {LocalAcquisitionDto} from './local-acquisition.dto';
 @Injectable()
 export class LocalAcquisitionService {
- constructor(@Inject(DATABASE)private readonly db:InjectedDatabase,private readonly audit:AuditService,private readonly reality:RealityPipelineService){}
+ constructor(@Inject(DATABASE)private readonly db:InjectedDatabase,private readonly audit:AuditService,private readonly reality:RealityPipelineService,private readonly modules:ModuleRef){}
  async receive(userId:string,deviceId:string,requestId:string,input:LocalAcquisitionDto,parentTx?:RealityExecutor){
   const store=parentTx??this.db;
   const now=new Date();const observedAt=new Date(input.observedAt),start=new Date(input.scopeStart),end=new Date(input.scopeEnd);
@@ -58,6 +63,17 @@ export class LocalAcquisitionService {
    if(artifactRead&&['VERIFIED_PRESENT','VERIFIED_EMPTY'].includes(state)&&(!['GRANTED','ON_DEMAND'].includes(lockedGrant.systemPermission)||lockedGrant.health==='UNAVAILABLE'||Date.now()-lockedGrant.checkedAt.getTime()>300000))throw new BadRequestException('文件能力授权证据已变化');
    if(!artifactRead&&['VERIFIED_PRESENT','VERIFIED_EMPTY'].includes(state)&&localCapabilityAvailability({key:input.capability,userGrant:lockedGrant.userGrant,systemPermission:lockedGrant.systemPermission as never,health:lockedGrant.health as never,checkedAt:lockedGrant.checkedAt.getTime()},Date.now())!=='AVAILABLE')throw new BadRequestException('读取授权证据已变化');
    await tx.insert(acquisitionRounds).values(row);
+   if(input.capability==='notification.read' && state==='VERIFIED_PRESENT'){
+    const sources=await tx.select().from(deviceAppConnections).where(and(eq(deviceAppConnections.userId,userId),eq(deviceAppConnections.trustedDeviceId,deviceId),eq(deviceAppConnections.enabled,1)));
+    const service=this.modules.get(MobileNotificationReceiptsService,{strict:false});
+    for(const item of input.items??[]){
+     const source=sources.find(s=>s.packageName===item.sourcePackage&&s.modesJson.includes('notification_read'));
+     if(!source)throw new BadRequestException('Notification source is not authorized on this device');
+     const dto=plainToInstance(CreateMobileNotificationReceiptDto,{eventId:item.eventId,contentHash:item.contentHash,sourcePackage:item.sourcePackage,postedAt:new Date(Number(item.postedAt)).toISOString(),capturedAt:new Date(Number(item.capturedAt)).toISOString(),hasTitle:item.hasTitle,hasText:item.hasText,candidateKind:item.candidateKind,candidateResource:item.candidateResource,candidateConfidence:item.candidateConfidence,amountMinor:item.amountMinor,currency:item.currency,candidateStatus:item.candidateStatus??null,parserVersion:item.parserVersion});
+     if((await validate(dto,{whitelist:true,forbidNonWhitelisted:true})).length)throw new BadRequestException('Invalid minimized notification evidence');
+     await service.receive(userId,source.id,dto,deviceId,tx,true);
+    }
+   }
    if(input.capability==='calendar.read'&&state==='VERIFIED_PRESENT'){
    for(const item of input.items??[]){
     const ingested=await this.reality.ingest(userId,{sourceMode:'NATIVE_OS',providerKey:'android-native',deviceId,externalEventKey:`${requestId}:${item.id}:${item.startAt}`,parserKey:'native.calendar-event.v1',resourceHint:'CalendarEvent',payload:{...item,nativeSourceId:sourceId,acquisitionId:id} as never,evidenceHash:input.contentHash!,observedAt:observedAt.toISOString()},0,tx);

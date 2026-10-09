@@ -18,7 +18,7 @@ import { ProviderCapabilityRegistryService } from '../src/provider-capabilities/
 describe.sequential('9C actual Calendar and Gmail adapters over isolated TCP, not Google-account acceptance', () => {
   let app: INestApplication; let pool: Pool; let server: Server; let owner: Session; let other: Session; let worker: ExecutionWorker;
   let calendarConnection: string; let gmailConnection: string; let calendarExchanges = 0; let mutations = 0; let revokes = 0; let refreshes = 0;
-  let disconnectCreate = false; let limited = false; const events = new Map<string, Record<string, unknown>>();
+  let disconnectCreate = false; let limited = false; let mismatchedReadback = false; const events = new Map<string, Record<string, unknown>>();
   const unique = Date.now() + '-' + Math.random().toString(16).slice(2); const calendarId = 'owner@example.test';
   const fields = { calendarId, title: 'Incoming meeting', start: { dateTime: '2026-09-15T09:00:00+08:00', timeZone: 'Asia/Shanghai' },
     end: { dateTime: '2026-09-15T10:00:00+08:00', timeZone: 'Asia/Shanghai' }, attendees: ['guest@example.test'], sendUpdates: 'all' };
@@ -56,7 +56,7 @@ describe.sequential('9C actual Calendar and Gmail adapters over isolated TCP, no
         mutations++; const event = { ...events.get(id), ...JSON.parse(body), etag: '"updated1"', updated: new Date().toISOString() }; events.set(id, event); res.end(JSON.stringify(event)); return;
       }
       if (url.pathname.endsWith('/events')) { res.end(JSON.stringify({ items: [events.get('incoming1')] })); return; }
-      if (events.has(id)) { res.end(JSON.stringify(events.get(id))); return; }
+      if (events.has(id)) { res.end(JSON.stringify(mismatchedReadback ? { ...events.get(id), summary: 'Changed externally after write' } : events.get(id))); return; }
       res.statusCode = 404; res.end(JSON.stringify({ error: { errors: [{ reason: 'notFound' }] } }));
     });
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve)); const endpoint = 'http://127.0.0.1:' + (server.address() as { port: number }).port;
@@ -132,12 +132,12 @@ describe.sequential('9C actual Calendar and Gmail adapters over isolated TCP, no
       await request(app.getHttpServer()).post(`/api/connections/${calendarConnection}/validate`).set(auth(owner.token)).send({}).expect(201);
     }
   });
-  async function executeApproved(capability: string, data: Record<string, unknown>) {
+  async function executeApproved(capability: string, data: Record<string, unknown>, suffix = '') {
     const plan = await request(app.getHttpServer()).post('/api/plans').set(auth(owner.token)).send({ name: capability + ' ' + unique, domain: 'general', automationLevel: 'L2',
       sources: [{ sourceType: 'manual', config: {}, sortOrder: 0 }], triggers: [{ triggerType: 'manual', config: {}, sortOrder: 0 }], conditions: [],
       actions: [{ actionType: 'publish', connectionId: calendarConnection, requiredCapability: capability, config: { visibility: 'private' }, stepOrder: 0 }] }).expect((r) => expect(r.status, JSON.stringify(r.body)).toBe(201));
     await activatePlan(app, owner.token, plan.body.id);
-    const execution = await request(app.getHttpServer()).post(`/api/plans/${plan.body.id}/executions`).set(auth(owner.token)).send({ requestId: unique + '-' + capability, triggerPayload: { calendarEvent: data } }).expect(201);
+    const execution = await request(app.getHttpServer()).post(`/api/plans/${plan.body.id}/executions`).set(auth(owner.token)).send({ requestId: unique + '-' + capability + suffix, triggerPayload: { calendarEvent: data } }).expect(201);
     await worker.processExecution(execution.body.id); const detail = await request(app.getHttpServer()).get(`/api/executions/${execution.body.id}`).set(auth(owner.token)).expect(200);
     expect(detail.body.status).toBe('waiting_approval'); await request(app.getHttpServer()).post('/api/approvals/' + detail.body.approvals[0].id + '/approve').set(auth(owner.token)).send({}).expect(201);
     await worker.processExecution(execution.body.id);
@@ -160,8 +160,10 @@ describe.sequential('9C actual Calendar and Gmail adapters over isolated TCP, no
     const reconciliation = app.get(ReconciliationService); const checks = (await Promise.all([reconciliation.claim(100), reconciliation.claim(100)])).flat().filter((c) => c.id === cases[0].id); expect(checks).toHaveLength(1);
     await reconciliation.process(checks[0]); expect(await reconciliation.get(owner.userId, cases[0].id)).toMatchObject({ status: 'RESOLVED', resultState: 'SUCCEEDED' });
     await dispatcher.process(claimed[0]); expect(mutations).toBe(1);
-    const [operation] = await pool.query<RowDataPacket[]>('SELECT status,attempt_count FROM side_effect_operations WHERE execution_id=UUID_TO_BIN(?)', [run.executionId]);
+    const [operation] = await pool.query<RowDataPacket[]>('SELECT status,attempt_count,provider_operation_id FROM side_effect_operations WHERE execution_id=UUID_TO_BIN(?)', [run.executionId]);
     expect(operation[0]).toMatchObject({ status: 'outcome_unknown', attempt_count: 1 });
+    expect(operation[0].provider_operation_id).toMatch(/^la[a-f0-9]{64}$/);
+    expect(events.has(operation[0].provider_operation_id)).toBe(true);
   });
   it('updates an approved event with If-Match through the same Existing Execution and records verification', async () => {
     const run = await executeApproved('UPDATE_CALENDAR_EVENT', { ...fields, eventId: 'incoming1', etag: '"incoming1"', title: 'Confirmed updated meeting' });
@@ -170,6 +172,28 @@ describe.sequential('9C actual Calendar and Gmail adapters over isolated TCP, no
     expect(events.get('incoming1')!.summary).toBe('Confirmed updated meeting'); expect(mutations).toBe(2);
     const [evidence] = await pool.query<RowDataPacket[]>("SELECT ve.result_state FROM verification_evidence ve INNER JOIN side_effect_operations op ON op.id=ve.operation_id WHERE op.execution_id=UUID_TO_BIN(?)", [run.executionId]);
     expect(evidence.some((row) => row.result_state === 'SUCCEEDED')).toBe(true);
+    const [operation] = await pool.query<RowDataPacket[]>('SELECT provider_operation_id,result_hash FROM side_effect_operations WHERE execution_id=UUID_TO_BIN(?)', [run.executionId]);
+    expect(operation[0].provider_operation_id).toBe('incoming1');
+    expect(operation[0].result_hash).toMatch(/^[a-f0-9]{64}$/);
+  });
+  it('routes HTTP success with mismatched calendar read-back to reconciliation and never replays the write', async () => {
+    const before = mutations;
+    mismatchedReadback = true;
+    try {
+      const run = await executeApproved('CREATE_CALENDAR_EVENT', { ...fields, title: 'Must match approved fields' }, '-mismatch');
+      const outbox = app.get<OutboxService>('OUTBOX_SERVICE'); const dispatcher = app.get<OutboxWorker>('OUTBOX_WORKER');
+      const message = (await outbox.claim(1000, unique + 'mismatch')).find(m => m.id === run.messageId)!;
+      await dispatcher.process(message);
+      await dispatcher.process(message);
+      expect(mutations).toBe(before + 1);
+      const [operation] = await pool.query<RowDataPacket[]>('SELECT status FROM side_effect_operations WHERE execution_id=UUID_TO_BIN(?)', [run.executionId]);
+      expect(operation[0].status).toBe('outcome_unknown');
+      const [evidence] = await pool.query<RowDataPacket[]>('SELECT ve.result_state FROM verification_evidence ve JOIN side_effect_operations op ON op.id=ve.operation_id WHERE op.execution_id=UUID_TO_BIN(?)', [run.executionId]);
+      expect(evidence.length).toBeGreaterThan(0);
+      expect(evidence.every(row => row.result_state !== 'SUCCEEDED')).toBe(true);
+      const [cases] = await pool.query<RowDataPacket[]>('SELECT result_state FROM reconciliation_cases WHERE execution_id=UUID_TO_BIN(?)', [run.executionId]);
+      expect(cases).toHaveLength(1); expect(cases[0].result_state).toBe('OUTCOME_UNKNOWN');
+    } finally { mismatchedReadback = false; }
   });
   it('refreshes using the shared Google token path and closes grants on revoke', async () => {
     await request(app.getHttpServer()).post(`/api/connections/${calendarConnection}/credentials/rotate`).set(auth(owner.token)).send({ credentials: { ...{

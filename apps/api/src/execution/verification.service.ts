@@ -59,6 +59,9 @@ export class VerificationService {
   async recordResponse(operation: Operation, ok: boolean, data: Record<string, unknown>, key: string, tx: VerificationTransaction) {
     const frozen = await this.policyForOperation(operation, tx);
     if (frozen.key.startsWith('mcp-read-back/')) return this.record(operation, frozen, 'OPERATION_LOOKUP', data, key, tx);
+    if (frozen.providerKey === 'google_calendar' && ['CREATE_CALENDAR_EVENT', 'UPDATE_CALENDAR_EVENT'].includes(frozen.capabilityKey ?? '')) {
+      return this.record(operation, frozen, 'PROVIDER_RESPONSE', ok ? data : { reasonCode: data.reasonCode, outcomeUnknown: true }, key, tx);
+    }
     // ConnectorResult is the existing typed acknowledgement contract. The
     // frozen provider policy governs read-back when that acknowledgement is
     // unavailable or ambiguous; it must not reinterpret a completed response.

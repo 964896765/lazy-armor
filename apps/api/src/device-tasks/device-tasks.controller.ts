@@ -60,7 +60,7 @@ export class DeviceTasksController {
   async fail(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() input: FailDeviceTaskDto, @Headers() headers: IncomingHttpHeaders) {
     const requestPath = `/device-tasks/${id}/fail`;
     const signed = await this.trustedDevices.assertSignedRequest(user.id, deviceEnvelope(headers), 'POST', requestPath, input);
-    return this.deviceTasks.fail(user.id, signed.trustedDeviceId, signed.deviceId, id, input.claimToken, input.errorCode);
+    return this.deviceTasks.fail(user.id, signed.trustedDeviceId, signed.deviceId, id, input.claimToken, input.errorCode,deviceEnvelope(headers).requestId);
   }
 }
 

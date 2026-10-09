@@ -19,6 +19,21 @@ export const users = mysqlTable('users', {
   ...timestamps,
 });
 
+/** Immutable confirmed authority source for execution; runtime state stays in Execution. */
+export const userEventSyncRequests = mysqlTable('user_event_sync_requests', {
+  id: uuidBinary('id').primaryKey(),
+  userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  userEventId: uuidBinary('user_event_id').notNull(),
+  userEventVersion: int('user_event_version').notNull(),
+  proposalMessageId: uuidBinary('proposal_message_id').notNull(),
+  contractHash: char('contract_hash', { length: 64 }).notNull(),
+  contractJson: json('contract_json').$type<Record<string, unknown>>().notNull(),
+  resultProjectionJson: json('result_projection_json').$type<Record<string, unknown>>(),
+  confirmedAt: datetime('confirmed_at', { mode: 'date', fsp: 6 }).notNull(),
+  revokedAt: datetime('revoked_at', { mode: 'date', fsp: 6 }),
+}, t => [uniqueIndex('user_event_sync_proposal_uq').on(t.userId, t.proposalMessageId),
+  index('user_event_sync_owner_event_idx').on(t.userId, t.userEventId, t.userEventVersion)]);
+
 export const membershipPlans = mysqlTable('membership_plans', {
   id: uuidBinary('id').primaryKey(),
   planKey: varchar('plan_key', { length: 32 }).notNull(),
@@ -1140,7 +1155,7 @@ export const creationDrafts = mysqlTable('creation_drafts', {
 export const capabilityResolutionDecisions = mysqlTable('capability_resolution_decisions', {
   id: uuidBinary('id').primaryKey(),
   userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
-  planVersionId: uuidBinary('plan_version_id').notNull().references(() => planVersions.id, { onDelete: 'restrict' }),
+  planVersionId: uuidBinary('plan_version_id').references(() => planVersions.id, { onDelete: 'restrict' }),
   requestKey: varchar('request_key', { length: 120 }).notNull(),
   requestHash: char('request_hash', { length: 64 }).notNull(),
   decisionHash: char('decision_hash', { length: 64 }).notNull(),
@@ -1225,10 +1240,12 @@ export const strategyRuntimeDecisions = mysqlTable('strategy_runtime_decisions',
 ]);
 
 export const executions = mysqlTable('executions', {
+  authoritySourceJson: json('authority_source_json').$type<Record<string, unknown>>(),
+  definitionSnapshotJson: json('definition_snapshot_json').$type<Record<string, unknown>>(),
   id: uuidBinary('id').primaryKey(),
   userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
-  planId: uuidBinary('plan_id').notNull().references(() => plans.id, { onDelete: 'restrict' }),
-  planVersionId: uuidBinary('plan_version_id').notNull().references(() => planVersions.id, { onDelete: 'restrict' }),
+  planId: uuidBinary('plan_id').references(() => plans.id, { onDelete: 'restrict' }),
+  planVersionId: uuidBinary('plan_version_id').references(() => planVersions.id, { onDelete: 'restrict' }),
   definitionHash: char('definition_hash', { length: 64 }).notNull(),
   requestId: varchar('request_id', { length: 255 }).notNull(),
   retryOfExecutionId: uuidBinary('retry_of_execution_id'),
@@ -1266,9 +1283,9 @@ export const executions = mysqlTable('executions', {
 export const actionIntents = mysqlTable('action_intents', {
   id: uuidBinary('id').primaryKey(),
   userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
-  planId: uuidBinary('plan_id').notNull().references(() => plans.id, { onDelete: 'restrict' }),
-  planVersionId: uuidBinary('plan_version_id').notNull().references(() => planVersions.id, { onDelete: 'restrict' }),
-  planActionId: uuidBinary('plan_action_id').notNull().references(() => planActions.id, { onDelete: 'restrict' }),
+  planId: uuidBinary('plan_id').references(() => plans.id, { onDelete: 'restrict' }),
+  planVersionId: uuidBinary('plan_version_id').references(() => planVersions.id, { onDelete: 'restrict' }),
+  planActionId: uuidBinary('plan_action_id').references(() => planActions.id, { onDelete: 'restrict' }),
   executionId: uuidBinary('execution_id').notNull().references(() => executions.id, { onDelete: 'restrict' }),
   schemaVersion: varchar('schema_version', { length: 16 }).notNull(),
   actionType: varchar('action_type', { length: 64 }).notNull(),
@@ -1319,7 +1336,7 @@ export const actionAdapterBindings = mysqlTable('action_adapter_bindings', {
 export const executionSteps = mysqlTable('execution_steps', {
   id: uuidBinary('id').primaryKey(),
   executionId: uuidBinary('execution_id').notNull().references(() => executions.id, { onDelete: 'restrict' }),
-  planActionId: uuidBinary('plan_action_id').notNull().references(() => planActions.id, { onDelete: 'restrict' }),
+  planActionId: uuidBinary('plan_action_id').references(() => planActions.id, { onDelete: 'restrict' }),
   actionIntentId: uuidBinary('action_intent_id').references(() => actionIntents.id, { onDelete: 'restrict' }),
   stepOrder: int('step_order').notNull(),
   actionType: varchar('action_type', { length: 64 }).notNull(),
@@ -1374,9 +1391,9 @@ export const approvalRequests = mysqlTable('approval_requests', {
   userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
   executionId: uuidBinary('execution_id').notNull().references(() => executions.id, { onDelete: 'restrict' }),
   executionStepId: uuidBinary('execution_step_id').notNull().references(() => executionSteps.id, { onDelete: 'restrict' }),
-  planId: uuidBinary('plan_id').notNull().references(() => plans.id, { onDelete: 'restrict' }),
-  planVersionId: uuidBinary('plan_version_id').notNull().references(() => planVersions.id, { onDelete: 'restrict' }),
-  planActionId: uuidBinary('plan_action_id').notNull().references(() => planActions.id, { onDelete: 'restrict' }),
+  planId: uuidBinary('plan_id').references(() => plans.id, { onDelete: 'restrict' }),
+  planVersionId: uuidBinary('plan_version_id').references(() => planVersions.id, { onDelete: 'restrict' }),
+  planActionId: uuidBinary('plan_action_id').references(() => planActions.id, { onDelete: 'restrict' }),
   actionType: varchar('action_type', { length: 64 }),
   policySnapshotJson: json('policy_snapshot').$type<Record<string, unknown>>(),
   approvalSnapshotJson: json('approval_snapshot_json').$type<Record<string, unknown>>(),
@@ -1459,9 +1476,9 @@ export const sideEffectOperations = mysqlTable('side_effect_operations', {
   userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
   executionId: uuidBinary('execution_id').notNull().references(() => executions.id, { onDelete: 'restrict' }),
   executionStepId: uuidBinary('execution_step_id').notNull().references(() => executionSteps.id, { onDelete: 'restrict' }),
-  planId: uuidBinary('plan_id').notNull().references(() => plans.id, { onDelete: 'restrict' }),
-  planVersionId: uuidBinary('plan_version_id').notNull().references(() => planVersions.id, { onDelete: 'restrict' }),
-  planActionId: uuidBinary('plan_action_id').notNull().references(() => planActions.id, { onDelete: 'restrict' }),
+  planId: uuidBinary('plan_id').references(() => plans.id, { onDelete: 'restrict' }),
+  planVersionId: uuidBinary('plan_version_id').references(() => planVersions.id, { onDelete: 'restrict' }),
+  planActionId: uuidBinary('plan_action_id').references(() => planActions.id, { onDelete: 'restrict' }),
   actionType: varchar('action_type', { length: 64 }).notNull(),
   connectorId: uuidBinary('connector_id').references(() => connectors.id, { onDelete: 'restrict' }),
   connectionId: uuidBinary('connection_id').references(() => connections.id, { onDelete: 'restrict' }),
@@ -1692,6 +1709,7 @@ export const aiProviderConfigs = mysqlTable('ai_provider_configs', {
 }, table => [uniqueIndex('ai_provider_configs_user_uq').on(table.userId)]);
 
 export const schema = {
+  userEventSyncRequests,
  conversationOnceRequests,
  artifacts,
  serviceMedia,
@@ -1797,3 +1815,30 @@ export const localCapabilityStates = mysqlTable('local_capability_states', {
  capability:varchar('capability',{length:120}).notNull(),manifestVersion:varchar('manifest_version',{length:80}).notNull(),userGrant:boolean('user_grant').notNull(),
  systemPermission:varchar('system_permission',{length:32}).notNull(),health:varchar('health',{length:32}).notNull(),checkedAt:datetime('checked_at',{mode:'date',fsp:6}).notNull(),evidenceRef:varchar('evidence_ref',{length:100}).notNull(),updatedAt:datetime('updated_at',{mode:'date',fsp:6}).notNull(),
 },table=>[uniqueIndex('local_capability_device_key_uq').on(table.userId,table.trustedDeviceId,table.capability)]);
+
+// V8.3 public runtime identity only. Backing authorization/credentials remain authoritative.
+export const runtimeTargets = mysqlTable('runtime_targets', {
+ id:uuidBinary('id').primaryKey(),userId:uuidBinary('user_id').notNull().references(()=>users.id),
+ targetType:varchar('target_type',{length:32}).notNull(),backingRef:varchar('backing_ref',{length:160}).notNull(),accountScope:varchar('account_scope',{length:160}),
+ authorityEpoch:int('authority_epoch').notNull(),authorityHash:char('authority_hash',{length:64}).notNull(),
+ onlineState:varchar('online_state',{length:16}).notNull(),health:varchar('health',{length:24}).notNull(),lastSeenAt:datetime('last_seen_at',{mode:'date',fsp:6}),
+ manifestVersion:varchar('manifest_version',{length:80}).notNull(),manifestHash:char('manifest_hash',{length:64}).notNull(),metadata:json('metadata').$type<Record<string,unknown>>().notNull(),...timestamps,
+},t=>[uniqueIndex('runtime_targets_owner_backing_uq').on(t.userId,t.targetType,t.backingRef)]);
+
+export const capabilityIdentities=mysqlTable('capability_identities',{id:varchar('id',{length:120}).primaryKey(),revision:varchar('revision',{length:80}).notNull()});
+export const capabilityAliases=mysqlTable('capability_aliases',{alias:varchar('alias',{length:120}).primaryKey(),canonicalId:varchar('canonical_id',{length:120}).notNull().references(()=>capabilityIdentities.id),revision:varchar('revision',{length:80}).notNull()});
+
+export const capabilityInvocations=mysqlTable('capability_invocations',{
+ id:uuidBinary('id').primaryKey(),userId:uuidBinary('user_id').notNull().references(()=>users.id),planId:uuidBinary('plan_id').references(()=>plans.id),planVersionId:uuidBinary('plan_version_id').references(()=>planVersions.id),executionId:uuidBinary('execution_id').references(()=>executions.id),actionIntentId:uuidBinary('action_intent_id').references(()=>actionIntents.id),
+ capabilityId:varchar('capability_id',{length:120}).notNull().references(()=>capabilityIdentities.id),targetId:uuidBinary('target_id').notNull().references(()=>runtimeTargets.id),authorityEpoch:int('authority_epoch').notNull(),targetManifestHash:char('target_manifest_hash',{length:64}).notNull(),arguments:json('arguments').$type<Record<string,unknown>>().notNull(),resourceScope:json('resource_scope').$type<Record<string,unknown>>().notNull(),timeoutMs:int('timeout_ms').notNull(),idempotencyKey:varchar('idempotency_key',{length:255}).notNull(),resolutionDecisionRef:uuidBinary('resolution_decision_ref').notNull().references(()=>capabilityResolutionDecisions.id),riskSnapshotRef:varchar('risk_snapshot_ref',{length:255}),approvalRef:varchar('approval_ref',{length:255}),verificationContractRef:varchar('verification_contract_ref',{length:255}),invocationHash:char('invocation_hash',{length:64}).notNull(),createdAt:datetime('created_at',{mode:'date',fsp:6}).notNull(),
+},t=>[uniqueIndex('cap_invocation_owner_idempotency_uq').on(t.userId,t.idempotencyKey),uniqueIndex('cap_invocation_intent_uq').on(t.actionIntentId)]);
+export const invocationRuntimeLinks=mysqlTable('invocation_runtime_links',{
+ id:uuidBinary('id').primaryKey(),invocationId:uuidBinary('invocation_id').notNull().references(()=>capabilityInvocations.id),runtimeKind:varchar('runtime_kind',{length:32}).notNull(),runtimeRef:uuidBinary('runtime_ref').notNull(),createdAt:datetime('created_at',{mode:'date',fsp:6}).notNull(),
+},t=>[uniqueIndex('invocation_runtime_link_uq').on(t.invocationId,t.runtimeKind,t.runtimeRef)]);
+
+export const runtimeResults=mysqlTable('runtime_results',{
+ id:uuidBinary('id').primaryKey(),userId:uuidBinary('user_id').notNull().references(()=>users.id),invocationId:uuidBinary('invocation_id').notNull().references(()=>capabilityInvocations.id),targetId:uuidBinary('target_id').notNull().references(()=>runtimeTargets.id),authorityEpoch:int('authority_epoch').notNull(),resultHash:char('result_hash',{length:64}).notNull(),payloadRef:varchar('payload_ref',{length:255}),evidenceRefs:json('evidence_refs').$type<string[]>().notNull(),executionState:varchar('execution_state',{length:32}).notNull(),verificationState:varchar('verification_state',{length:32}).notNull(),deliveryAttempt:int('delivery_attempt').notNull().default(0),lastDeliveredAt:datetime('last_delivered_at',{mode:'date',fsp:6}),ackTokenHash:char('ack_token_hash',{length:64}),ackAt:datetime('ack_at',{mode:'date',fsp:6}),resumeCursor:bigint('resume_cursor',{mode:'number',unsigned:true}).notNull().autoincrement(),createdAt:datetime('created_at',{mode:'date',fsp:6}).notNull(),expiresAt:datetime('expires_at',{mode:'date',fsp:6}),
+},t=>[uniqueIndex('runtime_result_invocation_uq').on(t.invocationId),uniqueIndex('runtime_result_cursor_uq').on(t.resumeCursor),index('runtime_result_owner_cursor_idx').on(t.userId,t.resumeCursor)]);
+export const runtimeResultDeliveries=mysqlTable('runtime_result_deliveries',{
+ id:uuidBinary('id').primaryKey(),resultId:uuidBinary('result_id').notNull().references(()=>runtimeResults.id),attempt:int('attempt').notNull(),deliveredAt:datetime('delivered_at',{mode:'date',fsp:6}).notNull(),
+},t=>[uniqueIndex('runtime_result_delivery_attempt_uq').on(t.resultId,t.attempt)]);

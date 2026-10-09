@@ -533,6 +533,76 @@
       "when": 1791171000000,
       "tag": "0075_service_offering_fulfillment",
       "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1791172800000,
+      "tag": "0076_runtime_targets",
+      "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1791174600000,
+      "tag": "0077_capability_identities_aliases",
+      "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1791176400000,
+      "tag": "0078_capability_invocations",
+      "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1791178200000,
+      "tag": "0079_invocation_runtime_links",
+      "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "7",
+      "when": 1791180000000,
+      "tag": "0080_runtime_result_ledger",
+      "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1791181800000,
+      "tag": "0081_result_delivery_ack",
+      "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1791388800000,
+      "tag": "0082_user_event_sync_authority",
+      "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1791392400000,
+      "tag": "0083_runtime_authority_sources",
+      "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1791396000000,
+      "tag": "0084_runtime_source_continuation",
+      "breakpoints": true
+    },
+    {
+      "idx": 85,
+      "version": "7",
+      "when": 1791399600000,
+      "tag": "0085_calendar_mutation_identities",
+      "breakpoints": true
     }
   ]
 }

@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { executionSteps } from '@lazy-armor/database';
+import { executionSteps,executions } from '@lazy-armor/database';
+import {assertExecutionOwner,executionOwnerContext} from './execution-owner-context';
 import { and, eq } from 'drizzle-orm';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
 import { ExecutionEventService } from './execution-event.service';
@@ -23,8 +24,15 @@ export class ExecutionStepStateService {
     let current: ExecutionStepStatus | undefined;
     let executionId: string | undefined;
     const body = async (client: NonNullable<StepExecutor>) => {
+      const owner=executionOwnerContext.getStore();
+      if(owner){
+        const parent=(await client.select().from(executions).where(eq(executions.id,owner.executionId)).for('update'))[0];
+        if(!parent)throw new ConflictException('STALE_EXECUTION_LEASE');
+        assertExecutionOwner(parent);
+      }
       const rows = await client.select({ executionId: executionSteps.executionId, status: executionSteps.status }).from(executionSteps).where(eq(executionSteps.id, id)).limit(1).for('update');
       if (!rows[0]) throw new NotFoundException('ExecutionStep not found');
+      if(owner&&rows[0].executionId!==owner.executionId)throw new ConflictException('STALE_EXECUTION_LEASE');
       executionId = rows[0].executionId;
       current = rows[0].status as ExecutionStepStatus;
       if (current === target) return;

@@ -1,3 +1,4 @@
+import {syncRuntimeResults} from './runtime-result-client';
 import { useRuntimeSettings } from './runtime-settings';
 import { AppState,NativeModules } from 'react-native';
 import { useEffect } from 'react';
@@ -17,7 +18,7 @@ async function assertDeviceTaskRunnerReady(token: string): Promise<boolean> {
     await ensureTrustedDevice(token);
     await syncLocalCapabilities(token);
     const resources=await deviceBoundApi<ResourceProjection[]>('/consumer/resources',token,{method:'GET'});
-    if(resources.some(row=>row.kind==='LOCAL'&&row.capabilityState?.key==='calendar.read'&&row.capabilityState.availability==='AVAILABLE'))return true;
+    if(resources.some(row=>row.kind==='LOCAL'&&['calendar.read','calendar.create','calendar.update','calendar.delete'].includes(row.capabilityState?.key??'')&&row.capabilityState?.availability==='AVAILABLE'))return true;
     if (!useRuntimeSettings.getState().background) return false;
     const connections = await api<Array<{ enabled: boolean }>>('/device-app-connections', token);
     return connections.some((connection) => connection.enabled === true);
@@ -44,13 +45,15 @@ export function useDeviceTaskRunnerLifecycle() {
     const current = token ?? null;
     if(!current)void NativeModules.LazyArmorDeviceBridge?.clearLocalCapabilityAccount?.();
     void lifecycle.sync(current);
+    if(current&&AppState.currentState==='active')void syncRuntimeResults().catch(()=>{});
     const subscription = AppState.addEventListener('change', (state) => {
       lifecycle.onAppState(state === 'active');
+      if(state==='active')void syncRuntimeResults().catch(()=>{});
     });
     // Foreground re-check catches server-side device revoke / authorization loss
     // without requiring a background service.
     const recheck = setInterval(() => {
-      if (AppState.currentState === 'active') void lifecycle.sync(useAuthStore.getState().token ?? null);
+      if (AppState.currentState === 'active'){void lifecycle.sync(useAuthStore.getState().token ?? null);void syncRuntimeResults().catch(()=>{});}
     }, 30_000);
     return () => {
       clearInterval(recheck);

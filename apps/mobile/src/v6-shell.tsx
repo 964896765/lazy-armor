@@ -1,62 +1,24 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useQuery } from '@tanstack/react-query';
 import { router, usePathname } from 'expo-router';
 import type { ComponentProps } from 'react';
-import { useState } from 'react';
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { api } from './api';
-import { useAuthStore } from './auth-store';
 import { workspaceColors as colors, spacing, typography } from './design';
 import { isSelected, PRIMARY_DESTINATIONS } from './v6-navigation';
 
 type IconName = ComponentProps<typeof Ionicons>['name'];
-interface Profile { displayName: string; status: string }
-interface AttentionItem { status: 'OPEN' | 'COMPLETED' }
-
 const PAGE_TITLES: Readonly<Record<string, string>> = {
   '/plans': '计划', '/chat': '会话', '/resources': '资源', '/services': '服务', '/messages': '消息', '/attention': '待处理',
 };
 
-const DRAWER_ITEMS: readonly { icon: IconName; label: string; path: string }[] = [
-  { icon: 'person-outline', label: '账号与登录', path: '/security-center' },
-  { icon: 'settings-outline', label: '应用设置', path: '/settings' },
-  { icon: 'extension-puzzle-outline', label: '资源管理', path: '/resources' },
-  { icon: 'shield-checkmark-outline', label: '数据与隐私', path: '/feature-placeholder?feature=personal-privacy' },
-  { icon: 'help-circle-outline', label: '帮助与反馈', path: '/feature-placeholder?feature=help' },
-  { icon: 'information-circle-outline', label: '关于懒人装甲', path: '/feature-placeholder?feature=about' },
-];
-
 export function TopWorkspaceNav() {
-  const pathname = usePathname();
-  const token = useAuthStore((store) => store.token);
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const profile = useQuery({ queryKey: ['me', token], queryFn: () => api<Profile>('/me', token), enabled: Boolean(token), staleTime: 60_000 });
-  const unread = useQuery({ queryKey: ['notifications-unread', token], queryFn: () => api<{ count: number }>('/notifications/unread-count', token), enabled: Boolean(token), staleTime: 30_000 });
-  const attention = useQuery({ queryKey: ['global-attention', token], queryFn: () => api<AttentionItem[]>('/attention', token), enabled: Boolean(token), staleTime: 30_000 });
-  const todoCount = attention.data?.filter((item) => item.status === 'OPEN').length ?? 0;
-  const name = profile.data?.displayName ?? (token ? '我的账号' : '未登录');
-  const title = PAGE_TITLES[pathname];
-  const navigateFromDrawer = (path: string) => { setDrawerOpen(false); router.push(path as never); };
-
-  return <>
-    <SafeAreaView edges={['top']} style={styles.topSafeArea}><View style={styles.topBar}>
-      <Pressable accessibilityRole="button" accessibilityLabel="打开我的" onPress={() => setDrawerOpen(true)} style={({ pressed }) => [styles.avatar, pressed && styles.pressed]}><Text style={styles.avatarText}>{name.trim().charAt(0).toUpperCase() || '我'}</Text></Pressable>
-      {title ? <Text style={styles.topTitle}>{title}</Text> : <View style={styles.topSpacer} />}
-      <HeaderButton label="消息" icon="notifications-outline" badge={unread.data?.count ?? 0} onPress={() => router.replace('/messages' as never)} />
-      <HeaderButton label="待处理" icon="checkbox-outline" badge={todoCount} onPress={() => router.push('/attention' as never)} />
-    </View></SafeAreaView>
-    <Modal visible={drawerOpen} transparent animationType="fade" onRequestClose={() => setDrawerOpen(false)}>
-      <Pressable style={styles.drawerBackdrop} onPress={() => setDrawerOpen(false)}><Pressable style={styles.drawer} onPress={(event) => event.stopPropagation()}>
-        <SafeAreaView edges={['top', 'bottom']} style={styles.drawerSafe}>
-          <View style={styles.drawerHeader}><View style={styles.drawerAvatar}><Text style={styles.drawerAvatarText}>{name.trim().charAt(0).toUpperCase() || '我'}</Text></View><View style={styles.drawerIdentity}><Text style={styles.drawerName}>{name}</Text><Text style={styles.drawerMotto}>{profile.data?.status || '从复杂中来，游刃有余'}</Text></View><Pressable accessibilityRole="button" accessibilityLabel="关闭" onPress={() => setDrawerOpen(false)} style={styles.closeButton}><Ionicons name="close" size={22} color={colors.text} /></Pressable></View>
-          <View style={styles.drawerList}>{DRAWER_ITEMS.map((item) => <Pressable key={item.label} accessibilityRole="button" onPress={() => navigateFromDrawer(item.path)} style={({ pressed }) => [styles.drawerRow, pressed && styles.rowPressed]}><Ionicons name={item.icon} size={21} color={colors.text} /><Text style={styles.drawerLabel}>{item.label}</Text><Ionicons name="chevron-forward" size={16} color={colors.textMuted} /></Pressable>)}</View>
-        </SafeAreaView>
-      </Pressable></Pressable>
-    </Modal>
-  </>;
+  const pathname=usePathname();
+  return <SafeAreaView edges={['top']} style={styles.topSafeArea}><View style={styles.topBar}>
+    {pathname==='/schedule'?<Pressable accessibilityRole="button" accessibilityLabel="我的" onPress={()=>router.push('/profile' as never)} style={styles.avatar}><Text style={styles.avatarText}>我</Text></Pressable>:null}
+    <Text style={styles.topTitle}>{PAGE_TITLES[pathname]??'懒人装甲'}</Text>
+    <HeaderButton label="搜索日程" icon="search-outline" badge={0} onPress={()=>router.push('/schedule-search' as never)}/>
+  </View></SafeAreaView>;
 }
-
 export function GlobalActionBar() {
   const pathname = usePathname();
   return <SafeAreaView edges={['bottom']} style={styles.bottomSafeArea}><View style={styles.bottomBar}>{PRIMARY_DESTINATIONS.map((item) => {

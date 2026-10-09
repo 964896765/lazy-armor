@@ -1,4 +1,6 @@
 import { ConflictException, Inject, Injectable, NotFoundException, OnApplicationShutdown, OnModuleInit } from '@nestjs/common';
+import {ModuleRef} from '@nestjs/core';
+import {NativeCalendarRuntimeService} from './native-calendar-runtime.service';
 import { ConnectorRegistry, resolveSideEffectContract } from '@lazy-armor/connector-sdk';
 import { executions, executionSteps, reconciliationCases, sideEffectOperations, verificationEvidence, verificationPolicies } from '@lazy-armor/database';
 import { catalogHash, verificationPolicyHash, type RuntimeResultState, type VerificationPolicy } from '@lazy-armor/plan-schema';
@@ -16,7 +18,7 @@ type Case = typeof reconciliationCases.$inferSelect;
 export class ReconciliationService {
   constructor(@Inject(DATABASE) private readonly db: InjectedDatabase, private readonly registry: ConnectorRegistry,
     private readonly guard: RuntimeConnectionGuard, private readonly operations: SideEffectOperationsService,
-    private readonly verification: VerificationService, private readonly audit: AuditService) {}
+    private readonly verification: VerificationService, private readonly audit: AuditService,private readonly modules:ModuleRef) {}
 
   async list(userId: string) { return this.db.select().from(reconciliationCases).where(eq(reconciliationCases.userId, userId)).orderBy(desc(reconciliationCases.createdAt)).limit(100); }
 
@@ -79,6 +81,10 @@ export class ReconciliationService {
     let evidence: Record<string, unknown> = { reasonCode: 'RECONCILIATION_EXPIRED' };
     let blocked = row.expiresAt <= new Date() || row.attemptCount > policy.maxAttempts;
     if (!blocked) {
+      if(policy.providerKey==='android_calendar'&&['calendar.event.create','calendar.event.update','calendar.event.delete'].includes(operation.capabilityKey ?? '')&&!operation.connectionId){
+        await this.modules.get(NativeCalendarRuntimeService,{strict:false}).queueLookup(row.id,row.userId,operation.id);
+        return {waitingDevice:true};
+      }
       let timeout: ReturnType<typeof setTimeout> | undefined;
       try {
         if (!operation.connectionId || !operation.capabilityKey) throw new Error('Unbound operation');

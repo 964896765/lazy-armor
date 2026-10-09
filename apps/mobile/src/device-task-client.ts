@@ -3,6 +3,7 @@ import { deviceBoundApi, ensureTrustedDevice } from './trusted-device-api';
 export type DeviceTaskStatus = 'PENDING' | 'CLAIMED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'AWAITING_DEVICE_EVIDENCE';
 
 export interface DeviceTask {
+  dispatchAuthorization?: {payload:string;signature:string};
   id: string;
   trustedDeviceId: string;
   deviceId: string;
@@ -65,14 +66,16 @@ export async function claimDeviceTask(token: string, task: DeviceTask): Promise<
 
 export async function heartbeatClaim(token: string, task: DeviceTask) {
   assertActiveClaim(task);
-  return deviceBoundApi<{ leaseExpiresAt: string }>(`/device-tasks/${encodeURIComponent(task.id)}/heartbeat`, token, {
+  return deviceBoundApi<{ leaseExpiresAt: string;dispatchAuthorization?:{payload:string;signature:string} }>(`/device-tasks/${encodeURIComponent(task.id)}/heartbeat`, token, {
     method: 'POST', body: JSON.stringify({ claimToken: task.claimToken }),
   });
 }
 
 export async function completeDeviceTask(token: string, task: DeviceTask, result: Record<string, unknown>) {
-  assertActiveClaim(task);
+  assertActiveClaim(task, true);
   if (!result || Array.isArray(result) || typeof result !== 'object') throw new Error('DEVICE_TASK_RESULT_INVALID');
+  const device = await ensureTrustedDevice(token);
+  if (task.deviceId !== device.deviceId || task.trustedDeviceId !== device.id) throw new Error('DEVICE_TASK_WRONG_DEVICE');
   return deviceBoundApi<DeviceTask>(`/device-tasks/${encodeURIComponent(task.id)}/complete`, token, {
     method: 'POST', body: JSON.stringify({ claimToken: task.claimToken, result }),
   });
@@ -86,7 +89,7 @@ export async function failDeviceTask(token: string, task: DeviceTask, errorCode:
   });
 }
 
-function assertActiveClaim(task: DeviceTask) {
+function assertActiveClaim(task: DeviceTask, retainedResult = false) {
   if ((task.status !== 'CLAIMED' && task.status !== 'RUNNING') || !task.claimToken || !CLAIM_TOKEN.test(task.claimToken)) throw new Error('DEVICE_TASK_CLAIM_REQUIRED');
-  if (!task.leaseExpiresAt || Date.parse(task.leaseExpiresAt) <= Date.now()) throw new Error('DEVICE_TASK_LEASE_EXPIRED');
+  if (!retainedResult && (!task.leaseExpiresAt || Date.parse(task.leaseExpiresAt) <= Date.now())) throw new Error('DEVICE_TASK_LEASE_EXPIRED');
 }

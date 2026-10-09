@@ -20,6 +20,8 @@ const KOTLIN_FILES = [
   'ForegroundPackageGuard.kt',
   'GenericNotificationNormalizer.kt',
   'LazyArmorNotificationListener.kt',
+  'LocalAcquisition.kt',
+  'LocalCapabilityManifest.kt',
   'LazyArmorShareReceiverActivity.kt',
 ];
 

@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import {NativeCalendarRuntimeService} from '../native-calendar-runtime.service';
 import { ConnectorRegistry, resolveSideEffectContract, type SideEffectContract } from '@lazy-armor/connector-sdk';
 import { ACTION_DEFINITIONS, requiresTerminalHandoffProof, type NormalizedAction, type RiskLevel } from '@lazy-armor/plan-schema';
 import { DATABASE, type InjectedDatabase } from '../../common/database.module';
@@ -13,8 +14,8 @@ import { SideEffectOperationsService } from './side-effect-operations.service';
 import { TerminalHandoffGuard, type TerminalHandoffProof } from '../../strategy-runtime/terminal-handoff-guard.service';
 
 export interface SideEffectPrepareInput {
-  execution: { id: string; userId: string; planId: string; planVersionId: string; requestId: string; triggerPayloadJson: Record<string, unknown>; resolvedRiskSnapshotJson: Record<string, unknown> | null };
-  step: { id: string; planActionId: string; stepOrder: number; actionType: string; connectionId: string | null; requiredCapability: string | null; inputFingerprint: string };
+  execution: { id: string; userId: string; planId: string | null; planVersionId: string | null; requestId: string; triggerPayloadJson: Record<string, unknown>; resolvedRiskSnapshotJson: Record<string, unknown> | null };
+  step: { id: string; planActionId: string | null; stepOrder: number; actionType: string; connectionId: string | null; requiredCapability: string | null; inputFingerprint: string };
   action: NormalizedAction;
   effectiveRisk: RiskLevel;
 }
@@ -32,6 +33,7 @@ export class SideEffectCoordinator {
     private readonly audit: AuditService,
     private readonly sanitizer: SnapshotSanitizer,
     private readonly terminalGuard: TerminalHandoffGuard,
+    private readonly nativeCalendar:NativeCalendarRuntimeService,
   ) {}
 
   // §15/§43：R3/R4 外部副作用、或 ActionDefinition 声明 externalEffect、或 Capability 声明 sideEffect 都进入 Side Effect Pipeline。
@@ -53,7 +55,11 @@ export class SideEffectCoordinator {
     if (requiresTerminalHandoffProof(action.config) && !terminalProof) {
       throw new ExecutionRuntimeError('TERMINAL_HANDOFF_NOT_AUTHORIZED', 'Cross-provider action requires a server-owned Truth handoff');
     }
-    if (terminalProof) await this.terminalGuard.assertExecutionCurrent(execution.userId, execution.planId, terminalProof);
+    if (terminalProof) {
+      if (!execution.planId) throw new ExecutionRuntimeError('TERMINAL_HANDOFF_NOT_AUTHORIZED', 'Plan authority required');
+      await this.terminalGuard.assertExecutionCurrent(execution.userId, execution.planId, terminalProof);
+    }
+    if (!step.connectionId && ['calendar.event.create','calendar.event.update','calendar.event.delete'].includes(step.requiredCapability ?? '')) return this.nativeCalendar.prepare(input);
     // §17 Runtime Security Recheck：批准后仍然重新过 Permission Guard，Approval 永远不能覆盖 Permission Guard。
     let connectorKey: string | null = null;
     let targetAuthorizationFence: { connectorKey: string; credentialRef: string | null; credentialVersion: number | null } | null = null;

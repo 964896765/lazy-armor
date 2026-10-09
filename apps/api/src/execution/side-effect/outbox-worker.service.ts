@@ -1,3 +1,8 @@
+import { UserEventSyncLaunchService } from '../user-event-sync-launch.service';
+import { ResourceGapContinuationService } from '../../consumer/resource-gap-continuation.service';
+import { RuntimeSourceContinuationService } from '../runtime-source-continuation.service';
+import { RuntimeAuthorityService } from '../runtime-authority.service';
+import { UserEventsService } from '../../profiles/user-events.service';
 import { Inject, Injectable, OnApplicationShutdown, OnModuleInit } from '@nestjs/common';
 import { ConnectorError, ConnectorRegistry, resolveSideEffectContract, type SideEffectContract } from '@lazy-armor/connector-sdk';
 import { conversationOnceRequests, executionSteps, executions, outboxMessages, plans, sideEffectOperations } from '@lazy-armor/database';
@@ -25,6 +30,9 @@ import { ActionAdapter } from '../action-adapter.service';
 import { VerificationService } from '../verification.service';
 import { TerminalHandoffGuard, type TerminalHandoffProof } from '../../strategy-runtime/terminal-handoff-guard.service';
 import { requiresTerminalHandoffProof } from '@lazy-armor/plan-schema';
+import { ModuleRef } from '@nestjs/core';
+import { NativeCalendarRuntimeService } from '../native-calendar-runtime.service';
+import { DeviceTasksService } from '../../device-tasks/device-tasks.service';
 
 function handoffTargetContext(actionConfig: Record<string, unknown>): Record<string, unknown> {
   const handoff = actionConfig.handoffTarget;
@@ -66,7 +74,9 @@ const BLOCKING_CODES = new Set(['TERMINAL_HANDOFF_NOT_AUTHORIZED', 'CONNECTION_R
 @Injectable()
 export class OutboxWorker implements OnModuleInit, OnApplicationShutdown {
   private timer?: ReturnType<typeof setInterval>;
+  private nativeRecoveryRunning=false;
   constructor(
+    private readonly modules:ModuleRef,
     @Inject(DATABASE) private readonly db: InjectedDatabase,
     private readonly outbox: OutboxService,
     private readonly operations: SideEffectOperationsService,
@@ -101,7 +111,24 @@ export class OutboxWorker implements OnModuleInit, OnApplicationShutdown {
 
   // §22：claim 由 FOR UPDATE SKIP LOCKED 保证多个 Worker 只有一个获得执行权。
   async poll() {
+    try { await this.modules.get(UserEventsService, { strict: false }).deliverDue(); }
+    catch { this.telemetry.increment('runtime.user_event_delivery_failure', 1); }
+    if(!this.nativeRecoveryRunning){
+      this.nativeRecoveryRunning=true;
+      try{
+        await this.modules.get(DeviceTasksService,{strict:false}).recoverExpired();
+        await this.modules.get(NativeCalendarRuntimeService,{strict:false}).recoverLegacyExpiredWrites();
+        await this.modules.get(NativeCalendarRuntimeService,{strict:false}).recoverCommittedResults();
+        await this.modules.get(RuntimeSourceContinuationService,{strict:false}).recover();
+      }catch{
+        this.telemetry.increment('runtime.native_recovery_failure',1);
+      }finally{this.nativeRecoveryRunning=false;}
+    }
+    try { await this.modules.get(UserEventSyncLaunchService,{strict:false}).recover(); }
+    catch { this.telemetry.increment('runtime.source_launch_recovery_failure',1); }
     const claimed = await this.outbox.claim(CLAIM_BATCH, WORKER_ID());
+    try { await this.modules.get(ResourceGapContinuationService,{strict:false}).recover(); }
+    catch { this.telemetry.increment('runtime.resource_gap_recovery_failure',1); }
     this.telemetry.gauge('outbox.pending', claimed.length, { phase: 'claimed_batch' });
     let processed = 0;
     for (const message of claimed) {
@@ -181,9 +208,9 @@ export class OutboxWorker implements OnModuleInit, OnApplicationShutdown {
     const startedAt = Date.now();
     try {
       // §56：Plan 不再 active，不得派发外部副作用。
-      const execution = (await this.db.select({ planId: executions.planId, planVersionId: executions.planVersionId, requestId: executions.requestId, cancellationRequestedAt: executions.cancellationRequestedAt, resolvedRiskSnapshotJson: executions.resolvedRiskSnapshotJson }).from(executions).where(eq(executions.id, payload.executionId)).limit(1))[0];
-      const plan = execution ? (await this.db.select({ status: plans.status, executionScope: plans.executionScope, currentVersionId: plans.currentVersionId }).from(plans).where(and(eq(plans.id, execution.planId), eq(plans.userId, operation.userId))).limit(1))[0] : null;
-      const once = execution && plan?.executionScope === 'ONCE' && plan.status === 'draft' && execution.requestId.startsWith('once:') ? (await this.db.select().from(conversationOnceRequests).where(and(eq(conversationOnceRequests.id, execution.requestId.slice(5)), eq(conversationOnceRequests.userId, operation.userId), eq(conversationOnceRequests.planId, execution.planId), eq(conversationOnceRequests.planVersionId, execution.planVersionId))).limit(1))[0] : null;
+      const execution = (await this.db.select({ userId:executions.userId, authoritySourceJson:executions.authoritySourceJson, planId: executions.planId, planVersionId: executions.planVersionId, requestId: executions.requestId, cancellationRequestedAt: executions.cancellationRequestedAt, resolvedRiskSnapshotJson: executions.resolvedRiskSnapshotJson }).from(executions).where(eq(executions.id, payload.executionId)).limit(1))[0];
+      const plan = execution?.planId ? (await this.db.select({ status: plans.status, executionScope: plans.executionScope, currentVersionId: plans.currentVersionId }).from(plans).where(and(eq(plans.id, execution.planId), eq(plans.userId, operation.userId))).limit(1))[0] : null;
+      const once = execution?.planId && execution.planVersionId && plan?.executionScope === 'ONCE' && plan.status === 'draft' && execution.requestId.startsWith('once:') ? (await this.db.select().from(conversationOnceRequests).where(and(eq(conversationOnceRequests.id, execution.requestId.slice(5)), eq(conversationOnceRequests.userId, operation.userId), eq(conversationOnceRequests.planId, execution.planId), eq(conversationOnceRequests.planVersionId, execution.planVersionId))).limit(1))[0] : null;
       if (execution?.cancellationRequestedAt) {
         if (operation.status === 'executing') {
           await this.unknownOutcome(operation, message, new ExecutionRuntimeError('OUTCOME_UNKNOWN', 'Cancelled dispatch recovery cannot confirm the prior effect'), payload.executionId);
@@ -192,7 +219,9 @@ export class OutboxWorker implements OnModuleInit, OnApplicationShutdown {
         await this.cancelOperation(operation, message, 'CANCELLED_BEFORE_DISPATCH', payload.executionId);
         return;
       }
-      if (!plan || !(plan.executionScope === 'PLAN' ? plan.status === 'active' : once?.proposalMessageId && once.planVersionId === plan.currentVersionId)) {
+      let sourceAllowed=false;
+      if(execution && !execution.planId) { await this.modules.get(RuntimeAuthorityService,{strict:false}).assertExecution(execution); sourceAllowed=true; }
+      if (!sourceAllowed && (!plan || !(plan.executionScope === 'PLAN' ? plan.status === 'active' : once?.proposalMessageId && once.planVersionId === plan.currentVersionId))) {
         if (operation.status === 'executing') {
           await this.unknownOutcome(operation, message, new ExecutionRuntimeError('OUTCOME_UNKNOWN', 'Inactive plan dispatch recovery cannot confirm the prior effect'), payload.executionId);
           return;
@@ -207,7 +236,10 @@ export class OutboxWorker implements OnModuleInit, OnApplicationShutdown {
       if (terminalAction && !terminalProof) {
         throw new ExecutionRuntimeError('TERMINAL_HANDOFF_NOT_AUTHORIZED', 'Cross-provider action is missing its server-owned Truth handoff proof');
       }
-      if (terminalProof) await this.terminalGuard.assertExecutionCurrent(operation.userId, execution!.planId, terminalProof);
+      if (terminalProof) {
+        if(!execution?.planId)throw new ExecutionRuntimeError('TERMINAL_HANDOFF_NOT_AUTHORIZED','Plan authority required');
+        await this.terminalGuard.assertExecutionCurrent(operation.userId, execution.planId, terminalProof);
+      }
       // §17 Runtime Security Recheck：再次检查 Connection/Permission/Credential（Approval 永远不能覆盖 Permission）。
       let connectorKey: string;
       let credentialRef: string | null | undefined;
@@ -250,7 +282,10 @@ export class OutboxWorker implements OnModuleInit, OnApplicationShutdown {
       // Last authorization barrier before invoking the provider. The target
       // credential is pinned when the operation is prepared; any rotation or
       // revocation fails closed instead of silently authorizing a new token.
-      if (terminalProof) await this.terminalGuard.assertExecutionCurrent(operation.userId, execution!.planId, terminalProof);
+      if (terminalProof) {
+        if(!execution?.planId)throw new ExecutionRuntimeError('TERMINAL_HANDOFF_NOT_AUTHORIZED','Plan authority required');
+        await this.terminalGuard.assertExecutionCurrent(operation.userId, execution.planId, terminalProof);
+      }
       const finalChecked = await this.guard.assertUsable(operation.userId, operation.connectionId, operation.capabilityKey,
         targetAuthorizationFence(operation.requestSnapshotJson, terminalAction) ?? undefined);
       if (finalChecked.connectorKey !== connectorKey) throw new ExecutionRuntimeError('CREDENTIAL_INVALID', 'Target connector changed before dispatch');
@@ -298,6 +333,10 @@ export class OutboxWorker implements OnModuleInit, OnApplicationShutdown {
         await this.circuits.recordFailure(connectorKeyForMetrics);
       }
       const mapped = asRuntimeError(error);
+      if (dispatchStarted && mapped.code === 'OUTCOME_UNKNOWN') {
+        await this.unknownOutcome(operation, message, mapped, payload.executionId);
+        return;
+      }
       if (dispatchStarted && (connectorError?.category === 'OUTCOME_UNKNOWN' || connectorError?.operationState === 'unknown')) {
         await this.unknownOutcome(operation, message, mapped, payload.executionId);
         return;
@@ -368,7 +407,9 @@ export class OutboxWorker implements OnModuleInit, OnApplicationShutdown {
 
   private async succeedOperation(operation: typeof sideEffectOperations.$inferSelect, message: typeof outboxMessages.$inferSelect, data: Record<string, unknown>, executionId: string) {
     const now = new Date();
-    const providerOperationId = String(data.providerOperationId ?? data.id ?? data.postId ?? data.orderId ?? data.messageId ?? null) || null;
+    const operationIdentity = data.providerOperationId ?? data.eventId ?? data.deviceOperationId ?? data.id ?? data.postId ?? data.orderId ?? data.messageId;
+    const providerOperationId = (typeof operationIdentity === 'string' && operationIdentity.length > 0) || typeof operationIdentity === 'number'
+      ? String(operationIdentity) : null;
     const resultHash = this.operations.hashResult(data);
     // §52：operation succeeded + step succeeded + outbox published + audit 同一 DB 事务。
     const accepted = await this.db.transaction(async (tx) => {
@@ -378,8 +419,9 @@ export class OutboxWorker implements OnModuleInit, OnApplicationShutdown {
         return false;
       }
       if (!live || ['succeeded', 'failed', 'cancelled'].includes(live.status)) return false;
+      const verificationState = await this.verification.recordResponse(operation, true, data, 'dispatch-succeeded', tx);
+      if (verificationState !== 'SUCCEEDED') throw new ExecutionRuntimeError('OUTCOME_UNKNOWN', 'Frozen verification did not confirm the dispatched effect');
       await this.operations.mark(operation.id, { status: 'succeeded', resultSnapshotJson: this.sanitizer.sanitize(data), resultHash, providerOperationId, finishedAt: now }, tx);
-      await this.verification.recordResponse(operation, true, data, 'dispatch-succeeded', tx);
       await this.stepStates.transition(operation.executionStepId, 'succeeded', { dispatchStatus: 'succeeded', outputSnapshotJson: this.sanitizer.sanitize(data), finishedAt: now }, tx);
       await tx.update(outboxMessages).set({ status: 'published', publishedAt: now, lockedBy: null, lockExpiresAt: null, updatedAt: now }).where(eq(outboxMessages.id, message.id));
       await this.audit.append({ actorType: 'outbox_worker', actorUserId: null, action: 'SIDE_EFFECT_SUCCEEDED', resourceType: 'side_effect_operation', resourceId: operation.id, userId: operation.userId, executionId, executionStepId: operation.executionStepId, sideEffectOperationId: operation.id, outboxMessageId: message.id, correlationId: operation.correlationId, causationId: operation.id, after: { providerOperationId, resultHash }, changeSummary: 'Side effect succeeded', source: 'outbox_worker', result: 'success' }, tx);
@@ -458,6 +500,12 @@ export class OutboxWorker implements OnModuleInit, OnApplicationShutdown {
   }
 
   // 外部动作成功后，推进 Execution：仍有剩余步骤则 resume 队列，否则直接聚合终态。
+  async resumeNativeExecution(userId:string,executionId:string,unknown:boolean) {
+    const row=(await this.db.select().from(executions).where(and(eq(executions.id,executionId),eq(executions.userId,userId))))[0];
+    if(!row||EXECUTION_TERMINAL_STATES.has(row.status as ExecutionStatus))return;
+    if(unknown)await this.finalizeExecution(userId,executionId,'OUTCOME_UNKNOWN');
+    else await this.resumeExecution(userId,executionId);
+  }
   private async resumeExecution(userId: string, executionId: string) {
     const steps = await this.db.select({ status: executionSteps.status }).from(executionSteps).where(eq(executionSteps.executionId, executionId));
     const aggregate = this.resultResolver.resolve(steps);

@@ -119,6 +119,8 @@ export function buildFactDemandProjections(input: {
   sources: readonly SourceCandidateEvidence[];
   sourcePins?: Readonly<Record<string, string | null>>;
   truths: readonly FactTruthEvidence[];
+  /** Server-validated Recipe source scope. Individual notification subjects remain distinct. */
+  sourceWideSubject?: { sourceId: string };
   evaluatedAt: string;
 }): readonly FactDemandProjection[] {
   const request = factDemandRequestSchema.parse(input.request);
@@ -134,7 +136,7 @@ export function buildFactDemandProjections(input: {
     const pin = input.sourcePins?.[definition.factKey];
     const pinnedSource = pin ? input.sources.find(source => source.sourceId === pin) : null;
     const relevantTruths = input.truths.filter((truth) => truth.factKey === definition.factKey
-      && truth.subjectKey === request.subject.subjectKey && definition.acceptedSourceModes.includes(truth.sourceMode as never)
+      && (input.sourceWideSubject ? (truth.sourceIds??[]).includes(input.sourceWideSubject.sourceId) : truth.subjectKey === request.subject.subjectKey) && definition.acceptedSourceModes.includes(truth.sourceMode as never)
       && (pin === undefined || Boolean(pin && ((truth.sourceIds ?? []).includes(pin)
         || pinnedSource?.connectionId && truth.sourceConnectionId === pinnedSource.connectionId
         || pin === `${truth.sourceMode === 'MANUAL' ? 'manual' : 'internal'}:${truth.truthRecordId}:${truth.truthVersionId}`))));
@@ -185,8 +187,10 @@ export function buildFactDemandProjections(input: {
     const freshTruths = relevantTruths.filter((truth) => new Date(truth.observedAt).getTime()<=now.getTime() && now.getTime() - new Date(truth.observedAt).getTime() <= definition.maximumAgeSeconds * 1000);
     const verifiedTruths = freshTruths.filter((truth) => truth.verified
       && REALITY_RANK[truth.realityLevel] >= REALITY_RANK[definition.minimumReality]);
+    const subjectHashes=new Map<string,Set<string>>();
+    for(const truth of verifiedTruths){const key=input.sourceWideSubject?truth.subjectKey:request.subject.subjectKey;const values=subjectHashes.get(key)??new Set<string>();values.add(truth.valueHash);subjectHashes.set(key,values);}
     const conflict = relevantTruths.some((truth) => truth.conflict)
-      || new Set(verifiedTruths.map((truth) => truth.valueHash)).size > 1;
+      || [...subjectHashes.values()].some(values=>values.size>1);
     const rankedSources = compatibleSources.map((source) => {
       const identityComplete = source.kind === 'PROVIDER_CONNECTION' ? Boolean(source.connectionId && source.capabilityKey)
         : source.kind === 'TRUSTED_DEVICE' ? Boolean(source.trustedDeviceId && source.deviceAppConnectionId && source.capabilityKey)
@@ -266,7 +270,7 @@ export function buildFactDemandProjections(input: {
 
 export function factDemandRequestForScenario(input: unknown): { request: FactDemandRequest; contract: ScenarioContractV2 } {
   const request = factDemandRequestSchema.parse(input);
-  const contract = scenarioContractV2ByKey(request.scenarioKey);
+  const contract = scenarioContractV2ByKey(request.scenarioKey,request.goal.intent);
   if (!contract) throw new Error('Scenario Contract V2 not available');
   return { request, contract };
 }

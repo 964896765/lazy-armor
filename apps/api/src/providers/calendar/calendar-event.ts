@@ -1,12 +1,9 @@
 import { z } from 'zod';
 import { ProviderRuntimeError, providerDefinitionHash } from '@lazy-armor/connector-sdk';
+import { calendarEventCreateSchema } from '@lazy-armor/plan-schema';
 
-const timed = z.object({ dateTime: z.string().datetime({ offset: true }), timeZone: z.string().min(1).max(100).refine((v) => {
-  try { new Intl.DateTimeFormat('en', { timeZone: v }); return true; } catch { return false; }
-}) }).strict();
 const email = z.string().email().max(254).transform((v) => v.toLowerCase());
-const approved = z.object({ calendarId: email, title: z.string().min(1).max(512), start: timed, end: timed,
-  attendees: z.array(email).max(20), sendUpdates: z.enum(['all', 'externalOnly', 'none']),
+const approved = calendarEventCreateSchema.safeExtend({ calendarId: email,
   eventId: z.string().regex(/^[a-zA-Z0-9_-]{1,1024}$/).optional(), etag: z.string().regex(/^"[^"\r\n]{1,198}"$/).optional() }).strict();
 export function prepareCalendarEvent(input: Record<string, unknown>, calendarId: string, key?: string, update = false) {
   const parsed = approved.safeParse((input.context as Record<string, unknown> | undefined)?.calendarEvent);

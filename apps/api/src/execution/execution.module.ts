@@ -1,3 +1,9 @@
+import { UserEventSyncLaunchService } from './user-event-sync-launch.service';
+import { RuntimeSourceContinuationService } from './runtime-source-continuation.service';
+import {CapabilityInvocationsModule} from '../capability-invocations/capability-invocations.module';
+import {NativeCalendarRuntimeService} from './native-calendar-runtime.service';
+import { RuntimeAuthorityService } from './runtime-authority.service';
+import {RuntimeTargetsModule} from '../runtime-targets/runtime-targets.module';
 import { Module } from '@nestjs/common';
 import { AuditModule } from '../audit/audit.module';
 import { BillingModule } from '../billing/billing.module';
@@ -59,7 +65,7 @@ export const SIDE_EFFECT_OPERATIONS_SERVICE = 'SIDE_EFFECT_OPERATIONS_SERVICE';
 export const OUTBOX_SERVICE = 'OUTBOX_SERVICE';
 
 @Module({
-  imports: [TerminalHandoffGuardModule, CapabilityResolverModule, PlansModule, ConnectorsModule, ConnectionsModule, RiskModule, NotificationsModule, AuditModule, CredentialsModule, BillingModule, ContentModule, DailySummaryModule, LogisticsModule, HouseholdModule, StudyModule, DeviceModule, ProfilesModule, OperationsModule, UsageModule, TruthStoreModule],
+  imports: [CapabilityInvocationsModule,RuntimeTargetsModule,TerminalHandoffGuardModule, CapabilityResolverModule, PlansModule, ConnectorsModule, ConnectionsModule, RiskModule, NotificationsModule, AuditModule, CredentialsModule, BillingModule, ContentModule, DailySummaryModule, LogisticsModule, HouseholdModule, StudyModule, DeviceModule, ProfilesModule, OperationsModule, UsageModule, TruthStoreModule],
   controllers: [ExecutionsController, VerificationController],
   providers: [
     SnapshotSanitizer,
@@ -73,6 +79,10 @@ export const OUTBOX_SERVICE = 'OUTBOX_SERVICE';
     SourceResolver,
     ActionExecutor,
     ActionAdapter,
+    NativeCalendarRuntimeService,
+    RuntimeAuthorityService,
+    RuntimeSourceContinuationService,
+    UserEventSyncLaunchService,
     VerificationPolicyRegistry,
     VerificationService,
     ReconciliationService,
@@ -100,6 +110,6 @@ export const OUTBOX_SERVICE = 'OUTBOX_SERVICE';
     { provide: OUTBOX_SERVICE, useExisting: OutboxService },
   ],
   // Public extension surface; Runner and verification behavior stay unchanged.
-  exports: [ReconciliationService, ActionAdapter, VerificationPolicyRegistry, ExecutionDispatchService, ExecutionsService, ExecutionWorker, ExecutionQueueReconciler, ExecutionApprovalGate, ExecutionStateService, ExecutionStepStateService, ExecutionEventService, ExecutionPolicyService, FallbackExecutor, ExecutionResultResolver, RuntimeConnectionGuard, ConditionEvaluator, SnapshotSanitizer, SideEffectOperationsService, OutboxService, SideEffectCoordinator, OutboxWorker, EXECUTION_WORKER, EXECUTION_RECONCILER, EXECUTION_STATE_SERVICE, EXECUTION_POLICY_SERVICE, FALLBACK_EXECUTOR, OUTBOX_WORKER, SIDE_EFFECT_COORDINATOR, SIDE_EFFECT_OPERATIONS_SERVICE, OUTBOX_SERVICE],
+  exports: [UserEventSyncLaunchService, RuntimeAuthorityService, ReconciliationService, ActionAdapter, VerificationPolicyRegistry, ExecutionDispatchService, ExecutionsService, ExecutionWorker, ExecutionQueueReconciler, ExecutionApprovalGate, ExecutionStateService, ExecutionStepStateService, ExecutionEventService, ExecutionPolicyService, FallbackExecutor, ExecutionResultResolver, RuntimeConnectionGuard, ConditionEvaluator, SnapshotSanitizer, SideEffectOperationsService, OutboxService, SideEffectCoordinator, OutboxWorker, EXECUTION_WORKER, EXECUTION_RECONCILER, EXECUTION_STATE_SERVICE, EXECUTION_POLICY_SERVICE, FALLBACK_EXECUTOR, OUTBOX_WORKER, SIDE_EFFECT_COORDINATOR, SIDE_EFFECT_OPERATIONS_SERVICE, OUTBOX_SERVICE],
 })
 export class ExecutionModule {}

@@ -22,7 +22,7 @@ try {
   const [versionRows] = await pool.query('SELECT VERSION() AS version');
   const version = versionRows[0]?.version;
   if (typeof version !== 'string' || !/^8\.4\./.test(version)) throw new Error(`MySQL 8.4 is required for RC integration evidence; connected server reports ${String(version)}`);
-  const requiredTables = ['trusted_devices', 'trusted_device_challenges', 'trusted_device_request_sessions', 'trusted_device_request_proofs', 'device_app_connections', 'mobile_notification_receipts', 'truth_records', 'truth_record_versions'];
+  const requiredTables = ['trusted_devices', 'trusted_device_challenges', 'trusted_device_request_sessions', 'trusted_device_request_proofs', 'device_app_connections', 'mobile_notification_receipts', 'truth_records', 'truth_record_versions', 'runtime_targets', 'capability_identities', 'capability_aliases', 'capability_invocations', 'invocation_runtime_links', 'runtime_results', 'runtime_result_deliveries'];
   const [tableRows] = await pool.query(
     `SELECT table_name AS tableName FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name IN (${requiredTables.map(() => '?').join(', ')})`,
     requiredTables,

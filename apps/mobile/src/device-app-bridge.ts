@@ -25,6 +25,8 @@ export interface TrustedDeviceRequestEnvelope {
 
 export interface NotificationSourceStatus {
   accessGranted: boolean;
+  connected?: boolean;
+  acquisitionEnabled?: boolean;
   enabledPackageCount: number;
   pendingCount: number;
 }

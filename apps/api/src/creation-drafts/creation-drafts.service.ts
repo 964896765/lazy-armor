@@ -1,4 +1,5 @@
 import {z} from 'zod';
+import {compileScheduledCalendarAuthoring,compileNotificationWatchAuthoring,type NotificationWatchAuthoring,type ScheduledCalendarAuthoring} from '@lazy-armor/plan-schema';
 import {ModuleRef} from '@nestjs/core';
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { consumerConversations, creationDrafts, planOfferSnapshots, planCreationContracts } from '@lazy-armor/database';
@@ -42,7 +43,7 @@ export class CreationDraftsService {
 
   async upsert(userId: string, raw: SaveCreationDraftDto): Promise<CreationDraft> {
     const input = creationDraftInputSchema.parse(raw);
-    const contract = scenarioContractV2ByKey(input.scenarioKey);
+    const contract = scenarioContractV2ByKey(input.scenarioKey,input.goal.intent);
     if (!contract || contract.scenario.revision !== input.scenarioRevision) {
       throw new NotFoundException('Scenario Contract V2 not available for this revision');
     }
@@ -129,11 +130,28 @@ export class CreationDraftsService {
     await tx.update(creationDrafts).set({ state: 'ACTIVE', expiresAt: new Date(Date.now() + CREATION_DRAFT_TTL_MS), goalJson: { ...row.goalJson, description: description.slice(0, 500), constraints: { ...(row.goalJson.constraints as Record<string, unknown> ?? {}), userInput: description } }, proposalMessageId: null, stage: 1, version: row.version + 1, updatedAt: new Date() }).where(eq(creationDrafts.draftId, draftId));
   }
 
-  async recordConversationProposal(userId: string, draftId: string, messageId: string, proposal: { scenarioKey?: string | null; scenarioRevision?: number | null; intentSummary?: string }, tx: PlanExecutor) {
+  async recordConversationProposal(userId: string, draftId: string, messageId: string, proposal: { scenarioKey?: string | null; scenarioRevision?: number | null; intentSummary?: string;scheduledCalendar?:ScheduledCalendarAuthoring;notificationWatch?:NotificationWatchAuthoring }, tx: PlanExecutor) {
     const row = (await tx.select().from(creationDrafts).where(and(eq(creationDrafts.draftId, draftId), eq(creationDrafts.userId, userId))).for('update'))[0];
     if (!row || row.state !== 'ACTIVE' || row.expiresAt <= new Date()) throw new ConflictException('CreationDraft expired or is not active');
     const scenario = proposal.scenarioKey ? scenarioByKey(proposal.scenarioKey) : null;
     if (!scenario || scenario.revision !== proposal.scenarioRevision) throw new ConflictException('Scenario revision changed');
+    if(proposal.notificationWatch){
+      const compiled=compileNotificationWatchAuthoring(scenario.key,proposal.notificationWatch,proposal.intentSummary??scenario.label);
+      const {PersistentNotificationPlanService}=await import('../consumer/persistent-notification-plan.service');
+      await this.moduleRef.get(PersistentNotificationPlanService,{strict:false}).assertSourceIdentity(userId,compiled.parameters,tx);
+      const sourceId='device-app:'+compiled.parameters.connectionId;
+      const resolved=await this.factDemands.resolve(userId,{scenarioKey:scenario.key,scenarioRevision:scenario.revision,goal:compiled.goal,subject:compiled.subject},{'shipment.status':sourceId});
+      const selection=buildSourceSelection({kind:'TRUSTED_DEVICE',sourceId,connectionId:null,capabilityKey:'READ_SHIPMENT',trustedDeviceId:compiled.parameters.trustedDeviceId,deviceAppConnectionId:compiled.parameters.connectionId,truthRecordId:null,truthVersionId:null});
+      const choices:CreationDraftSourceChoice[]=resolved.demands.map(demand=>({demandId:demand.demandId,factKey:demand.factKey,subjectKey:compiled.subject.subjectKey,selection}));
+      await tx.update(creationDrafts).set({scenarioKey:scenario.key,scenarioRevision:scenario.revision,goalJson:compiled.goal,subjectJson:compiled.subject,sourceChoicesJson:choices as unknown as Record<string,unknown>[],proposalMessageId:messageId,stage:5,version:row.version+1,updatedAt:new Date()}).where(eq(creationDrafts.draftId,draftId));return;
+    }
+    if(proposal.scheduledCalendar){
+      const compiled=compileScheduledCalendarAuthoring(scenario.key,proposal.scheduledCalendar,proposal.intentSummary??scenario.label);
+      const resolved=await this.factDemands.resolve(userId,{scenarioKey:scenario.key,scenarioRevision:scenario.revision,goal:compiled.goal,subject:compiled.subject});
+      const choices:CreationDraftSourceChoice[]=resolved.demands.flatMap(demand=>demand.selectedSource?[{demandId:demand.demandId,factKey:demand.factKey,subjectKey:compiled.subject.subjectKey,selection:demand.selectedSource}]:[]);
+      await tx.update(creationDrafts).set({scenarioKey:scenario.key,scenarioRevision:scenario.revision,goalJson:compiled.goal,subjectJson:compiled.subject,sourceChoicesJson:choices as unknown as Record<string,unknown>[],proposalMessageId:messageId,stage:3,version:row.version+1,updatedAt:new Date()}).where(eq(creationDrafts.draftId,draftId));
+      return;
+    }
     await tx.update(creationDrafts).set({ scenarioKey: scenario.key, scenarioRevision: scenario.revision, goalJson: { ...row.goalJson, description: proposal.intentSummary?.slice(0, 500) || row.goalJson.description }, proposalMessageId: messageId, stage: 5, version: row.version + 1, updatedAt: new Date() }).where(eq(creationDrafts.draftId, draftId));
   }
 
@@ -149,21 +167,42 @@ export class CreationDraftsService {
     if(!row||row.state!=='COMPLETED')throw new ConflictException('请先确认当前计划草案');
     const choices=row.sourceChoicesJson as unknown as CreationDraftSourceChoice[];
     const parsed=persistentPlanOfferRequestSchema.safeParse({scenarioKey:row.scenarioKey,scenarioRevision:row.scenarioRevision,goal:row.goalJson,subject:row.subjectJson});
-    if(!parsed.success){if(choices.length)throw new ConflictException('来源选择缺少有效需求合同');return null;}
+    if(!parsed.success){
+      if(created.definition.actions.some(action=>action.requiredCapability==='calendar.event.create'))throw new ConflictException('定时日历写入缺少有效需求与来源合同，请补全计划草案后重新确认');
+      if(choices.length)throw new ConflictException('来源选择缺少有效需求合同');return null;
+    }
     const pins=Object.fromEntries(choices.map(choice=>[choice.factKey,choice.selection.sourceId]));
     const resolved=await this.factDemands.resolve(userId,parsed.data,pins);
-    if(choices.some(choice=>!resolved.demands.some(demand=>demand.demandId===choice.demandId&&demand.selectedSourceId===choice.selection.sourceId&&demand.sourceCurrentlyUsable)))throw new ConflictException('已选来源发生变化，请重新确认');
-    const selected=resolved.demands.map(demand=>({demandId:demand.demandId,factKey:demand.factKey,selectedSourceId:demand.selectedSourceId,selectedSource:demand.selectedSource}));
+    const calendarParameters=row.goalJson.constraints as Record<string,unknown>|undefined;
+    const calendarRecipe=calendarParameters?.recipeKey==='calendar.scheduled-create.v1';
+    const watchRecipe=calendarParameters?.recipeKey==='notification.shipment-watch.v1';
+    if(watchRecipe){
+      const watch=compileNotificationWatchAuthoring(row.scenarioKey,JSON.parse(String(calendarParameters.notificationWatchJson)),created.definition.name);
+      if(definitionHash(watch.definition)!==definitionHash(created.definition)||parsed.data.subject.subjectKey!==watch.subject.subjectKey||parsed.data.goal.intent!==watch.goal.intent)throw new ConflictException('Notification watch confirmation integrity mismatch');
+      const {PersistentNotificationPlanService}=await import('../consumer/persistent-notification-plan.service');
+      await this.moduleRef.get(PersistentNotificationPlanService,{strict:false}).assertSourceIdentity(userId,watch.parameters,tx);
+      if(choices.length!==1||choices[0].selection.sourceId!=='device-app:'+watch.parameters.connectionId||choices[0].selection.trustedDeviceId!==watch.parameters.trustedDeviceId)throw new ConflictException('Notification watch source identity changed');
+    }
+    if(created.definition.actions.some(action=>action.requiredCapability==='calendar.event.create')&&!calendarRecipe)throw new ConflictException('日历写入草案必须来自受控 Recipe 合同，请重新生成草案');
+    if(calendarRecipe){
+      let recompiled;
+      try{recompiled=compileScheduledCalendarAuthoring(row.scenarioKey,JSON.parse(String(calendarParameters.calendarAuthoringJson)),created.definition.name);}catch{throw new ConflictException('日历计划时间或输入合同已失效，请重新生成草案');}
+      if(definitionHash(recompiled.definition)!==definitionHash(created.definition)||parsed.data.goal.intent!==recompiled.goal.intent||parsed.data.subject.subjectKey!==recompiled.subject.subjectKey)throw new ConflictException('日历计划与确认合同不一致');
+      if(!choices.length||resolved.demands.some(demand=>demand.required&&(!demand.selectedSourceId||!demand.sourceCurrentlyUsable||!choices.some(choice=>choice.demandId===demand.demandId&&choice.selection.sourceId===demand.selectedSourceId))))throw new ConflictException('日历计划缺少可用且已确认的读取来源');
+    }
+    if(!watchRecipe&&choices.some(choice=>!resolved.demands.some(demand=>demand.demandId===choice.demandId&&demand.selectedSourceId===choice.selection.sourceId&&demand.sourceCurrentlyUsable)))throw new ConflictException('已选来源发生变化，请重新确认');
+    const selected=resolved.demands.map(demand=>{const choice=watchRecipe?choices.find(c=>c.demandId===demand.demandId):null;return {demandId:demand.demandId,factKey:demand.factKey,selectedSourceId:choice?.selection.sourceId??demand.selectedSourceId,selectedSource:choice?.selection??demand.selectedSource};});
     const scenario=scenarioByKey(row.scenarioKey);
     if(!scenario)throw new ConflictException('需求合同已变化');
-    const offer=buildPersistentPlanOffer({request:parsed.data,demands:resolved.demands,contractHash:resolved.contractHash,strategyKey:scenario.defaultStrategy,planDefinitionHash:definitionHash(created.definition),generatedAt:resolved.evaluatedAt});
+    const strategy=calendarRecipe?'PERIODIC_SUMMARY':scenario.defaultStrategy;
+    const offer=buildPersistentPlanOffer({request:parsed.data,demands:resolved.demands,contractHash:resolved.contractHash,strategyKey:strategy,planDefinitionHash:definitionHash(created.definition),generatedAt:resolved.evaluatedAt});
     const now=new Date(),snapshotId=newId(),contractId=newId();
     await tx.insert(planOfferSnapshots).values({id:snapshotId,userId,offerKey:catalogHash({draftId,planVersionId:created.planVersionId}),scenarioKey:row.scenarioKey,scenarioRevision:row.scenarioRevision,contractHash:resolved.contractHash,offerHash:catalogHash(offer),preconditionHash:offer.preconditionHash,goalJson:row.goalJson,subjectJson:row.subjectJson!,factDemandsJson:resolved.demands as unknown as Record<string,unknown>[],sourceResolutionJson:selected as unknown as Record<string,unknown>[],offerJson:offer as unknown as Record<string,unknown>,status:'CHOSEN',expiresAt:new Date(offer.expiresAt),chosenAt:now,invalidatedAt:null,createdAt:now});
     await tx.insert(planCreationContracts).values({id:contractId,userId,planId:created.planId,planVersionId:created.planVersionId,offerSnapshotId:snapshotId,idempotencyKey:`draft:${draftId}:${created.planVersionId}`,scenarioKey:row.scenarioKey,scenarioRevision:row.scenarioRevision,contractHash:resolved.contractHash,confirmationHash:catalogHash({draftId,draftVersion:row.version,definitionHash:definitionHash(created.definition),selected}),goalJson:row.goalJson,subjectJson:row.subjectJson!,factDemandsJson:resolved.demands as unknown as Record<string,unknown>[],sourceSelectionJson:selected as unknown as Record<string,unknown>[],offerJson:offer as unknown as Record<string,unknown>,createdAt:now});
-    const compiled=compileScenarioPlan({scenarioKey:row.scenarioKey,scenarioRevision:row.scenarioRevision,strategy:scenario.defaultStrategy,subjectKey:parsed.data.subject.subjectKey,name:created.definition.name,mode:'DRAFT',readiness:{manualInputAvailable:true,observationPipelineAvailable:true,executionPipelineAvailable:true}});
-    if(definitionHash(compiled.definition)===definitionHash(created.definition)){
+    const compiled=compileScenarioPlan({scenarioKey:row.scenarioKey,scenarioRevision:row.scenarioRevision,strategy,subjectKey:parsed.data.subject.subjectKey,name:created.definition.name,mode:'DRAFT',readiness:{manualInputAvailable:true,observationPipelineAvailable:true,executionPipelineAvailable:true}});
+    if(watchRecipe||definitionHash(compiled.definition)===definitionHash(created.definition)||created.definition.actions.some(action=>action.requiredCapability==='calendar.event.create')){
       const {StrategyRuntimeService}=await import('../strategy-runtime/strategy-runtime.service');
-      await this.moduleRef.get(StrategyRuntimeService,{strict:false}).bindInTransaction(userId,{planVersionId:created.planVersionId,scenarioKey:row.scenarioKey,scenarioRevision:row.scenarioRevision,strategy:scenario.defaultStrategy,subjectKey:parsed.data.subject.subjectKey},tx);
+      await this.moduleRef.get(StrategyRuntimeService,{strict:false}).bindInTransaction(userId,{planVersionId:created.planVersionId,scenarioKey:row.scenarioKey,scenarioRevision:row.scenarioRevision,strategy,subjectKey:parsed.data.subject.subjectKey},tx,true);
     }
     return {contractId,sourceSelections:selected};
   }
@@ -195,7 +234,7 @@ export class CreationDraftsService {
     const reasonCodes: string[] = [];
     let state: CreationDraftResumeState;
 
-    const contract = scenarioContractV2ByKey(draft.scenarioKey);
+    const contract = scenarioContractV2ByKey(draft.scenarioKey,goal.intent);
     if (!contract || contract.scenario.revision !== draft.scenarioRevision) {
       state = 'NEEDS_RECONFIRMATION';
       reasonCodes.push(draft.scenarioKey === '__pending__' ? 'SCENARIO_NOT_RESOLVED' : 'SCENARIO_CONTRACT_CHANGED');

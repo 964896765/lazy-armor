@@ -161,7 +161,7 @@ export class LogisticsService {
   private normalizeStatusFact(value: unknown): string | null {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
     const row = value as Record<string, unknown>;
-    return typeof row.status === 'string' && row.status ? row.status : null;
+    return typeof row.status === 'string' && row.status ? row.status.toLowerCase() : null;
   }
 
   private statusEventSummary(status: string) {

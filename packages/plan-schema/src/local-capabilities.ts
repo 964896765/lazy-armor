@@ -13,7 +13,9 @@ export const LOCAL_CAPABILITY_CATALOG = [
   {key:'background.task',name:'后台任务',implemented:false,readable:false},
   {key:'appread.session',name:'应用读取会话',implemented:false,readable:false},
   {key:'voice.input',name:'语音输入',implemented:true,readable:false},
-  {key:'calendar.create',name:'创建日历事项',implemented:false,readable:false},
+  {key:'calendar.create',name:'创建日历事项',implemented:true,readable:false},
+  {key:'calendar.update',name:'修改日历事项',implemented:true,readable:false},
+  {key:'calendar.delete',name:'删除日历事项',implemented:true,readable:false},
   {key:'media.pick',name:'选择媒体',implemented:false,readable:false},
   {key:'camera.capture',name:'拍摄',implemented:false,readable:false},
   {key:'clipboard.read_on_demand',name:'剪贴板按需读取',implemented:true,readable:false},
@@ -56,4 +58,4 @@ export function normalizeLocalSourceId(sourceId:string):string {
 /** Canonical names use existing grants/IDs; aliases never create duplicate resources. */
 export const LOCAL_CAPABILITY_CANONICAL_KEYS:Readonly<Record<string,string>>={'files.read':'file.pick/read','photos.read':'media.pick','location.read':'location.foreground','appusage.read':'app.usage.read','share.read':'share.receive','voice.input':'microphone.transcribe','app.open':'app.launch','background.task':'background.device_task'};
 export const LOCAL_CAPABILITY_RESTRICTIONS:Readonly<Record<string,'PLATFORM_RESTRICTED'|'SPECIAL_PERMISSION'|'UNSUPPORTED'>>={'sms.read':'PLATFORM_RESTRICTED','calllog.read':'PLATFORM_RESTRICTED','location.background':'SPECIAL_PERMISSION','accessibility.read':'SPECIAL_PERMISSION','notification.send':'UNSUPPORTED'};
-export function localCapabilityGroup(key:string):'信息获取'|'设备执行'|'高级能力'{return LOCAL_CAPABILITY_RESTRICTIONS[key]||['background.task','appread.session'].includes(key)?'高级能力':['calendar.create','app.open','deep_link.open','notification.send','camera.capture'].includes(key)?'设备执行':'信息获取';}
+export function localCapabilityGroup(key:string):'信息获取'|'设备执行'|'高级能力'{return LOCAL_CAPABILITY_RESTRICTIONS[key]||['background.task','appread.session'].includes(key)?'高级能力':['calendar.create','calendar.update','calendar.delete','app.open','deep_link.open','notification.send','camera.capture'].includes(key)?'设备执行':'信息获取';}

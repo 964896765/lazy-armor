@@ -5,6 +5,7 @@ import { ProviderCapabilitiesModule } from '../provider-capabilities/provider-ca
 import { CapabilityResolverService } from './capability-resolver.service';
 import { ResolveCapabilityDto } from './dto';
 import { ResolutionEvidenceService } from './resolution-evidence.service';
+import { RuntimeTargetsModule } from '../runtime-targets/runtime-targets.module';
 
 @Controller('capability-resolutions')
 class CapabilityResolverController {
@@ -13,6 +14,6 @@ class CapabilityResolverController {
   @Get(':id') get(@CurrentUser() user: AuthenticatedUser, @Param('id', ParseUUIDPipe) id: string) { return this.resolver.get(user.id, id); }
 }
 
-@Module({ imports: [AuditModule, ProviderCapabilitiesModule], controllers: [CapabilityResolverController],
+@Module({ imports: [AuditModule, ProviderCapabilitiesModule, RuntimeTargetsModule], controllers: [CapabilityResolverController],
   providers: [CapabilityResolverService, ResolutionEvidenceService], exports: [CapabilityResolverService, ResolutionEvidenceService] })
 export class CapabilityResolverModule {}

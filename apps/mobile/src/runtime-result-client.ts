@@ -1,0 +1,13 @@
+import * as FileSystem from 'expo-file-system/legacy';
+import {api} from './api';
+import {syncRuntimeResultInbox,type RuntimeResultInboxStore,type DeliveredRuntimeResult} from './runtime-result-inbox';
+import {useAuthStore} from './auth-store';
+const uuid=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
+let sequence=0;let inFlight:Promise<void>|null=null;
+function directory(owner:string){if(!uuid.test(owner)||!FileSystem.documentDirectory)throw new Error('RESULT_STORAGE_UNAVAILABLE');return `${FileSystem.documentDirectory}runtime-result-inbox/${owner}/`;}
+const store:RuntimeResultInboxStore={
+ async load(owner){const root=directory(owner);await FileSystem.makeDirectoryAsync(root,{intermediates:true});const names=(await FileSystem.readDirectoryAsync(root)).filter(n=>/^\d{16}\.json$/.test(n)).sort().reverse();if(!names.length)return {cursor:'0',receipts:{}};const version=Number(names[0].slice(0,-5));sequence=Math.max(sequence,version);const state=JSON.parse(await FileSystem.readAsStringAsync(root+names[0])) as Awaited<ReturnType<RuntimeResultInboxStore['load']>>;if(typeof state.cursor!=='string'||!state.receipts||typeof state.receipts!=='object'||Array.isArray(state.receipts))throw new Error('RESULT_STORAGE_INVALID');return state;},
+ async save(owner,state){const root=directory(owner);sequence=Math.max(sequence+1,Date.now()*1000);const name=String(sequence).padStart(16,'0')+'.json';await FileSystem.writeAsStringAsync(root+name+'.part',JSON.stringify(state));await FileSystem.moveAsync({from:root+name+'.part',to:root+name});const older=(await FileSystem.readDirectoryAsync(root)).filter(n=>/^\d{16}\.json$/.test(n)).sort().reverse().slice(2);for(const old of older)await FileSystem.deleteAsync(root+old,{idempotent:true});}
+};
+/** Foreground result receipt only; ACK is transport confirmation, not user completion/approval. */
+export function syncRuntimeResults(){if(inFlight)return inFlight;const token=useAuthStore.getState().token;if(!token)return Promise.resolve();inFlight=(async()=>{const user=await api<{id:string}>('/me',token);const current=()=>{if(useAuthStore.getState().token!==token)throw new Error('RESULT_ACCOUNT_CHANGED');};await syncRuntimeResultInbox(user.id,store,{resume:async cursor=>{current();return api(`/runtime-results?after=${encodeURIComponent(cursor)}`,token);},deliver:async id=>{current();return api<DeliveredRuntimeResult>(`/runtime-results/${encodeURIComponent(id)}/deliver`,token,{method:'POST',body:'{}'});},ack:async(id,input)=>{current();return api(`/runtime-results/${encodeURIComponent(id)}/ack`,token,{method:'POST',body:JSON.stringify(input)});}});})().finally(()=>{inFlight=null;});return inFlight;}

@@ -47,7 +47,7 @@ export function todoRoute(item: TodoItem): string | null {
     case 'VERIFICATION':
       return item.reconciliationCaseId ? `/reconciliation/${item.reconciliationCaseId}` : item.executionId ? `/executions/${item.executionId}` : '/records';
     case 'EXCEPTION':
-      return item.connectionId ? `/connections/${item.connectionId}` : item.executionId ? `/executions/${item.executionId}` : '/records';
+      return item.connectionId ? `/connections/${item.connectionId}` : item.executionId ? `/executions/${item.executionId}` : item.planId ? `/plans/${item.planId}` : '/records';
     case 'CONFIRMATION':
       return item.executionId ? `/executions/${item.executionId}` : '/records';
   }

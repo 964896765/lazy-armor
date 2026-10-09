@@ -70,7 +70,7 @@ async function main() {
   ensureIsolatedDatabaseName(RESTORE_DB);
 
   const repoRoot = path.resolve(__dirname, '../../..');
-  const artifactDir = path.join(repoRoot, 'artifacts', 'backup-restore');
+  const artifactDir = process.env.BACKUP_RESTORE_ARTIFACT_DIR ? path.resolve(repoRoot,process.env.BACKUP_RESTORE_ARTIFACT_DIR) : path.join(repoRoot, 'artifacts', 'backup-restore');
   const dumpPath = path.join(artifactDir, `${BACKUP_DB}.sql`);
   const reportPath = path.join(artifactDir, 'backup-restore-report.json');
 
@@ -155,7 +155,7 @@ async function recreateDatabase(adminTarget: MysqlTarget, appTarget: MysqlTarget
   try {
     await pool.query(`DROP DATABASE IF EXISTS \`${databaseName}\``);
     await pool.query(`CREATE DATABASE \`${databaseName}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci`);
-    await pool.query(`GRANT ALL PRIVILEGES ON \`${databaseName}\`.* TO '${appTarget.user}'@'%'`);
+    if(adminTarget.user!==appTarget.user)await pool.query(`GRANT ALL PRIVILEGES ON \`${databaseName}\`.* TO '${appTarget.user}'@'%'`);
   } finally {
     await pool.end();
   }
@@ -649,6 +649,14 @@ async function seedCanonicalDataset(databaseUrl: string) {
        VALUES (UUID_TO_BIN(?), 'user:backup-budget', 'user', UUID_TO_BIN(?), NULL, 1000, 'CNY', 'active', ?, ?)`,
       [ids.costBudgetId, ids.userId, now, now],
     );
+    // Isolated backup fixtures verify V8.3 identity/result durability, never real runtime acceptance.
+    const targetId=randomUUID(),resolutionId=randomUUID(),invocationId=randomUUID(),resultId=randomUUID();
+    await pool.query(`INSERT INTO runtime_targets(id,user_id,target_type,backing_ref,account_scope,authority_epoch,authority_hash,online_state,health,manifest_version,manifest_hash,metadata,created_at,updated_at) VALUES(UUID_TO_BIN(?),UUID_TO_BIN(?),'PROVIDER',?,?,4,?,'UNKNOWN','UNKNOWN','runtime-header-v1',?,JSON_OBJECT('scope','isolated-backup-contract'),?,?)`,[targetId,ids.userId,ids.connectionId,ids.connectionId,sha256('backup-authority'),sha256('backup-manifest'),now,now]);
+    await pool.query(`INSERT INTO capability_resolution_decisions(id,user_id,plan_version_id,request_key,request_hash,decision_hash,input_json,decision_json,created_at) VALUES(UUID_TO_BIN(?),UUID_TO_BIN(?),UUID_TO_BIN(?),'backup-runtime-resolution',?,?,JSON_OBJECT('scope','isolated-backup-contract'),JSON_OBJECT('status','BLOCKED'),?)`,[resolutionId,ids.userId,ids.version2Id,sha256('backup-request'),sha256('backup-decision'),now]);
+    await pool.query(`INSERT INTO capability_invocations(id,user_id,plan_id,plan_version_id,execution_id,capability_id,target_id,authority_epoch,target_manifest_hash,arguments,resource_scope,timeout_ms,idempotency_key,resolution_decision_ref,invocation_hash,created_at) VALUES(UUID_TO_BIN(?),UUID_TO_BIN(?),UUID_TO_BIN(?),UUID_TO_BIN(?),UUID_TO_BIN(?),'email.send',UUID_TO_BIN(?),4,?,JSON_OBJECT('scope','isolated-backup-contract'),JSON_OBJECT('sourceCapabilityKey','SEND_EMAIL'),30000,'backup-runtime-invocation',UUID_TO_BIN(?),?,?)`,[invocationId,ids.userId,ids.planId,ids.version2Id,ids.failedExecutionId,targetId,sha256('backup-manifest'),resolutionId,sha256('backup-invocation'),now]);
+    await pool.query(`INSERT INTO invocation_runtime_links(id,invocation_id,runtime_kind,runtime_ref,created_at) VALUES(UUID_TO_BIN(?),UUID_TO_BIN(?),'EXECUTION',UUID_TO_BIN(?),?)`,[randomUUID(),invocationId,ids.failedExecutionId,now]);
+    await pool.query(`INSERT INTO runtime_results(id,user_id,invocation_id,target_id,authority_epoch,result_hash,payload_ref,evidence_refs,execution_state,verification_state,delivery_attempt,last_delivered_at,ack_token_hash,created_at) VALUES(UUID_TO_BIN(?),UUID_TO_BIN(?),UUID_TO_BIN(?),UUID_TO_BIN(?),4,?,'backup-isolated-payload',JSON_ARRAY(),'FAILED','UNVERIFIED',1,?,?,?)`,[resultId,ids.userId,invocationId,targetId,sha256('backup-runtime-result'),now,sha256('backup-ack-token'),now]);
+    await pool.query(`INSERT INTO runtime_result_deliveries(id,result_id,attempt,delivered_at) VALUES(UUID_TO_BIN(?),UUID_TO_BIN(?),1,?)`,[randomUUID(),resultId,now]);
   } finally {
     await pool.end();
   }
@@ -659,6 +667,7 @@ async function seedCanonicalDataset(databaseUrl: string) {
 function dumpDatabase(adminTarget: MysqlTarget, databaseName: string, dumpPath: string) {
   const local = spawnSync('mysqldump', [
     '--single-transaction',
+    '--no-tablespaces',
     '--routines',
     '--triggers',
     '--skip-comments',
@@ -682,6 +691,7 @@ function dumpDatabase(adminTarget: MysqlTarget, databaseName: string, dumpPath: 
     MYSQL_CONTAINER,
     'mysqldump',
     '--single-transaction',
+    '--no-tablespaces',
     '--routines',
     '--triggers',
     '--skip-comments',
@@ -828,6 +838,7 @@ async function verifyRestoredData(sourceUrl: string, restoredUrl: string) {
         FROM cost_budgets
        ORDER BY budget_key
     `, 'cost_budgets');
+    const runtimeDurability=await compareQuery(source,restored,`SELECT BIN_TO_UUID(r.id) resultId,BIN_TO_UUID(r.invocation_id) invocationId,r.authority_epoch,r.result_hash,r.execution_state,r.verification_state,r.delivery_attempt,r.resume_cursor,r.ack_token_hash,r.ack_at,t.manifest_hash,i.idempotency_key FROM runtime_results r JOIN runtime_targets t ON t.id=r.target_id JOIN capability_invocations i ON i.id=r.invocation_id ORDER BY r.resume_cursor`,'runtime_result_durability');
     const orphanRows = await countOrphans(restored);
     if (orphanRows !== 0) {
       throw new Error(`Restore verification found orphan rows: ${orphanRows}`);
@@ -852,6 +863,7 @@ async function verifyRestoredData(sourceUrl: string, restoredUrl: string) {
       cancellationRequests: cancellationRequests.length,
       templateLifecycleVersions: templateLifecycle.length,
       costBudgets: costBudgetsCompare.length,
+      runtimeResults:runtimeDurability.length,
     };
   } finally {
     await source.end();
@@ -900,6 +912,7 @@ async function compareTableCounts(source: Pool, restored: Pool) {
     'subscription_cancellation_requests',
     'template_lifecycle_versions',
     'cost_budgets',
+    'runtime_targets','capability_identities','capability_aliases','capability_invocations','invocation_runtime_links','runtime_results','runtime_result_deliveries',
   ];
   const result: Record<string, number> = {};
   for (const table of tables) {
@@ -926,6 +939,9 @@ async function compareQuery(source: Pool, restored: Pool, sql: string, label: st
 
 async function countOrphans(pool: Pool) {
   const checks = [
+    `SELECT COUNT(*) count FROM runtime_results r LEFT JOIN capability_invocations i ON i.id=r.invocation_id LEFT JOIN runtime_targets t ON t.id=r.target_id WHERE i.id IS NULL OR t.id IS NULL`,
+    `SELECT COUNT(*) count FROM invocation_runtime_links l LEFT JOIN capability_invocations i ON i.id=l.invocation_id WHERE i.id IS NULL`,
+    `SELECT COUNT(*) count FROM runtime_result_deliveries d LEFT JOIN runtime_results r ON r.id=d.result_id WHERE r.id IS NULL`,
     `SELECT COUNT(*) count FROM profiles p LEFT JOIN users u ON p.user_id = u.id WHERE u.id IS NULL`,
     `SELECT COUNT(*) count FROM connections c LEFT JOIN users u ON c.user_id = u.id LEFT JOIN connectors co ON c.connector_id = co.id WHERE u.id IS NULL OR co.id IS NULL`,
     `SELECT COUNT(*) count FROM connection_permissions cp LEFT JOIN connections c ON cp.connection_id = c.id LEFT JOIN connector_capabilities cc ON cp.connector_capability_id = cc.id WHERE c.id IS NULL OR cc.id IS NULL`,

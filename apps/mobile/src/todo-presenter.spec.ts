@@ -38,6 +38,7 @@ describe('todo presenter 类型映射', () => {
     expect(todoRoute(todo({ type: 'CONFIRMATION', executionId: 'e1' }))).toBe('/executions/e1');
     expect(todoRoute(todo({ type: 'EXCEPTION', executionId: 'e1' }))).toBe('/executions/e1');
     expect(todoRoute(todo({ type: 'EXCEPTION', connectionId: 'c1' }))).toBe('/connections/c1');
+    expect(todoRoute(todo({ type: 'EXCEPTION', planId: 'p1' }))).toBe('/plans/p1');
   });
 });
 

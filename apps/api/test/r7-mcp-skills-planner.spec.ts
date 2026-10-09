@@ -173,6 +173,19 @@ describe('R7 FixtureAgentModel golden journeys', () => {
 });
 
 describe('R7 Agent Planner output validation (fail-closed)', () => {
+  it('compiles calendar Recipe capability even when omitted by the model and rejects invented scope/action',()=>{
+    const service=makePlanner();const subjectKey='local:owned-device:calendar:1:42:123';
+    const first=new Date(Math.ceil((Date.now()+3600000)/60000)*60000);
+    const scheduledCalendar={recipeKey:'calendar.scheduled-create.v1' as const,firstRunAt:first.toISOString(),timezone:'Asia/Shanghai',recurrence:'DAILY' as const,observationSubjectKey:subjectKey,calendarEvent:{calendarId:'1',title:'Isolated model parameters',start:{dateTime:new Date(first.getTime()+3600000).toISOString(),timeZone:'Asia/Shanghai'},end:{dateTime:new Date(first.getTime()+4200000).toISOString(),timeZone:'Asia/Shanghai'},attendees:[],sendUpdates:'none' as const}};
+    const output=planDraftOutput({scenarioKey:'work.meetings',scenarioRevision:1,strategyKey:'PERIODIC_SUMMARY',scheduledCalendar,selectedTruthRefs:[],selectedSkillIds:[],requiredCapabilities:[]});
+    const facts=emptyFacts({truths:[freshTruth({resourceType:'CalendarEvent',subjectKey,factKey:'calendar_event.meetings.state'})]});
+    const result=service.validateOutput(output,facts,'创建日历计划');
+    expect(result.errors).toEqual([]);expect(result.proposal?.requiredCapabilities).toContain('calendar.event.create');
+    expect(result.proposal?.draftDefinition?.actions).toEqual(expect.arrayContaining([expect.objectContaining({requiredCapability:'calendar.event.create'})]));
+    expect(service.validateOutput({...output,scheduledCalendar:{...scheduledCalendar,observationSubjectKey:'invented'}},facts,'创建日历计划').valid).toBe(false);
+    expect(service.validateOutput({...output,draftDefinition:{actions:[{actionType:'publish'}]}},facts,'创建日历计划').valid).toBe(false);
+    expect(service.validateOutput({...output,scenarioKey:null},facts,'创建日历计划').valid).toBe(false);
+  });
   it('accepts a valid PLAN_DRAFT and compiles the draft definition', async () => {
     const service = makePlanner();
     const facts = emptyFacts({ domain: 'device', truths: [freshTruth()] });

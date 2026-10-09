@@ -1,3 +1,5 @@
+import {RuntimeResultsService} from '../capability-invocations/runtime-results.service';
+import {assertExecutionOwner} from './execution-owner-context';
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { executions } from '@lazy-armor/database';
 import { and, eq } from 'drizzle-orm';
@@ -19,7 +21,7 @@ const TRANSITIONS: Readonly<Record<ExecutionStatus, readonly ExecutionStatus[]>>
 
 @Injectable()
 export class ExecutionStateService {
-  constructor(@Inject(DATABASE) private readonly db: InjectedDatabase, private readonly events: ExecutionEventService, private readonly audit: AuditService, private readonly usage: UsageService) {}
+  constructor(@Inject(DATABASE) private readonly db: InjectedDatabase, private readonly events: ExecutionEventService, private readonly audit: AuditService, private readonly usage: UsageService,private readonly runtimeResults:RuntimeResultsService) {}
 
   async transition(id: string, target: ExecutionStatus, patch: Partial<typeof executions.$inferInsert> = {}) {
     let current: ExecutionStatus | undefined;
@@ -27,8 +29,9 @@ export class ExecutionStateService {
     let userId = '';
     let requestId: string | null = null;
     await this.db.transaction(async (tx) => {
-      const rows = await tx.select({ status: executions.status, userId: executions.userId, requestId: executions.requestId }).from(executions).where(eq(executions.id, id)).limit(1).for('update');
+      const rows = await tx.select({ id:executions.id,workerToken:executions.workerToken,leaseExpiresAt:executions.leaseExpiresAt,status: executions.status, userId: executions.userId, requestId: executions.requestId }).from(executions).where(eq(executions.id, id)).limit(1).for('update');
       if (!rows[0]) throw new NotFoundException('Execution not found');
+      assertExecutionOwner(rows[0]);
       current = rows[0].status as ExecutionStatus;
       userId = rows[0].userId;
       requestId = rows[0].requestId;
@@ -40,6 +43,7 @@ export class ExecutionStateService {
       await this.events.append(id, 'execution_state_changed', { from: current, to: target }, null, tx);
       // 终态转换与 Audit 同事务（§35）。
       if (EXECUTION_TERMINAL_STATES.has(target)) {
+        await this.runtimeResults.captureExecution(tx,userId,id,target);
         await this.audit.append({
           actorType: patch.workerToken ? 'worker' : 'user', actorUserId: userId, action: 'EXECUTION_TERMINAL',
           resourceType: 'execution', resourceId: id, userId, executionId: id, requestId, correlationId: requestId,

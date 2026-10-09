@@ -49,10 +49,22 @@ describe.sequential('MCP through canonical ActionProposal execution', { timeout:
  }
  it('requires a canonical operation and verifies a real independent read-back', async()=> {
   const connector=app.get(ConnectorRegistry).get(connectorKey);await expect(connector.execute!({capability,input:{context:{arguments:{payload:'forged'}}},requestId:'forged'})).rejects.toThrow('canonical outbox operation');expect(writeCalls).toBe(0);
-  const run=await confirmedRun();expect(writeCalls).toBe(0);await dispatchOutbox(run.executionId);expect(writeCalls).toBe(1);
+  const run=await confirmedRun();const [invocations]=await pool.query<any[]>("SELECT BIN_TO_UUID(i.id) id,i.capability_id,t.target_type,i.authority_epoch FROM capability_invocations i JOIN runtime_targets t ON t.id=i.target_id WHERE i.execution_id=UUID_TO_BIN(?)",[run.executionId]);expect(invocations).toHaveLength(1);expect(invocations[0].capability_id).toMatch(/^mcp\.tool\.[a-f0-9]{64}$/);expect(invocations[0].target_type).toBe('MCP_SERVER');expect(writeCalls).toBe(0);await dispatchOutbox(run.executionId);expect(writeCalls).toBe(1);
   const detail=await request(app.getHttpServer()).get(`/api/executions/${run.executionId}`).set(auth(owner.token)).expect(200);expect(detail.body.status).toBe('succeeded');
   const [proof]=await pool.query('SELECT ve.method,ve.result_state FROM verification_evidence ve JOIN side_effect_operations op ON ve.operation_id=op.id WHERE op.execution_id=UUID_TO_BIN(?)',[run.executionId]);expect(proof).toEqual(expect.arrayContaining([expect.objectContaining({method:'OPERATION_LOOKUP',result_state:'SUCCEEDED'})]));
   await dispatchOutbox(run.executionId);expect(writeCalls).toBe(1);
+  const resumed=await request(app.getHttpServer()).get('/api/runtime-results').set(auth(owner.token)).expect(200);const result=resumed.body.find((r:any)=>r.invocationId===invocations[0].id);expect(result).toBeTruthy();expect(result.deliveryState).toBe('RESULT_PENDING_DELIVERY');expect(result.verificationState).toBe('VERIFIED');expect(result.ackTokenHash).toBeUndefined();
+  const first=(await request(app.getHttpServer()).post(`/api/runtime-results/${result.id}/deliver`).set(auth(owner.token)).expect(201)).body;
+  const redelivered=(await request(app.getHttpServer()).post(`/api/runtime-results/${result.id}/deliver`).set(auth(owner.token)).expect(201)).body;expect(redelivered.resultHash).toBe(first.resultHash);expect(redelivered.ackToken).toBe(first.ackToken);expect(redelivered.deliveryAttempt).toBe(first.deliveryAttempt+1);expect(writeCalls).toBe(1);
+  const ack={ackToken:first.ackToken,resultHash:first.resultHash,authorityEpoch:first.authorityEpoch};
+  await request(app.getHttpServer()).post(`/api/runtime-results/${result.id}/ack`).set(auth(owner.token)).send({...ack,resultHash:'0'.repeat(64)}).expect(409);
+  await request(app.getHttpServer()).post(`/api/runtime-results/${result.id}/ack`).set(auth(owner.token)).send({...ack,ackToken:'0'.repeat(64)}).expect(403);
+  const duplicate=await Promise.all([1,2].map(()=>request(app.getHttpServer()).post(`/api/runtime-results/${result.id}/ack`).set(auth(owner.token)).send(ack).expect(201)));expect(duplicate[0].body.ackAt).toBe(duplicate[1].body.ackAt);expect(duplicate[0].body.deliveryState).toBe('RESULT_ACKNOWLEDGED');
+  expect((await request(app.getHttpServer()).get(`/api/runtime-results?after=${result.resumeCursor}`).set(auth(owner.token)).expect(200)).body.some((r:any)=>r.id===result.id)).toBe(false);
+  const runtime=(await request(app.getHttpServer()).get(`/api/capability-invocations/${invocations[0].id}/runtime`).set(auth(owner.token)).expect(200)).body;expect(runtime).toEqual(expect.arrayContaining([expect.objectContaining({runtimeKind:'EXECUTION',state:'SUCCEEDED'}),expect.objectContaining({runtimeKind:'SIDE_EFFECT_OPERATION',state:'SUCCEEDED'})]));
+  await pool.query('UPDATE runtime_results SET result_hash=? WHERE id=UUID_TO_BIN(?)',['0'.repeat(64),result.id]);await request(app.getHttpServer()).post(`/api/runtime-results/${result.id}/deliver`).set(auth(owner.token)).expect(409);await pool.query('UPDATE runtime_results SET result_hash=? WHERE id=UUID_TO_BIN(?)',[result.resultHash,result.id]);
+  await pool.query('UPDATE runtime_targets SET authority_epoch=authority_epoch+1 WHERE id=UUID_TO_BIN(?)',[result.targetId]);await request(app.getHttpServer()).post(`/api/runtime-results/${result.id}/ack`).set(auth(owner.token)).send(ack).expect(409);await pool.query('UPDATE runtime_targets SET authority_epoch=authority_epoch-1 WHERE id=UUID_TO_BIN(?)',[result.targetId]);
+
  });
  it('keeps schema-valid mismatched read-back unknown and reconciles without another write',async()=> {
   mismatch=true;const run=await confirmedRun();await dispatchOutbox(run.executionId);expect(writeCalls).toBe(2);

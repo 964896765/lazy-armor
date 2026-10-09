@@ -1,9 +1,12 @@
+import { confirmedCalendarRuntime } from './confirmed-calendar-runtime';
+import { PlanDefinitionAssembler } from '../plans/plan-definition.assembler';
 import { createHash } from 'node:crypto';
 import { ModuleRef } from '@nestjs/core';
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import {
   CONDITION_AST_SCHEMA_VERSION, OPERATOR_REGISTRY, OPERATOR_REGISTRY_REVISION, PLAN_EXECUTION_LIFECYCLE,
-  canonicalStringify, compileScenarioPlan, definitionHash, evaluateConditionAst,
+  canonicalStringify, compileScenarioPlan, definitionHash, evaluateConditionAst, assessState, nextBestAction,
+  compileNotificationWatchAuthoring,
   type CompiledStrategyRuntime, type RuntimeFactInput, type StrategyKey,
 } from '@lazy-armor/plan-schema';
 import {
@@ -33,9 +36,10 @@ export class StrategyRuntimeService {
     const pins=Object.fromEntries(selections.map(source=>[source.factKey??facts.find(fact=>fact.demandId===source.demandId)?.factKey??source.demandId,source.selectedSourceId]));
     // Resolve lazily: the existing Reality pipeline publishes into this runtime.
     const {FactDemandResolverService}=await import('../fact-demands/fact-demand-resolver.service');
-    const resolved=await this.moduleRef.get(FactDemandResolverService,{strict:false}).resolve(userId,{scenarioKey:contract.scenarioKey,scenarioRevision:contract.scenarioRevision,goal:contract.goalJson as never,subject:contract.subjectJson as never},pins);
+    const resolved=await this.moduleRef.get(FactDemandResolverService,{strict:false}).resolve(userId,{scenarioKey:contract.scenarioKey,scenarioRevision:contract.scenarioRevision,goal:contract.goalJson as never,subject:contract.subjectJson as never},pins,undefined,[truthVersionId]);
     const demand=resolved.demands.find(demand=>demand.factKey===factKey);
     if(resolved.contractHash!==contract.contractHash||!demand?.sourceCurrentlyUsable||demand.state!=='SATISFIED'||!demand.truthEvidence.some(truth=>truth.verified&&truth.truthVersionId===truthVersionId))throw new ConflictException('Frozen plan source evidence is unavailable or changed');
+    return resolved;
   }
 
   operators() {
@@ -89,7 +93,7 @@ export class StrategyRuntimeService {
   }
 
   /** Binds runtime/dependencies using a caller-owned transaction. */
-  async bindInTransaction(userId: string, input: BindingInput, executor: StrategyRuntimeExecutor) {
+  async bindInTransaction(userId: string, input: BindingInput, executor: StrategyRuntimeExecutor, confirmedCalendarWrite = false) {
     const owned = (await executor.select({ version: planVersions, plan: plans }).from(planVersions)
       .innerJoin(plans, and(eq(plans.id, planVersions.planId), eq(plans.userId, userId)))
       .where(eq(planVersions.id, input.planVersionId)).limit(1))[0];
@@ -103,7 +107,17 @@ export class StrategyRuntimeService {
       throw new BadRequestException(error instanceof Error ? error.message : 'Strategy runtime compilation failed');
     }
     if (definitionHash(compiled.definition) !== owned.version.definitionHash) {
-      throw new ConflictException('Plan version does not match the compiled scenario definition');
+      if(!confirmedCalendarWrite)throw new ConflictException('Plan version does not match the compiled scenario definition');
+      const contract=(await executor.select().from(planCreationContracts).where(and(eq(planCreationContracts.userId,userId),eq(planCreationContracts.planVersionId,input.planVersionId))).limit(1))[0];
+      if(!contract||contract.scenarioKey!==input.scenarioKey||contract.scenarioRevision!==compiled.scenarioRevision)throw new ConflictException('Confirmed immutable source contract required');
+      const assembled=await this.moduleRef.get(PlanDefinitionAssembler,{strict:false}).assembleById(userId,owned.plan.id,input.planVersionId,executor);
+      if(assembled.computedHash!==owned.version.definitionHash)throw new ConflictException('Confirmed Plan integrity mismatch');
+      const constraints=contract.goalJson.constraints as Record<string,unknown>|undefined;
+      if(constraints?.recipeKey==='notification.shipment-watch.v1'){
+        const watch=compileNotificationWatchAuthoring(contract.scenarioKey,JSON.parse(String(constraints.notificationWatchJson)),owned.version.name);
+        if(definitionHash(watch.definition)!==owned.version.definitionHash)throw new ConflictException('Confirmed notification watch integrity mismatch');
+        compiled.runtime=watch.runtime;
+      }else try {compiled.runtime=confirmedCalendarRuntime(compiled.runtime,assembled.definition);}catch(error){throw new ConflictException(error instanceof Error?error.message:'Unsupported confirmed calendar contract');}
     }
     const prior = await this.findBinding(userId, input.planVersionId, executor);
     if (prior) {
@@ -202,7 +216,7 @@ export class StrategyRuntimeService {
     return created;
   }
 
-  async enqueueScheduleWakeup(userId: string, bindingId: string, executor: StrategyRuntimeExecutor = this.db, scheduledAt=new Date()) {
+  async enqueueScheduleWakeup(userId: string, bindingId: string, executor: StrategyRuntimeExecutor = this.db, scheduledAt=new Date(), handoffTruthVersionId?: string) {
     const binding = (await executor.select().from(strategyRuntimeBindings)
       .where(and(eq(strategyRuntimeBindings.id, bindingId), eq(strategyRuntimeBindings.userId, userId)))
       .limit(1))[0];
@@ -221,6 +235,7 @@ export class StrategyRuntimeService {
         eq(truthRecords.status, 'verified'),
         isNull(truthRecords.revokedAt),
         eq(truthRecords.resourceKey, dependency.resourceType),
+        ...(handoffTruthVersionId ? [eq(truthRecordVersions.id,handoffTruthVersionId)] : []),
         ...(dependency.scope === 'EXACT_SUBJECT' && dependency.subjectKey
           ? [eq(truthRecords.subjectKey, dependency.subjectKey)] : []),
         sql`JSON_UNQUOTE(JSON_EXTRACT(${truthRecordVersions.valueJson}, '$.factKey')) = ${dependency.factKey}`,
@@ -261,7 +276,7 @@ export class StrategyRuntimeService {
     } catch (error) {
       if (!isDuplicate(error)) throw error;
     }
-    return (await this.db.select().from(strategyRuntimeWakeups)
+    return (await executor.select().from(strategyRuntimeWakeups)
       .where(and(eq(strategyRuntimeWakeups.wakeupKey, wakeupKey), eq(strategyRuntimeWakeups.userId, userId)))
       .limit(1))[0] ?? null;
   }
@@ -285,7 +300,7 @@ export class StrategyRuntimeService {
       .innerJoin(truthRecords, and(eq(truthRecords.id, truthRecordVersions.truthRecordId), eq(truthRecords.userId, userId)))
       .where(eq(truthRecordVersions.id, row.wakeup.truthRecordVersionId)).limit(1))[0];
     if (!truth) throw new ConflictException('Wakeup TruthVersion is unavailable');
-    await this.assertFrozenSource(userId,row.binding.planVersionId,row.wakeup.factKey,truth.version.id);
+    const sourceAssessment=await this.assertFrozenSource(userId,row.binding.planVersionId,row.wakeup.factKey,truth.version.id);
     const persisted = await this.findDecision(userId, wakeupId);
     if (persisted) return this.decisionResponse(persisted);
     const previous = (await this.db.select().from(truthRecordVersions)
@@ -302,7 +317,7 @@ export class StrategyRuntimeService {
     const dependency = runtime.dependencies.find((item) => item.factKey === row.wakeup.factKey && item.scope !== 'SCHEDULED');
     const evaluatedAt = new Date();
     const fact: RuntimeFactInput = {
-      value: runtimeValue(truth.version.valueJson, dependency?.field),
+      value: (sourceAssessment?.goal?.constraints?.recipeKey==='notification.shipment-watch.v1' ? String(runtimeValue(truth.version.valueJson,dependency?.field)).toLowerCase() : runtimeValue(truth.version.valueJson, dependency?.field)),
       ...(previous ? { previousValue: runtimeValue(previous.valueJson, dependency?.field) } : {}),
       truthVersionId: truth.version.id,
       verifiedAt: truth.record.verifiedAt.toISOString(),
@@ -311,9 +326,14 @@ export class StrategyRuntimeService {
       facts: { [row.wakeup.factKey]: fact },
       evaluatedAt: evaluatedAt.toISOString(),
     });
+    const assessmentInput=sourceAssessment?{coverage:sourceAssessment.acquisitionCoverage,verifiedComplete:false,hasConflict:sourceAssessment.demands.some(demand=>demand.state==='CONFLICT'),approvalRequired:false,approvalGranted:false,executionAuthorized:runtime.actionMode==='EXECUTE',due:row.wakeup.triggerMode==='SCHEDULE'&&conditionDecision.result,thresholdExceeded:null,changed:row.wakeup.triggerMode==='FACT_CHANGED'&&conditionDecision.result,serviceAvailable:false}:null;
+    // EXECUTE is a recommendation to enter Dispatch/Risk/Approval, never a grant
+    // to invoke the device directly. Approval is still enforced at write dispatch.
+    const recommendation=assessmentInput?nextBestAction(assessmentInput):null;
     const triggerDecision = {
       schemaVersion: '1', mode: row.wakeup.triggerMode, result: true,
       truthVersionId: truth.version.id, evaluatedAt: evaluatedAt.toISOString(), deterministic: true,
+      ...(assessmentInput?{stateAssessment:assessState(assessmentInput),nextBestAction:recommendation}:{}),
     };
     const lifecycleTrace = PLAN_EXECUTION_LIFECYCLE.map((step) => ({
       ...step,
@@ -324,7 +344,8 @@ export class StrategyRuntimeService {
       ...(step.step >= 7 && !conditionDecision.result ? { reason: 'CONDITION_FALSE' } : {}),
     }));
     const inputHash = hash({ runtimeHash, triggerDecision, fact });
-    const result = conditionDecision.result ? 'READY_FOR_PLAN_ENGINE' : 'CONDITION_NOT_MET';
+    const ready=conditionDecision.result&&(!sourceAssessment||runtime.actionMode!=='EXECUTE'||recommendation==='EXECUTE');
+    const result = ready ? 'READY_FOR_PLAN_ENGINE' : 'CONDITION_NOT_MET';
     const decisionHash = hash({ inputHash, triggerDecision, conditionDecision, lifecycleTrace, result });
     const decisionId = newId();
     try {

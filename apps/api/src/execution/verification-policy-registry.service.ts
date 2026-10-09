@@ -1,11 +1,11 @@
 import { ConflictException, Injectable } from '@nestjs/common';
-import { CONNECTOR_RESPONSE_POLICY, verificationPolicyHash, type VerificationPolicy } from '@lazy-armor/plan-schema';
+import { ANDROID_CALENDAR_WRITE_POLICY, ANDROID_CALENDAR_UPDATE_POLICY, ANDROID_CALENDAR_DELETE_POLICY, CONNECTOR_RESPONSE_POLICY, verificationPolicyHash, type VerificationPolicy } from '@lazy-armor/plan-schema';
 
 @Injectable()
 export class VerificationPolicyRegistry {
   private readonly revisions = new Map<string, VerificationPolicy>();
   private readonly bindings = new Map<string, string>();
-  constructor() { this.register(CONNECTOR_RESPONSE_POLICY); }
+  constructor() { this.register(CONNECTOR_RESPONSE_POLICY); this.register(ANDROID_CALENDAR_WRITE_POLICY); this.register(ANDROID_CALENDAR_UPDATE_POLICY); this.register(ANDROID_CALENDAR_DELETE_POLICY); }
   register(policy: VerificationPolicy) {
     verificationPolicyHash(policy);
     const identity = policy.key + '@' + policy.revision;

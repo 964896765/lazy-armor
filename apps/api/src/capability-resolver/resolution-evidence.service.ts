@@ -3,7 +3,7 @@ import type { ResolutionCandidate } from '@lazy-armor/connector-sdk';
 
 export type ResolutionEvidence = Pick<ResolutionCandidate, 'accountSatisfied' | 'deviceSatisfied' | 'reality' | 'observedAt' | 'costMicros' | 'latencyMs' | 'reliability'>;
 export interface ResolutionEvidenceContext {
-  userId: string; connectionId: string; capabilityKey: string; resource: string; planVersionId: string;
+  userId: string; connectionId: string; capabilityKey: string; resource: string; planVersionId: string | null;
 }
 export type ResolutionEvidenceHook = (context: ResolutionEvidenceContext) => Promise<ResolutionEvidence>;
 

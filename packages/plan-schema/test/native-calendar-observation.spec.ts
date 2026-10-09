@@ -11,4 +11,12 @@ describe('native calendar evidence adapter',()=>{
   expect(()=>parseAndNormalizeObservation({...input,payload:{...input.payload,endAt:0}})).toThrow();
   expect(()=>parseAndNormalizeObservation({...input,payload:{...input.payload,status:'AI_GUESSED'}})).toThrow();
  });
+ it('represents verified absence without inventing an event time or a scheduled event',()=>{
+  const absent={...input,parserKey:'native.calendar-event-absence.v1' as const,payload:{id:'42',calendarId:'7',present:false}};
+  const facts=parseAndNormalizeObservation(absent);
+  expect(facts).toHaveLength(1);expect(facts[0]).toMatchObject({subjectKey:'local:device:calendar:7:42',factKey:'calendar_event.presence',value:{eventId:'42',calendarId:'7',present:false}});
+  expect(facts[0].value).not.toHaveProperty('start');
+  expect(()=>parseAndNormalizeObservation({...absent,sourceMode:'OFFICIAL_API'})).toThrow();
+  expect(()=>parseAndNormalizeObservation({...absent,payload:{...absent.payload,present:true}})).toThrow();
+ });
 });

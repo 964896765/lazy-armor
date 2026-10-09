@@ -1,0 +1,2 @@
+import {Text} from 'react-native';import {EditorPage,ui} from '../src/editor-ui';
+export default function PairDevice(){return <EditorPage title="配对设备"><Text style={ui.detail}>其它设备需要独立安装节点、完成设备证明并确认授权。</Text>{['Windows','Mac','其它 Android','iPhone','NAS','Browser Node','Edge Node'].map(name=><Text key={name} style={ui.row}>{name} · 待接入</Text>)}<Text style={ui.detail}>跨设备配对流程尚未开放；不会把当前手机重复添加为其它设备。</Text></EditorPage>;}

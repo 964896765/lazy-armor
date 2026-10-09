@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { Worker } from 'bullmq';
 import IORedis from 'ioredis';
 import { ExecutionRunner } from './execution-runner.service';
+import { executionOwnerContext } from './execution-owner-context';
 import { ExecutionLeaseService } from './execution-lease.service';
 import { workerEnabled } from '../common/app-role';
 import { ObservabilityService } from '../observability/observability.service';
@@ -58,11 +59,11 @@ export class ExecutionWorker implements OnModuleInit, OnApplicationShutdown {
         takeover: lease.recovered,
       }, async () => {
         this.telemetry.event('log', 'execution_worker_started', { executionId, workerId, takeover: lease.recovered });
-        const outcome = await this.runner.run(executionId, lease.workerToken, {
+        const outcome = await executionOwnerContext.run({executionId,workerToken:lease.workerToken},()=>this.runner.run(executionId, lease.workerToken, {
           workerId,
           attempt: lease.recovered ? 2 : 1,
           takeover: lease.recovered,
-        });
+        }));
         this.telemetry.event('log', 'execution_worker_finished', { executionId, workerId, status: outcome.status, takeover: lease.recovered });
         return outcome;
       });

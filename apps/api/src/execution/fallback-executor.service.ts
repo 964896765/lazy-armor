@@ -16,7 +16,7 @@ export interface FallbackOutcome {
 export class FallbackExecutor {
   constructor(private readonly events: ExecutionEventService, private readonly plans: PlansService) {}
 
-  async execute(userId: string, planId: string, executionId: string, stepId: string, errorCode: string, policyValue: unknown): Promise<FallbackOutcome> {
+  async execute(userId: string, planId: string | null, executionId: string, stepId: string, errorCode: string, policyValue: unknown): Promise<FallbackOutcome> {
     const policy = policyValue as Partial<FallbackPolicySnapshot> | null;
     const strategy = policy?.strategy;
     if (!strategy || !['fail_execution', 'skip_step', 'pause_plan', 'require_manual_intervention'].includes(strategy)) {
@@ -24,6 +24,7 @@ export class FallbackExecutor {
       return { strategy: 'fail_execution', stepStatus: 'failed', continueExecution: false, resultCode: 'FALLBACK_POLICY_INVALID', resultSummary: 'Fallback policy was invalid; execution stopped safely' };
     }
     if (strategy === 'pause_plan') {
+      if (!planId) return { strategy: 'fail_execution', stepStatus: 'failed', continueExecution: false, resultCode: 'NO_PLAN_AUTHORITY', resultSummary: 'Execution stopped; this authority source owns no Plan' };
       try { await this.plans.changeStatus(userId, planId, 'paused'); } catch {
         await this.events.append(executionId, 'fallback_failed', { strategy, reason: 'PLAN_STATE_TRANSITION_REJECTED' }, stepId);
         return { strategy, stepStatus: 'failed', continueExecution: false, resultCode: 'FALLBACK_FAILED', resultSummary: 'Plan could not be paused; execution stopped safely' };

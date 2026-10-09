@@ -233,7 +233,7 @@ export class NotificationService {
 
     const latestByPlan = new Map<string, typeof execRows[number]>();
     for (const exec of execRows) {
-      if (!latestByPlan.has(exec.planId)) latestByPlan.set(exec.planId, exec);
+      if (exec.planId && !latestByPlan.has(exec.planId)) latestByPlan.set(exec.planId, exec);
     }
 
     const latestExecIds = [...latestByPlan.values()].map((e) => e.id);

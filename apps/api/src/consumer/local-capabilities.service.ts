@@ -1,8 +1,8 @@
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
-import { localCapabilityStates, trustedDevices,planCreationContracts,plans,planVersions } from '@lazy-armor/database';
+import { runtimeTargets,localCapabilityStates, trustedDevices,planCreationContracts,plans,planVersions } from '@lazy-armor/database';
 import { LOCAL_CAPABILITY_CANONICAL_KEYS,localCapabilityGroup,localCapabilitySourceId, LOCAL_CAPABILITY_CATALOG, localCapabilityAvailability, type ResourceProjection } from '@lazy-armor/plan-schema';
 import { newId } from '@lazy-armor/shared';
-import { isNull, and, eq } from 'drizzle-orm';
+import { isNull, and, eq,sql } from 'drizzle-orm';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
 import { AuditService } from '../audit/audit.service';
 import type { NativeCapabilitiesDto } from './local-capabilities.dto';
@@ -11,15 +11,26 @@ export class LocalCapabilitiesService {
  constructor(@Inject(DATABASE) private readonly db:InjectedDatabase,private readonly audit:AuditService){}
  async receive(userId:string,deviceId:string,requestId:string,input:NativeCapabilitiesDto){
   const now=new Date();
-  const expected=input.manifestVersion==='android-local-v2'&&input.capabilities.length===14?LOCAL_CAPABILITY_CATALOG.slice(0,14):LOCAL_CAPABILITY_CATALOG;
+  const legacy=LOCAL_CAPABILITY_CATALOG.filter(spec=>!['calendar.update','calendar.delete'].includes(spec.key));
+  const expected=input.manifestVersion==='android-local-v2'&&input.capabilities.length===14?legacy.slice(0,14):input.manifestVersion==='android-local-v4'?LOCAL_CAPABILITY_CATALOG:legacy;
   if(input.capabilities.length!==expected.length||new Set(input.capabilities.map(row=>row.key)).size!==input.capabilities.length||expected.some(spec=>!input.capabilities.some(row=>row.key===spec.key)))throw new BadRequestException('本机能力清单不完整');
   if(input.capabilities.some(row=>row.checkedAt>now.getTime()+1000||now.getTime()-row.checkedAt>60000))throw new BadRequestException('本机能力证据已过期');
   await this.db.transaction(async tx=>{
+   const device=(await tx.select().from(trustedDevices).where(and(eq(trustedDevices.id,deviceId),eq(trustedDevices.userId,userId))).for('update'))[0];if(!device||device.status!=='active'||device.revokedAt)throw new BadRequestException('Device authority revoked');
+   let authorityChanged=false;
+   for(const key of ['calendar.update','calendar.delete']) {
+    if(input.capabilities.some(row=>row.key===key))continue;
+    const stale=(await tx.select().from(localCapabilityStates).where(and(eq(localCapabilityStates.userId,userId),eq(localCapabilityStates.trustedDeviceId,deviceId),eq(localCapabilityStates.capability,key))))[0];
+    if(stale){authorityChanged=authorityChanged||stale.userGrant;await tx.update(localCapabilityStates).set({userGrant:false,health:'UNAVAILABLE',checkedAt:now,manifestVersion:input.manifestVersion,updatedAt:now}).where(eq(localCapabilityStates.id,stale.id));}
+   }
    for(const row of input.capabilities){
     const spec=LOCAL_CAPABILITY_CATALOG.find(spec=>spec.key===row.key)!;
     const values={id:newId(),userId,trustedDeviceId:deviceId,capability:row.key,manifestVersion:input.manifestVersion,userGrant:row.userGrant,systemPermission:row.systemPermission,health:spec.implemented?row.health:'UNAVAILABLE',checkedAt:new Date(row.checkedAt),evidenceRef:`signed-request:${requestId}`,updatedAt:now};
-    await tx.insert(localCapabilityStates).values(values).onDuplicateKeyUpdate({set:{userGrant:values.userGrant,systemPermission:values.systemPermission,health:values.health,checkedAt:values.checkedAt,evidenceRef:values.evidenceRef,updatedAt:now}});
+    const prior=(await tx.select().from(localCapabilityStates).where(and(eq(localCapabilityStates.userId,userId),eq(localCapabilityStates.trustedDeviceId,deviceId),eq(localCapabilityStates.capability,row.key))))[0];
+    if(prior&&(prior.userGrant!==values.userGrant||prior.systemPermission!==values.systemPermission))authorityChanged=true;
+    await tx.insert(localCapabilityStates).values(values).onDuplicateKeyUpdate({set:{manifestVersion:values.manifestVersion,userGrant:values.userGrant,systemPermission:values.systemPermission,health:values.health,checkedAt:values.checkedAt,evidenceRef:values.evidenceRef,updatedAt:now}});
    }
+   if(authorityChanged)await tx.update(runtimeTargets).set({authorityEpoch:sql`${runtimeTargets.authorityEpoch}+1`,updatedAt:now}).where(and(eq(runtimeTargets.userId,userId),eq(runtimeTargets.backingRef,deviceId),eq(runtimeTargets.targetType,'ANDROID_DEVICE')));
    await this.audit.append({actorType:'user',actorUserId:userId,userId,action:'LOCAL_CAPABILITY_MANIFEST_RECORDED',resourceType:'trusted_device',resourceId:deviceId,source:'api',result:'success',changeSummary:'Signed OS permission, user grant and capability health recorded',after:{manifestVersion:input.manifestVersion,evidenceRef:`signed-request:${requestId}`}},tx);
   });
   return {recorded:true};

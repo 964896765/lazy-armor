@@ -1,6 +1,6 @@
 export const PRIMARY_ENTRIES = [
  {key:'schedule',label:'日程',responsibility:'全部运行、待处理与结果的统一时间轴'},
- {key:'plans',label:'计划',responsibility:'模板与我的计划'},
+ {key:'plans',label:'计划',responsibility:'Skill仓库与我的计划'},
  {key:'chat',label:'会话',responsibility:'临时与计划两种工作上下文'},
  {key:'resources',label:'资源',responsibility:'本机、云端、其它设备与接口'},
  {key:'services',label:'服务',responsibility:'内部服务与外部服务'},

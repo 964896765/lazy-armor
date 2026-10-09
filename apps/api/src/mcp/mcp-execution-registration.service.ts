@@ -1,7 +1,9 @@
+import {createHash} from 'node:crypto';
+import {RuntimeTargetsService} from '../runtime-targets/runtime-targets.service';
 import { ConflictException, Inject, Injectable, OnApplicationBootstrap } from '@nestjs/common';
 import { ConnectorError, ConnectorRegistry, HttpMcpTransport, candidateCapability, type McpTransport, type ConnectorRequest, type ProviderCapabilityManifest } from '@lazy-armor/connector-sdk';
 import { canonicalStringify } from '@lazy-armor/plan-schema';
-import { connections, credentialRefs, sideEffectOperations, executions } from '@lazy-armor/database';
+import { connections, credentialRefs, sideEffectOperations, executions,capabilityIdentities,capabilityAliases } from '@lazy-armor/database';
 import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
@@ -19,7 +21,7 @@ const bindingSchema = z.object({serverId:z.string().regex(/^[a-z0-9_-]{1,40}$/),
 /** Installs an operator-pinned provider adapter into existing registries. No execution endpoint. */
 @Injectable()
 export class McpExecutionRegistrationService implements OnApplicationBootstrap {
- constructor(private readonly servers:McpServerRegistryService,private readonly connectors:ConnectorRegistry,private readonly catalog:ConnectorCatalogSyncService,private readonly manifests:ProviderCapabilityRegistryService,private readonly verification:VerificationPolicyRegistry,private readonly evidence:ResolutionEvidenceService,@Inject(DATABASE) private readonly db:InjectedDatabase,@Inject(CREDENTIAL_PROVIDER) private readonly credentials:CredentialProvider) {}
+ constructor(private readonly targets:RuntimeTargetsService,private readonly servers:McpServerRegistryService,private readonly connectors:ConnectorRegistry,private readonly catalog:ConnectorCatalogSyncService,private readonly manifests:ProviderCapabilityRegistryService,private readonly verification:VerificationPolicyRegistry,private readonly evidence:ResolutionEvidenceService,@Inject(DATABASE) private readonly db:InjectedDatabase,@Inject(CREDENTIAL_PROVIDER) private readonly credentials:CredentialProvider) {}
  async onApplicationBootstrap() {
   if(!process.env.MCP_EXECUTION_BINDINGS_JSON) return;
   const settings=z.array(z.object({endpoint:z.string().url(),binding:bindingSchema}).strict()).max(20).parse(JSON.parse(process.env.MCP_EXECUTION_BINDINGS_JSON));
@@ -43,6 +45,9 @@ export class McpExecutionRegistrationService implements OnApplicationBootstrap {
    if(binding.authentication==='api_key') { if(!request.credentials?.ref) throw new ConnectorError('AUTH_REQUIRED','AUTH_REQUIRED','MCP credential required');const credential=await this.credentials.get(request.credentials.ref,request.credentials.version);if(!credential.apiKey) throw new ConnectorError('AUTH_REQUIRED','AUTH_REQUIRED','MCP credential unavailable');headers={authorization:`Bearer ${credential.apiKey}`}; }
    return new HttpMcpTransport(binding.serverId,descriptor.endpoint,{headers});
   };
+  // Explicit operator binding receives a stable server/tool identity; no inference from display names.
+  const canonicalId='mcp.tool.'+createHash('sha256').update(canonicalStringify({serverId:binding.serverId,toolName:binding.toolName})).digest('hex');
+  await this.db.transaction(async tx=>{await tx.insert(capabilityIdentities).values({id:canonicalId,revision:'canonical-capability-v1'}).onDuplicateKeyUpdate({set:{revision:'canonical-capability-v1'}});const prior=(await tx.select().from(capabilityAliases).where(eq(capabilityAliases.alias,write.capabilityKey)))[0];if(prior&&prior.canonicalId!==canonicalId)throw new ConflictException('MCP canonical alias collision');if(!prior)await tx.insert(capabilityAliases).values({alias:write.capabilityKey,canonicalId,revision:'canonical-capability-v1'});});
   const connector=new McpBoundConnector(binding,this.servers,transport,async request=> {
    if(!request.executionOperationId||!request.userId||!request.connectionId) throw new ConnectorError('CANONICAL_OPERATION_REQUIRED','PERMISSION_DENIED','MCP writes require a canonical outbox operation');
    const row=(await this.db.select({operation:sideEffectOperations,execution:executions}).from(sideEffectOperations).innerJoin(executions,eq(sideEffectOperations.executionId,executions.id)).where(and(eq(sideEffectOperations.id,request.executionOperationId),eq(sideEffectOperations.userId,request.userId))).limit(1))[0];
@@ -60,6 +65,7 @@ export class McpExecutionRegistrationService implements OnApplicationBootstrap {
    const started=Date.now();const health=await connector.validateConnection({capability:write.capabilityKey,input:{},requestId:`resolve:${context.planVersionId}`,userId:context.userId,connectionId:context.connectionId,credentials:{ref:ref?.ref ?? undefined,version:ref?.currentVersion ?? undefined}});
    return {accountSatisfied:true,deviceSatisfied:true,reality:'VERIFIED',observedAt:health.checkedAt,costMicros:binding.costMicros,latencyMs:Date.now()-started,reliability:null};
   });
+  this.targets.registerMcpBacking(binding.connectorKey,()=>{const descriptor=this.servers.listServers().find(s=>s.serverId===binding.serverId);if(!descriptor)throw new ConflictException('MCP backing registration missing');return descriptor;});
   return {providerKey:binding.connectorKey,capabilityKey:write.capabilityKey,schemaHash:binding.schemaHash};
  }
 }

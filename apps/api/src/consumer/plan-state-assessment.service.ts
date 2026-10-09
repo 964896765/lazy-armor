@@ -1,8 +1,8 @@
 import { LifecycleReadService } from '../plans/lifecycle-read.service';
 import {assessPlanAvailability,authorityNextBestAction,type SourceSelection} from '@lazy-armor/plan-schema';
 import {Inject,Injectable} from '@nestjs/common';
-import {plans,planCreationContracts,executions} from '@lazy-armor/database';
-import {and,eq,desc} from 'drizzle-orm';
+import {plans,planCreationContracts,executions,strategyRuntimeWakeups,auditLogs} from '@lazy-armor/database';
+import {and,eq,desc,inArray} from 'drizzle-orm';
 import {DATABASE,type InjectedDatabase} from '../common/database.module';
 import {FactDemandResolverService} from '../fact-demands/fact-demand-resolver.service';
 import type {ScenarioGoalSpec,ScenarioResourceSubject,StateAssessment,NextBestAction} from '@lazy-armor/plan-schema';
@@ -34,6 +34,40 @@ export class PlanStateAssessmentService {
     if(verified&&complete)continue;
     result.nextBestAction=authorityNextBestAction({coverage:result.assessment.coverage,verifiedComplete:false,hasConflict:result.assessment.coverage.some(row=>row.state==='CONFLICT'),approvalRequired:false,approvalGranted:false,executionAuthorized:false,due:null,thresholdExceeded:null,changed:null,serviceAvailable:false},{executionId:run.id,executionStatus:run.status,lifecycle:projection.lifecycle},true);
    }catch{result.nextBestAction='RECONCILE';}
+  }
+  const versionIds=results.flatMap(result=>result.planVersionId?[result.planVersionId]:[]);
+  if(versionIds.length){
+   const waits=await this.db.select({id:strategyRuntimeWakeups.id,planVersionId:strategyRuntimeWakeups.planVersionId})
+     .from(strategyRuntimeWakeups).where(and(eq(strategyRuntimeWakeups.userId,userId),inArray(strategyRuntimeWakeups.planVersionId,versionIds),eq(strategyRuntimeWakeups.handoffStatus,'PENDING'),eq(strategyRuntimeWakeups.handoffReason,'WAITING_RESOURCE')));
+   for(const result of results){
+    const wait=waits.find(row=>row.planVersionId===result.planVersionId);
+    if(wait&&result.nextBestAction!=='REQUEST_APPROVAL'&&result.nextBestAction!=='RECONCILE'){
+     result.assessment={...result.assessment,state:'BLOCKED',reason:'执行资源需要授权或恢复，本次尚未写入',evidenceRefs:[...result.assessment.evidenceRefs,'strategy-wakeup:'+wait.id]};
+     result.nextBestAction='CONNECT_RESOURCE';
+    }
+   }
+  }
+  // Notification watch checkpoints derive from the same confirmed PlanVersion.
+  // Empty acquisition means wait for facts, never a completed logistics goal.
+  for(const {plan,contract} of rows){
+   if((contract?.goalJson.constraints as Record<string,unknown>|undefined)?.recipeKey!=='notification.shipment-watch.v1')continue;
+   const result=results.find(row=>row.planId===plan.id);
+   if(!result||!result.planVersionId)continue;
+   const checkpoint=(await this.db.select().from(auditLogs).where(and(eq(auditLogs.userId,userId),eq(auditLogs.resourceId,result.planVersionId),eq(auditLogs.action,'PERSISTENT_NOTIFICATION_RESOURCE_STATE'))).orderBy(desc(auditLogs.createdAt),desc(auditLogs.id)).limit(1))[0];
+   if(!checkpoint?.afterSnapshotJson)continue;
+   const state=String(checkpoint.afterSnapshotJson.state),reasons=Array.isArray(checkpoint.afterSnapshotJson.reasons)?checkpoint.afterSnapshotJson.reasons as string[]:[];
+   if(state==='WAITING_RESOURCE'){
+    const labels:Record<string,string>={NOTIFICATION_ACCESS_REQUIRED:'需要开启 Android 通知访问权限',NOTIFICATION_GRANT_REQUIRED:'需要允许读取本机通知',NOTIFICATION_COLLECTION_UNAVAILABLE:'需要恢复消息获取开关或通知监听器',WAITING_DEVICE:'正在等待原手机上线',APP_SOURCE_GRANT_REQUIRED:'需要授权京东通知来源',FROZEN_SOURCE_CHANGED:'原通知来源已变化，需要恢复原来源',READ_ATTEMPT_LIMIT_REACHED:'读取恢复次数已达上限，需要核对来源'};
+    result.assessment={...result.assessment,state:'BLOCKED',reason:reasons.map(reason=>labels[reason]).filter(Boolean).join('；')||'原通知来源需要恢复；计划已保存，恢复后自动继续'};
+    result.nextBestAction='CONNECT_RESOURCE';
+   }else if(state==='WAITING_FACT_CONFIRMATION'){
+    result.assessment={...result.assessment,state:'NEEDS_ATTENTION',reason:'读取到京东通知候选，核实后才判断是否需要提醒'};result.nextBestAction='ASK_USER';
+   }else if(state==='READ_FAILED'){
+    result.assessment={...result.assessment,state:'UNKNOWN',reason:'本次通知读取未完成，不能判断物流状态'};result.nextBestAction='REFRESH_SOURCE';
+   }else if(state==='READ_PENDING'||state==='WAITING_FACT_CHANGE'){
+    result.assessment={...result.assessment,state:'UNKNOWN',reason:state==='READ_PENDING'?'正在读取原计划授权的京东通知':'正在等待新的已核实京东物流通知；当前读取范围不能证明没有快递'};result.nextBestAction='WAIT';
+   }
+   result.assessment={...result.assessment,evidenceRefs:[...result.assessment.evidenceRefs,'notification-checkpoint:'+checkpoint.id]};
   }
   return results;
  }

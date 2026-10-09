@@ -48,8 +48,8 @@ describe('Calendar isolated provider contract, not real-account acceptance', () 
     expect(mutations[0][0]).toContain('sendUpdates=all'); expect(transport.mock.calls.at(-1)?.[0]).toContain('/events/la' + input.idempotencyKey);
   });
   it.each([{ summary: 'changed' }, { attendeesOmitted: true }, { attendees: [] }, { status: 'cancelled' }, { extendedProperties: {} }])('never succeeds on mismatched or incomplete read-back %j', async (changed) => {
-    const provider = adapter(async (url) => json(url.endsWith('/primary') ? { id: credentials.calendarId } : event(changed))); const result = await provider.execute(input);
-    expect((await provider.verify({ request: input, result, policy: calendarPolicy.verificationPolicies[0] })).state).toBe('OUTCOME_UNKNOWN');
+    const provider = adapter(async (url) => json(url.endsWith('/primary') ? { id: credentials.calendarId } : event(changed)));
+    await expect(provider.execute(input)).rejects.toMatchObject({ code: 'OUTCOME_UNKNOWN', phase: 'AFTER_DISPATCH', definitiveNoEffect: false });
   });
   it('updates with approved If-Match and preserves other private properties', async () => {
     const transport = vi.fn(async (url: string) => json(url.endsWith('/primary') ? { id: credentials.calendarId } : event())); const provider = adapter(transport);
@@ -87,5 +87,27 @@ describe('Calendar isolated provider contract, not real-account acceptance', () 
       parserKey: 'generic.calendar-event.v1' as const, resourceHint: 'CalendarEvent', payload, evidenceHash: 'f'.repeat(64), observedAt: new Date().toISOString() };
     expect(parseAndNormalizeObservation(observation)[0].factKey).toBe('calendar_event.schedule');
     expect(parseAndNormalizeObservation(observation)[0].subjectKey).not.toBe(parseAndNormalizeObservation({ ...observation, connectionId: 'two' })[0].subjectKey);
+  });
+  it('reconciles a committed write after response loss using a fresh executor without another mutation', async () => {
+    let retained: Record<string, unknown> | null = null;
+    const transport = vi.fn(async (url: string, init: RequestInit) => {
+      if (url.endsWith('/primary')) return json({ id: credentials.calendarId });
+      if (init.method === 'POST') {
+        retained = event();
+        throw new TypeError('response lost after provider committed');
+      }
+      return retained ? json(retained) : json({ error: { errors: [{ reason: 'notFound' }] } }, 404);
+    });
+    await expect(adapter(transport).execute(input)).rejects.toMatchObject({ phase: 'AFTER_DISPATCH', definitiveNoEffect: false });
+    // Restart/reconciliation restores the frozen request and uses operation lookup only.
+    const restarted = adapter(transport);
+    const first = await restarted.lookupOperation(input);
+    const replay = await restarted.lookupOperation(input);
+    expect(first).toEqual(replay);
+    expect(first.data.verificationEvidence).toMatchObject({ matched: true });
+    expect(transport.mock.calls.filter(([, init]) => init.method === 'POST')).toHaveLength(1);
+    const mismatched = await restarted.lookupOperation({ ...input, input: { context: { calendarEvent: { ...approved, title: 'changed after approval' } } } });
+    expect(mismatched.data.verificationEvidence).toMatchObject({ matched: false });
+    expect(transport.mock.calls.filter(([, init]) => init.method === 'POST')).toHaveLength(1);
   });
 });

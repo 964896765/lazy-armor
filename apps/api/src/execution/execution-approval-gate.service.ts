@@ -29,7 +29,7 @@ export class ExecutionApprovalGate {
   ) {}
 
   async check(input: {
-    execution: { id: string; userId: string; planId: string; planVersionId: string; triggerPayloadJson: Record<string, unknown>; resolvedApprovalPolicyJson: Record<string, unknown> | null };
+    execution: { id: string; userId: string; planId: string | null; planVersionId: string | null; triggerPayloadJson: Record<string, unknown>; resolvedApprovalPolicyJson: Record<string, unknown> | null };
     step: typeof executionSteps.$inferSelect;
     action: NormalizedAction;
   }): Promise<{ allowed: boolean; effectiveRisk: RiskLevel }> {
@@ -85,11 +85,11 @@ export class ExecutionApprovalGate {
     }
   }
 
-  contextHash(input: { execution: { id: string; planVersionId: string }; step: { id: string; planActionId: string } }, risk: RiskSnapshot) {
+  contextHash(input: { execution: { id: string; planVersionId: string | null }; step: { id: string; planActionId: string | null } }, risk: RiskSnapshot) {
     return createHash('sha256').update(canonicalStringify({ executionId: input.execution.id, planVersionId: input.execution.planVersionId, stepId: input.step.id, planActionId: input.step.planActionId, inputFingerprint: risk.inputFingerprint, effectiveRisk: risk.effectiveRisk, amountMinor: risk.amountMinor, currency: risk.currency })).digest('hex');
   }
 
-  async assertSnapshotValid(request: typeof approvalRequests.$inferSelect, execution: { id: string; planVersionId: string }, step: typeof executionSteps.$inferSelect, risk: RiskSnapshot) {
+  async assertSnapshotValid(request: typeof approvalRequests.$inferSelect, execution: { id: string; planVersionId: string | null }, step: typeof executionSteps.$inferSelect, risk: RiskSnapshot) {
     if (!request.approvalSnapshotJson || !request.approvalSnapshotHash) {
       if (step.actionIntentId) throw new ConflictException('Immutable approval snapshot missing');
       return; // Preserve historical requests under their original fingerprint guard.
@@ -100,7 +100,7 @@ export class ExecutionApprovalGate {
       || approvalSnapshotInvalidation(snapshot, current, new Date().toISOString()).length) throw new ConflictException('Immutable approval snapshot invalidated');
   }
 
-  private async snapshotFor(execution: { id: string; planVersionId: string }, step: typeof executionSteps.$inferSelect, risk: RiskSnapshot, expiresAt: Date): Promise<ApprovalSnapshot> {
+  private async snapshotFor(execution: { id: string; planVersionId: string | null }, step: typeof executionSteps.$inferSelect, risk: RiskSnapshot, expiresAt: Date): Promise<ApprovalSnapshot> {
     const intent = step.actionIntentId ? (await this.db.select().from(actionIntents).where(eq(actionIntents.id, step.actionIntentId)).limit(1))[0] : null;
     if (step.actionIntentId && (!intent || intent.executionId !== execution.id)) throw new ConflictException('ActionIntent unavailable');
     return { schemaVersion: '1', executionId: execution.id, executionStepId: step.id, planVersionId: execution.planVersionId,
@@ -150,7 +150,8 @@ export class ExecutionApprovalGate {
 
   private summary(action: NormalizedAction, risk: RiskSnapshot) {
     const labels: Record<string, string> = { publish: '将内容发布到外部平台', create_order: '将创建外部订单', sync: '将数据同步到外部服务', prepare_purchase: '将准备购买操作', update_internal_record: '将更新内部记录' };
+    const label=action.requiredCapability==='calendar.event.delete'?'将删除已关联的手机日历事项':action.requiredCapability==='calendar.event.update'?'将修改已关联的手机日历事项':action.requiredCapability==='calendar.event.create'?'将在日历创建事项':labels[action.actionType]??`将执行 ${action.actionType}`;
     const amount = risk.amountMinor === null ? '' : `，金额 ${(risk.amountMinor / 100).toFixed(2)} ${risk.currency ?? ''}`;
-    return `${labels[action.actionType] ?? `将执行 ${action.actionType}`}（风险 ${risk.effectiveRisk}${amount}）`;
+    return `${label}（风险 ${risk.effectiveRisk}${amount}）`;
   }
 }

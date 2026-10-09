@@ -1,6 +1,6 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { executionEvents, executionSteps, executions, planVersions, plans, approvalRequests, notifications } from '@lazy-armor/database';
-import { and, asc, desc, eq, gte, lt, lte, or, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, lt, lte, or, sql, type SQL } from 'drizzle-orm';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
 import { AuditService } from '../audit/audit.service';
 import { QueueService } from '../infrastructure/queue.service';
@@ -27,11 +27,11 @@ export class ExecutionsService {
     if (query.from) filters.push(gte(executions.createdAt, new Date(query.from)));
     if (query.to) filters.push(lte(executions.createdAt, new Date(query.to)));
     const rows = await this.db.select({
-      id: executions.id, planId: executions.planId, planVersionId: executions.planVersionId, planName: planVersions.name,
+      id: executions.id, planId: executions.planId, planVersionId: executions.planVersionId, planName: sql<string>`COALESCE(${planVersions.name}, JSON_UNQUOTE(JSON_EXTRACT(${executions.definitionSnapshotJson}, '$.name'))) `,
       status: executions.status, resultCode: executions.resultCode, resultSummary: executions.resultSummary,
       errorCode: executions.errorCode, errorMessage: executions.errorMessage, createdAt: executions.createdAt,
       startedAt: executions.startedAt, finishedAt: executions.finishedAt,
-    }).from(executions).innerJoin(planVersions, eq(executions.planVersionId, planVersions.id))
+    }).from(executions).leftJoin(planVersions, eq(executions.planVersionId, planVersions.id))
       .where(and(...filters)).orderBy(desc(executions.createdAt)).limit(query.limit).offset(query.offset);
     return rows.map((row) => ({ ...row, errorMessage: this.consumerErrorDetail(row.errorCode, row.errorMessage) }));
   }
@@ -50,11 +50,11 @@ export class ExecutionsService {
     const cursor = decodeCursor(query.cursor);
     if (cursor) filters.push(or(lt(executions.createdAt, cursor.createdAt), and(eq(executions.createdAt, cursor.createdAt), lt(executions.id, cursor.id)))!);
     const rows = await this.db.select({
-      id: executions.id, planId: executions.planId, planVersionId: executions.planVersionId, planName: planVersions.name,
+      id: executions.id, planId: executions.planId, planVersionId: executions.planVersionId, planName: sql<string>`COALESCE(${planVersions.name}, JSON_UNQUOTE(JSON_EXTRACT(${executions.definitionSnapshotJson}, '$.name'))) `,
       status: executions.status, resultCode: executions.resultCode, resultSummary: executions.resultSummary,
       errorCode: executions.errorCode, errorMessage: executions.errorMessage, createdAt: executions.createdAt,
       startedAt: executions.startedAt, finishedAt: executions.finishedAt,
-    }).from(executions).innerJoin(planVersions, eq(executions.planVersionId, planVersions.id))
+    }).from(executions).leftJoin(planVersions, eq(executions.planVersionId, planVersions.id))
       .where(and(...filters)).orderBy(desc(executions.createdAt), desc(executions.id)).limit(query.limit + 1);
     const hasMore = rows.length > query.limit;
     const selected = hasMore ? rows.slice(0, query.limit) : rows;
@@ -66,14 +66,14 @@ export class ExecutionsService {
   async get(userId: string, id: string) {
     const rows = await this.db.select({
       id: executions.id, userId: executions.userId, planId: executions.planId, planVersionId: executions.planVersionId,
-      planName: planVersions.name, planVersionNumber: planVersions.versionNumber, definitionHash: executions.definitionHash, requestId: executions.requestId,
+      planName: sql<string>`COALESCE(${planVersions.name}, JSON_UNQUOTE(JSON_EXTRACT(${executions.definitionSnapshotJson}, '$.name'))) `, planVersionNumber: planVersions.versionNumber, definitionHash: executions.definitionHash, requestId: executions.requestId,
       retryOfExecutionId: executions.retryOfExecutionId, triggerType: executions.triggerType, status: executions.status,
       declaredRiskLevel: executions.declaredRiskLevel, approvalStatus: executions.approvalStatus,
       riskPolicyVersion: executions.riskPolicyVersion, resolvedRiskSnapshotJson: executions.resolvedRiskSnapshotJson, resolvedApprovalPolicyJson: executions.resolvedApprovalPolicyJson,
       executionPolicyVersion: executions.executionPolicyVersion, resultCode: executions.resultCode, resultSummary: executions.resultSummary,
       errorCode: executions.errorCode, errorMessage: executions.errorMessage, cancellationRequestedAt: executions.cancellationRequestedAt,
       queuedAt: executions.queuedAt, startedAt: executions.startedAt, finishedAt: executions.finishedAt, createdAt: executions.createdAt,
-    }).from(executions).innerJoin(planVersions, eq(executions.planVersionId, planVersions.id))
+    }).from(executions).leftJoin(planVersions, eq(executions.planVersionId, planVersions.id))
       .where(and(eq(executions.id, id), eq(executions.userId, userId))).limit(1);
     if (!rows[0]) throw new NotFoundException('Execution not found');
     const [steps, events, approvals, detailNotifications] = await Promise.all([

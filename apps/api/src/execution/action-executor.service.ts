@@ -3,6 +3,7 @@ import { executions } from '@lazy-armor/database';
 import { eq } from 'drizzle-orm';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
 import { TerminalHandoffGuard, type HandoffTransaction, type TerminalHandoffProof } from '../strategy-runtime/terminal-handoff-guard.service';
+import { TruthHandoffGuard, type TruthHandoffProof } from '../strategy-runtime/truth-handoff-guard.service';
 import { ConnectorRegistry } from '@lazy-armor/connector-sdk';
 import { ACTION_DEFINITIONS, type NormalizedAction, type RiskLevel } from '@lazy-armor/plan-schema';
 import { BillingService } from '../billing/billing.service';
@@ -31,6 +32,7 @@ export class ActionExecutor {
     private readonly study: StudyService,
     @Inject(DATABASE) private readonly db: InjectedDatabase,
     private readonly terminalGuard: TerminalHandoffGuard,
+    private readonly truthGuard: TruthHandoffGuard,
   ) {}
 
   supports(actionType: string): boolean { return ['record', 'compare', 'update_internal_record', 'classify', 'summarize', 'notify', 'prepare_purchase', 'generate_content', 'create_draft', 'prepare_publish', 'create_task', 'archive'].includes(actionType); }
@@ -38,13 +40,30 @@ export class ActionExecutor {
   async execute(userId: string, executionId: string, action: NormalizedAction, context: Record<string, unknown>, effectiveRisk: RiskLevel = action.riskLevel, terminalTx?: HandoffTransaction): Promise<Record<string, unknown>> {
     if (!terminalTx) {
       const execution = (await this.db.select().from(executions).where(eq(executions.id, executionId)).limit(1))[0];
+      const truthProof=execution?.resolvedRiskSnapshotJson?.truthHandoffProof as TruthHandoffProof|undefined;
+      if(truthProof?.notificationSourceProof&&action.actionType==='notify'&&!action.connectionId){
+        if(execution.userId!==userId||!execution.planId)throw new ExecutionRuntimeError('TRUTH_HANDOFF_NOT_AUTHORIZED','Plan authority required for a notification fact');
+        const planId=execution.planId;
+        return this.db.transaction(async tx=>{
+          const handoff=await this.truthGuard.lockTruth(userId,planId,truthProof.wakeupId,tx,truthProof);
+          // A notification receipt identifies one verified line of evidence,
+          // not a tracking number. Distinct receipts must not share the generic
+          // logistics text-based dedupe key.
+          const notificationContext={...context,notificationDedupeKey:`notification-watch:${truthProof.planVersionId}:${truthProof.truthVersionId}`};
+          const output=await this.execute(userId,executionId,action,notificationContext,effectiveRisk,tx);
+          handoff.assertCurrent();
+          return output;
+        });
+      }
       const proof = execution?.resolvedRiskSnapshotJson?.terminalHandoffProof as TerminalHandoffProof | undefined;
       if (proof) {
+        if (!execution.planId) throw new ExecutionRuntimeError('TERMINAL_HANDOFF_NOT_AUTHORIZED', 'Plan authority required for terminal handoff');
+        const authorityPlanId=execution.planId;
         const localTerminalAction = ['notify', 'record'].includes(action.actionType) && !action.connectionId;
         const crossProviderAction = action.actionType === 'publish' && Boolean(action.connectionId) && Boolean(action.requiredCapability);
         if (execution.userId !== userId || (!localTerminalAction && !crossProviderAction)) throw new ExecutionRuntimeError('TERMINAL_HANDOFF_NOT_AUTHORIZED', 'Terminal action boundary is invalid');
         return this.db.transaction(async (tx) => {
-          const handoff = await this.terminalGuard.lock(userId, execution.planId, proof.wakeupId, tx, proof);
+          const handoff = await this.terminalGuard.lock(userId, authorityPlanId, proof.wakeupId, tx, proof);
           const output = await this.execute(userId, executionId, action, context, effectiveRisk, tx);
           handoff.assertCurrent(); // Includes notification/usage persistence in this transaction.
           return output;

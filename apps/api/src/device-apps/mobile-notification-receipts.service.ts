@@ -1,6 +1,8 @@
 import {localCapabilityAvailability} from '@lazy-armor/plan-schema';
+import type { RealityExecutor } from '../reality-pipeline/reality-pipeline.service';
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
+import { ModuleRef } from '@nestjs/core';
 import { localCapabilityStates,deviceAppConnections, mobileNotificationReceipts } from '@lazy-armor/database';
 import { newId } from '@lazy-armor/shared';
 import { and, eq } from 'drizzle-orm';
@@ -11,6 +13,8 @@ import { NotificationService } from '../notifications/notification.service';
 import { ObservabilityService } from '../observability/observability.service';
 import { TrustedDevicesService } from '../trusted-devices/trusted-devices.service';
 import { TruthStoreService } from '../truth-store/truth-store.service';
+import { RuntimeTargetsService } from '../runtime-targets/runtime-targets.service';
+import { lockNotificationSource } from '../strategy-runtime/notification-receipt-source.guard';
 import type { CreateMobileNotificationReceiptDto } from './notification-receipt.dto';
 import type { VerifyMobileNotificationReceiptDto } from './verify-notification-receipt.dto';
 
@@ -28,10 +32,18 @@ export class MobileNotificationReceiptsService {
     private readonly telemetry: ObservabilityService,
     private readonly trustedDevices: TrustedDevicesService,
     private readonly truthStore: TruthStoreService,
+    private readonly modules: ModuleRef,
   ) {}
 
-  async receive(userId: string, connectionId: string, input: CreateMobileNotificationReceiptDto, signedTrustedDeviceId: string) {
-    const connection = await this.getConnection(userId, connectionId);
+  async receive(userId: string, connectionId: string, input: CreateMobileNotificationReceiptDto, signedTrustedDeviceId: string, parentTx?:RealityExecutor, retainedRead=false):Promise<{receiptId:string;duplicate:boolean;status:string}> {
+    if(!parentTx){
+      await this.modules.get(RuntimeTargetsService,{strict:false}).refresh(userId);
+      const result=await this.db.transaction(tx=>this.receive(userId,connectionId,input,signedTrustedDeviceId,tx,false));
+      if(!result.duplicate)await this.notifications.emit({userId,priority:'P2',eventType:'mobile_notification_received',dedupeKey:`mobile_notification:${connectionId}:${input.eventId}`,title:'收到一条待核实的应用通知',body:'已保留一条你授权应用的通知线索，等待后续验证。不会触发自动操作。',actionRequired:false});
+      return result;
+    }
+    const store=parentTx??this.db;
+    const connection = await this.getConnection(userId, connectionId,store);
     if (connection.trustedDeviceId !== signedTrustedDeviceId) {
       await this.block(userId, connectionId, 'SIGNED_DEVICE_MISMATCH');
       this.telemetry.increment('mobile_notification.rejected', 1, { reason: 'SIGNED_DEVICE_MISMATCH' });
@@ -50,15 +62,18 @@ export class MobileNotificationReceiptsService {
       throw error;
     }
     await this.assertConnectionAllowsSource(connection, input.sourcePackage, userId, connectionId);
-    const grant=(await this.db.select().from(localCapabilityStates).where(and(eq(localCapabilityStates.userId,userId),eq(localCapabilityStates.trustedDeviceId,signedTrustedDeviceId),eq(localCapabilityStates.capability,'notification.read'))).limit(1))[0];
+    const grant=(await store.select().from(localCapabilityStates).where(and(eq(localCapabilityStates.userId,userId),eq(localCapabilityStates.trustedDeviceId,signedTrustedDeviceId),eq(localCapabilityStates.capability,'notification.read'))).limit(1))[0];
     if(!grant||localCapabilityAvailability({key:grant.capability,userGrant:grant.userGrant,systemPermission:grant.systemPermission as never,health:grant.health as never,checkedAt:grant.checkedAt.getTime()},Date.now())!=='AVAILABLE'){
       await this.block(userId,connectionId,'LOCAL_NOTIFICATION_GRANT_REQUIRED');
       throw new ForbiddenException('Native notification source is not authorized or healthy');
     }
+    const sourceBinding=await lockNotificationSource(store,userId,{deviceAppConnectionId:connectionId,trustedDeviceId:signedTrustedDeviceId,sourcePackage:input.sourcePackage});
     await this.assertNormalizedCandidate(input, userId, connectionId);
     const postedAt = new Date(input.postedAt);
     const capturedAt = new Date(input.capturedAt);
-    await this.assertFresh(capturedAt, postedAt, userId, connectionId);
+    // A signed, bounded acquisition can re-observe an older retained notice.
+    // Keep its actual posted/captured timestamps; do not relabel it as a new event.
+    await this.assertFresh(capturedAt, postedAt, userId, connectionId,retainedRead?MAX_EVENT_AGE_MS:CAPTURE_WINDOW_MS);
 
     const rate = await this.limiter.consume(`mobile-notification:${connectionId}`, 60, 60);
     if (!rate.allowed) {
@@ -67,12 +82,11 @@ export class MobileNotificationReceiptsService {
       throw new ConflictException('Notification source rate limit exceeded');
     }
 
-    const payloadHash = createHash('sha256').update(JSON.stringify({
+    const eventEvidence={
       eventId: input.eventId,
       contentHash: input.contentHash,
       sourcePackage: input.sourcePackage,
       postedAt: input.postedAt,
-      capturedAt: input.capturedAt,
       hasTitle: input.hasTitle,
       hasText: input.hasText,
       candidateKind: input.candidateKind,
@@ -81,10 +95,19 @@ export class MobileNotificationReceiptsService {
       amountMinor: input.amountMinor,
       currency: input.currency,
       parserVersion: input.parserVersion,
+    };
+    const eventEvidenceHash=createHash('sha256').update(JSON.stringify(eventEvidence)).digest('hex');
+    // Capture time belongs to this delivery, while the original event identity
+    // and evidence remain stable when the listener observes it again.
+    const payloadHash=createHash('sha256').update(JSON.stringify({
+      eventId:input.eventId,contentHash:input.contentHash,sourcePackage:input.sourcePackage,
+      postedAt:input.postedAt,capturedAt:input.capturedAt,hasTitle:input.hasTitle,hasText:input.hasText,
+      candidateKind:input.candidateKind,candidateResource:input.candidateResource,candidateConfidence:input.candidateConfidence,
+      amountMinor:input.amountMinor,currency:input.currency,parserVersion:input.parserVersion,
     })).digest('hex');
-    const existing = await this.findExisting(connectionId, input.eventId);
+    const existing = await this.findExisting(connectionId, input.eventId,store);
     if (existing) {
-      if (existing.payloadHash !== payloadHash) {
+      if (!this.matchesEvidence(existing,eventEvidenceHash,payloadHash,input.candidateStatus??null)) {
         await this.block(userId, connectionId, 'DUPLICATE_MISMATCH');
         this.telemetry.increment('mobile_notification.rejected', 1, { reason: 'DUPLICATE_MISMATCH' });
         throw new ConflictException('Notification event key cannot be reused with different evidence');
@@ -96,7 +119,7 @@ export class MobileNotificationReceiptsService {
     const now = new Date();
     const id = newId();
     try {
-      await this.db.insert(mobileNotificationReceipts).values({
+      await store.insert(mobileNotificationReceipts).values({
         id,
         userId,
         deviceAppConnectionId: connectionId,
@@ -106,14 +129,14 @@ export class MobileNotificationReceiptsService {
         postedAt,
         amountMinor: input.amountMinor,
         status: 'received_unclassified',
-        snapshotJson: { schema: 'mobile-notification-minimal-v2', hasTitle: input.hasTitle, hasText: input.hasText, candidateKind: input.candidateKind, candidateResource: input.candidateResource, candidateConfidence: input.candidateConfidence, currency: input.currency, candidateStatus: input.candidateStatus, parserVersion: input.parserVersion },
+        snapshotJson: { schema: 'mobile-notification-minimal-v2', hasTitle: input.hasTitle, hasText: input.hasText, candidateKind: input.candidateKind, candidateResource: input.candidateResource, candidateConfidence: input.candidateConfidence, currency: input.currency, candidateStatus: input.candidateStatus, parserVersion: input.parserVersion, sourceBinding, eventEvidenceHash },
         receivedAt: now,
         verifiedAt: null,
       });
     } catch (error) {
       if (!isDuplicate(error)) throw error;
-      const raced = await this.findExisting(connectionId, input.eventId);
-      if (!raced || raced.payloadHash !== payloadHash) throw new ConflictException('Notification event key cannot be reused with different evidence');
+      const raced = await this.findExisting(connectionId, input.eventId,store);
+      if (!raced || !this.matchesEvidence(raced,eventEvidenceHash,payloadHash,input.candidateStatus??null)) throw new ConflictException('Notification event key cannot be reused with different evidence');
       this.telemetry.increment('mobile_notification.duplicate', 1, { source: 'generic' });
       return { receiptId: raced.id, duplicate: true, status: raced.status };
     }
@@ -121,12 +144,8 @@ export class MobileNotificationReceiptsService {
     await this.audit.append({
       actorType: 'user', actorUserId: userId, action: 'MOBILE_NOTIFICATION_RECEIPT_RECORDED', resourceType: 'mobile_notification_receipt', resourceId: id,
       userId, correlationId: id, changeSummary: 'Recorded a minimal notification receipt from a user-authorized generic app source', source: 'api', result: 'success',
-    });
+    },parentTx);
     this.telemetry.increment('mobile_notification.received', 1, { source: 'generic', status: 'unclassified' });
-    await this.notifications.emit({
-      userId, priority: 'P2', eventType: 'mobile_notification_received', dedupeKey: `mobile_notification:${connectionId}:${input.eventId}`,
-      title: '收到一条待核实的应用通知', body: '已保留一条你授权应用的通知线索，等待后续验证。不会触发自动操作。', actionRequired: false,
-    });
     return { receiptId: id, duplicate: false, status: 'received_unclassified' };
   }
 
@@ -138,8 +157,9 @@ export class MobileNotificationReceiptsService {
       const snapshot = receipt.snapshotJson as Record<string, unknown>;
       return {
         id: receipt.id, connectionId: receipt.deviceAppConnectionId, status: receipt.status, postedAt: receipt.postedAt.toISOString(), receivedAt: receipt.receivedAt.toISOString(),
-        candidateKind: snapshot.candidateKind === 'billing_transaction_candidate' || snapshot.candidateKind === 'account_notification_candidate' ? snapshot.candidateKind : 'unknown',
-        candidateResource: snapshot.candidateResource === 'mobile.billing.transaction' || snapshot.candidateResource === 'mobile.account.notification' ? snapshot.candidateResource : null,
+        candidateKind: ['billing_transaction_candidate','account_notification_candidate','shipment_candidate','bill_candidate','device_candidate'].includes(String(snapshot.candidateKind)) ? snapshot.candidateKind : 'unknown',
+        candidateResource: ['mobile.billing.transaction','mobile.account.notification','shipment','Bill','DeviceStatus'].includes(String(snapshot.candidateResource)) ? snapshot.candidateResource : null,
+        candidateStatus:typeof snapshot.candidateStatus==='string'?snapshot.candidateStatus:null,
         candidateConfidence: typeof snapshot.candidateConfidence === 'number' ? snapshot.candidateConfidence : 0,
         amountMinor: typeof receipt.amountMinor === 'number' ? receipt.amountMinor : null,
         currency: snapshot.currency === 'CNY' ? 'CNY' : null,
@@ -148,23 +168,25 @@ export class MobileNotificationReceiptsService {
   }
 
   async verify(userId: string, connectionId: string, receiptId: string, input: VerifyMobileNotificationReceiptDto) {
-    const rows = await this.db.select().from(mobileNotificationReceipts)
-      .where(and(eq(mobileNotificationReceipts.id, receiptId), eq(mobileNotificationReceipts.deviceAppConnectionId, connectionId), eq(mobileNotificationReceipts.userId, userId))).limit(1);
+    return this.db.transaction(async tx=>{
+    const rows = await tx.select().from(mobileNotificationReceipts)
+      .where(and(eq(mobileNotificationReceipts.id, receiptId), eq(mobileNotificationReceipts.deviceAppConnectionId, connectionId), eq(mobileNotificationReceipts.userId, userId))).limit(1).for('update');
     const receipt = rows[0];
     if (!receipt) throw new NotFoundException('Mobile notification receipt not found');
     if (receipt.status !== 'received_unclassified') throw new ConflictException('Notification receipt has already been decided');
     const now = new Date();
     if (!input.confirmed) {
-      await this.db.update(mobileNotificationReceipts).set({ status: 'rejected_by_user', verifiedAt: now }).where(eq(mobileNotificationReceipts.id, receiptId));
-      await this.audit.append({ actorType: 'user', actorUserId: userId, action: 'MOBILE_NOTIFICATION_CANDIDATE_REJECTED', resourceType: 'mobile_notification_receipt', resourceId: receiptId, userId, correlationId: receiptId, changeSummary: 'User rejected a notification candidate; no truth record was created', source: 'api', result: 'success' });
+      await tx.update(mobileNotificationReceipts).set({ status: 'rejected_by_user', verifiedAt: now }).where(eq(mobileNotificationReceipts.id, receiptId));
+      await this.audit.append({ actorType: 'user', actorUserId: userId, action: 'MOBILE_NOTIFICATION_CANDIDATE_REJECTED', resourceType: 'mobile_notification_receipt', resourceId: receiptId, userId, correlationId: receiptId, changeSummary: 'User rejected a notification candidate; no truth record was created', source: 'api', result: 'success' },tx);
       this.telemetry.increment('mobile_notification.verification', 1, { outcome: 'rejected_by_user' });
       return { receiptId, status: 'rejected_by_user', truthRecord: null };
     }
-    const truthRecord = await this.truthStore.confirmMobileReceipt(userId, receipt);
-    await this.db.update(mobileNotificationReceipts).set({ status: 'verified', verifiedAt: now }).where(eq(mobileNotificationReceipts.id, receiptId));
-    await this.audit.append({ actorType: 'user', actorUserId: userId, action: 'MOBILE_NOTIFICATION_CANDIDATE_CONFIRMED', resourceType: 'mobile_notification_receipt', resourceId: receiptId, userId, correlationId: receiptId, changeSummary: 'User confirmed a generic notification candidate after device key proof', source: 'api', result: 'success' });
+    const truthRecord = await this.truthStore.confirmMobileReceipt(userId, receipt,tx);
+    await tx.update(mobileNotificationReceipts).set({ status: 'verified', verifiedAt: now }).where(eq(mobileNotificationReceipts.id, receiptId));
+    await this.audit.append({ actorType: 'user', actorUserId: userId, action: 'MOBILE_NOTIFICATION_CANDIDATE_CONFIRMED', resourceType: 'mobile_notification_receipt', resourceId: receiptId, userId, correlationId: receiptId, changeSummary: 'User confirmed a generic notification candidate after device key proof', source: 'api', result: 'success' },tx);
     this.telemetry.increment('mobile_notification.verification', 1, { outcome: 'verified' });
     return { receiptId, status: 'verified', truthRecord };
+    });
   }
 
   private async assertNormalizedCandidate(input: CreateMobileNotificationReceiptDto, userId: string, connectionId: string) {
@@ -182,8 +204,8 @@ export class MobileNotificationReceiptsService {
     throw new BadRequestException('Notification candidate is not a valid generic normalized signal');
   }
 
-  private async getConnection(userId: string, connectionId: string) {
-    const rows = await this.db.select().from(deviceAppConnections)
+  private async getConnection(userId: string, connectionId: string,store:RealityExecutor=this.db) {
+    const rows = await store.select().from(deviceAppConnections)
       .where(and(eq(deviceAppConnections.id, connectionId), eq(deviceAppConnections.userId, userId))).limit(1);
     if (!rows[0]) throw new NotFoundException('Device app connection not found');
     return rows[0];
@@ -197,17 +219,22 @@ export class MobileNotificationReceiptsService {
     }
   }
 
-  private async assertFresh(capturedAt: Date, postedAt: Date, userId: string, connectionId: string) {
+  private async assertFresh(capturedAt: Date, postedAt: Date, userId: string, connectionId: string,captureWindowMs=CAPTURE_WINDOW_MS) {
     const now = Date.now();
-    if (!Number.isFinite(capturedAt.getTime()) || !Number.isFinite(postedAt.getTime()) || Math.abs(now - capturedAt.getTime()) > CAPTURE_WINDOW_MS || postedAt.getTime() > now + CAPTURE_WINDOW_MS || now - postedAt.getTime() > MAX_EVENT_AGE_MS) {
+    if (!Number.isFinite(capturedAt.getTime()) || !Number.isFinite(postedAt.getTime()) || capturedAt.getTime()>now+5000 || now-capturedAt.getTime()>captureWindowMs || postedAt.getTime() > now + CAPTURE_WINDOW_MS || now - postedAt.getTime() > MAX_EVENT_AGE_MS) {
       await this.block(userId, connectionId, 'STALE_EVENT');
       this.telemetry.increment('mobile_notification.rejected', 1, { reason: 'STALE_EVENT' });
       throw new ConflictException('Notification source event is outside the accepted time window');
     }
   }
 
-  private async findExisting(connectionId: string, eventId: string) {
-    const rows = await this.db.select({ id: mobileNotificationReceipts.id, payloadHash: mobileNotificationReceipts.payloadHash, status: mobileNotificationReceipts.status })
+  private matchesEvidence(receipt:Pick<typeof mobileNotificationReceipts.$inferSelect,'payloadHash'|'snapshotJson'>,eventEvidenceHash:string,payloadHash:string,candidateStatus:string|null) {
+    const sameEvidence=typeof receipt.snapshotJson?.eventEvidenceHash==='string'?receipt.snapshotJson.eventEvidenceHash===eventEvidenceHash:receipt.payloadHash===payloadHash;
+    return sameEvidence&&(receipt.snapshotJson?.candidateStatus??null)===candidateStatus;
+  }
+
+  private async findExisting(connectionId: string, eventId: string,store:RealityExecutor=this.db) {
+    const rows = await store.select({ id: mobileNotificationReceipts.id, payloadHash: mobileNotificationReceipts.payloadHash, status: mobileNotificationReceipts.status, snapshotJson:mobileNotificationReceipts.snapshotJson })
       .from(mobileNotificationReceipts).where(and(eq(mobileNotificationReceipts.deviceAppConnectionId, connectionId), eq(mobileNotificationReceipts.eventId, eventId))).limit(1);
     return rows[0];
   }

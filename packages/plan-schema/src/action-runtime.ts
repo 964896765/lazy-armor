@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { canonicalStringify, type RiskLevel } from './index';
+import { runtimeAuthoritySourceSchema } from './runtime-authority-source';
 
 export const ACTION_INTENT_SCHEMA_VERSION = '1' as const;
 export const ACTION_ADAPTER_REVISION = 1 as const;
@@ -12,8 +13,8 @@ export interface ContextRiskSignal {
 
 export interface ActionIntentInput {
   intentId: string;
-  planVersionId: string;
-  planActionId: string;
+  planVersionId: string | null;
+  planActionId: string | null;
   actionType: string;
   capabilityKey: string | null;
   resourceType: string;
@@ -39,8 +40,8 @@ export interface ApprovalSnapshot {
   schemaVersion: '1';
   executionId: string;
   executionStepId: string;
-  planVersionId: string;
-  planActionId: string;
+  planVersionId: string | null;
+  planActionId: string | null;
   actionIntentId: string | null;
   actionIntentHash: string | null;
   capabilityKey: string | null;
@@ -60,6 +61,10 @@ export function riskMaximum(...levels: RiskLevel[]): RiskLevel {
 }
 
 export function buildActionIntent(input: ActionIntentInput): ActionIntent {
+  if (input.planVersionId === null || input.planActionId === null) {
+    const source = runtimeAuthoritySourceSchema.parse((input.target as Record<string, unknown>)?.authoritySource);
+    if (input.planVersionId !== null || input.planActionId !== null || source.kind !== 'USER_EVENT_SYNC') throw new Error('ActionIntent requires a complete controlled authority source');
+  }
   const payloadHash = hash(input.payload);
   const contextRiskElevation = riskMaximum(...input.contextSignals.map((signal) => signal.floor));
   const effectiveRisk = riskMaximum(input.providerRiskFloor, input.scenarioRiskFloor, input.actionRisk, contextRiskElevation);

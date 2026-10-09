@@ -15,6 +15,7 @@ const client = vi.hoisted(() => ({
 
 vi.mock('./device-app-bridge', () => bridge);
 vi.mock('./device-task-client', () => client);
+vi.mock('expo-file-system/legacy', () => ({}));
 vi.mock('expo-secure-store', () => ({
   getItemAsync: vi.fn(),
   setItemAsync: vi.fn(),

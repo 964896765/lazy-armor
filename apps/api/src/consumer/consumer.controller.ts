@@ -1,3 +1,6 @@
+import { UserEventSyncLaunchService } from '../execution/user-event-sync-launch.service';
+import { UserEventsService } from '../profiles/user-events.service';
+import { ChangeUserEventDto, ProposeUserEventSyncChangeDto } from './dto';
 import { ExternalReferenceDto } from './dto';
 import { CalendarProjectionService } from './calendar-projection.service';
 import {NativeCapabilitiesDto} from './local-capabilities.dto';
@@ -19,7 +22,7 @@ import { ConsumerService } from './consumer.service';
 import { UpdateConversationHistoryDto, SaveConversationDraftInputDto, ConversationAttachmentDto, RunConversationOnceDto, CreateConversationDto, ConversationMessageDto, ConfirmConversationPlanDto, PromoteConversationDto, ExternalServiceDto, ServiceRequestDto, RequestTransitionDto } from './dto';
 @Controller()
 export class ConsumerController {
- constructor(private readonly calendarProjection: CalendarProjectionService, private readonly localCapabilities:LocalCapabilitiesService, private readonly consumer: ConsumerService, private readonly once: ConversationOnceService,private readonly workItems:WorkItemProjectionService,private readonly localAcquisition:LocalAcquisitionService,private readonly trustedDevices:TrustedDevicesService) {}
+ constructor(private readonly syncLaunch:UserEventSyncLaunchService, private readonly calendarProjection: CalendarProjectionService, private readonly localCapabilities:LocalCapabilitiesService, private readonly consumer: ConsumerService, private readonly once: ConversationOnceService,private readonly workItems:WorkItemProjectionService,private readonly localAcquisition:LocalAcquisitionService,private readonly trustedDevices:TrustedDevicesService, private readonly userEvents: UserEventsService) {}
  @Get('consumer/acquisition-coverage') coverage(@CurrentUser() user:AuthenticatedUser){return this.localAcquisition.coverage(user.id);}
  @Post('consumer/local-acquisition') async localRead(@CurrentUser() user:AuthenticatedUser,@Body() input:LocalAcquisitionDto,@Req() request:Request,@Headers() headers:IncomingHttpHeaders){const h=(name:string)=>{const v=headers[name];return Array.isArray(v)?v[0]??'':v??'';};const proof={sessionId:h('x-device-session'),requestId:h('x-device-request-id'),signedAt:h('x-device-signed-at'),payloadHash:h('x-device-payload-hash'),signature:h('x-device-signature')};const signed=await this.trustedDevices.assertSignedRequest(user.id,proof,'POST','/consumer/local-acquisition',request.body);return this.localAcquisition.receive(user.id,signed.trustedDeviceId,proof.requestId,input);}
  @Get('consumer/calendar') calendar(@CurrentUser() user:AuthenticatedUser,@Query('month') month:string,@Query('timezone') timezone='Asia/Shanghai'){return this.calendarProjection.month(user.id,month,timezone);}
@@ -36,12 +39,13 @@ export class ConsumerController {
  private deviceProof(headers:IncomingHttpHeaders){const h=(name:string)=>{const v=headers[name];return Array.isArray(v)?v[0]??'':v??'';};return {sessionId:h('x-device-session'),requestId:h('x-device-request-id'),signedAt:h('x-device-signed-at'),payloadHash:h('x-device-payload-hash'),signature:h('x-device-signature')};}
  @Get('consumer/resources') async resources(@CurrentUser() user:AuthenticatedUser,@Headers() headers:IncomingHttpHeaders){
   const current=headers['x-device-session']?await this.trustedDevices.assertSignedRequest(user.id,this.deviceProof(headers),'GET','/consumer/resources',{}):null;
-  const [resources,local]=await Promise.all([this.consumer.resources(user.id),this.localCapabilities.project(user.id,current?.trustedDeviceId)]);
+  const [resources,local]=await Promise.all([this.consumer.resources(user.id,current?.trustedDeviceId,current?.deviceId),this.localCapabilities.project(user.id,current?.trustedDeviceId)]);
   return [...resources, ...local];
  }
  @Get('conversations') conversations(@CurrentUser() user: AuthenticatedUser) { return this.consumer.conversations(user.id); }
  @Post('conversations') createConversation(@CurrentUser() user: AuthenticatedUser, @Body() input: CreateConversationDto) { return this.consumer.createConversation(user.id, input); }
  @Post('conversations/:id/history') updateHistory(@CurrentUser() user: AuthenticatedUser, @Param('id', ParseUUIDPipe) id: string, @Body() input: UpdateConversationHistoryDto) { return this.consumer.updateConversationHistory(user.id, id, input); }
+ @Get('conversations/archived') archivedConversations(@CurrentUser() user: AuthenticatedUser) { return this.consumer.archivedConversations(user.id); }
  @Get('conversations/:id') conversation(@CurrentUser() user: AuthenticatedUser, @Param('id', ParseUUIDPipe) id: string) { return this.consumer.conversation(user.id, id); }
  @Post('conversations/:id/attachments') attach(@CurrentUser() user: AuthenticatedUser, @Param('id', ParseUUIDPipe) id: string, @Body() input: ConversationAttachmentDto) { return this.consumer.attach(user.id, id, input); }
  @Post('conversations/:id/artifact-attachments') attachArtifact(@CurrentUser() user: AuthenticatedUser, @Param('id', ParseUUIDPipe) id: string, @Body() input: AttachArtifactDto) { return this.consumer.attachArtifact(user.id,id,input); }
@@ -57,6 +61,14 @@ export class ConsumerController {
  @Delete('external-references/:id') deleteReference(@CurrentUser() user:AuthenticatedUser,@Param('id',ParseUUIDPipe) id:string){return this.consumer.externalRemove(user.id,id);}
  @Get('external-services') external(@CurrentUser() user: AuthenticatedUser) { return this.consumer.externalList(user.id); }
  @Get('external-services/:id') externalDetail(@CurrentUser() user: AuthenticatedUser, @Param('id', ParseUUIDPipe) id: string) { return this.consumer.externalGet(user.id, id); }
+ @Get('user-events/:id/external-sync') eventSyncStatus(@CurrentUser() user:AuthenticatedUser,@Param('id',ParseUUIDPipe) id:string){return this.syncLaunch.summaries(user.id,id);}
+ @Post('user-events/:id/external-sync/:requestId/start') startEventSync(@CurrentUser() user:AuthenticatedUser,@Param('id',ParseUUIDPipe) id:string,@Param('requestId',ParseUUIDPipe) requestId:string){return this.syncLaunch.start(user.id,id,requestId);}
+ @Post('user-events/:id/external-sync/:requestId/propose-change') proposeEventSyncChange(@CurrentUser() user:AuthenticatedUser,@Param('id',ParseUUIDPipe) id:string,@Param('requestId',ParseUUIDPipe) requestId:string,@Body() input:ProposeUserEventSyncChangeDto){return this.syncLaunch.proposeMutation(user.id,id,requestId,input.version);}
+ @Post('user-events/:id/external-sync/confirm-change') confirmEventSyncChange(@CurrentUser() user:AuthenticatedUser,@Param('id',ParseUUIDPipe) id:string,@Body() input:ConfirmActionProposalDto){return this.syncLaunch.confirmMutation(user.id,id,input);}
+ @Post('conversations/:id/confirm-user-event') confirmEvent(@CurrentUser() user:AuthenticatedUser,@Param('id',ParseUUIDPipe) id:string,@Body() input:ConfirmActionProposalDto){return this.consumer.confirmUserEvent(user.id,id,input);}
+ @Get('user-events') userEventList(@CurrentUser() user:AuthenticatedUser){return this.userEvents.list(user.id);}
+ @Get('user-events/:id') userEvent(@CurrentUser() user:AuthenticatedUser,@Param('id',ParseUUIDPipe) id:string){return this.userEvents.get(user.id,id);}
+ @Post('user-events/:id/lifecycle') changeEvent(@CurrentUser() user:AuthenticatedUser,@Param('id',ParseUUIDPipe) id:string,@Body() input:ChangeUserEventDto){return this.userEvents.change(user.id,id,input);}
  @Post('conversations/:id/confirm-plan') confirmPlan(@CurrentUser() user: AuthenticatedUser, @Param('id', ParseUUIDPipe) id: string, @Body() input: ConfirmConversationPlanDto) { return this.consumer.confirmPlan(user.id, id, input); }
  @Post('conversations/:id/promote') promote(@CurrentUser() user: AuthenticatedUser, @Param('id', ParseUUIDPipe) id: string, @Body() input: PromoteConversationDto) { return this.consumer.promoteConversation(user.id, id, input); }
  @Post('external-services') createExternal(@CurrentUser() user: AuthenticatedUser, @Body() input: ExternalServiceDto) { return this.consumer.externalCreate(user.id, input); }

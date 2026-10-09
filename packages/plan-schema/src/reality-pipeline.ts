@@ -2,13 +2,13 @@ import { createHash } from 'node:crypto';
 import { canonicalStringify, type JsonValue } from './index';
 
 export const SOURCE_MODES = ['OFFICIAL_API', 'WEBHOOK', 'NOTIFICATION', 'SHARE', 'APP_READ_SESSION', 'FILE', 'MANUAL', 'INTERNAL', 'NATIVE_OS'] as const;
-export const PARSER_KEYS = ['generic.transaction.v1', 'generic.shipment-status.v1', 'generic.connection-health.v1', 'generic.device-status.v1', 'generic.bill-reminder.v1', 'mobile-notification-billing.v1', 'generic.email-message.v1', 'generic.calendar-event.v1', 'generic.repository-resource.v1', 'generic.repository-resource.v2', 'generic.document-resource.v1', 'generic.consumable-remaining.v1', 'generic.household-supply.v1', 'generic.feishu-resource.v1', 'generic.dingtalk-resource.v1', 'generic.wecom-resource.v1', 'generic.structured-read.v1', 'native.calendar-event.v1','generic.external-reference.v1','generic.artifact-content.v1'] as const;
+export const PARSER_KEYS = ['generic.transaction.v1', 'generic.shipment-status.v1', 'generic.connection-health.v1', 'generic.device-status.v1', 'generic.bill-reminder.v1', 'mobile-notification-billing.v1', 'generic.email-message.v1', 'generic.calendar-event.v1', 'generic.repository-resource.v1', 'generic.repository-resource.v2', 'generic.document-resource.v1', 'generic.consumable-remaining.v1', 'generic.household-supply.v1', 'generic.feishu-resource.v1', 'generic.dingtalk-resource.v1', 'generic.wecom-resource.v1', 'generic.structured-read.v1', 'native.calendar-event.v1','native.calendar-event-absence.v1','generic.external-reference.v1','generic.artifact-content.v1'] as const;
 export type SourceMode = typeof SOURCE_MODES[number];
 export type ParserKey = typeof PARSER_KEYS[number];
 
 export const REALITY_ADAPTER_REGISTRY = Object.freeze([
   ...PARSER_KEYS.map((key) => Object.freeze({ key, kind: 'PARSER' as const, revision: 1 as const, status: 'ACTIVE' as const })),
-  ...['money.v1', 'transaction-reconciliation.v1', 'shipment-status.v1', 'connection-health.v1', 'device-status.v1', 'bill-reminder.v1', 'email-message.v1', 'calendar-event.v1', 'repository-resource.v1', 'repository-resource.v2', 'document-resource.v1', 'consumable-remaining.v1', 'household-supply.v1', 'feishu-resource.v1', 'dingtalk-resource.v1', 'wecom-resource.v1', 'structured-read.v1', 'native-calendar-event.v1','external-reference.v1','artifact-content.v1'].map((key) => Object.freeze({ key, kind: 'NORMALIZER' as const, revision: 1 as const, status: 'ACTIVE' as const })),
+  ...['money.v1', 'transaction-reconciliation.v1', 'shipment-status.v1', 'connection-health.v1', 'device-status.v1', 'bill-reminder.v1', 'email-message.v1', 'calendar-event.v1', 'repository-resource.v1', 'repository-resource.v2', 'document-resource.v1', 'consumable-remaining.v1', 'household-supply.v1', 'feishu-resource.v1', 'dingtalk-resource.v1', 'wecom-resource.v1', 'structured-read.v1', 'native-calendar-event.v1','native-calendar-event-absence.v1','external-reference.v1','artifact-content.v1'].map((key) => Object.freeze({ key, kind: 'NORMALIZER' as const, revision: 1 as const, status: 'ACTIVE' as const })),
 ]);
 
 export interface SourceObservationInput {
@@ -21,7 +21,7 @@ export interface SourceObservationInput {
 
 export interface NormalizedFactDraft {
   resourceType: 'ExternalReference' | 'Artifact' | 'finance.transaction' | 'shipment' | 'digital_account.connection' | 'DeviceStatus' | 'Bill' | 'EmailMessage' | 'CalendarEvent' | 'Repository' | 'Issue' | 'PullRequest' | 'Workflow' | 'Page' | 'DataSource' | 'FeishuResource' | 'DingTalkResource' | 'WeComResource' | 'StructuredRead' | 'device.consumable' | 'household.supply';
-  resourceKey: string; subjectKey: string; factKey: 'external_reference.content' | 'artifact.content' | 'calendar_event.meetings.state' | 'finance.transaction.amount' | 'shipment.status' | 'digital_account.connection.health' | 'device_status.status.state' | 'bill.bill.state' | 'email_message.metadata' | 'email_message.body' | 'email_message.labels' | 'calendar_event.schedule' | 'repository.metadata' | 'issue.state' | 'pull_request.state' | 'workflow.run_status' | 'page.properties' | 'data_source.schema' | 'feishu.resource.state' | 'dingtalk.resource.state' | 'wecom.resource.state' | 'structured_read.field' | 'device.consumable.remaining_days' | 'household.supply.remaining_days';
+  resourceKey: string; subjectKey: string; factKey: 'calendar_event.presence' | 'external_reference.content' | 'artifact.content' | 'calendar_event.meetings.state' | 'finance.transaction.amount' | 'shipment.status' | 'digital_account.connection.health' | 'device_status.status.state' | 'bill.bill.state' | 'email_message.metadata' | 'email_message.body' | 'email_message.labels' | 'calendar_event.schedule' | 'repository.metadata' | 'issue.state' | 'pull_request.state' | 'workflow.run_status' | 'page.properties' | 'data_source.schema' | 'feishu.resource.state' | 'dingtalk.resource.state' | 'wecom.resource.state' | 'structured_read.field' | 'device.consumable.remaining_days' | 'household.supply.remaining_days';
   value: Record<string, JsonValue>; confidence: number; normalizerKey: string;
   freshnessPolicyKey: 'external.reference' | 'artifact.content' | 'transaction.default' | 'shipment.status' | 'connection.health' | 'device.status' | 'bill.reminder' | 'email.message' | 'calendar.event' | 'repository.resource' | 'repository.resource.v2' | 'document.resource.v1' | 'feishu.resource' | 'dingtalk.resource' | 'wecom.resource' | 'structured.read' | 'consumable.remaining' | 'household.supply';
   conflictPolicyKey: 'latest_verified_then_observed' | 'latest_verified_then_observed.v2';
@@ -184,6 +184,13 @@ export function parseAndNormalizeObservation(input: SourceObservationInput): Nor
     return [{ resourceType: type as keyof typeof keys, resourceKey: subjectKey, subjectKey, factKey: keys[type as keyof typeof keys], value: input.payload,
       confidence: 1, normalizerKey: versioned ? 'repository-resource.v2' : 'repository-resource.v1',
       freshnessPolicyKey: versioned ? 'repository.resource.v2' : 'repository.resource', conflictPolicyKey: versioned ? 'latest_verified_then_observed.v2' : 'latest_verified_then_observed' }];
+  }
+  if (input.parserKey === 'native.calendar-event-absence.v1') {
+    if(input.sourceMode!=='NATIVE_OS'||input.connectionId||!input.deviceId||input.payload.present!==false)throw new Error('Calendar absence requires signed native read-back provenance');
+    const eventId=requireString(input.payload,'id'),calendarId=requireString(input.payload,'calendarId');
+    if(!/^[1-9][0-9]*$/.test(eventId)||!/^[1-9][0-9]*$/.test(calendarId))throw new Error('Invalid calendar absence identity');
+    const subjectKey=`local:${input.deviceId}:calendar:${calendarId}:${eventId}`;
+    return [{resourceType:'CalendarEvent',resourceKey:subjectKey,subjectKey,factKey:'calendar_event.presence',value:{eventId,calendarId,present:false},confidence:1,normalizerKey:'native-calendar-event-absence.v1',freshnessPolicyKey:'calendar.event',conflictPolicyKey:'latest_verified_then_observed'}];
   }
   if (input.parserKey === 'native.calendar-event.v1') {
     if(input.sourceMode!=='NATIVE_OS'||input.connectionId||!input.deviceId)throw new Error('Native calendar requires signed native device provenance');

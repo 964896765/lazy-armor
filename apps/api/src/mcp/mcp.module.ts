@@ -1,3 +1,4 @@
+import {RuntimeTargetsModule} from '../runtime-targets/runtime-targets.module';
 import { Module } from '@nestjs/common';
 import { ExecutionModule } from '../execution/execution.module';
 import { ConnectorsModule } from '../connectors/connectors.module';
@@ -17,7 +18,7 @@ import { McpClientService } from './mcp-client.service';
 import { McpServerRegistryService } from './mcp-server-registry.service';
 
 @Module({
-  imports: [ExecutionModule, ConnectorsModule, CapabilityResolverModule, AuditModule, ConnectionsModule, CredentialsModule, PlansModule, ProviderCapabilitiesModule, RealityPipelineModule, RuntimeCatalogModule],
+  imports: [RuntimeTargetsModule, ExecutionModule, ConnectorsModule, CapabilityResolverModule, AuditModule, ConnectionsModule, CredentialsModule, PlansModule, ProviderCapabilitiesModule, RealityPipelineModule, RuntimeCatalogModule],
   controllers: [LazyArmorMcpController],
   providers: [McpExecutionRegistrationService, McpServerRegistryService, McpClientService, McpActionAdapter, LazyArmorMcpToolService],
   exports: [McpExecutionRegistrationService, McpServerRegistryService, McpClientService, McpActionAdapter, LazyArmorMcpToolService],

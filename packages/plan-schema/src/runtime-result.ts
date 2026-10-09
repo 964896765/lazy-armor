@@ -1,0 +1,4 @@
+import {z} from 'zod';
+export const runtimeResultSchema=z.object({resultId:z.string().uuid(),invocationId:z.string().uuid(),targetId:z.string().uuid(),authorityEpoch:z.number().int().positive(),resultHash:z.string().regex(/^[a-f0-9]{64}$/),payloadRef:z.string().nullable(),evidenceRefs:z.array(z.string()),executionState:z.string(),verificationState:z.enum(['UNVERIFIED','VERIFIED','OUTCOME_UNKNOWN','FAILED']),deliveryAttempt:z.number().int().nonnegative(),lastDeliveredAt:z.string().datetime().nullable(),ackToken:z.string().nullable(),ackAt:z.string().datetime().nullable(),resumeCursor:z.string().nullable(),createdAt:z.string().datetime(),expiresAt:z.string().datetime().nullable()}).strict();
+export type RuntimeResult=z.infer<typeof runtimeResultSchema>;
+export function runtimeResultDeliveryState(result:Pick<RuntimeResult,'ackAt'|'lastDeliveredAt'>){return result.ackAt?'RESULT_ACKNOWLEDGED':result.lastDeliveredAt?'RESULT_DELIVERED':'RESULT_PENDING_DELIVERY';}

@@ -23,7 +23,7 @@ export function parseAmountToMinor(value: unknown): number | null {
 export class RiskEngine {
   constructor(@Inject(DATABASE) private readonly db: InjectedDatabase) {}
 
-  async evaluate(action: NormalizedAction, declaredRisk: RiskLevel, input: Record<string, unknown>, connectorId: string | null, executor: RiskExecutor = this.db, planVersionId?: string, manifestRiskFloor: RiskLevel = 'R0'): Promise<RiskSnapshot> {
+  async evaluate(action: NormalizedAction, declaredRisk: RiskLevel, input: Record<string, unknown>, connectorId: string | null, executor: RiskExecutor = this.db, planVersionId?: string | null, manifestRiskFloor: RiskLevel = 'R0'): Promise<RiskSnapshot> {
     const definition = ACTION_DEFINITIONS[action.actionType];
     const registryRisk = definition.riskLevel;
     const capabilityRisk = connectorId && action.requiredCapability

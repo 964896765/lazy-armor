@@ -19,7 +19,7 @@ export interface SearchScenarioHit {
 
 export interface SearchExecutionHit {
   id: string;
-  planId: string;
+  planId: string | null;
   planName: string | null;
   status: string;
   resultSummary: string | null;
@@ -133,7 +133,7 @@ export class SearchService {
       resultSummary: executions.resultSummary,
       createdAt: executions.createdAt,
     }).from(executions)
-      .innerJoin(planVersions, eq(executions.planVersionId, planVersions.id))
+      .leftJoin(planVersions, eq(executions.planVersionId, planVersions.id))
       .where(and(
         eq(executions.userId, userId),
         or(like(executions.resultSummary, pattern), like(executions.status, pattern)),

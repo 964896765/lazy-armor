@@ -68,7 +68,11 @@ export class GoogleCalendarProviderAdapter implements ProviderAdapter {
       if (created.id !== desired.eventId) throw new ProviderRuntimeError('OUTCOME_UNKNOWN', 'AFTER_DISPATCH');
     } catch (error) { if (!(error instanceof GoogleApiError && error.httpStatus === 409 && !update)) throw error; }
     // Includes POST success and duplicate-ID response: only read, never repeat mutation.
-    try { return await this.readback(credential, desired); }
+    try {
+      const result = await this.readback(credential, desired);
+      if (!result.data.verificationEvidence.matched) throw new ProviderRuntimeError('OUTCOME_UNKNOWN', 'AFTER_DISPATCH');
+      return result;
+    }
     catch { throw new ProviderRuntimeError('OUTCOME_UNKNOWN', 'AFTER_DISPATCH'); }
   }
   async lookupOperation(input: ConnectorRequest) {

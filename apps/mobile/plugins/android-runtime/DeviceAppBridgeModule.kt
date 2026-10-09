@@ -302,6 +302,18 @@ class DeviceAppBridgeModule(reactContext: ReactApplicationContext) : ReactContex
   }
 
   @ReactMethod
+  fun acquireNotificationSource(account: String, sourcePackage: String, start: Double, end: Double, promise: Promise) {
+    try {
+      LocalCapabilityManifest.activateAccount(reactApplicationContext, account)
+      check(LocalCapabilityManifest.activeGrant(reactApplicationContext, "notification.read")) { "NOTIFICATION_GRANT_REQUIRED" }
+      val result = LocalAcquisition.readNotificationSource(reactApplicationContext, sourcePackage, start.toLong(), end.toLong())
+      promise.resolve(result.toString())
+    } catch (error: Exception) {
+      promise.reject("E_NOTIFICATION_SOURCE_READ_FAILED", "通知来源暂时无法读取，不会当作空结果。", error)
+    }
+  }
+
+  @ReactMethod
   fun openApp(packageName: String, promise: Promise) {
     if (packageName.isBlank()) {
       promise.reject("E_APP_PACKAGE_INVALID", "应用标识无效。")
@@ -327,6 +339,7 @@ class DeviceAppBridgeModule(reactContext: ReactApplicationContext) : ReactContex
       val status = LazyArmorNotificationListener.status(reactApplicationContext)
       val result = Arguments.createMap()
       result.putBoolean("accessGranted", status.optBoolean("accessGranted", false))
+      result.putBoolean("acquisitionEnabled", status.optBoolean("acquisitionEnabled", false))
       result.putInt("enabledPackageCount", status.optInt("enabledPackageCount", 0))
       result.putInt("pendingCount", status.optInt("pendingCount", 0))
       promise.resolve(result)

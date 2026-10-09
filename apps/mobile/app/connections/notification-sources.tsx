@@ -1,26 +1,48 @@
+import { syncLocalCapabilities } from '../../src/local-capability-client';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { router, useFocusEffect } from 'expo-router';
-import { useCallback } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { useCallback, useEffect, useState } from 'react';
+import { ActivityIndicator, AppState, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/api';
 import { useAuthStore } from '../../src/auth-store';
 import { createMobileNotificationReceiptRequest } from '../../src/device-app-api-contract';
-import { deviceBoundApi } from '../../src/trusted-device-api';
+import { deviceBoundApi, ensureTrustedDevice } from '../../src/trusted-device-api';
 import { acknowledgeNotificationPreviews, deviceDiscoveryStatus, drainNotificationPreviews, notificationSourceStatus, openNotificationAccessSettings, setNotificationSourceEnabled } from '../../src/device-app-bridge';
 import { ActionButton, EmptyState, Surface, colors, spacing, typography } from '../../src/design';
 
-interface DeviceAppConnection { id: string; packageName: string; displayName: string; enabled: boolean; modes: string[] }
+interface DeviceAppConnection { id: string; trustedDeviceId: string | null; packageName: string; displayName: string; enabled: boolean; modes: string[] }
 interface ReceiptResult { receiptId: string; duplicate: boolean; status: string }
-interface PendingReceipt { id: string; connectionId: string; status: string; postedAt: string; receivedAt: string; candidateKind: 'unknown' | 'billing_transaction_candidate' | 'account_notification_candidate'; candidateResource: 'mobile.billing.transaction' | 'mobile.account.notification' | null; candidateConfidence: number; amountMinor: number | null; currency: 'CNY' | null }
+interface PendingReceipt { id: string; connectionId: string; status: string; postedAt: string; receivedAt: string; candidateKind: 'unknown' | 'billing_transaction_candidate' | 'account_notification_candidate' | 'shipment_candidate' | 'bill_candidate' | 'device_candidate'; candidateStatus:string|null; candidateResource: 'mobile.billing.transaction' | 'mobile.account.notification' | 'shipment' | 'Bill' | 'DeviceStatus' | null; candidateConfidence: number; amountMinor: number | null; currency: 'CNY' | null }
 
 export default function NotificationSourcesPage() {
+  const params=useLocalSearchParams<{returnTo?:string}>();
+  const returnTo=typeof params.returnTo==='string' && /^\/chat\?conversationId=[0-9a-f-]{36}$/i.test(params.returnTo)?params.returnTo:null;
   const token = useAuthStore((store) => store.token);
   const client = useQueryClient();
-  const nativeStatus = useQuery({ queryKey: ['notification-source-status'], queryFn: notificationSourceStatus, enabled: Boolean(token), staleTime: 0 });
+  const nativeUnavailable = deviceDiscoveryStatus() === 'unavailable';
+  const [pageFocused, setPageFocused] = useState(false);
+  const [foreground, setForeground] = useState(AppState.currentState === 'active');
+  const refreshInterval = pageFocused && foreground ? 5000 : false;
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', state => setForeground(state === 'active'));
+    return () => subscription.remove();
+  }, []);
+  const nativeStatus = useQuery({ queryKey: ['notification-source-status'], queryFn: notificationSourceStatus, enabled: Boolean(token), staleTime: 0, refetchInterval: refreshInterval, refetchIntervalInBackground: false });
   const connections = useQuery({ queryKey: ['device-app-connections', token], queryFn: () => api<DeviceAppConnection[]>('/device-app-connections', token), enabled: Boolean(token) });
-  const pendingReceipts = useQuery({ queryKey: ['mobile-notification-receipts', token], queryFn: () => api<PendingReceipt[]>('/device-app-connections/notification-receipts', token), enabled: Boolean(token) });
-  useFocusEffect(useCallback(() => { void nativeStatus.refetch(); }, [nativeStatus]));
+  const currentDevice = useQuery({ queryKey: ['current-trusted-device', token], queryFn: () => ensureTrustedDevice(token ?? null), enabled: Boolean(token) && !nativeUnavailable });
+  const available = currentDevice.data ? (connections.data ?? []).filter(connection => connection.enabled && connection.trustedDeviceId === currentDevice.data.id) : [];
+  const sourcesReady = currentDevice.isSuccess && connections.isSuccess;
+  const sourcesError = currentDevice.isError || connections.isError;
+  const pendingReceipts = useQuery({ queryKey: ['mobile-notification-receipts', token, currentDevice.data?.id], queryFn: () => api<PendingReceipt[]>('/device-app-connections/notification-receipts', token), select: receipts => receipts.filter(receipt => available.some(connection => connection.id === receipt.connectionId)), enabled: Boolean(token) && sourcesReady, refetchInterval: refreshInterval, refetchIntervalInBackground: false });
+  useFocusEffect(useCallback(() => {
+    setPageFocused(true);
+    if (token) {
+      void pendingReceipts.refetch();
+      void syncLocalCapabilities(token).then(() => nativeStatus.refetch()).catch(() => {});
+    }
+    return () => setPageFocused(false);
+  }, [token, nativeStatus.refetch, pendingReceipts.refetch]));
 
   const toggle = useMutation({
     mutationFn: async ({ connection, enabled }: { connection: DeviceAppConnection; enabled: boolean }) => {
@@ -44,7 +66,8 @@ export default function NotificationSourcesPage() {
 
   const sync = useMutation({
     mutationFn: async () => {
-      const byPackage = new Map((connections.data ?? []).filter((connection) => connection.enabled && connection.modes.includes('notification_read')).map((connection) => [connection.packageName, connection]));
+      if (!sourcesReady) throw new Error('CURRENT_DEVICE_SOURCES_REQUIRED');
+      const byPackage = new Map(available.filter(connection => connection.modes.includes('notification_read')).map(connection => [connection.packageName, connection]));
       const pending = await drainNotificationPreviews();
       const acknowledged: string[] = [];
       for (const preview of pending) {
@@ -57,8 +80,10 @@ export default function NotificationSourcesPage() {
       await acknowledgeNotificationPreviews(acknowledged);
       return acknowledged.length;
     },
-    onSuccess: async () => {
-      await Promise.all([nativeStatus.refetch(), client.invalidateQueries({ queryKey: ['today', token] }), client.invalidateQueries({ queryKey: ['notifications', token] })]);
+    onSettled: async () => {
+      // Some receipts may already be committed even when a later upload fails.
+      // Display server candidates without treating synchronization as Truth.
+      await Promise.all([nativeStatus.refetch(), client.invalidateQueries({ queryKey: ['mobile-notification-receipts', token] }), client.invalidateQueries({ queryKey: ['today', token] }), client.invalidateQueries({ queryKey: ['notifications', token] })]);
     },
   });
 
@@ -68,23 +93,25 @@ export default function NotificationSourcesPage() {
       await Promise.all([client.invalidateQueries({ queryKey: ['mobile-notification-receipts', token] }), client.invalidateQueries({ queryKey: ['today', token] }), client.invalidateQueries({ queryKey: ['notifications', token] })]);
     },
   });
-  const available = (connections.data ?? []).filter((connection) => connection.enabled);
-  const nativeUnavailable = deviceDiscoveryStatus() === 'unavailable';
   return <SafeAreaView style={styles.safeArea} edges={['top']}><ScrollView style={styles.page} contentContainerStyle={styles.content}>
     <View style={styles.header}><Text style={styles.title}>通知来源</Text><Text style={styles.subtitle}>逐个选择已添加的应用。通知正文只在手机上短暂处理，系统只会同步最小化指纹线索等待核实。</Text></View>
     {!token ? <Surface><EmptyState icon="log-in-outline" title="请先登录" description="需要先确认当前账号，才能管理通知来源。" /></Surface> : null}
     {token && nativeUnavailable ? <Surface><EmptyState icon="notifications-off-outline" title="暂时无法管理通知来源" description="请使用包含原生模块的 Android 构建。Web、iOS 或 Expo Go 不会假装已经获得系统通知访问。" /></Surface> : null}
     {token && !nativeUnavailable ? <>
+      {nativeStatus.data?.acquisitionEnabled===false ? <Surface><Text style={styles.cardTitle}>消息获取已暂停</Text><Text style={styles.cardCopy}>开启通知访问和应用来源后，还需要开启消息获取，才能读取真实通知。</Text><View style={styles.action}><ActionButton label="管理消息获取" onPress={()=>router.push('/settings' as never)}/></View></Surface> : null}
+      {nativeStatus.data?.accessGranted && nativeStatus.data.acquisitionEnabled !== false && nativeStatus.data.connected === false ? <Surface><Text style={styles.cardTitle}>通知监听尚未连接</Text><Text style={styles.cardCopy}>系统权限已开启，但当前还不能读取通知。请在系统通知访问设置中检查连接，恢复后原目标会自动继续。</Text><View style={styles.action}><ActionButton label="打开系统设置" onPress={() => void openNotificationAccessSettings()} /></View></Surface> : null}
       {!nativeStatus.data?.accessGranted ? <Surface><Text style={styles.cardTitle}>需要系统通知访问</Text><Text style={styles.cardCopy}>系统会单独询问是否允许懒人装甲读取通知。开启系统访问后，你仍需要在此页为每个应用分别选择是否作为来源。</Text><View style={styles.action}><ActionButton label="打开系统设置" onPress={() => void openNotificationAccessSettings()} /></View></Surface> : null}
       {nativeStatus.data?.accessGranted ? <Surface><Text style={styles.cardTitle}>已获得系统通知访问</Text><Text style={styles.cardCopy}>当前已有 {nativeStatus.data.enabledPackageCount} 个应用被你选为来源。未启用的应用不会采集或同步通知。</Text>{nativeStatus.data.pendingCount > 0 ? <View style={styles.action}><ActionButton label={sync.isPending ? '正在同步…' : `同步 ${nativeStatus.data.pendingCount} 条待核实线索`} onPress={() => sync.mutate()} disabled={sync.isPending} /></View> : <Text style={styles.quietText}>当前没有待同步的通知线索。</Text>}{sync.isError ? <Text style={styles.error}>同步暂时失败，未确认的线索会保留在本机等待你稍后重试。</Text> : null}</Surface> : null}
-      <Text style={styles.sectionTitle}>已添加的应用</Text>
-      {connections.isLoading ? <ActivityIndicator color={colors.primary} /> : null}
-      {available.length === 0 && !connections.isLoading ? <Surface><EmptyState icon="add-circle-outline" title="还没有可管理的应用" description="请先从当前设备的真实可启动应用中添加连接。" /></Surface> : null}
+      <View style={styles.action}><ActionButton label="管理本机通知读取授权" tone="quiet" onPress={()=>router.push('/resources' as never)}/>{returnTo?<ActionButton label="返回原查询" onPress={()=>router.replace(returnTo as never)}/>:null}</View><Text style={styles.sectionTitle}>已添加的应用</Text>
+      {connections.isLoading || currentDevice.isLoading ? <ActivityIndicator color={colors.primary} /> : null}
+      {sourcesError ? <><Text style={styles.error}>本机来源暂时无法加载。确认当前设备后才能管理通知读取。</Text><View style={styles.action}><ActionButton label="重试读取本机来源" tone="quiet" onPress={() => void Promise.all([currentDevice.refetch(), connections.refetch()])} disabled={currentDevice.isFetching || connections.isFetching} /></View></> : null}
+      {sourcesReady && available.length === 0 ? <Surface><EmptyState icon="add-circle-outline" title="还没有可管理的应用" description="请先从当前设备的真实可启动应用中添加连接。" /></Surface> : null}
       <View style={styles.list}>{available.map((connection) => <NotificationSourceRow key={connection.id} connection={connection} accessGranted={Boolean(nativeStatus.data?.accessGranted)} pending={toggle.isPending} onToggle={(enabled) => toggle.mutate({ connection, enabled })} />)}</View>
       {toggle.isError ? <Text style={styles.error}>设置暂时没有保存。系统不会在未明确启用时上传通知。</Text> : null}
       <Text style={styles.sectionTitle}>待确认的资源线索</Text>
       {pendingReceipts.isLoading ? <ActivityIndicator color={colors.primary} /> : null}
-      {!pendingReceipts.isLoading && (pendingReceipts.data?.length ?? 0) === 0 ? <Text style={styles.quietText}>当前没有等待确认的线索。</Text> : null}
+      {pendingReceipts.isError ? <><Text style={styles.error}>线索暂时无法加载，这不能说明没有待核实信息。</Text><View style={styles.action}><ActionButton label="重试读取线索" tone="quiet" onPress={() => void pendingReceipts.refetch()} disabled={pendingReceipts.isFetching} /></View></> : null}
+      {sourcesReady && !pendingReceipts.isLoading && !pendingReceipts.isError && (pendingReceipts.data?.length ?? 0) === 0 ? <Text style={styles.quietText}>当前没有等待确认的线索。</Text> : null}
       <View style={styles.list}>{pendingReceipts.data?.map((receipt) => <PendingReceiptCard key={receipt.id} receipt={receipt} pending={decideReceipt.isPending} onDecide={(confirmed) => decideReceipt.mutate({ receipt, confirmed })} />)}</View>
       {decideReceipt.isError ? <Text style={styles.error}>这次确认没有保存。系统不会把线索当作真实事实；你可以稍后重试。</Text> : null}
       <View style={styles.action}><ActionButton label="查看已验证事实" tone="quiet" onPress={() => router.push('/truth-store' as never)} /></View>
@@ -94,10 +121,11 @@ export default function NotificationSourcesPage() {
 }
 
 function PendingReceiptCard({ receipt, pending, onDecide }: { receipt: PendingReceipt; pending: boolean; onDecide: (confirmed: boolean) => void }) {
-  const label = receipt.candidateKind === 'billing_transaction_candidate'
+  const label = receipt.candidateKind === 'shipment_candidate' ? `物流候选：${({IN_TRANSIT:'运输或派送中',DELIVERED:'通知提示已送达或签收',EXCEPTION:'物流异常',READY_FOR_PICKUP:'待取件'} as Record<string,string>)[receipt.candidateStatus??'']??'需要核实'}` : receipt.candidateKind === 'billing_transaction_candidate'
     ? `金额候选${receipt.amountMinor !== null ? `：${formatMoney(receipt.amountMinor, receipt.currency)}` : ''}`
     : receipt.candidateKind === 'account_notification_candidate' ? '账号提醒候选' : '未归类通知线索';
-  const confirmable = receipt.candidateKind === 'billing_transaction_candidate' && receipt.candidateResource === 'mobile.billing.transaction' && receipt.amountMinor !== null && receipt.currency === 'CNY';
+  const shipment=receipt.candidateKind==='shipment_candidate'&&receipt.candidateResource==='shipment'&&!!receipt.candidateStatus;
+  const confirmable = shipment || receipt.candidateKind === 'billing_transaction_candidate' && receipt.candidateResource === 'mobile.billing.transaction' && receipt.amountMinor !== null && receipt.currency === 'CNY';
   return <Surface><Text style={styles.rowTitle}>{label}</Text><Text style={styles.rowDescription}>来源已授权；端侧分类置信度 {receipt.candidateConfidence}%。收到时间：{formatTime(receipt.postedAt)}。</Text>{confirmable ? <View style={styles.receiptActions}><ActionButton label={pending ? '正在保存…' : '确认这条资源事实'} onPress={() => onDecide(true)} disabled={pending} /><ActionButton label="不是这项事实" tone="quiet" onPress={() => onDecide(false)} disabled={pending} /></View> : <Text style={styles.quietText}>无法自动验证的线索不会被写入资源事实。你可以停止该来源，或忽略此线索。</Text>}</Surface>;
 }
 

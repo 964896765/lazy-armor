@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import {canonicalCapabilityId,prepareAndroidCalendarCreate} from '@lazy-armor/plan-schema';
 import {
   connections,
   connectorCapabilities,
@@ -24,6 +25,7 @@ import {
   type RuntimeResultState,
 } from '@lazy-armor/plan-schema';
 import { newId } from '@lazy-armor/shared';
+import { CronExpressionParser } from 'cron-parser';
 import { and, asc, desc, eq, lt, or } from 'drizzle-orm';
 import { ZodError } from 'zod';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
@@ -390,14 +392,20 @@ export class PlansService {
     const actions = [] as PlanDefinition['actions'];
     for (const action of definition.actions) {
       const reference = await this.resolveConnectorReference(executor, userId, action.connectorKey, action.connectionId);
+      const nativeCalendar = !reference.connectionId && !reference.connectorId && action.actionType === 'publish'
+        && canonicalCapabilityId(action.requiredCapability ?? '') === 'calendar.event.create';
+      if (nativeCalendar) {
+        if (action.requiredCapability !== 'calendar.event.create') throw new BadRequestException('Native action requires canonical capability identity');
+        try { prepareAndroidCalendarCreate(action.config.calendarEvent); } catch { throw new BadRequestException('Invalid native calendar create semantics'); }
+      }
       const publishDraftOnlyWithoutProvider = action.actionType === 'publish'
         && !action.requiredCapability
         && !reference.connectionId
         && !reference.connectorId;
-      if (!options.allowMissingConnections && (ACTION_DEFINITIONS[action.actionType].externalEffect || action.requiredCapability) && !reference.connectionId && !publishDraftOnlyWithoutProvider) {
+      if (!options.allowMissingConnections && (ACTION_DEFINITIONS[action.actionType].externalEffect || action.requiredCapability) && !reference.connectionId && !publishDraftOnlyWithoutProvider && !nativeCalendar) {
         throw new BadRequestException(`${action.actionType} actions with external effects or capabilities require a connectionId`);
       }
-      if (action.requiredCapability) {
+      if (action.requiredCapability && !nativeCalendar) {
         if (!reference.connectorId) throw new BadRequestException('Capability has no connector context');
         const capability = await executor.select({ id: connectorCapabilities.id }).from(connectorCapabilities)
           .where(and(eq(connectorCapabilities.connectorId, reference.connectorId), eq(connectorCapabilities.key, action.requiredCapability)))
@@ -513,7 +521,7 @@ export class PlansService {
       plan.activeVersionId ? this.versionSummary(userId, plan.id, plan.activeVersionId) : null,
     ]);
     const latestExecution = await this.latestExecutionSummary(userId, plan.id);
-    const nextExpectedRunAt = await this.nextExpectedRun(plan.currentVersionId ?? plan.activeVersionId ?? null);
+    const nextExpectedRunAt = await this.nextExpectedRun((plan.status === 'active' ? plan.activeVersionId : plan.currentVersionId) ?? plan.currentVersionId ?? null);
     const summaryVersion = current ?? active;
     const planCenterSummary = summaryVersion
       ? await this.buildPlanCenterSummary(summaryVersion, latestExecution, nextExpectedRunAt)
@@ -847,7 +855,7 @@ export class PlansService {
       .limit(5);
     const scheduleTrigger = rows.find((row) => row.triggerType === 'schedule' && typeof row.config?.cronExpression === 'string');
     if (!scheduleTrigger || typeof scheduleTrigger.config?.cronExpression !== 'string') return null;
-    const next = this.computeNextRun(scheduleTrigger.config.cronExpression, new Date());
+    const next = this.computeNextRun(scheduleTrigger.config.cronExpression, new Date(), typeof scheduleTrigger.config.timezone === 'string' ? scheduleTrigger.config.timezone : 'UTC');
     return next?.toISOString() ?? null;
   }
 
@@ -886,79 +894,15 @@ export class PlansService {
     return [...missing.values()];
   }
 
-  private computeNextRun(cronExpression: string, now: Date) {
-    const [minutePart, hourPart, dayPart, monthPart, weekDayPart] = cronExpression.split(/\s+/);
-    if (!minutePart || !hourPart || !dayPart || !monthPart || !weekDayPart) return null;
-    const minute = this.parseFixedPart(minutePart);
-    if (minute === null) return null;
-    if (dayPart !== '*' && monthPart === '*' && weekDayPart === '*') {
-      const hour = this.parseFixedPart(hourPart);
-      const day = Number(dayPart);
-      if (hour === null || !Number.isInteger(day)) return null;
-      const candidate = new Date(now);
-      candidate.setUTCSeconds(0, 0);
-      candidate.setUTCMinutes(minute);
-      candidate.setUTCHours(hour);
-      candidate.setUTCDate(day);
-      if (candidate <= now) candidate.setUTCMonth(candidate.getUTCMonth() + 1, day);
-      return candidate;
+  private computeNextRun(cronExpression: string, now: Date, timezone = 'UTC') {
+    // Read-only projection: use the same timezone-aware parser as runtime.
+    // Invalid legacy configuration must not fabricate a next execution time.
+    try {
+      return CronExpressionParser.parse(cronExpression, { currentDate: now, tz: timezone }).next().toDate();
+    } catch {
+      return null;
     }
-    if (dayPart === '*' && monthPart === '*' && weekDayPart === '*') {
-      const everyHours = this.parseEveryPart(hourPart);
-      if (everyHours !== null) {
-        const candidate = new Date(now);
-        candidate.setUTCSeconds(0, 0);
-        candidate.setUTCMinutes(minute);
-        const currentHour = candidate.getUTCHours();
-        const currentMinute = candidate.getUTCMinutes();
-        let nextHour = Math.ceil(currentHour / everyHours) * everyHours;
-        if (currentHour % everyHours === 0 && minute > currentMinute) nextHour = currentHour;
-        if (currentHour % everyHours === 0 && minute <= currentMinute) nextHour = currentHour + everyHours;
-        if (currentHour % everyHours !== 0 && nextHour === currentHour) nextHour += everyHours;
-        if (nextHour >= 24) {
-          candidate.setUTCDate(candidate.getUTCDate() + Math.floor(nextHour / 24));
-          nextHour %= 24;
-        }
-        candidate.setUTCHours(nextHour);
-        return candidate;
-      }
-      const hour = this.parseFixedPart(hourPart);
-      if (hour === null) return null;
-      const candidate = new Date(now);
-      candidate.setUTCSeconds(0, 0);
-      candidate.setUTCMinutes(minute);
-      candidate.setUTCHours(hour);
-      if (candidate <= now) candidate.setUTCDate(candidate.getUTCDate() + 1);
-      return candidate;
-    }
-    if (dayPart === '*' && monthPart === '*' && /^[0-6]$/.test(weekDayPart)) {
-      const hour = this.parseFixedPart(hourPart);
-      const weekday = Number(weekDayPart);
-      if (hour === null) return null;
-      const candidate = new Date(now);
-      candidate.setUTCSeconds(0, 0);
-      candidate.setUTCMinutes(minute);
-      candidate.setUTCHours(hour);
-      const delta = (weekday - candidate.getUTCDay() + 7) % 7;
-      candidate.setUTCDate(candidate.getUTCDate() + delta);
-      if (candidate <= now) candidate.setUTCDate(candidate.getUTCDate() + 7);
-      return candidate;
-    }
-    return null;
   }
-
-  private parseFixedPart(part: string) {
-    const value = Number(part);
-    return Number.isInteger(value) ? value : null;
-  }
-
-  private parseEveryPart(part: string) {
-    const match = /^\*\/(\d+)$/.exec(part);
-    if (!match) return null;
-    const value = Number(match[1]);
-    return Number.isInteger(value) && value > 0 ? value : null;
-  }
-
   private toObjectRecord(value: unknown) {
     return value && typeof value === 'object' && !Array.isArray(value)
       ? value as Record<string, unknown>

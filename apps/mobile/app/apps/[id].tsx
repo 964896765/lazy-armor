@@ -1,3 +1,4 @@
+import {resourceStatus,appCapabilityLabel} from '../../src/resource-workspace';
 import { Ionicons } from '@expo/vector-icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { router, useLocalSearchParams, type Href } from 'expo-router';
@@ -11,7 +12,7 @@ import { discoverLaunchableApps, openDeviceApp, setNotificationSourceEnabled } f
 import { ActionButton, EmptyState, WorkspaceHeader, colors, radius, spacing, typography } from '../../src/design';
 import { ensureTrustedDevice } from '../../src/trusted-device-api';
 
-interface DeviceAppConnection { id: string; trustedDeviceId: string | null; packageName: string; displayName: string; enabled: boolean; modes: string[]; lastSeenAt: string | null }
+interface DeviceAppConnection { id: string; trustedDeviceId: string | null; packageName: string; displayName: string; enabled: boolean; modes: string[]; lastSeenAt: string | null;versionName?:string;launchable?:boolean;capabilities?:Array<{key:string;status:string;systemPermission:string;userGrant:boolean;healthy:boolean;evidenceRefs:string[]}> }
 interface TrustedDeviceSummary { id: string; status: 'active' | 'revoked' }
 
 export default function AppWorkspace() {
@@ -22,8 +23,11 @@ export default function AppWorkspace() {
   const deviceApps = useQuery({ queryKey: ['device-app-connections', token], queryFn: () => api<DeviceAppConnection[]>('/device-app-connections', token), enabled: Boolean(token) });
   const trustedDevices = useQuery({ queryKey: ['trusted-devices', token], queryFn: () => api<TrustedDeviceSummary[]>('/trusted-devices', token), enabled: Boolean(token) });
   const discoveredApps = useQuery({ queryKey: ['app-workspace-discovered-apps'], queryFn: discoverLaunchableApps, enabled: Boolean(token && (deviceApps.data?.length ?? 0) > 0), staleTime: 5 * 60_000 });
-  const app = deviceApps.data?.find((item) => item.id === id);
+  const current = useQuery({queryKey:['current-trusted-device',token],enabled:Boolean(token),queryFn:()=>ensureTrustedDevice(token!)});
+  const app = deviceApps.data?.find((item) => item.id === id&&item.trustedDeviceId===current.data?.id);
   const trustedDeviceStatus = trustedDevices.data?.find((device) => device.id === app?.trustedDeviceId)?.status;
+  const installation=discoveredApps.data?.find(item=>item.packageName===app?.packageName);
+  const installed=installation?.launchable===true;
   const iconUri = discoveredApps.data?.find((item) => item.packageName === app?.packageName)?.iconDataUri;
 
   const update = useMutation({
@@ -54,11 +58,12 @@ export default function AppWorkspace() {
   if (!token) {
     return <SafeAreaView style={styles.safeArea} edges={['top']}><EmptyState icon="phone-portrait-outline" title="登录后查看应用" description="登录后可管理这台手机上的应用来源。" action={{ label: '去登录', onPress: () => router.push('/auth/login' as never) }} /></SafeAreaView>;
   }
-  if (deviceApps.isLoading) {
+  if (deviceApps.isLoading||current.isLoading||discoveredApps.isLoading) {
     return <SafeAreaView style={styles.safeArea} edges={['top']}><View style={styles.loading}><ActivityIndicator color={colors.primary} /><Text style={styles.muted}>正在读取应用信息…</Text></View></SafeAreaView>;
   }
+  if(deviceApps.isError||current.isError||discoveredApps.isError){return <SafeAreaView style={styles.safeArea} edges={['top']}><EmptyState icon="cloud-offline-outline" title="暂时无法检查应用" description="不会使用旧发现记录替代当前安装证据。" action={{label:'重试',onPress:()=>{void deviceApps.refetch();void current.refetch();void discoveredApps.refetch();}}}/></SafeAreaView>;}
   if (!app) {
-    return <SafeAreaView style={styles.safeArea} edges={['top']}><EmptyState icon="help-circle-outline" title="没有找到这个应用" description="它可能已经断开或被移除。" action={{ label: '返回连接中心', onPress: () => router.replace('/connections' as never) }} /></SafeAreaView>;
+    return <SafeAreaView style={styles.safeArea} edges={['top']}><EmptyState icon="help-circle-outline" title="没有找到这个应用" description="它可能已经断开或被移除。" action={{ label: '返回应用能力', onPress: () => router.replace('/phone-apps' as never) }} /></SafeAreaView>;
   }
 
   return (
@@ -72,19 +77,20 @@ export default function AppWorkspace() {
 
         <View style={styles.openBar}>
           <View style={styles.openCopy}><Text style={styles.openTitle}>直接打开这个应用</Text><Text style={styles.openDetail}>受控读取会话会在你允许的范围内进行。</Text></View>
-          <ActionButton label="打开应用" onPress={() => void open()} disabled={!app.enabled} />
+          <ActionButton label="打开应用" onPress={() => void open()} disabled={!installed||!app.capabilities?.some(c=>c.key==='open_app'&&c.status==='AVAILABLE')} />
         </View>
         {feedback ? <Text style={styles.feedback}>{feedback}</Text> : null}
 
-        <SectionTitle title="它能提供什么" />
-        <View style={styles.card}>{app.modes.length > 0 ? app.modes.map((mode, index) => <InfoRow key={mode} icon={modeIcon(mode)} title={modeLabel(mode)} detail={modeDescription(mode)} last={index === app.modes.length - 1} />) : <Text style={styles.cardEmpty}>这个应用暂未声明可用能力。</Text>}</View>
+        <SectionTitle title="安装信息" /><Text style={styles.heroDetail}>已安装：{installed?'是':discoveredApps.isSuccess?'未发现':'待检查'} · 版本：{installation?.versionName??app.versionName??'未知'}</Text>
+        <SectionTitle title="基础能力与增强能力" />
+        {(app.capabilities??[]).map(cap=><View key={cap.key} style={styles.notice}><View><Text style={styles.openTitle}>{cap.key} · {appCapabilityLabel(cap.status,installed)}</Text><Text style={styles.heroDetail}>系统权限：{resourceStatus(cap.systemPermission)} · 用户授权：{cap.userGrant?'已授权':'需要授权'}</Text><Text style={styles.heroDetail}>健康：{cap.healthy?'正常':'待检查'} · 证据：{cap.evidenceRefs.join(' · ')||'暂无'}</Text></View></View>)}
 
         <SectionTitle title="隐私边界" />
         <View style={styles.notice}><Ionicons name="shield-checkmark-outline" size={20} color={colors.primary} /><Text style={styles.noticeText}>只使用你确认过的能力；真实数据必须来自通知、分享或受控读取，不会把“已安装”当成“已授权”。应用离开前台、会话过期或权限撤销时，采集会立即停止。</Text></View>
 
         <SectionTitle title="管理" />
         <View style={styles.actions}>
-          {app.enabled ? <ActionButton label="受控读取" onPress={() => router.push({ pathname: '/connections/app-read-session', params: { connectionId: app.id, packageName: app.packageName, displayName: app.displayName, notificationEnabled: String(app.modes.includes('notification_read')) } } as unknown as Href)} /> : null}
+          {installed&&app.capabilities?.some(c=>c.key==='app_read_session'&&c.status==='AVAILABLE') ? <ActionButton label="受控读取" onPress={() => router.push({ pathname: '/connections/app-read-session', params: { connectionId: app.id, packageName: app.packageName, displayName: app.displayName, notificationEnabled: String(app.modes.includes('notification_read')) } } as unknown as Href)} /> : null}
           {app.enabled ? <ActionButton label="通知来源" tone="quiet" onPress={() => router.push('/connections/notification-sources' as Href)} /> : null}
           <ActionButton label={app.enabled ? '停用连接' : trustedDeviceStatus === 'revoked' ? '重新验证并启用' : '重新启用'} tone={app.enabled ? 'danger' : 'primary'} onPress={changeEnabled} disabled={update.isPending} />
         </View>

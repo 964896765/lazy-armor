@@ -1,4 +1,5 @@
 import { catalogHash } from './runtime-catalog';
+import { runtimeAuthoritySourceSchema } from './runtime-authority-source';
 
 export const RESULT_STATES = ['SUCCEEDED', 'PARTIALLY_SUCCEEDED', 'FAILED', 'OUTCOME_UNKNOWN'] as const;
 export type RuntimeResultState = typeof RESULT_STATES[number];
@@ -57,8 +58,10 @@ export interface VerificationContract {
 }
 
 export interface ActionResolutionContract {
+  runtimeTargetBinding?: import('./runtime-action-binding').RuntimeTargetActionBinding;
   version: '1';
-  planVersionId: string;
+  planVersionId: string | null;
+  authoritySource?: import('./runtime-authority-source').RuntimeAuthoritySource;
   actionIntentId: string;
   actionIntentHash: string;
   adapterRevision: number;
@@ -88,7 +91,11 @@ export function verificationContractHash(contract: VerificationContract): string
 }
 
 export function actionResolutionContractHash(contract: ActionResolutionContract): string {
-  if (contract.version !== '1' || !contract.planVersionId || !contract.actionIntentId || !contract.actionIntentHash
+  if (contract.authoritySource) {
+    const source = runtimeAuthoritySourceSchema.parse(contract.authoritySource);
+    if (source.kind === 'USER_EVENT_SYNC' ? contract.planVersionId !== null : source.planVersionId !== contract.planVersionId) throw new Error('Resolution authority source mismatch');
+  }
+  if (contract.version !== '1' || (!contract.planVersionId && contract.authoritySource?.kind !== 'USER_EVENT_SYNC') || !contract.actionIntentId || !contract.actionIntentHash
     || !Number.isInteger(contract.adapterRevision) || contract.adapterRevision < 1 || !contract.adapterKey
     || !contract.riskInputFingerprint || !contract.effectiveRisk || !contract.verificationContractHash) {
     throw new Error('Invalid action resolution contract');

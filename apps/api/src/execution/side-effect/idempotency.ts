@@ -9,8 +9,8 @@ export function deriveIdempotencyKey(input: {
   userId: string;
   executionId: string;
   executionStepId: string;
-  planVersionId: string;
-  planActionId: string;
+  planVersionId: string | null;
+  planActionId: string | null;
   actionType: string;
   connectionId: string | null;
   capabilityKey: string | null;

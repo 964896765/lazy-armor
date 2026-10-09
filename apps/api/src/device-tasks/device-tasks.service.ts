@@ -1,3 +1,10 @@
+import {RuntimeResultsService} from '../capability-invocations/runtime-results.service';
+import { ResourceGapContinuationService } from '../consumer/resource-gap-continuation.service';
+import { PersistentNotificationPlanService } from '../consumer/persistent-notification-plan.service';
+import {ModuleRef} from '@nestjs/core';
+import {NativeCalendarRuntimeService} from '../execution/native-calendar-runtime.service';
+import {CapabilityInvocationsService} from '../capability-invocations/capability-invocations.service';
+import {RuntimeTargetsService} from '../runtime-targets/runtime-targets.service';
 import {plainToInstance} from 'class-transformer';
 import {validate} from 'class-validator';
 import {LocalAcquisitionService} from '../consumer/local-acquisition.service';
@@ -33,6 +40,7 @@ const STRUCTURED_READ_TASK_TYPES = new Set(['APP_STRUCTURED_READ', 'SCREEN_CAPTU
 // 未注册类型在入队时拒绝，在 complete 时不得置 SUCCEEDED。
 const ALLOWED_DEVICE_TASK_TYPES = new Set<string>([
   'NATIVE_CALENDAR_READ',
+  'NATIVE_NOTIFICATION_READ',
   ...Object.keys(DEVICE_TASK_REALITY_SPEC),
   ...STRUCTURED_READ_TASK_TYPES,
   ...AWAITING_DEVICE_EVIDENCE_TASK_TYPES,
@@ -52,7 +60,11 @@ export class StaleClaimError extends ConflictException {
 export class DeviceTasksService {
   constructor(
     @Inject(DATABASE) private readonly db: InjectedDatabase,
+    private readonly modules:ModuleRef,
     private readonly audit: AuditService,
+    private readonly invocations: CapabilityInvocationsService,
+    private readonly runtimeResults: RuntimeResultsService,
+    private readonly targets: RuntimeTargetsService,
     private readonly acquisition:LocalAcquisitionService,
     private readonly pipeline: RealityPipelineService,
     private readonly trustedDevices: TrustedDevicesService,
@@ -72,10 +84,13 @@ export class DeviceTasksService {
     const keyHash=acquisitionKey?createHash('sha256').update(`${userId}:${trustedDeviceId}:${taskType}:${acquisitionKey}`).digest('hex'):null;
     const id = keyHash?`${keyHash.slice(0,8)}-${keyHash.slice(8,12)}-5${keyHash.slice(13,16)}-8${keyHash.slice(17,20)}-${keyHash.slice(20,32)}`:newId();
     if(acquisitionKey){const prior=(await this.db.select().from(deviceTasks).where(and(eq(deviceTasks.id,id),eq(deviceTasks.userId,userId))).limit(1))[0];if(prior){if(realityValueHash(prior.payloadJson)!==realityValueHash(payload))throw new ConflictException('Acquisition request payload changed');return this.toResponse(prior);}}
-    try { await this.db.insert(deviceTasks).values({
+    if((taskType==='NATIVE_CALENDAR_READ'&&payload.planWakeup)||(taskType==='NATIVE_NOTIFICATION_READ'&&payload.planNotificationRead))await this.targets.refresh(userId);
+    try { await this.db.transaction(async tx=>{await tx.insert(deviceTasks).values({
       id, userId, trustedDeviceId: device.id, deviceId: device.deviceId, taskType, factKey, resourceType,
       payloadJson: payload, status, claimToken: null, claimedAt: null, leaseExpiresAt: null,
       resultJson: null, resultHash: null, errorCode: null, createdAt: now, updatedAt: now, completedAt: null,
+    });if(taskType==='NATIVE_CALENDAR_READ'&&payload.planWakeup)await this.invocations.bindNativeCalendar(tx,userId,trustedDeviceId,id,payload);
+    if(taskType==='NATIVE_NOTIFICATION_READ'&&payload.planNotificationRead)await this.invocations.bindNativeNotification(tx,userId,trustedDeviceId,id,payload);
     }); } catch(error) { if(!acquisitionKey)throw error;const prior=(await this.db.select().from(deviceTasks).where(and(eq(deviceTasks.id,id),eq(deviceTasks.userId,userId))).limit(1))[0];if(!prior||realityValueHash(prior.payloadJson)!==realityValueHash(payload))throw error;return this.toResponse(prior); }
     await this.audit.append({
       actorType: 'system', actorUserId: null, action: 'DEVICE_TASK_ENQUEUED', resourceType: 'device_task', resourceId: id,
@@ -90,6 +105,9 @@ export class DeviceTasksService {
         .where(and(eq(deviceTasks.id, taskId), eq(deviceTasks.userId, userId), eq(deviceTasks.trustedDeviceId, trustedDeviceId), eq(deviceTasks.deviceId, deviceId)))
         .limit(1).for('update'))[0];
       if (!row) throw new NotFoundException('Device task not found');
+      await this.assertNotificationSource(tx,userId,row);
+      if(['NATIVE_CALENDAR_CREATE','NATIVE_CALENDAR_WRITE'].includes(row.taskType))await this.modules.get(NativeCalendarRuntimeService,{strict:false}).assertTask(tx,userId,row);
+      else await this.invocations.assertDeviceTaskCurrent(tx,userId,taskId,trustedDeviceId,row.payloadJson);
       const now = new Date();
       const leaseActive = Boolean(row.claimToken && row.leaseExpiresAt && row.leaseExpiresAt.getTime() > now.getTime());
       if ((row.status === 'CLAIMED' || row.status === 'RUNNING') && leaseActive) throw new ConflictException('Device task is already claimed');
@@ -101,12 +119,43 @@ export class DeviceTasksService {
         actorType: 'user', actorUserId: userId, action: 'DEVICE_TASK_CLAIMED', resourceType: 'device_task', resourceId: taskId,
         userId, correlationId: taskId, changeSummary: 'Edge device claimed a pending task', source: 'api', result: 'success',
       }, tx);
-      return this.toResponse((await tx.select().from(deviceTasks).where(eq(deviceTasks.id, taskId)).limit(1))[0]!, { revealClaimToken: true });
+      const claimed=(await tx.select().from(deviceTasks).where(eq(deviceTasks.id,taskId)))[0]!;
+      if(['NATIVE_CALENDAR_CREATE','NATIVE_CALENDAR_WRITE'].includes(claimed.taskType)&&claimed.payloadJson.lookupOnly!==true){
+        const {sideEffectOperations}=await import('@lazy-armor/database');
+        const op=(await tx.select().from(sideEffectOperations).where(eq(sideEffectOperations.id,String(claimed.payloadJson.operationId))).for('update'))[0];
+        if(!op||!['queued','executing','retry_wait'].includes(op.status))throw new ConflictException('Native operation is no longer dispatchable');
+        await tx.update(sideEffectOperations).set({status:'executing',attemptCount:op.attemptCount+1,startedAt:op.startedAt??now,updatedAt:now}).where(eq(sideEffectOperations.id,op.id));
+      }
+      const response=this.toResponse(claimed,{revealClaimToken:true});
+      return ['NATIVE_CALENDAR_CREATE','NATIVE_CALENDAR_WRITE'].includes(claimed.taskType)?{...response,dispatchAuthorization:await this.modules.get(NativeCalendarRuntimeService,{strict:false}).executionTicket(tx,userId,claimed)}:response;
     });
   }
 
   async heartbeat(userId: string, trustedDeviceId: string, deviceId: string, taskId: string, claimToken: string) {
     const task = await this.getRowForDevice(userId, trustedDeviceId, deviceId, taskId);
+    if(['NATIVE_CALENDAR_CREATE','NATIVE_CALENDAR_WRITE'].includes(task.taskType)){
+      return this.db.transaction(async tx=>{
+        const row=(await tx.select().from(deviceTasks).where(eq(deviceTasks.id,taskId)).for('update'))[0];
+        this.assertClaim(row,claimToken);
+        if(!['CLAIMED','RUNNING'].includes(row.status))throw new ConflictException('Native task not running');
+        const leaseExpiresAt=new Date(Date.now()+LEASE_TTL_MS);
+        await tx.update(deviceTasks).set({status:'RUNNING',leaseExpiresAt,updatedAt:new Date()}).where(eq(deviceTasks.id,taskId));
+        const active={...row,status:'RUNNING',leaseExpiresAt};
+        return {id:taskId,claimToken,leaseExpiresAt:leaseExpiresAt.toISOString(),dispatchAuthorization:await this.modules.get(NativeCalendarRuntimeService,{strict:false}).executionTicket(tx,userId,active)};
+      });
+    }
+    if(task.taskType==='NATIVE_NOTIFICATION_READ')return this.db.transaction(async tx=>{
+      const row=(await tx.select().from(deviceTasks).where(and(eq(deviceTasks.id,taskId),eq(deviceTasks.userId,userId),eq(deviceTasks.trustedDeviceId,trustedDeviceId),eq(deviceTasks.deviceId,deviceId))).limit(1).for('update'))[0];
+      if(!row)throw new NotFoundException('Device task not found');
+      await this.assertNotificationSource(tx,userId,row);
+      await this.invocations.assertDeviceTaskCurrent(tx,userId,taskId,trustedDeviceId,row.payloadJson);
+      this.assertClaim(row,claimToken);
+      if(!['CLAIMED','RUNNING'].includes(row.status))throw new ConflictException('Device task is not running');
+      const now=new Date(),leaseExpiresAt=new Date(now.getTime()+LEASE_TTL_MS);
+      const [updated]=await tx.update(deviceTasks).set({leaseExpiresAt,updatedAt:now}).where(and(eq(deviceTasks.id,taskId),eq(deviceTasks.claimToken,claimToken),inArray(deviceTasks.status,['CLAIMED','RUNNING']),gte(deviceTasks.leaseExpiresAt,now)));
+      if(updated.affectedRows!==1)throw new ConflictException('Device task lease is no longer active');
+      return {id:taskId,claimToken,leaseExpiresAt:leaseExpiresAt.toISOString()};
+    });
     this.assertClaim(task, claimToken);
     if (task.status !== 'CLAIMED' && task.status !== 'RUNNING') throw new ConflictException('Device task is not running');
     const now = new Date();
@@ -120,6 +169,24 @@ export class DeviceTasksService {
   }
 
   async complete(userId: string, trustedDeviceId: string, deviceId: string, taskId: string, claimToken: string, result: Record<string, unknown>,proofRequestId?:string) {
+    const native=await this.getRowForDevice(userId,trustedDeviceId,deviceId,taskId);
+    if(['NATIVE_CALENDAR_CREATE','NATIVE_CALENDAR_WRITE'].includes(native.taskType)) {
+      if(!proofRequestId)throw new ForbiddenException('Signed native write receipt required');
+      const runtime=this.modules.get(NativeCalendarRuntimeService,{strict:false});
+      const outcome=await this.db.transaction(async tx=>{
+        const task=(await tx.select().from(deviceTasks).where(eq(deviceTasks.id,taskId)).for('update'))[0];
+        await runtime.assertTask(tx,userId,task,'RECONCILE');
+        if(['SUCCEEDED','FAILED'].includes(task.status)){
+          if(task.claimToken!==claimToken||task.resultHash!==realityValueHash(result))throw new ConflictException('Native terminal receipt mismatch');
+          return {executionId:String((task.payloadJson.invocation as {executionId:string}).executionId),unknown:task.status!=='SUCCEEDED'};
+        }
+        this.assertClaim(task,claimToken);
+        if(!['CLAIMED','RUNNING'].includes(task.status))throw new ConflictException('Native task not running');
+        return runtime.complete(tx,userId,task,result,proofRequestId);
+      });
+      await runtime.resume(userId,outcome.executionId,outcome.unknown);
+      return this.toResponse(await this.getRowForDevice(userId,trustedDeviceId,deviceId,taskId),{revealClaimToken:true});
+    }
     const resultHash = realityValueHash(result);
     const outcome = await this.db.transaction(async (tx) => {
       // Atomic ownership boundary: lock the task row so recoverExpired/claim
@@ -128,6 +195,15 @@ export class DeviceTasksService {
         .where(and(eq(deviceTasks.id, taskId), eq(deviceTasks.userId, userId), eq(deviceTasks.trustedDeviceId, trustedDeviceId), eq(deviceTasks.deviceId, deviceId)))
         .limit(1).for('update'))[0];
       if (!task) throw new NotFoundException('Device task not found');
+      await this.assertNotificationSource(tx,userId,task);
+      await this.invocations.assertDeviceTaskCurrent(tx,userId,taskId,trustedDeviceId,task.payloadJson);
+      if (task.status === 'SUCCEEDED' && (['NATIVE_CALENDAR_READ','NATIVE_NOTIFICATION_READ'].includes(task.taskType) || STRUCTURED_READ_TASK_TYPES.has(task.taskType))) {
+        await this.trustedDevices.assertActive(userId, trustedDeviceId, deviceId);
+        if (task.taskType === 'NATIVE_CALENDAR_READ' && !proofRequestId) throw new ForbiddenException('Signed native read proof is required');
+        if (task.claimToken !== claimToken || task.resultHash !== resultHash || realityValueHash(task.resultJson) !== resultHash) throw new ConflictException('Completed device task receipt does not match');
+        // Transport replay only: retain the verified terminal record, no ingestion.
+        return { success: { ...this.toResponse(task, { revealClaimToken: true }), replayed: true } } as const;
+      }
       this.assertClaim(task, claimToken);
       if (task.status !== 'CLAIMED' && task.status !== 'RUNNING') throw new ConflictException('Device task is not running');
       if (!ALLOWED_DEVICE_TASK_TYPES.has(task.taskType)) {
@@ -136,11 +212,16 @@ export class DeviceTasksService {
       }
       const spec = DEVICE_TASK_REALITY_SPEC[task.taskType];
       let reality: DeviceTaskReality | null = null;
-      if(task.taskType==='NATIVE_CALENDAR_READ'){
+      if(['NATIVE_CALENDAR_READ','NATIVE_NOTIFICATION_READ'].includes(task.taskType)){
         if(!proofRequestId)throw new ForbiddenException('Signed native read proof is required');
         const input=plainToInstance(LocalAcquisitionDto,result);
         if((await validate(input,{whitelist:true,forbidNonWhitelisted:true})).length)throw new BadRequestException('Invalid native acquisition evidence');
-        if(input.capability!=='calendar.read'||input.scopeStart!==task.payloadJson.scopeStart||input.scopeEnd!==task.payloadJson.scopeEnd)throw new BadRequestException('Native read scope does not match task');
+        const capability=task.taskType==='NATIVE_NOTIFICATION_READ'?'notification.read':'calendar.read';
+        if(input.capability!==capability||input.scopeStart!==task.payloadJson.scopeStart||input.scopeEnd!==task.payloadJson.scopeEnd)throw new BadRequestException('Native read scope does not match task');
+        if(task.taskType==='NATIVE_NOTIFICATION_READ'){
+          const fields=new Set(['eventId','contentHash','sourcePackage','postedAt','capturedAt','hasTitle','hasText','candidateKind','candidateResource','candidateConfidence','amountMinor','currency','candidateStatus','parserVersion','status']);
+          if(input.items?.some(i=>!i || typeof i!=='object' || Array.isArray(i) || i.sourcePackage!==task.payloadJson.sourcePackage || Object.keys(i).some(k=>!fields.has(k)) || typeof i.capturedAt!=='number' || !Number.isFinite(i.capturedAt) || typeof i.postedAt!=='number' || !Number.isFinite(i.postedAt) || i.postedAt<input.scopeStart || i.postedAt>=input.scopeEnd))throw new BadRequestException('Native notification source, minimized fields or time scope does not match frozen query');
+        }
         const receipt=await this.acquisition.receive(userId,trustedDeviceId,proofRequestId,input,tx);
         reality={acquisitionId:receipt.id,acquisitionState:receipt.state,truthRecordIds:'truthIds' in receipt?receipt.truthIds:[]};
       } else if (STRUCTURED_READ_TASK_TYPES.has(task.taskType)) {
@@ -160,7 +241,10 @@ export class DeviceTasksService {
           return { failure: new BadRequestException('Device task result failed verification') } as const;
         }
       }
-      if (!hasVerifiedReality(reality)) {
+      // Notification acquisition verifies collection, not the semantic candidate.
+      // Its original Goal stays WAITING_FACT_CONFIRMATION until formal Truth exists.
+      const verifiedNotificationRead=task.taskType==='NATIVE_NOTIFICATION_READ' && reality && 'acquisitionId' in reality && ['VERIFIED_EMPTY','VERIFIED_PRESENT'].includes(reality.acquisitionState);
+      if (!hasVerifiedReality(reality) && !verifiedNotificationRead) {
         await this.markVerificationFailed(tx, task, result, resultHash, deviceTaskVerificationError(reality));
         return { failure: new BadRequestException('Device task result produced no verified reality') } as const;
       }
@@ -177,6 +261,8 @@ export class DeviceTasksService {
         actorType: 'user', actorUserId: userId, action: 'DEVICE_TASK_SUCCEEDED', resourceType: 'device_task', resourceId: taskId,
         userId, correlationId: taskId, changeSummary: 'Edge device task completed with verified evidence', source: 'api', result: 'success',
       }, tx);
+      if(task.taskType==='NATIVE_CALENDAR_READ'&&reality&&'acquisitionId' in reality)await this.runtimeResults.captureNativeCalendar(tx,userId,taskId,reality.acquisitionId);
+      if(task.taskType==='NATIVE_NOTIFICATION_READ'&&task.payloadJson.planNotificationRead&&reality&&'acquisitionId' in reality)await this.runtimeResults.captureNativeNotification(tx,userId,taskId,reality.acquisitionId);
       const updatedRow = (await tx.select().from(deviceTasks).where(eq(deviceTasks.id, taskId)).limit(1))[0]!;
       return { success: { ...this.toResponse(updatedRow, { revealClaimToken: true }), reality } } as const;
     });
@@ -184,8 +270,28 @@ export class DeviceTasksService {
     return outcome.success;
   }
 
-  async fail(userId: string, trustedDeviceId: string, deviceId: string, taskId: string, claimToken: string, errorCode: string) {
+  async fail(userId: string, trustedDeviceId: string, deviceId: string, taskId: string, claimToken: string, errorCode: string,proofRequestId?:string) {
     const task = await this.getRowForDevice(userId, trustedDeviceId, deviceId, taskId);
+    if(['NATIVE_CALENDAR_CREATE','NATIVE_CALENDAR_WRITE'].includes(task.taskType)){
+      if(!proofRequestId)throw new ForbiddenException('Signed native failure receipt required');
+      const runtime=this.modules.get(NativeCalendarRuntimeService,{strict:false});
+      const receipt=await this.db.transaction(tx=>runtime.failureReceipt(tx,userId,task,errorCode));
+      return this.complete(userId,trustedDeviceId,deviceId,taskId,claimToken,receipt,proofRequestId);
+    }
+    if(task.taskType==='NATIVE_NOTIFICATION_READ')return this.db.transaction(async tx=>{
+      const row=(await tx.select().from(deviceTasks).where(and(eq(deviceTasks.id,taskId),eq(deviceTasks.userId,userId),eq(deviceTasks.trustedDeviceId,trustedDeviceId),eq(deviceTasks.deviceId,deviceId))).limit(1).for('update'))[0];
+      if(!row)throw new NotFoundException('Device task not found');
+      await this.assertNotificationSource(tx,userId,row);
+      await this.invocations.assertDeviceTaskCurrent(tx,userId,taskId,trustedDeviceId,row.payloadJson);
+      this.assertClaim(row,claimToken);
+      if(!['CLAIMED','RUNNING'].includes(row.status))throw new ConflictException('Device task is not running');
+      const now=new Date();
+      const [updated]=await tx.update(deviceTasks).set({status:'FAILED',errorCode,completedAt:now,updatedAt:now}).where(and(eq(deviceTasks.id,taskId),eq(deviceTasks.claimToken,claimToken),inArray(deviceTasks.status,['CLAIMED','RUNNING']),gte(deviceTasks.leaseExpiresAt,now)));
+      if(updated.affectedRows!==1)throw new ConflictException('Device task claim is no longer active');
+      await this.audit.append({actorType:'user',actorUserId:userId,action:'DEVICE_TASK_FAILED',resourceType:'device_task',resourceId:taskId,userId,correlationId:taskId,reasonCode:errorCode,changeSummary:'Edge device reported task failure',source:'api',result:'failure'},tx);
+      const failed=(await tx.select().from(deviceTasks).where(eq(deviceTasks.id,taskId)).limit(1))[0]!;
+      return this.toResponse(failed,{revealClaimToken:true});
+    });
     this.assertClaim(task, claimToken);
     if (task.status !== 'CLAIMED' && task.status !== 'RUNNING') throw new ConflictException('Device task is not running');
     const now = new Date();
@@ -204,9 +310,17 @@ export class DeviceTasksService {
 
   async recoverExpired() {
     const now = new Date();
-    const [result] = await this.db.update(deviceTasks).set({ status: 'PENDING', claimToken: null, claimedAt: null, leaseExpiresAt: null, updatedAt: now })
-      .where(and(inArray(deviceTasks.status, ['CLAIMED', 'RUNNING']), lt(deviceTasks.leaseExpiresAt, now)));
-    return { recovered: result.affectedRows };
+    return this.db.transaction(async tx=>{
+      const rows=await tx.select().from(deviceTasks).where(and(inArray(deviceTasks.status,['CLAIMED','RUNNING']),lt(deviceTasks.leaseExpiresAt,now))).for('update');
+      for(const row of rows){
+        if(['NATIVE_CALENDAR_CREATE','NATIVE_CALENDAR_WRITE'].includes(row.taskType)&&row.payloadJson.lookupOnly!==true){
+          await this.modules.get(NativeCalendarRuntimeService,{strict:false}).expireWrite(tx,row);
+          continue;
+        }
+        await tx.update(deviceTasks).set({status:'PENDING',claimToken:null,claimedAt:null,leaseExpiresAt:null,updatedAt:now}).where(eq(deviceTasks.id,row.id));
+      }
+      return {recovered:rows.length};
+    });
   }
 
   async heartbeatDevice(userId: string, trustedDeviceId: string, deviceId: string, onlineState: 'online' | 'offline' | 'unknown') {
@@ -281,6 +395,12 @@ export class DeviceTasksService {
       truths: truths.map((item) => ({ id: item.id, status: item.status, current: item.status === 'verified' && !item.revokedAt })),
       readEvidence: reads.map((item) => ({ id: item.id, status: item.status, blockedReason: item.blockedReason })),
     };
+  }
+
+  private async assertNotificationSource(tx:RealityExecutor,userId:string,task:typeof deviceTasks.$inferSelect) {
+    if(task.taskType!=='NATIVE_NOTIFICATION_READ')return;
+    if(task.payloadJson.planNotificationRead)await this.modules.get(PersistentNotificationPlanService,{strict:false}).assertTask(tx,userId,task);
+    else await this.modules.get(ResourceGapContinuationService,{strict:false}).assertTask(tx,userId,task);
   }
 
   private async markVerificationFailed(tx: RealityExecutor, task: typeof deviceTasks.$inferSelect, result: Record<string, unknown>, resultHash: string, errorCode = 'RESULT_VERIFICATION_FAILED') {

@@ -1,3 +1,4 @@
+import { RuntimeAuthorityService } from './runtime-authority.service';
 import { Inject, Injectable } from '@nestjs/common';
 import { VerificationService } from './verification.service';
 import { conversationOnceRequests, executionSteps, executions, planActions, plans } from '@lazy-armor/database';
@@ -57,6 +58,7 @@ export class ExecutionRunner {
     private readonly actionAdapter: ActionAdapter,
     private readonly truthGuard: TruthHandoffGuard,
     private readonly verification: VerificationService,
+    private readonly authority: RuntimeAuthorityService,
   ) {}
 
   async run(executionId: string, workerToken: string, runContext?: ExecutionRunContext): Promise<RunnerOutcome> {
@@ -86,20 +88,21 @@ export class ExecutionRunner {
 
       try {
       if (!(await this.planCanRun(execution))) return this.cancelAtBoundary(executionId, 'running', await this.successCount(executionId), 'PLAN_NOT_ACTIVE');
-      const assembled = await this.assembler.assembleById(execution.userId, execution.planId, execution.planVersionId);
-      if (assembled.version.planId !== execution.planId || assembled.computedHash !== execution.definitionHash || assembled.version.definitionHash !== execution.definitionHash) {
+      const assembled = execution.planId && execution.planVersionId ? await this.assembler.assembleById(execution.userId, execution.planId, execution.planVersionId) : null;
+      if (assembled && (assembled.version.planId !== execution.planId || assembled.computedHash !== execution.definitionHash || assembled.version.definitionHash !== execution.definitionHash)) {
         return this.fail(executionId, 'running', 'PLAN_DEFINITION_INTEGRITY_ERROR', 'Plan Definition integrity verification failed');
       }
+      const definition = assembled?.definition ?? await this.authority.loadSyncDefinition(execution);
 
       const existing = await this.db.select().from(executionSteps).where(eq(executionSteps.executionId, executionId)).orderBy(asc(executionSteps.stepOrder));
       const initialRun = existing.every((step) => step.attemptCount === 0);
       let context: Record<string, unknown>;
       try {
         const truthContext = await this.hydrateTruthContext(execution);
-        context = await this.sources.resolve(execution.userId, assembled.definition.sources, { ...execution.triggerPayloadJson, ...truthContext, planId: execution.planId }, execution.requestId);
+        context = await this.sources.resolve(execution.userId, definition.sources, { ...execution.triggerPayloadJson, ...truthContext, planId: execution.planId }, execution.requestId);
         context = { ...context, planId: execution.planId };
         if (initialRun) {
-          const conditionsMet = this.conditions.evaluate(assembled.definition.conditions, context);
+          const conditionsMet = this.conditions.evaluate(definition.conditions, context);
           await this.events.append(executionId, conditionsMet ? 'conditions_met' : 'conditions_not_met', { conditionsMet });
           if (!conditionsMet) {
             for (const step of existing) await this.stepStates.transition(step.id, 'skipped', { errorCode: 'SKIPPED_BY_CONDITION', finishedAt: new Date() });
@@ -113,8 +116,8 @@ export class ExecutionRunner {
         return this.fail(executionId, 'running', mapped.code, this.sanitizer.sanitizeText(mapped));
       }
 
-      const actionRows = await this.db.select().from(planActions).where(eq(planActions.planVersionId, execution.planVersionId)).orderBy(asc(planActions.stepOrder));
-      for (const [index, actionDefinition] of assembled.definition.actions.entries()) {
+      const actionRows = execution.planVersionId ? await this.db.select().from(planActions).where(eq(planActions.planVersionId, execution.planVersionId)).orderBy(asc(planActions.stepOrder)) : definition.actions;
+      for (const [index, actionDefinition] of definition.actions.entries()) {
         if (!(await this.lease.heartbeat(executionId, workerToken))) return { status: 'running' };
         const planAction = actionRows[index];
         if (!planAction || planAction.stepOrder !== actionDefinition.stepOrder) return this.fail(executionId, 'running', 'PLAN_DEFINITION_INTEGRITY_ERROR', 'Plan Action order is inconsistent');
@@ -158,7 +161,7 @@ export class ExecutionRunner {
         } catch (error) {
           const mapped = asRuntimeError(error);
           const safeMessage = this.sanitizer.sanitizeText(mapped);
-          if (BLOCKING_CODES.has(mapped.code)) {
+          if (execution.planId && BLOCKING_CODES.has(mapped.code)) {
             try { await this.plansService.changeStatus(execution.userId, execution.planId, 'blocked'); } catch { /* another state change won the race */ }
             await this.events.append(executionId, 'plan_block_requested', { errorCode: mapped.code }, step.id);
           }
@@ -212,17 +215,20 @@ export class ExecutionRunner {
       id: executions.id, userId: executions.userId, planId: executions.planId, planVersionId: executions.planVersionId,
       definitionHash: executions.definitionHash, requestId: executions.requestId, triggerPayloadJson: executions.triggerPayloadJson,
       status: executions.status, cancellationRequestedAt: executions.cancellationRequestedAt, startedAt: executions.startedAt,
+      authoritySourceJson: executions.authoritySourceJson, definitionSnapshotJson: executions.definitionSnapshotJson,
       planStatus: plans.status,
       executionScope: plans.executionScope,
       resolvedRetryPolicyJson: executions.resolvedRetryPolicyJson,
       resolvedFallbackPolicyJson: executions.resolvedFallbackPolicyJson,
       resolvedApprovalPolicyJson: executions.resolvedApprovalPolicyJson,
       resolvedRiskSnapshotJson: executions.resolvedRiskSnapshotJson,
-    }).from(executions).innerJoin(plans, and(eq(executions.planId, plans.id), eq(executions.userId, plans.userId))).where(eq(executions.id, id)).limit(1);
-    if (!rows[0]) throw new Error('Execution ownership or Plan relation is invalid');
+    }).from(executions).leftJoin(plans, and(eq(executions.planId, plans.id), eq(executions.userId, plans.userId))).where(eq(executions.id, id)).limit(1);
+    if (!rows[0] || (rows[0].planId && !rows[0].planStatus)) throw new Error('Execution ownership or Plan relation is invalid');
+    this.authority.sourceFor(rows[0]);
     return rows[0];
   }
-  private async planCanRun(execution: { userId: string; planId: string; planVersionId: string; requestId: string; planStatus: string; executionScope: string }) {
+  private async planCanRun(execution: { userId: string; planId: string | null; planVersionId: string | null; requestId: string; planStatus: string | null; executionScope: string | null; authoritySourceJson?: Record<string, unknown> | null }) {
+    if (!execution.planId || !execution.planVersionId) { await this.authority.assertExecution(execution); return true; }
     if (execution.executionScope === 'PLAN') return execution.planStatus === 'active';
     if (execution.executionScope !== 'ONCE' || execution.planStatus !== 'draft' || !execution.requestId.startsWith('once:')) return false;
     const task = (await this.db.select().from(conversationOnceRequests).where(and(eq(conversationOnceRequests.id, execution.requestId.slice(5)), eq(conversationOnceRequests.userId, execution.userId), eq(conversationOnceRequests.planId, execution.planId), eq(conversationOnceRequests.planVersionId, execution.planVersionId))).limit(1))[0];

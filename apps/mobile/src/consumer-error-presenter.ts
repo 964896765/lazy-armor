@@ -45,6 +45,7 @@ export function notificationCategoryLabel(category: ConsumerNotificationCategory
 }
 
 export interface NotificationDeepLinkInput {
+  messageParamsJson?: Record<string, unknown> | null;
   eventType?: string | null;
   executionId?: string | null;
   approvalRequestId?: string | null;
@@ -57,6 +58,7 @@ export interface NotificationDeepLinkInput {
  * 结果待确认优先跳到 Reconciliation 回查；普通提醒不强制跳转，返回 null 由调用方保持原位。
  */
 export function notificationDeepLink(input: NotificationDeepLinkInput): string | null {
+  if (input.eventType === 'user_event_due' && typeof input.messageParamsJson?.userEventId === 'string' && /^[0-9a-f-]{36}$/i.test(input.messageParamsJson.userEventId)) return `/user-events/${input.messageParamsJson.userEventId}`;
   const category = notificationCategory(input.eventType ?? '');
   if (category === 'CONNECTION_INVALID') {
     return input.connectionId ? `/connections/${input.connectionId}` : '/connections';

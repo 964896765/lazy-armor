@@ -14,7 +14,7 @@ function completedTruthRecord(overrides: Record<string, unknown> = {}) {
 function fixture(options: { existing?: ReturnType<typeof completedTruthRecord>; ingestError?: unknown; confirmError?: unknown; noCandidate?: boolean } = {}) {
   const limit = vi.fn(async () => options.existing ? [options.existing] : []);
   const select = vi.fn(() => ({ from: vi.fn(() => ({ where: vi.fn(() => ({ limit })) })) }));
-  const db = { select };
+  const db = { select,transaction:vi.fn(async(fn:(tx:unknown)=>Promise<unknown>)=>fn(db)) };
   const audit = { append: vi.fn(async () => undefined) };
   const ingest = vi.fn(async () => {
     if (options.ingestError) throw options.ingestError;
@@ -41,14 +41,14 @@ describe('brand-neutral truth store generic-pipeline adapter policy', () => {
       payload: { subjectKey: 'receipt-1', amountMinor: 12345, currency: 'CNY' },
       evidenceHash: expect.stringMatching(/^[a-f0-9]{64}$/),
       observedAt: '2026-09-04T00:00:01.000Z', occurredAt: '2026-09-04T00:00:00.000Z',
-    }));
+    }),0,expect.any(Object));
     expect(confirmCandidate).toHaveBeenCalledWith('user-1', 'candidate-1', {
       sourceReceiptId: 'receipt-1', verifiedBy: 'user_confirmation',
       verificationMethod: 'user_confirmation_after_device_key_proof',
-    });
+    },0,expect.any(Object));
     expect(JSON.stringify(ingest.mock.calls[0]?.[1])).not.toMatch(/通知正文/);
     expect(result).toMatchObject({ resourceKey: 'mobile.billing.transaction', status: 'verified' });
-    expect(audit.append).toHaveBeenCalledWith(expect.objectContaining({ action: 'TRUTH_RECORD_VERIFIED', result: 'success', resourceId: 'truth-1' }));
+    expect(audit.append).toHaveBeenCalledWith(expect.objectContaining({ action: 'TRUTH_RECORD_VERIFIED', result: 'success', resourceId: 'truth-1' }),expect.any(Object));
   });
 
   it('does not emit a verified audit when observation ingestion fails', async () => {

@@ -9,6 +9,7 @@ import { MembershipModule } from '../membership/membership.module';
 import { RuntimeCatalogModule } from '../runtime-catalog/runtime-catalog.module';
 import { PlanLifecycleProjectionService } from './plan-lifecycle-projection.service';
 import { FactDemandsModule } from '../fact-demands/fact-demands.module';
+import { PlanControlProjectionService } from './plan-control-projection.service';
 
 export const PLAN_SERVICE = 'PLAN_SERVICE';
 
@@ -21,6 +22,7 @@ export const PLAN_SERVICE = 'PLAN_SERVICE';
     PlansService,
     LifecycleReadService,
     PlanLifecycleProjectionService,
+    PlanControlProjectionService,
     { provide: PLAN_SERVICE, useExisting: PlansService },
   ],
   exports: [PlansService, LifecycleReadService, PlanLifecycleProjectionService, PLAN_SERVICE, PlanDefinitionAssembler, PlanStateService],

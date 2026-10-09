@@ -83,6 +83,7 @@ const GENERIC_SOURCE_CAPABILITIES: readonly DeviceAppCaptureMode[] = ['notificat
 
 /** Curated source capability hints for well-known packages; never an allowlist or grant. */
 const DEVICE_APP_METADATA: Readonly<Record<string, { sourceCapabilities: readonly DeviceAppCaptureMode[]; actionCapabilities: readonly string[]; riskClass: string; verificationMethod: string }>> = Object.freeze({
+  'com.jingdong.app.mall': Object.freeze({ sourceCapabilities: ['notification_read', 'app_read_session'] as const, actionCapabilities: ['READ_SHIPMENT'] as const, riskClass: 'R1', verificationMethod: 'READ_BACK' }),
   'com.eg.android.AlipayGphone': Object.freeze({ sourceCapabilities: ['notification_read', 'share', 'app_read_session'] as const, actionCapabilities: ['READ_TRANSACTION'] as const, riskClass: 'R2', verificationMethod: 'READ_BACK' }),
   'com.tencent.mm': Object.freeze({ sourceCapabilities: ['notification_read', 'share', 'app_read_session'] as const, actionCapabilities: ['READ_TRANSACTION'] as const, riskClass: 'R2', verificationMethod: 'READ_BACK' }),
   'com.cainiao.wireless': Object.freeze({ sourceCapabilities: ['notification_read', 'app_read_session'] as const, actionCapabilities: ['READ_SHIPMENT'] as const, riskClass: 'R1', verificationMethod: 'READ_BACK' }),

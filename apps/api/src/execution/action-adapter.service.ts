@@ -1,3 +1,5 @@
+import {CapabilityInvocationsService} from '../capability-invocations/capability-invocations.service';
+import {actionMatchesResolution,runtimeTargetActionBindingSchema} from '@lazy-armor/plan-schema';
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { actionAdapterBindings, actionIntents, connectors, executionSteps, executions, planActions, approvalRequests } from '@lazy-armor/database';
 import { ACTION_ADAPTER_REVISION, actionResolutionContractHash, buildActionIntent, catalogHash, verificationContractHash,
@@ -11,21 +13,30 @@ import { RiskEngine } from '../risk/risk-engine.service';
 import type { RiskSnapshot } from '../risk/risk.types';
 import { ExecutionApprovalGate } from './execution-approval-gate.service';
 import { VerificationPolicyRegistry } from './verification-policy-registry.service';
+import { RuntimeAuthorityService } from './runtime-authority.service';
 
 @Injectable()
 export class ActionAdapter {
   constructor(@Inject(DATABASE) private readonly db: InjectedDatabase, private readonly resolver: CapabilityResolverService,
     private readonly risk: RiskEngine, private readonly approvalGate: ExecutionApprovalGate,
-    private readonly verificationPolicies: VerificationPolicyRegistry) {}
+    private readonly verificationPolicies: VerificationPolicyRegistry,private readonly invocations:CapabilityInvocationsService, private readonly authority: RuntimeAuthorityService) {}
 
   async assertOperation(executionId: string, stepId: string) {
     const execution = (await this.db.select().from(executions).where(eq(executions.id, executionId)).limit(1))[0];
     const step = (await this.db.select().from(executionSteps).where(and(eq(executionSteps.id, stepId), eq(executionSteps.executionId, executionId))).limit(1))[0];
-    const row = step && execution && (await this.db.select().from(planActions).where(and(eq(planActions.id, step.planActionId), eq(planActions.planVersionId, execution.planVersionId))).limit(1))[0];
-    if (!execution || !step || !row) throw new ExecutionRuntimeError('ACTION_ADAPTER_INTEGRITY_ERROR', 'Execution action is unavailable');
-    const connector = row.connectorId ? (await this.db.select({ key: connectors.key }).from(connectors).where(eq(connectors.id, row.connectorId)).limit(1))[0] : null;
-    const action = { actionType: row.actionType, connectorKey: connector?.key ?? null, connectionId: row.connectionId,
-      requiredCapability: row.requiredCapability, riskLevel: row.riskLevel, config: row.configJson, stepOrder: row.stepOrder } as NormalizedAction;
+    if (!execution || !step) throw new ExecutionRuntimeError('ACTION_ADAPTER_INTEGRITY_ERROR', 'Execution action is unavailable');
+    let action: NormalizedAction;
+    if (execution.planVersionId && step.planActionId) {
+      const row = (await this.db.select().from(planActions).where(and(eq(planActions.id, step.planActionId), eq(planActions.planVersionId, execution.planVersionId))).limit(1))[0];
+      if (!row) throw new ExecutionRuntimeError('ACTION_ADAPTER_INTEGRITY_ERROR', 'Execution action is unavailable');
+      const connector = row.connectorId ? (await this.db.select({ key: connectors.key }).from(connectors).where(eq(connectors.id, row.connectorId)).limit(1))[0] : null;
+      action = { actionType: row.actionType, connectorKey: connector?.key ?? null, connectionId: row.connectionId, requiredCapability: row.requiredCapability, riskLevel: row.riskLevel, config: row.configJson, stepOrder: row.stepOrder } as NormalizedAction;
+    } else {
+      const definition = await this.authority.loadSyncDefinition(execution);
+      const frozen = definition.actions.find(a => a.stepOrder === step.stepOrder);
+      if (!frozen) throw new ExecutionRuntimeError('ACTION_ADAPTER_INTEGRITY_ERROR', 'Frozen source action is unavailable');
+      action = frozen as NormalizedAction;
+    }
     await this.assertCompatible(execution, step, action);
     if (!step.actionIntentId) return;
     const snapshot = step.riskSnapshotJson as unknown as RiskSnapshot;
@@ -38,12 +49,17 @@ export class ActionAdapter {
     if (approval?.status === 'approved') await this.approvalGate.assertSnapshotValid(approval, execution, step, current);
   }
 
-  async assertCompatible(execution: Pick<typeof executions.$inferSelect, 'id' | 'userId' | 'planVersionId' | 'triggerPayloadJson' | 'resolvedRiskSnapshotJson'>, step: typeof executionSteps.$inferSelect, action: NormalizedAction) {
+  async assertCompatible(execution: Pick<typeof executions.$inferSelect, 'id' | 'userId' | 'planVersionId' | 'triggerPayloadJson' | 'resolvedRiskSnapshotJson'> & Partial<Pick<typeof executions.$inferSelect,'planId'|'authoritySourceJson'|'definitionHash'|'definitionSnapshotJson'>>, step: typeof executionSteps.$inferSelect, action: NormalizedAction) {
+    if (!execution.planVersionId) {
+      if (execution.planId !== null || !execution.authoritySourceJson || !execution.definitionHash || !execution.definitionSnapshotJson) throw new ExecutionRuntimeError('RUNTIME_AUTHORITY_SOURCE_REQUIRED','Non-Plan action requires a frozen controlled source');
+      await this.authority.assertExecution({ ...execution, planId: null });
+    }
     if (!step.actionIntentId) {
       // Historical executions keep their original risk/approval/side-effect guards.
       if (execution.resolvedRiskSnapshotJson?.actionIntentSchemaVersion === '1') throw new ExecutionRuntimeError('ACTION_INTENT_MISSING', 'New execution has no immutable ActionIntent');
       return;
     }
+    await this.invocations.assertActionCurrent(execution.userId,step.actionIntentId);
     const row = await this.get(execution.userId, step.actionIntentId);
     const binding = row.adapter;
     const intent = buildActionIntent({ intentId: row.id, planVersionId: row.planVersionId, planActionId: row.planActionId,
@@ -73,7 +89,15 @@ export class ActionAdapter {
           || !binding.verificationPolicyKey || !binding.verificationPolicyRevision || !binding.verificationPolicyHash) throw new Error('Incomplete frozen contract');
         const resolutionContract = binding.resolutionContractJson as unknown as ActionResolutionContract;
         const verificationContract = binding.verificationContractJson as unknown as VerificationContract;
-        const currentPolicy = this.verificationPolicies.select(action.connectorKey, action.requiredCapability);
+        const native = resolutionContract.runtimeTargetBinding;
+        if (!execution.planVersionId && (catalogHash(resolutionContract.authoritySource) !== catalogHash(execution.authoritySourceJson)
+          || catalogHash((row.targetJson as Record<string, unknown>).authoritySource) !== catalogHash(execution.authoritySourceJson))) throw new Error('Authority source mismatch');
+        if (native) {
+          runtimeTargetActionBindingSchema.parse(native);
+          if (binding.connectorId || binding.connectionId || !['calendar.event.create','calendar.event.update','calendar.event.delete'].includes(action.requiredCapability ?? '')
+            || catalogHash((row.targetJson as {runtimeTargetBinding?:unknown}).runtimeTargetBinding) !== catalogHash(native)) throw new Error('Native target binding mismatch');
+        }
+        const currentPolicy = this.verificationPolicies.select(native?'android_calendar':action.connectorKey, action.requiredCapability);
         if (actionResolutionContractHash(resolutionContract) !== binding.resolutionContractHash
           || verificationContractHash(verificationContract) !== binding.verificationContractHash
           || verificationPolicyHash(verificationContract.policy) !== binding.verificationPolicyHash
@@ -95,7 +119,7 @@ export class ActionAdapter {
     if (binding.capabilityResolutionDecisionId) {
       const resolution = await this.resolver.revalidate(execution.userId, binding.capabilityResolutionDecisionId);
       if (resolution.row.decisionHash !== binding.capabilityResolutionDecisionHash || resolution.row.planVersionId !== execution.planVersionId
-        || resolution.candidate.id !== step.connectionId + ':' + step.requiredCapability || resolution.requirement.operation !== 'execute'
+        || !actionMatchesResolution(step,resolution.candidate) || resolution.requirement.operation !== 'execute'
         || Number(row.effectiveRiskLevel.slice(1)) > Number(resolution.requirement.maxRisk.slice(1))) {
         throw new ExecutionRuntimeError('ACTION_RESOLUTION_CHANGED', 'Selected capability changed; execution denied');
       }

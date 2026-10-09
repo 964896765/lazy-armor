@@ -14,6 +14,7 @@ import { QueueService } from '../infrastructure/queue.service';
 import { NotificationService } from '../notifications/notification.service';
 import { AuditService } from '../audit/audit.service';
 import { PlanDefinitionAssembler } from '../plans/plan-definition.assembler';
+import { RuntimeAuthorityService } from '../execution/runtime-authority.service';
 
 type Decision = 'approved' | 'rejected' | 'expired';
 
@@ -32,13 +33,14 @@ export class ApprovalService {
     private readonly notifications: NotificationService,
     private readonly assembler: PlanDefinitionAssembler,
     private readonly audit: AuditService,
+    private readonly authority: RuntimeAuthorityService,
   ) {}
 
   list(userId: string, status?: string) {
     const filters = [eq(approvalRequests.userId, userId)];
     if (status) filters.push(eq(approvalRequests.status, status));
     return this.db.select({ id: approvalRequests.id, executionId: approvalRequests.executionId, executionStepId: approvalRequests.executionStepId, status: approvalRequests.status, effectiveRiskLevel: approvalRequests.effectiveRiskLevel, actionSummary: approvalRequests.actionSummary, expiresAt: approvalRequests.expiresAt, createdAt: approvalRequests.createdAt, planName: planVersions.name })
-      .from(approvalRequests).innerJoin(planVersions, eq(approvalRequests.planVersionId, planVersions.id)).where(and(...filters)).orderBy(desc(approvalRequests.createdAt)).limit(100);
+      .from(approvalRequests).leftJoin(planVersions, eq(approvalRequests.planVersionId, planVersions.id)).where(and(...filters)).orderBy(desc(approvalRequests.createdAt)).limit(100);
   }
 
   async get(userId: string, id: string) {
@@ -74,8 +76,11 @@ export class ApprovalService {
       if (!execution || !step || execution.status !== 'waiting_approval') throw new ConflictException('Execution is no longer waiting for approval');
       if (step.inputFingerprint !== request.inputFingerprint || request.contextHash !== this.gate.contextHash({ execution, step }, step.riskSnapshotJson as never)) throw new ConflictException('Approval context fingerprint mismatch');
       if (decision === 'approved') await this.gate.assertSnapshotValid(request, execution, step, step.riskSnapshotJson as never);
-      const assembled = await this.assembler.assembleById(userId, execution.planId, execution.planVersionId, tx);
-      if (assembled.computedHash !== execution.definitionHash || assembled.version.definitionHash !== execution.definitionHash) throw new ConflictException('PlanVersion integrity check failed');
+      if (execution.planId && execution.planVersionId) {
+        const assembled = await this.assembler.assembleById(userId, execution.planId, execution.planVersionId, tx);
+        if (assembled.computedHash !== execution.definitionHash || assembled.version.definitionHash !== execution.definitionHash) throw new ConflictException('PlanVersion integrity check failed');
+      } else if (decision === 'approved') await this.authority.loadSyncDefinition(execution, tx);
+      else this.authority.sourceFor(execution); // Reject/expire remains possible after a source is superseded.
       const now = new Date();
       const decisionReason = input.reason ?? (decision === 'expired' ? 'Approval window expired' : decision === 'rejected' ? 'User rejected this action' : null);
       await tx.insert(approvalDecisions).values({ id: newId(), approvalRequestId: id, actorUserId: userId, decision, reason: input.reason ?? null, deviceContextJson: { deviceId: input.deviceId ?? 'unknown', source: decision === 'expired' ? 'system' : 'user' }, createdAt: now });

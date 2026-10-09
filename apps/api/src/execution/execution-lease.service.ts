@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { executionSteps, executions } from '@lazy-armor/database';
 import { newId } from '@lazy-armor/shared';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, gt, inArray } from 'drizzle-orm';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
 import { ExecutionEventService } from './execution-event.service';
 import { ExecutionStepStateService } from './execution-step-state.service';
@@ -28,6 +28,9 @@ export class ExecutionLeaseService {
       if (!rows[0]) return;
       status = rows[0].status as ExecutionStatus;
       if (EXECUTION_TERMINAL_STATES.has(status)) return;
+      // Duplicate queue delivery while an executor or approval owns the next
+      // transition cannot start Runner and turn a waiting execution into failure.
+      if (!['created','queued','running','retry_wait'].includes(status)) return;
       const now = new Date();
       if (rows[0].workerToken && rows[0].leaseExpiresAt && rows[0].leaseExpiresAt > now) return;
       recovered = status === 'running' && Boolean(rows[0].workerToken);
@@ -57,6 +60,8 @@ export class ExecutionLeaseService {
       .where(and(
         eq(executions.id, executionId),
         eq(executions.workerToken, workerToken),
+        gt(executions.leaseExpiresAt, now),
+        inArray(executions.status, ['created', 'queued', 'running', 'retry_wait']),
       ));
     return result.affectedRows === 1;
   }

@@ -43,6 +43,32 @@ import java.util.TimeZone
  * QUERY_ALL_PACKAGES, does not infer providers, and does not persist an app inventory.
  */
 class DeviceAppBridgeModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModule(reactContext) {
+  /** Canonical server-approved task only; no raw calendar-write entry point. */
+  @ReactMethod
+  fun executeClaimedRuntimeTask(account:String,taskText:String,promise:Promise) {
+    Thread {
+      try {
+        require(android.os.Build.VERSION.SDK_INT >= 26 && taskText.length <= 60000)
+        val task=org.json.JSONObject(taskText)
+        require(task.getString("taskType") in listOf("NATIVE_CALENDAR_CREATE","NATIVE_CALENDAR_WRITE") && task.getString("status") in listOf("CLAIMED","RUNNING"))
+        val ticket=task.getJSONObject("dispatchAuthorization")
+        require(BuildConfig.NATIVE_DISPATCH_PUBLIC_KEY.isNotEmpty()) { "DISPATCH_KEY_UNCONFIGURED" }
+        val payload=Base64.decode(ticket.getString("payload"),Base64.NO_WRAP)
+        val signature=Base64.decode(ticket.getString("signature"),Base64.NO_WRAP)
+        val key=java.security.KeyFactory.getInstance("EC").generatePublic(java.security.spec.X509EncodedKeySpec(Base64.decode(BuildConfig.NATIVE_DISPATCH_PUBLIC_KEY,Base64.NO_WRAP)))
+        val verifier=Signature.getInstance("SHA256withECDSA");verifier.initVerify(key);verifier.update(payload)
+        require(verifier.verify(signature)) { "INVALID_DISPATCH_SIGNATURE" }
+        val claims=org.json.JSONObject(String(payload,Charsets.UTF_8))
+        require(claims.getString("version")=="1" && claims.getString("userId")==account
+          && claims.getString("taskId")==task.getString("id") && claims.getString("claimToken")==task.getString("claimToken")) { "DISPATCH_BINDING_MISMATCH" }
+        require(java.time.OffsetDateTime.parse(claims.getString("expiresAt")).toInstant().toEpochMilli()>System.currentTimeMillis()) { "DISPATCH_LEASE_EXPIRED" }
+        val invocation=org.json.JSONObject(claims.getString("invocationJson"))
+        require(invocation.getString("verificationContractRef")==claims.getString("verificationContractHash"))
+        val result=CalendarInvocationExecutor.execute(reactApplicationContext,account,invocation,claims.getString("targetId"),claims.getLong("authorityEpoch"),invocation.getString("invocationId"),claims.optBoolean("lookupOnly",false))
+        promise.resolve(result.toString())
+      } catch(error:Exception) {promise.reject("DEVICE_WRITE_EXECUTION_FAILED",error)}
+    }.start()
+  }
   private val maxDiscoveryResults = 200
   private val iconSizePx = 48
   private val maxIconBytes = 24_000
@@ -386,6 +412,18 @@ class DeviceAppBridgeModule(reactContext: ReactApplicationContext) : ReactContex
   }
 
   @ReactMethod
+  fun acquireNotificationSource(account: String, sourcePackage: String, start: Double, end: Double, promise: Promise) {
+    try {
+      LocalCapabilityManifest.activateAccount(reactApplicationContext, account)
+      check(LocalCapabilityManifest.activeGrant(reactApplicationContext, "notification.read")) { "NOTIFICATION_GRANT_REQUIRED" }
+      val result = LocalAcquisition.readNotificationSource(reactApplicationContext, sourcePackage, start.toLong(), end.toLong())
+      promise.resolve(result.toString())
+    } catch (error: Exception) {
+      promise.reject("E_NOTIFICATION_SOURCE_READ_FAILED", "通知来源暂时无法读取，不会当作空结果。", error)
+    }
+  }
+
+  @ReactMethod
   fun openApp(packageName: String, promise: Promise) {
     if (packageName.isBlank()) {
       promise.reject("E_APP_PACKAGE_INVALID", "应用标识无效。")
@@ -411,6 +449,7 @@ class DeviceAppBridgeModule(reactContext: ReactApplicationContext) : ReactContex
       val status = LazyArmorNotificationListener.status(reactApplicationContext)
       val result = Arguments.createMap()
       result.putBoolean("accessGranted", status.optBoolean("accessGranted", false))
+      result.putBoolean("acquisitionEnabled", status.optBoolean("acquisitionEnabled", false))
       result.putInt("enabledPackageCount", status.optInt("enabledPackageCount", 0))
       result.putInt("pendingCount", status.optInt("pendingCount", 0))
       promise.resolve(result)

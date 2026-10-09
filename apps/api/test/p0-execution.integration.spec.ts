@@ -4,6 +4,7 @@ import type { INestApplication } from '@nestjs/common';
 import type { Connector, ConnectorRequest, ConnectorResult } from '@lazy-armor/connector-sdk';
 import { createPool, type Pool } from 'mysql2/promise';
 import { randomUUID } from 'node:crypto';
+import { createRequire } from 'node:module';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ExecutionRuntimeError } from '../dist/execution/execution.types.js';
@@ -370,14 +371,46 @@ describe.sequential('P0-5 Execution Engine integration and security', () => {
     const row = await detail(userA.token, created.body.id);
     await queue.removeExecutionJob(created.body.id);
     await pool.query("UPDATE executions SET status='running',worker_token='dead-worker',heartbeat_at=DATE_SUB(UTC_TIMESTAMP(6),INTERVAL 1 MINUTE),lease_expires_at=DATE_SUB(UTC_TIMESTAMP(6),INTERVAL 30 SECOND),started_at=UTC_TIMESTAMP(6) WHERE id=UUID_TO_BIN(?)", [created.body.id]);
+    const { ExecutionLeaseService } = createRequire(import.meta.url)('../dist/execution/execution-lease.service.js');
+    const leases = app.get<{ heartbeat(id: string, token: string): Promise<boolean> }>(ExecutionLeaseService);
+    // Expiry itself revokes renewal authority, even before another owner takes over.
+    expect(await leases.heartbeat(created.body.id, 'dead-worker')).toBe(false);
     await pool.query("UPDATE execution_steps SET status='succeeded',attempt_count=1,started_at=UTC_TIMESTAMP(6),finished_at=UTC_TIMESTAMP(6) WHERE id=UUID_TO_BIN(?)", [row.steps[0].id]);
     await pool.query("UPDATE execution_steps SET status='running',attempt_count=1,started_at=UTC_TIMESTAMP(6) WHERE id=UUID_TO_BIN(?)", [row.steps[1].id]);
     expect((await reconciler.reconcile(new Date(Date.now() + 1_000))).recovered).toBeGreaterThanOrEqual(1);
     expect((await worker.processExecution(created.body.id)).status).toBe('succeeded');
+    expect(await leases.heartbeat(created.body.id, 'dead-worker')).toBe(false);
     const recovered = await detail(userA.token, created.body.id);
     expect(recovered.steps[0].attemptCount).toBe(1);
     expect(recovered.steps[1].attemptCount).toBe(2);
     expect(recovered.events.some((event: { eventType: string }) => event.eventType === 'worker_lease_recovered')).toBe(true);
+  });
+
+  it('fences an expired holder before and after natural lease takeover', async () => {
+    const plan = await createPlan(userA.token, definition('租约接管隔离', [compare(0)]));
+    const created = await dispatch(userA.token, plan.id, { amount: 300 }).expect(201);
+    await queue.removeExecutionJob(created.body.id);
+    const { ExecutionLeaseService } = createRequire(import.meta.url)('../dist/execution/execution-lease.service.js');
+    const leases = app.get<{
+      acquire(id: string, owner: string): Promise<{ acquired: boolean; workerToken: string }>;
+      heartbeat(id: string, token: string): Promise<boolean>;
+    }>(ExecutionLeaseService);
+    const first = await leases.acquire(created.body.id, 'lease-test-owner-a');
+    expect(first.acquired).toBe(true);
+    expect(await leases.heartbeat(created.body.id, first.workerToken)).toBe(true);
+    await wait(1_100);
+    expect(await leases.heartbeat(created.body.id, first.workerToken)).toBe(false);
+    const second = await leases.acquire(created.body.id, 'lease-test-owner-b');
+    expect(second.acquired).toBe(true);
+    expect(second.workerToken).not.toBe(first.workerToken);
+    expect(await leases.heartbeat(created.body.id, first.workerToken)).toBe(false);
+    expect(await leases.heartbeat(created.body.id, second.workerToken)).toBe(true);
+    const {executionOwnerContext}=createRequire(import.meta.url)('../dist/execution/execution-owner-context.js');
+    await expect(executionOwnerContext.run({executionId:created.body.id,workerToken:first.workerToken},()=>executionStates.transition(created.body.id,'failed'))).rejects.toThrow('STALE_EXECUTION_LEASE');
+    expect((await detail(userA.token,created.body.id)).status).toBe('queued');
+    await wait(1_100);
+    expect((await worker.processExecution(created.body.id)).status).toBe('succeeded');
+    expect(await leases.heartbeat(created.body.id, second.workerToken)).toBe(false);
   });
 
   it('30 reconciles a DB-created Execution after Queue failure without creating another Execution', async () => {

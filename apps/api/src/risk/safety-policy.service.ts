@@ -15,15 +15,15 @@ export class SafetyPolicyService {
     return { version: 'p0-6-approval-v1', type: (definition?.type ?? 'never') as ApprovalPolicyType, config: (definition?.config ?? {}) as Record<string, unknown>, systemFloor: 'R3' };
   }
 
-  async requiresApproval(userId: string, planActionId: string, risk: RiskLevel, amountMinor: number | null, currency: string | null, policy: ResolvedApprovalPolicy, temporaryAuthorizationMatched: boolean) {
+  async requiresApproval(userId: string, planActionId: string | null, risk: RiskLevel, amountMinor: number | null, currency: string | null, policy: ResolvedApprovalPolicy, temporaryAuthorizationMatched: boolean) {
     const authorized = risk !== 'R4' && policy.type === 'temporary_authorization' && temporaryAuthorizationMatched;
     const systemRequires = RISK_SCORE[risk] >= RISK_SCORE[policy.systemFloor] && !authorized;
     let policyRequires = false;
     if (policy.type === 'always' || policy.type === 'per_execution') policyRequires = true;
     if (policy.type === 'temporary_authorization' && !authorized) policyRequires = true;
     if (policy.type === 'first_time') {
-      const prior = await this.db.select({ id: approvalRequests.id }).from(approvalRequests)
-        .where(and(eq(approvalRequests.userId, userId), eq(approvalRequests.planActionId, planActionId), eq(approvalRequests.status, 'approved'))).limit(1);
+      const prior = planActionId ? await this.db.select({ id: approvalRequests.id }).from(approvalRequests)
+        .where(and(eq(approvalRequests.userId, userId), eq(approvalRequests.planActionId, planActionId), eq(approvalRequests.status, 'approved'))).limit(1) : [];
       policyRequires = prior.length === 0;
     }
     if (policy.type === 'above_risk_level') policyRequires = RISK_SCORE[risk] > RISK_SCORE[(policy.config.riskLevel as RiskLevel) ?? 'R0'];

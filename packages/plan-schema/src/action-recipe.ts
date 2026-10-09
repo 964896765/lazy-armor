@@ -24,6 +24,16 @@ export interface ActionRecipe {
   steps: readonly ActionRecipeStep[];
 }
 
+/** Controlled parameterized extension of the same Recipe catalog, not a runtime. */
+export const PARAMETERIZED_ACTION_RECIPES = Object.freeze([
+  Object.freeze({key:'calendar.scheduled-create.v1',scenarioKey:'work.meetings',scenarioRevision:1,
+    goalIntent:'CREATE_SCHEDULED_CALENDAR_EVENT',strategy:'PERIODIC_SUMMARY' as const,
+    resourceType:'CalendarEvent',requiredFacts:['calendar_event.meetings.state'],
+    requiredCapabilities:['READ_CALENDAR_EVENT','calendar.event.create'],actionCapability:'calendar.event.create',
+    approval:'always',verification:'READ_BACK',
+  }),
+]);
+
 const step = (actionType: ActionType, config: Record<string, JsonValue> = {}): ActionRecipeStep => ({ actionType, config });
 
 export const ACTION_RECIPES: readonly ActionRecipe[] = Object.freeze([

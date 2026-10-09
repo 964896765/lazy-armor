@@ -98,7 +98,7 @@ jobs:
   full-rc-gate:
     name: RC Full Gate
     needs: fast-gate
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'codex/v83'))
     runs-on: ubuntu-latest
     services:
       mysql:
@@ -163,7 +163,7 @@ jobs:
   android-verification:
     name: Android Verification Artifact
     needs: fast-gate
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'codex/v83'))
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262

@@ -32,6 +32,10 @@
     "./service-offering": {
       "types": "./src/service-offering.ts",
       "default": "./dist/service-offering.js"
+    },
+    "./capability-identity": {
+      "types": "./src/capability-identity.ts",
+      "default": "./dist/capability-identity.js"
     }
   },
   "scripts": {

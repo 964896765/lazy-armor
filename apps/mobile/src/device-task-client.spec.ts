@@ -45,9 +45,16 @@ describe('signed mobile DeviceTask client', () => {
     ]);
   });
 
-  it('never submits stale completion or an unclaimed task', async () => {
+  it('allows an expired retained result through the signed endpoint but rejects an unclaimed task', async () => {
+    mocks.ensureTrustedDevice.mockResolvedValue({ id: 'trusted-1', deviceId: 'device-1' });
     await expect(completeDeviceTask('token', task(), {})).rejects.toThrow('DEVICE_TASK_CLAIM_REQUIRED');
-    await expect(completeDeviceTask('token', task({ status: 'CLAIMED', claimToken: 'a'.repeat(64), leaseExpiresAt: new Date(Date.now() - 1).toISOString() }), {})).rejects.toThrow('DEVICE_TASK_LEASE_EXPIRED');
+    await completeDeviceTask('token', task({ status: 'CLAIMED', claimToken: 'a'.repeat(64), leaseExpiresAt: new Date(Date.now() - 1).toISOString() }), {});
+    expect(mocks.deviceBoundApi).toHaveBeenCalledTimes(1);
+  });
+
+  it('fences retained result bytes before transmission after an account or device change', async () => {
+    mocks.ensureTrustedDevice.mockResolvedValue({ id: 'trusted-other-account', deviceId: 'device-1' });
+    await expect(completeDeviceTask('token', task({ status: 'CLAIMED', claimToken: 'a'.repeat(64), leaseExpiresAt: new Date(Date.now() + 1000).toISOString() }), { private: 'retained' })).rejects.toThrow('DEVICE_TASK_WRONG_DEVICE');
     expect(mocks.deviceBoundApi).not.toHaveBeenCalled();
   });
 });

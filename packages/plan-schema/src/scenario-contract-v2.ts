@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import {PARAMETERIZED_ACTION_RECIPES} from './action-recipe';
 import { catalogHash, scenarioByKey, scenarioDefinitionByKey, type RealityLevel } from './runtime-catalog';
 
 export const SCENARIO_CONTRACT_VERSION = 2 as const;
@@ -341,8 +342,16 @@ export const SCENARIO_CONTRACT_V2_REGISTRY: readonly ScenarioContractV2[] = Obje
   }),
 ]);
 
-export function scenarioContractV2ByKey(key: string): ScenarioContractV2 | null {
-  return SCENARIO_CONTRACT_V2_REGISTRY.find((contract) => contract.scenario.key === key) ?? null;
+export function scenarioContractV2ByKey(key: string,goalIntent?:string): ScenarioContractV2 | null {
+  const base=SCENARIO_CONTRACT_V2_REGISTRY.find((contract) => contract.scenario.key === key) ?? null;
+  const recipe=PARAMETERIZED_ACTION_RECIPES.find(item=>item.scenarioKey===key&&item.goalIntent===goalIntent);
+  if(!base||!recipe)return base;
+  const {definitionHash,contractVersion,...content}=base;
+  const contract=defineContract({...content,goal:{supportedIntents:[recipe.goalIntent],requiredSubjectTypes:[recipe.resourceType]},
+    actionDemands:[{intentKey:recipe.goalIntent,capabilityKey:recipe.actionCapability,resourceType:recipe.resourceType,requiresUserConfirmation:true,verification:['READ_BACK_OR_CALLBACK']}],
+    risk:{floor:'R3',authority:'RiskEngine',canAutoApprove:false},verification:{authority:'Verification',requirements:[recipe.verification]},
+  });
+  assertScenarioContractV2(contract);return contract;
 }
 
 export function assertScenarioContractV2(contract: ScenarioContractV2): void {
@@ -355,7 +364,8 @@ export function assertScenarioContractV2(contract: ScenarioContractV2): void {
   if (!contract.factDemands.every((item) => contract.goal.requiredSubjectTypes.includes(item.subjectType))) {
     throw new Error('Scenario Contract V2 FactDemand subject type must be allowed by the goal contract');
   }
-  if (!contract.actionDemands.every((item) => scenario.actionRequirements.some((requirement) => requirement.capabilityKey === item.capabilityKey))) {
+  if (!contract.actionDemands.every((item) => scenario.actionRequirements.some((requirement) => requirement.capabilityKey === item.capabilityKey)
+    || PARAMETERIZED_ACTION_RECIPES.some(recipe=>recipe.scenarioKey===scenario.key&&recipe.scenarioRevision===scenario.revision&&recipe.goalIntent===item.intentKey&&recipe.actionCapability===item.capabilityKey&&recipe.resourceType===item.resourceType&&item.requiresUserConfirmation&&item.verification.includes('READ_BACK_OR_CALLBACK')))) {
     throw new Error('Scenario Contract V2 ActionDemand must exist in the V1 scenario contract');
   }
   const { definitionHash: _definitionHash, ...content } = contract;

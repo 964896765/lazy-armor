@@ -8,7 +8,7 @@ import type { CompiledAgentContext } from './agent-context-compiler.service';
  * structured completion plus model capability metadata.
  */
 
-export const AGENT_PLANNER_RESULTS = ['ANSWER', 'PLAN_DRAFT', 'ACTION_PROPOSAL', 'CLARIFICATION_REQUIRED'] as const;
+export const AGENT_PLANNER_RESULTS = ['ANSWER', 'PLAN_DRAFT', 'ACTION_PROPOSAL', 'USER_EVENT_DRAFT', 'CLARIFICATION_REQUIRED'] as const;
 export type AgentPlannerResultKind = typeof AGENT_PLANNER_RESULTS[number];
 
 export interface AgentToolRequirement {
@@ -29,6 +29,11 @@ export interface AgentModelRequest {
 }
 
 export interface AgentModelOutput {
+  notificationWatch?: import('@lazy-armor/plan-schema').NotificationWatchAuthoring | null;
+  factQuery?: import('../consumer/notification-fact-query.contract').NotificationFactQuery | null;
+  externalSync?: import('@lazy-armor/plan-schema').UserEventExternalSyncIntent | null;
+  userEvent?: import('@lazy-armor/plan-schema').UserEventInput | null;
+  scheduledCalendar?: import('@lazy-armor/plan-schema').ScheduledCalendarAuthoring | null;
   actionProposal?: import('@lazy-armor/plan-schema').ActionProposal | null;
   result: AgentPlannerResultKind;
   intentSummary: string;

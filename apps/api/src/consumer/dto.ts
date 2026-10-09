@@ -22,3 +22,12 @@ export class ExternalReferenceDto extends ExternalServiceDto {
  @IsOptional() @IsIn(['text/plain','text/html']) mimeType?: 'text/plain'|'text/html';
  @IsOptional() @IsUUID() evidenceArtifactId?: string;
 }
+
+export class ChangeUserEventDto {
+ @IsInt() @Min(1) version!: number;
+ @IsIn(['EDIT', 'POSTPONE', 'COMPLETE', 'CANCEL']) action!: 'EDIT' | 'POSTPONE' | 'COMPLETE' | 'CANCEL';
+ @IsOptional() @IsObject() event?: Record<string, unknown>;
+}
+export class ProposeUserEventSyncChangeDto {
+ @IsInt() @Min(1) version!: number;
+}
