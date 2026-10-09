@@ -1,6 +1,6 @@
 # 当前任务书 — V84–V90
 
-2026-10-09 最新授权：**继续本地开发，暂不推送 GitHub**。当前 V85-MEMORY-02/03 [候选确认、引用核对和关系图](V85_MEMORY_CANDIDATES_GRAPH.md)已实现并通过自动验证；继续本地构建、部署、安装与 V85-MEMORY-04 的独立验收工作，不重复问是否继续。先前推送记录是历史 checkpoint，不构成本轮推送授权。
+2026-10-09 最新授权：**继续本地开发，暂不推送 GitHub**。V85-MEMORY-02/03 已构建、部署、覆盖安装并保存本地 `316ec96`；V85-MEMORY-04 真实 DeepSeek 与隔离 API 生命周期 5/5 通过，本地 `5f101cd`。本人手机授权/核对/消费仍待正常登录，不绕过、不重复催问、不提前 CLOSED。当前连续主任务为 [V86-RESOURCE-01 逐项资源能力与时效一致性](V86_RESOURCE_CAPABILITY.md)，沿已有 Registry/Resolver 和五页面同步能力与入口，先前推送是历史 checkpoint，不构成本轮推送授权。
 
 当前任务 V85-MEMORY-01 [Controlled Memory Store & Planner Context](V85_MEMORY_SYSTEM.md)：Backend/Frontend/Database/Runtime 均已实现，自动检查与构建通过后保存 checkpoint。Memory 的 AI 候选提取/确认、关系图与真实消费仍属 V85 后续任务；不提前切到 Computer Use。
 

@@ -53,4 +53,4 @@ Agent Core 编排现有能力。Plan、USER_EVENT、Approval、Execution、Resul
 
 来源、时间、权限、执行与验证历史必须可追踪。自动化、构建、部署、安装与真机分别记账；缺真实数据或手机锁屏时保留待验并推进独立工作。不重复询问已确定方向，不模拟生产事实，不改历史终态，不扩大已冻结矩阵。
 
-当前进入 [V85 Memory](V85_MEMORY_SYSTEM.md)。前一 checkpoint 见 [Task Orchestrator](V84_TASK_ORCHESTRATOR.md)，已完成的理解入口见 [V84 Agent Core](V84_AGENT_CORE.md)。
+V85 Memory 基础、候选/引用/关系与真实模型隔离 API 已验，手机操作独立待验；当前进入 [V86 Resource Capability](V86_RESOURCE_CAPABILITY.md)。前一 checkpoint 见 [Task Orchestrator](V84_TASK_ORCHESTRATOR.md)，已完成的理解入口见 [V84 Agent Core](V84_AGENT_CORE.md)。

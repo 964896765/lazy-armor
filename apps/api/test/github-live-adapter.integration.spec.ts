@@ -12,6 +12,7 @@ import type { ExecutionWorker } from '../src/execution/execution-worker.service'
 import type { OutboxService } from '../src/execution/side-effect/outbox.service';
 import type { OutboxWorker } from '../src/execution/side-effect/outbox-worker.service';
 import { CapabilityUsabilityService } from '../src/provider-capabilities/capability-usability.service';
+import { ConnectorRegistry } from '@lazy-armor/connector-sdk';
 import { ProviderCapabilityRegistryService } from '../src/provider-capabilities/provider-capability-registry.service';
 import { RealityPipelineService } from '../src/reality-pipeline/reality-pipeline.service';
 
@@ -26,6 +27,7 @@ describe.sequential('9D actual GitHub adapter over isolated TCP/MySQL; not real 
   const keys = ['GITHUB_OAUTH_CLIENT_ID', 'GITHUB_OAUTH_CLIENT_SECRET', 'GITHUB_OAUTH_REDIRECT_URI', 'REDIS_KEY_PREFIX'] as const;
   const saved = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
   const pipelineFailures: { stage: string; code: string }[] = [];
+  const dispatchFailures: { code: string; origin: string }[] = [];
   beforeAll(async () => {
     issues.set(1, { id: 99, number: 1, title: 'Observed issue', body: 'Actual isolated issue', state: 'open', user: { id: 7 }, url: base + '/issues/1', updated_at: '2026-09-13T10:00:00Z' });
     prState = { ...issues.get(1), id: 100, number: 2, url: base + '/pulls/2', state: 'closed', merged: true };
@@ -68,6 +70,14 @@ describe.sequential('9D actual GitHub adapter over isolated TCP/MySQL; not real 
     process.env.REDIS_KEY_PREFIX = 'lazy-armor-github-isolated-' + unique;
     const transport: GitHubTransport = (url, init) => { const source = new URL(url); return fetch(endpoint + source.pathname + source.search, init); };
     ({ app, pool, worker } = await bootP2App('github-' + unique, [{ token: GITHUB_TRANSPORT, value: transport }]));
+    const adapter = app.get(ConnectorRegistry).get('github'), execute = adapter.execute!.bind(adapter);
+    vi.spyOn(adapter, 'execute').mockImplementation(async input => {
+      try { return await execute(input); } catch (error) {
+        const failure = error as { code?: string; stack?: string };
+        dispatchFailures.push({ code: failure.code ?? 'UNKNOWN', origin: failure.stack?.split('\n')[1]?.trim() ?? 'unavailable' });
+        throw error;
+      }
+    });
     const pipeline = app.get(RealityPipelineService);
     const ingest = pipeline.ingest.bind(pipeline); const confirm = pipeline.confirmCandidate.bind(pipeline);
     const recordFailure = (stage: string, error: unknown) => {
@@ -111,6 +121,11 @@ describe.sequential('9D actual GitHub adapter over isolated TCP/MySQL; not real 
   it('keeps actual scope, owner, four-axis status and direct-write denial fail-closed', async () => {
     expect((await request(app.getHttpServer()).get('/api/providers/github/status').set(auth(owner.token)).expect(200)).body).toMatchObject({ oauthConfigured: true, realAccountAcceptance: 'NOT_VERIFIED' });
     const view = await app.get(CapabilityUsabilityService).resolveConnection(owner.userId, connection); expect(view.capabilities).toHaveLength(5); expect(view.capabilities.every((c) => c.usable)).toBe(true);
+    const resources = (await request(app.getHttpServer()).get('/api/consumer/resources').set(auth(owner.token)).expect(200)).body;
+    const resource = resources.find((r: { sourceRef: { id: string } }) => r.sourceRef.id === connection);
+    expect(resource.capabilitySummary).toMatchObject({ total: 5, available: 5 });
+    expect(resource.capabilities).toEqual(view.capabilities.map(c => c.key));
+    expect(resource.capabilitySummary.items.map((c: { name: string }) => c.name)).toEqual(view.capabilities.map(c => c.name));
     await request(app.getHttpServer()).post(`/api/providers/github/connections/${connection}/observations`).set(auth(other.token)).send({ capability: 'READ_ISSUE', repository }).expect(404);
     await request(app.getHttpServer()).post(`/api/connections/${connection}/invoke`).set(auth(owner.token)).send({ capability: 'CREATE_ISSUE', requestId: unique, input: {} }).expect(403); expect(mutations).toBe(0);
     await observe('READ_ISSUE', { payload: { state: 'fabricated' } }).expect(400);
@@ -175,7 +190,7 @@ describe.sequential('9D actual GitHub adapter over isolated TCP/MySQL; not real 
     const run = await approved('CREATE_ISSUE', { repository, visibility: 'private', title: 'Approved isolated issue', body: 'Approved isolated details' }); disconnect = true;
     const outbox = app.get<OutboxService>('OUTBOX_SERVICE'); const dispatcher = app.get<OutboxWorker>('OUTBOX_WORKER');
     const claims = (await Promise.all([outbox.claim(1000, unique + 'a'), outbox.claim(1000, unique + 'b')])).flat().filter((m) => m.id === run.messageId); expect(claims).toHaveLength(1);
-    await Promise.all([dispatcher.process(claims[0]), dispatcher.process(claims[0])]); expect(mutations).toBe(1); disconnect = false;
+    await Promise.all([dispatcher.process(claims[0]), dispatcher.process(claims[0])]); expect(mutations, JSON.stringify(dispatchFailures)).toBe(1); disconnect = false;
     const [cases] = await pool.query<RowDataPacket[]>('SELECT BIN_TO_UUID(id) id FROM reconciliation_cases WHERE execution_id=UUID_TO_BIN(?)', [run.executionId]); expect(cases).toHaveLength(1);
     const reconciliation = app.get(ReconciliationService); const checks = (await Promise.all([reconciliation.claim(100), reconciliation.claim(100)])).flat().filter((c) => c.id === cases[0].id); expect(checks).toHaveLength(1);
     await reconciliation.process(checks[0]); expect(await reconciliation.get(owner.userId, cases[0].id)).toMatchObject({ status: 'RESOLVED', resultState: 'SUCCEEDED' });

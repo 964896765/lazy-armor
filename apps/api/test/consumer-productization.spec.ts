@@ -8,8 +8,10 @@ function service(rows:unknown[][]=[]){
  const connectors={listPublic:vi.fn().mockResolvedValue([])};
  const plans={list:vi.fn().mockResolvedValue([])};
  const templates={list:vi.fn().mockResolvedValue([])};
- const instance=new ConsumerService(db as never,{} as never,plans as never,connections as never,devices as never,connectors as never,templates as never,{} as never,{} as never);
- return {instance,connections,connectors};
+ const usability={resolveConnection:vi.fn().mockResolvedValue({capabilities:[]})};
+ const modules={get:()=>usability};
+ const instance=new ConsumerService(db as never,{} as never,plans as never,connections as never,devices as never,connectors as never,templates as never,{} as never,{} as never,{} as never,{} as never,{} as never,{} as never,modules as never,{} as never,{} as never);
+ return {instance,connections,connectors,usability};
 }
 describe('productization authoritative projections',()=>{
  it('keeps the complete canonical catalog visible without any connected resource',async()=>{
@@ -24,13 +26,15 @@ describe('productization authoritative projections',()=>{
   const rows=await instance.resources('user');expect(rows.map(row=>row.sourceRef.id)).toEqual(['public_http_json']);
  });
  it('requires current health and non-revoked grants to project usable capabilities',async()=>{
-  const now=Date.now();const {instance,connections}=service([
-   [{capabilityKey:'valid',status:'HEALTHY',checkedAt:new Date(now-1000),validUntil:new Date(now+60000)},
-    {capabilityKey:'unbounded',status:'HEALTHY',checkedAt:new Date(now-1000),validUntil:null},
-    {capabilityKey:'revoked',status:'HEALTHY',checkedAt:new Date(now-1000),validUntil:new Date(now+60000)}],
-   [{capabilityKey:'valid',status:'GRANTED',revokedAt:null},{capabilityKey:'unbounded',status:'GRANTED'}, {capabilityKey:'revoked',status:'GRANTED',revokedAt:new Date(now-1000)}]
-  ]);
+  const {instance,connections,connectors,usability}=service();
+  connectors.listPublic.mockResolvedValue([{key:'public_http_json',providerType:'file'}]);
+  usability.resolveConnection.mockResolvedValue({capabilities:[
+   {key:'valid',name:'有效读取',operation:'read',health:'HEALTHY',usable:true,reasons:[]},
+   {key:'unbounded',name:'过期检查',operation:'read',health:'UNKNOWN',usable:false,reasons:['CAPABILITY_HEALTH_EVIDENCE_STALE']},
+   {key:'revoked',name:'撤回授权',operation:'read',health:'HEALTHY',usable:false,reasons:['CAPABILITY_GRANT_REVOKED']},
+  ]});
   connections.list.mockResolvedValue([{id:'x',connectorId:'public_http_json',connectorName:'JSON',externalAccountName:'接口',status:'connected',lastCheckedAt:null}]);
-  const [row]=await instance.resources('user');expect(row.capabilities).toEqual(['valid']);expect(row.status).toBe('已添加');
+  const [row]=await instance.resources('user');expect(row.capabilities).toEqual(['valid']);expect(row.status).toBe('已连接');
+  expect(row.capabilitySummary).toMatchObject({total:3,available:1});expect(usability.resolveConnection).toHaveBeenCalledWith('user','x');
  });
 });

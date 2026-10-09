@@ -1,5 +1,7 @@
 # 当前状态 — 2026-10-09
 
+2026-10-09 当前本地主线：[V86 逐项资源能力](V86_RESOURCE_CAPABILITY.md)已实现、自动验证、本地部署与 APK 覆盖安装；下一任务 V86-RESOURCE-02。V85 候选/引用/关系已部署并安装，真实 DeepSeek + 隔离账户完整 API 生命周期 5/5 通过；手机记忆操作仍待正常登录。V85/V86 均不提前 CLOSED，本轮不推送。
+
 主线已切换 [V84–V90 持续开发方案](V84_V90_ROADMAP.md)。P1/P2 CLOSED；P3 ResourceGap 核心机制已收口，三条物流正向证据独立 REAL_PENDING，不阻塞新主线。
 
 V84.1 已实现 `goal-understanding.v1`、Agent intent/planner/policy、原 Planner/审计/消息接入和会话理解卡片。V84.2 已接入本人 timezone/locale 的只读 Context，理解卡片显示采用时区。复用现有确认与 Shared Runtime，无新数据库权威。后端 57 项、移动端 14 项相关回归通过，Plan-schema/API/Mobile typecheck 与构建、Android bundle/APK 构建通过。

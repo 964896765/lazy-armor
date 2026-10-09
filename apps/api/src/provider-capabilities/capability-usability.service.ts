@@ -1,14 +1,10 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import {
   resolveCapabilityUsability,
-  type ConnectionCapabilityGrantStatus,
   type ImplementationStatus,
-  type OfficialCapabilityAvailability,
-  type ProviderCapabilityHealthStatus,
 } from '@lazy-armor/connector-sdk';
 import {
   connectionCapabilityGrants,
-  connectionPermissions,
   connections,
   connectorCapabilities,
   connectors,
@@ -17,6 +13,8 @@ import {
 import { and, eq } from 'drizzle-orm';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
 import { ProviderCapabilityRegistryService } from './provider-capability-registry.service';
+import { capabilityAvailability } from './capability-availability';
+import { canonicalCapabilityId, type ConnectionCapabilityView } from '@lazy-armor/plan-schema';
 
 @Injectable()
 export class CapabilityUsabilityService {
@@ -25,7 +23,7 @@ export class CapabilityUsabilityService {
     private readonly manifests: ProviderCapabilityRegistryService,
   ) {}
 
-  async resolveConnection(userId: string, connectionId: string) {
+  async resolveConnection(userId: string, connectionId: string): Promise<ConnectionCapabilityView> {
     const connection = (await this.db.select({
       id: connections.id,
       providerKey: connectors.key,
@@ -43,12 +41,8 @@ export class CapabilityUsabilityService {
       operation: connectorCapabilities.operation,
       riskLevel: connectorCapabilities.riskLevel,
       providerAvailability: connectorCapabilities.providerAvailability,
-      permissionGranted: connectionPermissions.granted,
-      permissionExpiresAt: connectionPermissions.expiresAt,
-      permissionRevokedAt: connectionPermissions.revokedAt,
     }).from(connectorCapabilities)
       .innerJoin(connectors, eq(connectorCapabilities.connectorId, connectors.id))
-      .leftJoin(connectionPermissions, and(eq(connectionPermissions.connectorCapabilityId, connectorCapabilities.id), eq(connectionPermissions.connectionId, connectionId)))
       .where(eq(connectors.key, connection.providerKey));
 
     const manifest = this.manifests.list().find((item) => item.providerKey === connection.providerKey);
@@ -66,18 +60,25 @@ export class CapabilityUsabilityService {
       const health = healthRows.find((item) => item.capabilityKey === key);
       const official = declared?.officialAvailability ?? 'TO_VERIFY_OFFICIAL';
       const implementation = old ? implementationFromLegacy(old.providerAvailability) : declared?.implementationStatus ?? 'NOT_IMPLEMENTED';
-      const grantStatus = grant?.status as ConnectionCapabilityGrantStatus | undefined ?? grantFromLegacy(old, now);
-      const healthStatus = health?.status as ProviderCapabilityHealthStatus | undefined ?? healthFromConnection(connection.status, connection.expiresAt, now);
+      const state = capabilityAvailability({ providerKey: connection.providerKey, connection, scopes: declared?.oauthScopes ?? [], grant, health, now });
+      const usability = resolveCapabilityUsability({ providerKey: connection.providerKey, capabilityKey: key, providerAvailability: official,
+        implementation, grant: state.grantStatus, health: state.healthStatus,
+        explicitlyDenied: !!manifest?.explicitDenials.includes(key) || (declared?.explicitDenials.length ?? 0) > 0 });
+      const reasons = [...usability.reasons, ...(!state.connectionReady ? ['CONNECTION_NOT_READY'] : []),
+        ...(health?.status === 'HEALTHY' && !state.healthFresh ? ['CAPABILITY_HEALTH_EVIDENCE_STALE'] : [])];
       return {
         key,
+        canonicalKey: canonicalCapabilityId(key),
         name: declared?.userFacingName ?? declared?.name ?? old?.name ?? key,
-        operation: declared?.operation ?? old?.operation ?? 'read',
+        operation: declared?.operation ?? (old?.operation === 'execute' ? 'execute' as const : old?.operation === 'subscribe' ? 'subscribe' as const : 'read' as const),
         sourceModes: [...(declared?.sourceModes ?? [])],
         riskLevel: declared?.riskLevel ?? old?.riskLevel ?? 'R0',
         dataBoundary: declared?.dataBoundary ?? null,
         verificationMethods: declared?.verificationMethods ?? [],
         explicitDenials: declared?.explicitDenials ?? [],
-        ...resolveCapabilityUsability({ providerKey: connection.providerKey, capabilityKey: key, providerAvailability: official, implementation, grant: grantStatus, health: healthStatus, explicitlyDenied: (declared?.explicitDenials.length ?? 0) > 0 }),
+        ...usability, usable: reasons.length === 0, reasons,
+        evidence: { checkedAt: health?.checkedAt.toISOString() ?? null, validUntil: health?.validUntil?.toISOString() ?? null,
+          fresh: state.healthFresh, reasonCode: health?.reasonCode ?? null },
       };
     });
     return {
@@ -89,11 +90,10 @@ export class CapabilityUsabilityService {
       providerReview: manifest?.providerReview ?? 'TO_VERIFY_OFFICIAL',
       connectionStatus: connection.status,
       connectionStatusReason: connection.statusReason,
+      evaluatedAt: now.toISOString(), executionAuthorized: false,
       capabilities,
     };
   }
 }
 
 function implementationFromLegacy(value: string): ImplementationStatus { if (value === 'available') return 'PRODUCTION'; if (value === 'beta') return 'BETA'; if (value === 'draft_only') return 'PARTIAL'; return 'DISABLED'; }
-function grantFromLegacy(value: { permissionGranted: number | null; permissionExpiresAt: Date | null; permissionRevokedAt: Date | null } | undefined, now: Date): ConnectionCapabilityGrantStatus { if (!value) return 'UNKNOWN'; if (value.permissionRevokedAt) return 'REVOKED'; if (value.permissionExpiresAt && value.permissionExpiresAt <= now) return 'EXPIRED'; return value.permissionGranted === 1 ? 'GRANTED' : 'NOT_GRANTED'; }
-function healthFromConnection(status: string, expiresAt: Date | null, now: Date): ProviderCapabilityHealthStatus { if (expiresAt && expiresAt <= now) return 'REAUTHORIZATION_REQUIRED'; if (status === 'connected') return 'HEALTHY'; if (status === 'degraded') return 'DEGRADED'; if (status === 'reauthorization_required' || status === 'expired') return 'REAUTHORIZATION_REQUIRED'; if (status === 'provider_error') return 'PROVIDER_UNAVAILABLE'; if (status === 'revoked') return 'PERMISSION_REVOKED'; return 'UNKNOWN'; }

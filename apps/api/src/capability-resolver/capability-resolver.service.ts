@@ -8,6 +8,7 @@ import { canonicalStringify,canonicalCapabilityId,sameCapabilityIdentity,capabil
 import { runtimeTargets, planActions, capabilityResolutionDecisions, connections, connectors, connectionCapabilityGrants, providerCapabilityHealth, plans, planVersions,planCreationContracts,planTriggers,localCapabilityStates,trustedDevices,deviceTasks } from '@lazy-armor/database';
 import { newId } from '@lazy-armor/shared';
 import { createHash } from 'node:crypto';
+import { capabilityAvailability } from '../provider-capabilities/capability-availability';
 import { and, eq } from 'drizzle-orm';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
 import { AuditService } from '../audit/audit.service';
@@ -208,19 +209,17 @@ export class CapabilityResolverService {
       for (const capability of manifest.capabilities.filter((item) => sameCapabilityIdentity(item.key,input.requirement.capabilityKey))) {
         const grant = grants.find((item) => item.capabilityKey === capability.key);
         const check = health.find((item) => item.capabilityKey === capability.key);
+        const availability = capabilityAvailability({ providerKey: row.providerKey, connection: row.connection, scopes: capability.oauthScopes, grant, health: check, now });
         const evidence = await this.evidence.read(row.providerKey, { userId, connectionId: row.connection.id,
           capabilityKey: capability.key, resource: input.requirement.resource, planVersionId: input.planVersionId });
         candidates.push({ id: `${row.connection.id}:${capability.key}`, providerKey: row.providerKey,
           manifestRevision: manifest.revision, manifestHash: manifest.manifestHash, capability, ...capabilityIdentity(capability.key),
-          connectionReady: row.connection.status === 'connected' && (!row.connection.expiresAt || row.connection.expiresAt > now),
-          grantSatisfied: grant?.status === 'GRANTED' && !grant.revokedAt && (!grant.expiresAt || grant.expiresAt > now)
-            && capability.oauthScopes.every((scope) => grant.grantedScopesJson.includes(scope)),
-          healthUsable: check?.status === 'HEALTHY' && check.validUntil !== null && check.validUntil > now && check.checkedAt <= now,
+          connectionReady: availability.connectionReady, grantSatisfied: availability.grantSatisfied, healthUsable: availability.healthUsable,
           // Account/device/data-freshness evidence is supplied by future verified provider adapters.
           // A health probe alone is not evidence about account type or resource freshness.
           accountSatisfied: capability.accountTypes.length === 0 || evidence?.accountSatisfied === true,
           deviceSatisfied: evidence?.deviceSatisfied === true || (capability.androidPermissions.length === 0 && !capability.sourceModes.some((mode) => ['APP_READ', 'VISION', 'OS_API', 'NOTIFICATION'].includes(mode))),
-          explicitlyDenied: manifest.explicitDenials.includes(capability.key) || capability.explicitDenials.includes(capability.key),
+          explicitlyDenied: manifest.explicitDenials.includes(capability.key) || capability.explicitDenials.length > 0,
           reality: evidence?.reality ?? 'CLAIMED', observedAt: evidence?.observedAt ?? null,
           costMicros: evidence?.costMicros ?? null, latencyMs: evidence?.latencyMs ?? null, reliability: evidence?.reliability ?? null });
       }
