@@ -56,3 +56,5 @@ Agent Core 编排现有能力。Plan、USER_EVENT、Approval、Execution、Resul
 V85 Memory 基础、候选/引用/关系与真实模型隔离 API 已验，手机操作独立待验；当前进入 [V86 Resource Capability](V86_RESOURCE_CAPABILITY.md)。前一 checkpoint 见 [Task Orchestrator](V84_TASK_ORCHESTRATOR.md)，已完成的理解入口见 [V84 Agent Core](V84_AGENT_CORE.md)。
 
 2026-10-09：V86-RESOURCE-02 的版本绑定资源核对与手动只读来源 fencing 已自动验证、部署与安装，详见 [任务与证据](V86_GOAL_RESOURCE_MATCH.md)。本人合法入口/真实 Goal Runtime 验收继续待正常登录；不以手动 inspection 宣称 V86 CLOSED。随后进入 V87-COMPUTER-01，先收既有受控页面观察的来源/字段/发布边界。
+
+2026-10-09：已完成 [V87-COMPUTER-01 受控页面观察边界](V87_COMPUTER_RUNTIME.md)，后端字段/来源/事务 fencing、Mobile 读取范围及原会话/请求字段最小化同步实现。native UI-node provider 尚未接入；不因 guard、fixtures 或构建把 Computer Use 标记为 REAL_VERIFIED。下一任务为显式页面 consent/mode + 一个真实只读 native observer。

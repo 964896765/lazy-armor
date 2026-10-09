@@ -18,6 +18,7 @@ export interface DeviceTask {
 }
 
 export interface DeviceTaskEvidence {
+  readScope?: { foregroundOnly: true; boundedSession: true; fields: string[] };
   task: {
     id: string; taskType: string; resourceType: string; factKey: string; status: DeviceTaskStatus; errorCode: string | null;
     attemptCount: number; claimedAt: string | null; leaseExpiresAt: string | null; resultHash: string | null;

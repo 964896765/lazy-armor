@@ -1,5 +1,7 @@
 # 当前状态 — 2026-10-09
 
+2026-10-09 当前主线：[V87-COMPUTER-01](V87_COMPUTER_RUNTIME.md)已完成受控页面观察的范围/会话 fencing、原子回滚与任务读取范围表面，41 项 API 和 38 项 Mobile 回归通过，已本地部署/安装。下一任务 V87-COMPUTER-02 显式页面读取授权与 native observer。前序 V86 本地 fda37c0 已部署/安装；V86/V87 的本人真机结果独立待验。无新迁移，不推送。
+
 2026-10-09：[V86-RESOURCE-02](V86_GOAL_RESOURCE_MATCH.md)已实现版本绑定的目标资源核对、公开接口读取来源 fencing 和二级返回入口；自动回归、构建与 APK 安装已有证据，本人正常登录后的 UI/目标调用独立待验。下一任务 V87-COMPUTER-01，沿既有 DeviceTask/受控读取合同推进，不推送 GitHub。
 
 2026-10-09 当前本地主线：[V86 逐项资源能力](V86_RESOURCE_CAPABILITY.md)已实现、自动验证、本地部署与 APK 覆盖安装；下一任务 V86-RESOURCE-02。V85 候选/引用/关系已部署并安装，真实 DeepSeek + 隔离账户完整 API 生命周期 5/5 通过；手机记忆操作仍待正常登录。V85/V86 均不提前 CLOSED，本轮不推送。

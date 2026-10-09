@@ -22,12 +22,16 @@ export default function DeviceTaskDetailPage() {
   });
   const evidence = detail.data;
   const stages = evidence ? deviceTaskStages(evidence) : [];
-  return <RuntimeDetailScreen title="手机任务详情" subtitle="只展示服务器已记录的状态与证据" onBack={() => router.back()}>
+  return <RuntimeDetailScreen title="手机任务详情" subtitle="只展示服务器已记录的状态与证据" onBack={() => router.canGoBack() ? router.back() : router.replace('/resources' as never)}>
     {!token ? <LoginRequired /> : null}
     {token ? <RuntimeLoadState loading={detail.isLoading} error={detail.isError} onRetry={() => detail.refetch()} loadingText="正在核对设备任务…" /> : null}
     {evidence ? <>
       <View style={styles.hero}><Text style={styles.eyebrow}>{evidence.task.deviceOnline ? '手机在线' : '手机当前离线'}</Text><Text style={styles.heroTitle}>{deviceTaskStatusLabel(evidence.task.status)}</Text><Text style={styles.heroDetail}>{evidence.task.factKey}</Text></View>
       <RuntimeSection title="任务在手机上做到哪一步"><RuntimeCard>{stages.map((stage, index) => <View key={stage.key} style={[styles.stage, index < stages.length - 1 && styles.divider]}><View style={[styles.dot, stage.state === 'done' ? styles.done : stage.state === 'current' ? styles.current : stage.state === 'failed' ? styles.failed : styles.waiting]} /><View style={styles.stageCopy}><Text style={styles.stageTitle}>{stage.label}</Text><Text style={styles.stageDetail}>{stage.detail}</Text></View></View>)}</RuntimeCard></RuntimeSection>
+      {evidence.readScope ? <RuntimeSection title="读取范围"><RuntimeCard>
+        <RuntimeText>只在原读取时段内读取目标应用的前台页面。</RuntimeText>
+        {evidence.readScope.fields.map(field => <RuntimeKeyValue key={field} label="读取内容" value={({ 'wallet.balance': '余额', 'transaction.latest.amount': '最近交易金额', 'transaction.latest.time': '最近交易时间' } as Record<string, string>)[field] ?? '已选择的页面字段'} />)}
+      </RuntimeCard></RuntimeSection> : null}
       <RuntimeSection title="现实数据证据"><RuntimeCard>
         {evidence.observations.length === 0 ? <RuntimeText>尚无已记录的来源观察；不会把待执行任务显示为已验证。</RuntimeText> : evidence.observations.map((item) =>
           <RuntimeCard key={item.id} title="来源观察"><RuntimeKeyValue label="状态" value={item.status} /><RuntimeKeyValue label="观察时间" value={displayTime(item.observedAt)} /><ActionButton label="查看脱敏证据" tone="quiet" onPress={() => router.push(`/evidence/${item.id}` as never)} /></RuntimeCard>)}

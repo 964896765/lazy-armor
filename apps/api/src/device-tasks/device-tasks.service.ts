@@ -19,7 +19,8 @@ import { and, desc, eq, gte, inArray, lt } from 'drizzle-orm';
 import { AuditService } from '../audit/audit.service';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
 import { RealityPipelineService, type RealityExecutor } from '../reality-pipeline/reality-pipeline.service';
-import { StructuredReadService } from '../structured-read/structured-read.service';
+import { StructuredReadService, StructuredReadSourceInvalidError } from '../structured-read/structured-read.service';
+import { resolveAppReadProfile } from '../structured-read/app-read-profiles';
 import { TrustedDevicesService } from '../trusted-devices/trusted-devices.service';
 
 const LEASE_TTL_MS = process.env.NODE_ENV === 'test' ? 10_000 : 30_000;
@@ -228,7 +229,7 @@ export class DeviceTasksService {
         try {
           reality = await this.structuredRead.ingestDeviceResult(userId, task, result, tx, claimToken);
         } catch (error) {
-          if (error instanceof StaleClaimError) throw error;
+          if (error instanceof StaleClaimError || error instanceof StructuredReadSourceInvalidError) throw error;
           await this.markVerificationFailed(tx, task, result, resultHash);
           return { failure: new BadRequestException('Device task result failed structured read verification') } as const;
         }
@@ -385,6 +386,8 @@ export class DeviceTasksService {
       .from(deviceHeartbeats).where(and(eq(deviceHeartbeats.userId, userId), eq(deviceHeartbeats.trustedDeviceId, trustedDeviceId))).limit(1))[0];
     const deviceOnline = Boolean(heartbeat && Date.now() - heartbeat.lastHeartbeatAt.getTime() <= ONLINE_WINDOW_MS);
     return {
+      ...(structured ? { readScope: { foregroundOnly: true, boundedSession: true,
+        fields: Array.isArray(task.payloadJson.requestedFields) ? task.payloadJson.requestedFields.filter((field): field is string => typeof field === 'string' && !!resolveAppReadProfile(String(task.payloadJson.packageName ?? ''))?.allowedSelectors.includes(field)) : [] } } : {}),
       task: { id: task.id, taskType: task.taskType, resourceType: task.resourceType, factKey: task.factKey, status: task.status,
         errorCode: task.errorCode, attemptCount: claimEvents.length, claimedAt: task.claimedAt?.toISOString() ?? null,
         leaseExpiresAt: task.leaseExpiresAt?.toISOString() ?? null, resultHash: task.resultHash,

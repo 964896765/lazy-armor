@@ -37,3 +37,5 @@ APK 在 2c696fe 覆盖安装，源码 bundle、APK bundle 和已安装 APK 字�
 本机证据（不推送）：artifacts/v86-goal-resource-fresh-test-db-r1.json、v86-goal-resource-tests-r1.log、v86-goal-resource-tests-final-r2.log、v86-goal-resource-registry-final-r3.log、v86-goal-resource-deployment-r1.json、v86-goal-resource-worker-restoration-r1b.json、v86-goal-resource-readiness-r3.json、v86-goal-resource-r1-install-real.json。历史 0083 production migration evidence gate 继续未过，本轮无新 migration，不放宽历史 gate。
 
 最终部署证据：artifacts/v86-goal-resource-deployment-r2.json、v86-goal-resource-readiness-final-r4.json、v86-goal-resource-development-authority-counts-r1.json。
+
+真实网络补验：PUBLIC_JSON_REAL_READ opt-in 通过正常注册/显式授权的隔离账户，实际读取 https://registry.npmjs.org/typescript/latest，核对返回包名/版本及 SOURCE_RESPONSE_ONLY；0 Truth/Execution/Invocation。1/1 通过，证据 artifacts/v86-public-json-real-read-r2.log。最初 OpenLibrary 来源未通过连接检查（provider_error），r1 失败记录保留；未注入响应或放宽网络/时效门。这个补验是真实 HTTP Source inspection，不是本人手机或完整 Goal Shared Runtime Golden Flow。

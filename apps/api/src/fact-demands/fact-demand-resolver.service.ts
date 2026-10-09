@@ -9,7 +9,7 @@ import { newId } from '@lazy-armor/shared';
 import {DeviceTasksService} from '../device-tasks/device-tasks.service';
 import type {AcquireFactDemandsDto} from './dto';
 import {localCapabilityAvailability,LOCAL_RUNTIME_CAPABILITY_MAP,localCapabilitySourceId,normalizeLocalSourceId} from '@lazy-armor/plan-schema';
-import { BadRequestException, ConflictException, Inject, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Inject, Injectable, forwardRef } from '@nestjs/common';
 import {
   deviceAppConnections,localCapabilityStates,deviceTasks,capabilityInvocations,invocationRuntimeLinks,runtimeResults,runtimeTargets,planCreationContracts,mobileNotificationReceipts,
   deviceConsumables,
@@ -78,7 +78,7 @@ export class FactDemandResolverService {
   constructor(
     @Inject(DATABASE) private readonly db: InjectedDatabase,
     private readonly readiness: ReadinessEvidenceService,
-    private readonly deviceTasks:DeviceTasksService,
+    @Inject(forwardRef(() => DeviceTasksService)) private readonly deviceTasks:DeviceTasksService,
     private readonly acquisition:LocalAcquisitionService,
     private readonly moduleRef:ModuleRef,
     private readonly audit:AuditService,

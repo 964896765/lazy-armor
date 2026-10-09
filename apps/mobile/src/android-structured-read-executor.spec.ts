@@ -6,6 +6,7 @@ const bridge = vi.hoisted(() => ({
 }));
 
 const client = vi.hoisted(() => ({
+  heartbeatDevice: vi.fn(),
   listDeviceTasks: vi.fn(),
   claimDeviceTask: vi.fn(),
   heartbeatClaim: vi.fn(),
@@ -31,8 +32,8 @@ function taskFixture(overrides: Partial<DeviceTask> = {}): DeviceTask {
   return {
     id: 'task-1', trustedDeviceId: 'trusted-1', deviceId: 'device-1', taskType: 'APP_STRUCTURED_READ',
     factKey: 'structured_read.field', resourceType: 'FixtureWallet',
-    payload: { packageName: 'com.lazyarmor.fixture.wallet', resourceId: 'fixture-1', requestedFields: ['wallet.balance'] },
-    status: 'PENDING', claimToken: null, leaseExpiresAt: null, errorCode: null, ...overrides,
+    payload: { packageName: 'com.lazyarmor.fixture.wallet', resourceId: 'fixture-1', appReadSessionId: 'session-1', requestedFields: ['wallet.balance'] },
+    status: 'CLAIMED', claimToken: 'a'.repeat(64), leaseExpiresAt: new Date(Date.now() + 60_000).toISOString(), errorCode: null, ...overrides,
   };
 }
 
@@ -54,6 +55,23 @@ function store(initial: RunnerState | null) {
 describe('real Android structured read executor', () => {
   beforeEach(() => vi.resetAllMocks());
 
+  it('does not capture for unclaimed or expired Tasks, or a different original session', async () => {
+    bridge.appReadSessionStatus.mockResolvedValue(readingSession());
+    for (const patch of [{ status: 'PENDING' as const }, { claimToken: null }, { leaseExpiresAt: new Date(Date.now() - 1).toISOString() }]) {
+      expect(await executeStructuredRead(taskFixture(patch))).toBeNull();
+    }
+    bridge.appReadSessionStatus.mockResolvedValue(readingSession({ sessionId: 'other-session' }));
+    expect(await executeStructuredRead(taskFixture())).toBeNull();
+    expect(bridge.captureAppReadUiNodes).not.toHaveBeenCalled();
+  });
+
+  it('rejects captured data when the source session changes before publication', async () => {
+    bridge.appReadSessionStatus.mockResolvedValueOnce(readingSession()).mockResolvedValueOnce(readingSession({ sessionId: 'new-session' }));
+    bridge.captureAppReadUiNodes.mockResolvedValue({ nodes: [{ resourceId: 'wallet.balance', text: '25' }], evidenceHash: null });
+    expect(await executeStructuredRead(taskFixture())).toBeNull();
+    expect(bridge.captureAppReadUiNodes).toHaveBeenCalledTimes(1);
+  });
+
   it('fails closed when the package has no registered profile', async () => {
     bridge.appReadSessionStatus.mockResolvedValue(readingSession());
     const result = await executeStructuredRead(taskFixture({ payload: { packageName: 'com.unknown.app', resourceId: 'x', requestedFields: ['wallet.balance'] } }));
@@ -63,8 +81,8 @@ describe('real Android structured read executor', () => {
 
   it('rejects wildcard and sensitive selectors before any capture', async () => {
     bridge.appReadSessionStatus.mockResolvedValue(readingSession());
-    const wildcard = await executeStructuredRead(taskFixture({ payload: { packageName: 'com.lazyarmor.fixture.wallet', resourceId: 'fixture-1', requestedFields: ['*'] } }));
-    const sensitive = await executeStructuredRead(taskFixture({ payload: { packageName: 'com.lazyarmor.fixture.wallet', resourceId: 'fixture-1', requestedFields: ['paymentPassword'] } }));
+    const wildcard = await executeStructuredRead(taskFixture({ payload: { packageName: 'com.lazyarmor.fixture.wallet', resourceId: 'fixture-1', appReadSessionId: 'session-1', requestedFields: ['*'] } }));
+    const sensitive = await executeStructuredRead(taskFixture({ payload: { packageName: 'com.lazyarmor.fixture.wallet', resourceId: 'fixture-1', appReadSessionId: 'session-1', requestedFields: ['paymentPassword'] } }));
     expect(wildcard).toBeNull();
     expect(sensitive).toBeNull();
     expect(bridge.captureAppReadUiNodes).not.toHaveBeenCalled();
@@ -99,8 +117,8 @@ describe('real Android structured read executor', () => {
     expect(result).not.toBeNull();
     expect((result as Record<string, unknown>).nodes).toEqual([
       { resourceId: 'wallet.balance', text: '25' },
-      { resourceId: 'transaction.latest.amount', text: '12.50' },
     ]);
+    expect(bridge.captureAppReadUiNodes).toHaveBeenCalledWith('com.lazyarmor.fixture.wallet', ['wallet.balance']);
     expect(result).not.toHaveProperty('verified');
     expect(result).not.toHaveProperty('status');
   });
@@ -111,7 +129,7 @@ describe('fixture structured read closed loop', () => {
 
   it('completes the DeviceTask with fixture evidence that is never marked verified', async () => {
     const stateStore = store(null);
-    const pending = taskFixture();
+    const pending = taskFixture({ status: 'PENDING', claimToken: null, leaseExpiresAt: null });
     const claimed = { ...pending, status: 'CLAIMED' as const, claimToken: 'a'.repeat(64), leaseExpiresAt: new Date(Date.now() + 60_000).toISOString() };
     client.listDeviceTasks.mockResolvedValue([pending]);
     client.claimDeviceTask.mockResolvedValue(claimed);
