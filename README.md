@@ -1,17 +1,20 @@
 # 懒人装甲 Lazy Armor
 
-懒人装甲是一个以完成目标计划为核心的个人交付系统。用户表达目标后，系统把目标整理为计划，解析可用资源，在安全边界内持续运行，并以可追溯证据交付结果。
+懒人装甲是以 Goal 为入口、具备感知、理解、规划、执行和验证能力的个人生活操作系统。系统判断一次性任务、内部个人事项或长期目标，解析真实方法与资源，在授权范围内执行并核实结果。
 
 当前统一主线：
 
 ```text
-Goal → Plan → Resource Resolve → Run → Verify → Result
+Goal → Context / Planner → Temporary / USER_EVENT / Persistent Plan
+  → Skill / Resource Resolve → Shared Runtime → Verify / Truth → Result / Replan
 ```
 
-移动端固定五个一级入口：首页、计划、问一问、资源、服务。消息和待处理属于全局注意力入口，个人中心由头像进入。
+移动端永久固定五个一级入口：日程、计划、会话、资源、服务。个人中心由头像进入。当前开发 V84 Agent Core；V84–V90 按能力、用户入口与真实证据同步推进。
 
 ## 当前文档
 
+- [V84–V90 持续开发总方案](./docs/current/V84_V90_ROADMAP.md)
+- [V84 当前任务与验收](./docs/current/V84_AGENT_CORE.md)
 - [产品定义](./docs/current/PRODUCT.md)
 - [技术架构](./docs/current/ARCHITECTURE.md)
 - [当前状态](./docs/current/STATUS.md)

@@ -1,4 +1,5 @@
 import {AcquisitionModule} from '../acquisition/acquisition.module';
+import { AgentModule } from '../agent/agent.module';
 import { AiProviderConfigModule } from '../ai-provider-config/ai-provider-config.module';
 import { RemoteAgentModel } from './remote-agent-model';
 import { Module } from '@nestjs/common';
@@ -15,7 +16,7 @@ import { AuditModule } from '../audit/audit.module';
 // Adapter boundary only; the Agent Planner extends this module, it is not a
 // second Agent Engine. The model is swappable via the AGENT_MODEL token.
 @Module({
-  imports: [AcquisitionModule, AiProviderConfigModule, PortableSkillsModule, RuntimeCatalogModule, RealityPipelineModule, McpModule, AuditModule],
+  imports: [AgentModule, AcquisitionModule, AiProviderConfigModule, PortableSkillsModule, RuntimeCatalogModule, RealityPipelineModule, McpModule, AuditModule],
   providers: [
     PlanIntentAdapterService,
     AgentContextCompiler,

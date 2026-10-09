@@ -1,4 +1,6 @@
 import { userEventInputSchema, userEventExternalSyncIntentSchema, type UserEventExternalSyncIntent, type UserEventInput } from '@lazy-armor/plan-schema';
+import { GoalUnderstandingService } from '../agent/planner/goal-understanding.service';
+import { GoalExecutionContextService, type GoalTimeContext } from '../agent/goal-execution-context.service';
 import {LocalAcquisitionService} from '../consumer/local-acquisition.service';
 import {ModuleRef} from '@nestjs/core';
 import { notificationFactQuerySchema } from '../consumer/notification-fact-query.contract';
@@ -57,6 +59,7 @@ export interface AgentPlanProposal {
 }
 
 export interface PlannerResult {
+  understanding?: import('@lazy-armor/plan-schema').GoalUnderstanding;
   factQuery?: import('../consumer/notification-fact-query.contract').NotificationFactQuery;
   externalSync?: UserEventExternalSyncIntent | null;
   sourceTruthRefs?: string[];
@@ -73,6 +76,7 @@ export interface PlannerResult {
 }
 
 export interface PlannerRuntimeFacts {
+  timeContext?: GoalTimeContext;
   acquisitionCoverage?:readonly AcquisitionCoverage[];
   domain: string | null;
   scenarios: AgentScenarioRef[];
@@ -99,6 +103,8 @@ export class AgentPlannerService {
     private readonly lazyArmorTools: LazyArmorMcpToolService,
     @Optional() private readonly acquisitions?:LocalAcquisitionService,
     @Optional() private readonly moduleRef?:ModuleRef,
+    @Optional() private readonly understanding?: GoalUnderstandingService,
+    @Optional() private readonly executionContext?: GoalExecutionContextService,
   ) {}
 
   async plan(userId: string, intent: string, options: { audit?: boolean; workContext?: 'TEMPORARY' | 'PLAN'; contextSources?: Array<{ label: string; content: string }> } = {}): Promise<PlannerResult> {
@@ -112,6 +118,7 @@ export class AgentPlannerService {
     const skillBodies = this.skills.listRuntimeAgentSkills().map((skill) => ({ name: skill.name, instruction: skill.bodyMarkdown }));
     const context = this.compiler.compile({
       intent,
+      timeContext: facts.timeContext,
       acquisitionCoverage:facts.acquisitionCoverage,
       domain: facts.domain,
       scenarios: facts.scenarios,
@@ -144,9 +151,11 @@ export class AgentPlannerService {
       if (output.result === 'USER_EVENT_DRAFT') { result.userEvent = userEventInputSchema.parse(output.userEvent); result.sourceTruthRefs = output.selectedTruthRefs; result.sourceTruthVersions = facts.truths.filter(t=>output.selectedTruthRefs.includes(t.truthId) && t.truthVersionId).map(t=>({truthId:t.truthId,versionId:t.truthVersionId!})); result.externalSync = output.externalSync ? userEventExternalSyncIntentSchema.parse(output.externalSync) : null; result.answer = { explanation: output.explanation }; }
       if (output.result === 'ANSWER') result.answer = { explanation: output.explanation };
       if (output.result === 'CLARIFICATION_REQUIRED') result.clarification = { missingRequirements: output.missingRequirements };
-      if (output.result === 'PLAN_DRAFT') result.proposal = validation.proposal!;
+      if (output.result === 'PLAN_DRAFT') result.proposal = { ...validation.proposal!, proposalId };
       if (output.result === 'ACTION_PROPOSAL') { result.actionProposal = compileActionProposal(output.actionProposal).proposal; result.answer = { explanation: output.explanation }; }
     }
+
+    result.understanding = (this.understanding ?? new GoalUnderstandingService()).compile(result, output, facts, this.model.modelId());
 
     if (options.audit !== false && options.userId) {
       const modelId = this.model.modelId();
@@ -161,6 +170,14 @@ export class AgentPlannerService {
           changeSummary: `Agent planner ${intent.slice(0, 80)} -> ${result.result}`,
           after: {
             plannerRunId: proposalId,
+            goalUnderstanding: result.understanding ? {
+              schemaVersion: result.understanding.schemaVersion,
+              lifecycle: result.understanding.lifecycle,
+              executionMode: result.understanding.executionMode,
+              policy: result.understanding.policy,
+              generatedAt: result.understanding.provenance.generatedAt,
+              capabilities: result.understanding.capabilities.map(({ key, availability }) => ({ key, availability })),
+            } : null,
             scheduledCalendarParameters:output.scheduledCalendar??null,
             notificationWatchParameters:output.notificationWatch??null,
             userId: options.userId,
@@ -185,6 +202,7 @@ export class AgentPlannerService {
   }
 
   async collectFacts(userId: string, intent: string): Promise<PlannerRuntimeFacts> {
+    const timeContext = this.executionContext ? await this.executionContext.timeContext(userId) : undefined;
     const domain = this.compiler.inferDomain(intent);
     const top = this.compiler.topScenarios(domain, 6);
     const readinessByKey = new Map<string, string>();
@@ -217,7 +235,7 @@ export class AgentPlannerService {
     }
     const coverage=this.acquisitions?await this.acquisitions.coverage(userId):null;
     const acquisitionCoverage:AcquisitionCoverage[]|undefined=coverage?.sources.map(round=>({sourceId:round.sourceId,factKey:round.capability,state:round.state as AcquisitionCoverage['state'],observedAt:round.observedAt?.toISOString()??null,evidenceRefs:round.evidenceRefsJson,reason:round.reason}));
-    return { domain, scenarios, truths, capabilities, tools, acquisitionCoverage:acquisitionCoverage?.length?acquisitionCoverage:undefined };
+    return { timeContext, domain, scenarios, truths, capabilities, tools, acquisitionCoverage:acquisitionCoverage?.length?acquisitionCoverage:undefined };
   }
 
   /** Pure fail-closed validation of model output against collected runtime facts. */

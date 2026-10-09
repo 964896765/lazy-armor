@@ -1,5 +1,7 @@
 # Mobile Product System Track — P4～P11
 
+> 当前主线为 [V84–V90](V84_V90_ROADMAP.md)，此体验基线随新版本同步实施。下文 P3 等待与禁止后续开发的描述属于旧阶段时点，不阻塞用户最新授权的 V84 工作。
+
 2026-10-09：后续总计划的产品工程基线，DESIGN_ONLY。它随每个P阶段同步推进，不是新阶段、新页面或新Authority。当前P3 IN_PROGRESS，本文不授权提前实施P4～P11；总范围见 [V83_MAINLINE.md](V83_MAINLINE.md)。
 
 ## 一级结构与可演进范围

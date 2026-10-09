@@ -1,5 +1,13 @@
 # 当前状态 — 2026-10-09
 
+主线已切换 [V84–V90 持续开发方案](V84_V90_ROADMAP.md)。P1/P2 CLOSED；P3 ResourceGap 核心机制已收口，三条物流正向证据独立 REAL_PENDING，不阻塞新主线。
+
+V84.1 已实现 `goal-understanding.v1`、Agent intent/planner/policy、原 Planner/审计/消息接入和会话理解卡片。V84.2 已接入本人 timezone/locale 的只读 Context，理解卡片显示采用时区。复用现有确认与 Shared Runtime，无新数据库权威。后端 57 项、移动端 14 项相关回归通过，Plan-schema/API/Mobile typecheck 与构建、Android bundle/APK 构建通过。
+
+本地 API 已更新；V84 r1b APK 覆盖安装成功，构建/已安装 SHA256 一致：`ad52ccb785118dd36b7ed70540cbc17821c7828472fda7382ec3288c8c03b8bd`。只读真实 DeepSeek 探针 8/8：按本人时区正确解析次日下午15:00，USER_EVENT 建议不生成 Plan、外部同步或执行授权。该探针未保存会话/事项，不冒充手机确认链。用户回复暂时无法登录，真机理解卡片与确认验收保留 REAL_PENDING，V84 IN_PROGRESS。详见 [当前任务](V84_AGENT_CORE.md)。
+
+## V8.3 历史 checkpoint
+
 2026-10-09 17:41 导航修复：GitHub checkpoint `7fdbb90` 已推送并核对远端一致后，补上通知来源页固定顶部返回按钮、移除重复导航标题。普通进入使用已有页面历史返回，直达且没有上一页时回到资源；五个一级入口保持不变。Mobile typecheck、Android bundle/APK 构建通过，r8 已覆盖安装并核对手机 APK 与构建字节相同，SHA256 `b5b72d4f17d99556ef1c0f5d1512c044e5352585cce5243e4b2fea95039f2cd4`。已提交的本机来源过滤和监听状态提示随此次源码打包。
 
 真机导航脚本首次采集为全黑画面，返回按钮检查未通过；唤醒后确认手机停在系统锁屏（`mDreamingLockscreen=true`）。这是未完成点按验收，不能记为导航路径 REAL_VERIFIED；原失败记录保留，等待合法解锁后检查正常返回和直达回资源。安装证据与失败记录保留在本机 `artifacts/v83-notification-back-r8-install-real.json`、`artifacts/v83-notification-back-r8-navigation-real.json`。本次仅修用户指出的返回入口，不产生新的 P3 关闭证据或故障矩阵。

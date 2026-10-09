@@ -1,4 +1,10 @@
-# 当前任务书 — V8.3
+# 当前任务书 — V84–V90
+
+2026-10-09 最新指令：按 [V84–V90 总方案](V84_V90_ROADMAP.md)继续开发。[V84.1 Agent Core / V84.2 GoalExecutionContext](V84_AGENT_CORE.md)已实现会话理解、受控确认解释与本人时间设置，并完成回归/构建/本地API部署/Android安装。只读真实模型合同通过，手机确认链待正常登录；V84 不提前 CLOSED。五个一级页保持日程 | 计划 | 会话 | 资源 | 服务。
+
+P1/P2 CLOSED，P3 核心恢复机制从主开发线移除，物流正向证据独立待验，不循环空读、不阻塞 V84。复用既有权威，每个任务同步 Backend/Frontend/Database/Runtime/Tests/Acceptance，自动回归与真机分别记账。
+
+## V8.3 历史任务书（以下不是当前执行阻塞）
 
 2026-10-09最新执行规则以 [P0～P11前后端一体化总计划](V83_MAINLINE.md)为准。五个一级页面名称/数量/顺序/职责永久冻结；新能力只接既有Manifest/Capability/Resolver/Invocation/Runtime/Verification/Truth，不增平行Engine。P3 CLOSED后P4→P5→P6→P7→P8→P9→P10→P11逐阶段Backend + Mobile联调、真验、更新文档/ledger后CLOSED，不先堆完后端再补产品。
 

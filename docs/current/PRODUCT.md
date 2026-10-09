@@ -43,6 +43,6 @@ Goal / Conversation → GoalExecutionContext → Planner / Router
 
 领域仅为可扩展category/tag；Scenario暂保留受控Recipe metadata和历史执行合同，不作为强制创建入口。旧Strategy用户选择入口退出，合法automation/risk policy保留。历史PlanVersion不删除或放松校验。日程沿用ScheduleProjection，各内部/外部来源保留自身Authority；P2内部USER_EVENT与显式外部同步已CLOSED，Android OS Push仍未验收。
 
-当前阶段顺序与验收标准以 [V83_MAINLINE.md](V83_MAINLINE.md)为准：P1/P2 CLOSED，P3 IN_PROGRESS；P4～P11后端能力、产品表面与真实证据三轨同步，四项DoD齐全才关闭。[Mobile Product System Track](MOBILE_PRODUCT_SYSTEM_TRACK.md)贯穿后续阶段，不新增P编号或一级页面，视觉维持黑白、简洁、低装饰、少卡片和清晰层级。
+当前阶段以 [V84–V90 总方案](V84_V90_ROADMAP.md)为准，先推进 V84 Agent Core；P1/P2 CLOSED，P3 核心机制已从主线收口，物流正向证据独立待验。后端能力、产品表面与真实证据同步记账，不以构建代替真实完成。[Mobile Product System Track](MOBILE_PRODUCT_SYSTEM_TRACK.md)作为体验基线，不新增一级页面，视觉维持简洁、低装饰与清晰层级。
 
 2026-10-07 Skill仓库正式四层：SkillRepository → SkillEntry/Recipe → SkillEntryRevision → Planner Composition/PlanSkillReference。Planner 按 Goal 可检索 0～N Entry，简单 USER_EVENT 无须 Skill。方法仓库没有执行权；MCP/代码/AppSkill 分流到既有资源或 Candidate 链。最终 + 接入来源、Entry 进入会话编排，设计详见 SKILL_REPOSITORY_DESIGN.md，P6 尚未实施。

@@ -20,7 +20,7 @@ const reasons: Record<string, string> = {
 const internalCode = /\b[A-Z][A-Z0-9]+(?:_[A-Z0-9]+)+\b/;
 const technical = /OAuth|\bScenario\s+[a-z]|Execution\s*ID|\b(?:outbox|schema|worker|capabilityKey|connectionId|planVersionId|structuredPayload)\b|\b(?:truths|capabilities|tools)\s*(?:为空|=|\/)|\bmanual\/internal\b|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f-]{23}/i;
 export const ConsumerPresentationMapper = {
- capability(value: string) { return ({ 'notification.send': '发送提醒', 'notification.read': '读取消息', 'calendar.read': '读取日历', 'calendar.write': '创建日程', 'email.read': '读取邮件', 'email.send': '发送邮件', 'file.read': '读取文件', 'http.json.read': '读取接口数据' } as Record<string,string>)[value] ?? (/^[a-z][a-z0-9_.:-]+$/i.test(value) ? '所需数据与操作权限' : this.text(value, '所需数据与操作权限')); },
+ capability(value: string) { return ({ 'notification.send': '发送提醒', 'notification.read': '读取消息', 'app.notification.read': '读取已授权的应用通知', 'calendar.event.read': '读取日历事项', 'calendar.event.create': '创建外部日历事项', 'calendar.event.update': '修改外部日历事项', 'calendar.event.delete': '删除外部日历事项', 'calendar.read': '读取日历', 'calendar.write': '创建日程', 'email.read': '读取邮件', 'email.send': '发送邮件', 'file.read': '读取文件', 'http.json.read': '读取接口数据' } as Record<string,string>)[value] ?? (/^[a-z][a-z0-9_.:-]+$/i.test(value) ? '所需数据与操作权限' : this.text(value, '所需数据与操作权限')); },
  reason(value: string) { return reasons[value] ?? (value.startsWith('MISSING_FACT:') ? '还需要补充计划信息' : value.startsWith('MISSING_CAPABILITY:') ? '还需要补充可用资源' : technical.test(value) || internalCode.test(value) ? '需要补充信息或检查资源授权' : this.text(value, '需要补充信息或检查资源授权')); },
  text(value: string | null | undefined, fallback = '') {
   if (!value) return fallback;

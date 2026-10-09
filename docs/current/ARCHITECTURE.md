@@ -1,6 +1,8 @@
 # 懒人装甲技术架构
 
-2026-10-09当前路径及阶段以 [V83_MAINLINE.md](V83_MAINLINE.md)为准：Conversation/Goal→只读GoalExecutionContext→Planner判断TEMPORARY/USER_EVENT/PERSISTENT→按需0～N Skill→Facts与Capability Requirements→Resolver/ResourceGap→Risk/Approval→Invocation→Shared Durable Runtime→Target→Verification/Reconciliation→Truth/Result/Assessment/Replan/WAIT。Skill不具有执行、审批或Truth权威；P6正式引用就绪前，沿用受控Recipe合同，不制造Skill平台完成证据。
+当前开发依据 [V84–V90 总方案](V84_V90_ROADMAP.md)。V84 Agent Core 使用 `apps/api/src/agent` 编排/解释已校验 Planner 方案，理解合同保存在原会话消息与审计。理解阶段没有执行授权；owner/version/确认、Risk/Approval、Invocation、Ledger 与 Truth 均由已有权威控制。Memory、Computer Use、Skill 和 Service 分阶段接入同一链。
+
+既有链路保持：Conversation/Goal→只读GoalExecutionContext→Planner判断TEMPORARY/USER_EVENT/PERSISTENT→按需0～N Skill→Facts与Capability Requirements→Resolver/ResourceGap→Risk/Approval→Invocation→Shared Durable Runtime→Target→Verification/Reconciliation→Truth/Result/Assessment/Replan/WAIT。Skill不具有执行、审批或Truth权威；正式仓库引用就绪前沿用受控Recipe，不制造平台完成证据。
 
 系统沿用 pnpm 与 Turborepo 单仓结构。Plan、Truth、Risk、Approval、Execution、Verification 和 Audit 是权威状态链；AI、Provider、设备、MCP 与外部服务只能作为资源或执行目标参与，不能越过权威服务写入业务结果。
 

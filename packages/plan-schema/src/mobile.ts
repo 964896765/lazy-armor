@@ -1,4 +1,5 @@
 // React Native-safe plan schema surface.
+export * from './goal-understanding';
 // Keep this module free of Node built-ins because Metro resolves the full module graph.
 export {
   CANONICAL_DOMAIN_CATALOG,
