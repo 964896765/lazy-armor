@@ -3,6 +3,7 @@ import { resolveAppReadProfile } from './app-read-profiles';
 import { appReadSessionStatus, captureAppReadUiNodes, type CapturedUiNode } from './device-app-bridge';
 import type { DeviceTask } from './device-task-client';
 import type { StructuredReadResult } from './device-task-runner';
+import { publishNativeReadHeartbeat } from './page-read-handoff';
 
 /**
  * Real Android structured read executor. It forms the controlled pipeline
@@ -14,7 +15,7 @@ import type { StructuredReadResult } from './device-task-runner';
  * token / cookie. The result is evidence only — it is never marked VERIFIED.
  */
 export async function executeStructuredRead(task: DeviceTask): Promise<StructuredReadResult> {
-  if (!['CLAIMED', 'RUNNING'].includes(task.status) || !task.claimToken || !task.leaseExpiresAt || Date.parse(task.leaseExpiresAt) <= Date.now() || !Number.isFinite(Date.parse(task.leaseExpiresAt))) return null;
+  if (!['CLAIMED', 'RUNNING'].includes(task.status) || !task.dispatchAuthorization || !task.claimToken || !task.leaseExpiresAt || Date.parse(task.leaseExpiresAt) <= Date.now() || !Number.isFinite(Date.parse(task.leaseExpiresAt))) return null;
   const payload = task.payload ?? {};
   const packageName = typeof payload.packageName === 'string' ? payload.packageName : null;
   const resourceId = typeof payload.resourceId === 'string' ? payload.resourceId : null;
@@ -27,10 +28,11 @@ export async function executeStructuredRead(task: DeviceTask): Promise<Structure
 
   const session = await appReadSessionStatus();
   if (!session.active || !session.usageAccessGranted || session.targetPackage !== packageName || session.sessionId !== sessionId || !Number.isFinite(session.expiresAt) || session.expiresAt <= Date.now()) return null;
-  if (session.status !== 'READING') return null;
-  if (session.foregroundPackage !== packageName) return null;
+  if (!session.modes?.includes('UI_READ') || !session.observerConnected || !session.observerPermissionGranted) return null;
+  if (!['WAITING_FOREGROUND', 'READING'].includes(session.status)) return null;
+  if (session.status === 'READING' && session.foregroundPackage !== packageName) return null;
 
-  const captured = await captureAppReadUiNodes(packageName, [...new Set(requestedFields)]);
+  const captured = await captureAppReadUiNodes(task);
   if (!captured || captured.nodes.length === 0) return null;
 
   const nodes = captured.nodes
@@ -41,13 +43,15 @@ export async function executeStructuredRead(task: DeviceTask): Promise<Structure
   // A session switch, foreground loss or expired claim during capture invalidates this read.
   const current = await appReadSessionStatus();
   if (!current.active || !current.usageAccessGranted || current.sessionId !== sessionId || current.status !== 'READING'
+    || current.accountId !== session.accountId || !current.modes?.includes('UI_READ') || !current.observerConnected || !current.observerPermissionGranted
     || current.targetPackage !== packageName || current.foregroundPackage !== packageName || !Number.isFinite(current.expiresAt) || current.expiresAt <= Date.now()
     || Date.parse(task.leaseExpiresAt) <= Date.now()) return null;
+  if (!await publishNativeReadHeartbeat(sessionId, packageName)) return null;
 
   return {
     packageName,
     resourceId,
-    observedAt: new Date().toISOString(),
+    observedAt: new Date(captured.observedAt ?? Date.now()).toISOString(),
     screenId: sessionId,
     nodes,
     ...(captured.evidenceHash ? { evidenceHash: captured.evidenceHash } : {}),
@@ -66,7 +70,7 @@ function selectorsAllowed(requestedFields: string[], profile: AppReadProfile): b
 function nodeMatchesAllowlist(node: CapturedUiNode, selectors: readonly string[]): boolean {
   const selector = node.resourceId ?? node.contentDescription ?? '';
   if (!selector) return false;
-  return selectors.some((allowed) => selector === allowed || selector.endsWith(`/${allowed}`) || selector.endsWith(`.${allowed}`));
+  return selectors.includes(selector);
 }
 
 function isSensitiveNode(node: CapturedUiNode): boolean {

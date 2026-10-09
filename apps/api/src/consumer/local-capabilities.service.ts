@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
-import { runtimeTargets,localCapabilityStates, trustedDevices,planCreationContracts,plans,planVersions } from '@lazy-armor/database';
+import { appReadSessions, runtimeTargets,localCapabilityStates, trustedDevices,planCreationContracts,plans,planVersions } from '@lazy-armor/database';
 import { LOCAL_CAPABILITY_CANONICAL_KEYS,localCapabilityGroup,localCapabilitySourceId, LOCAL_CAPABILITY_CATALOG, localCapabilityAvailability, type ResourceProjection } from '@lazy-armor/plan-schema';
 import { newId } from '@lazy-armor/shared';
 import { isNull, and, eq,sql } from 'drizzle-orm';
@@ -12,7 +12,7 @@ export class LocalCapabilitiesService {
  async receive(userId:string,deviceId:string,requestId:string,input:NativeCapabilitiesDto){
   const now=new Date();
   const legacy=LOCAL_CAPABILITY_CATALOG.filter(spec=>!['calendar.update','calendar.delete'].includes(spec.key));
-  const expected=input.manifestVersion==='android-local-v2'&&input.capabilities.length===14?legacy.slice(0,14):input.manifestVersion==='android-local-v4'?LOCAL_CAPABILITY_CATALOG:legacy;
+  const expected=input.manifestVersion==='android-local-v2'&&input.capabilities.length===14?legacy.slice(0,14):['android-local-v4','android-local-v5'].includes(input.manifestVersion)?LOCAL_CAPABILITY_CATALOG:legacy;
   if(input.capabilities.length!==expected.length||new Set(input.capabilities.map(row=>row.key)).size!==input.capabilities.length||expected.some(spec=>!input.capabilities.some(row=>row.key===spec.key)))throw new BadRequestException('本机能力清单不完整');
   if(input.capabilities.some(row=>row.checkedAt>now.getTime()+1000||now.getTime()-row.checkedAt>60000))throw new BadRequestException('本机能力证据已过期');
   await this.db.transaction(async tx=>{
@@ -25,9 +25,13 @@ export class LocalCapabilitiesService {
    }
    for(const row of input.capabilities){
     const spec=LOCAL_CAPABILITY_CATALOG.find(spec=>spec.key===row.key)!;
-    const values={id:newId(),userId,trustedDeviceId:deviceId,capability:row.key,manifestVersion:input.manifestVersion,userGrant:row.userGrant,systemPermission:row.systemPermission,health:spec.implemented?row.health:'UNAVAILABLE',checkedAt:new Date(row.checkedAt),evidenceRef:`signed-request:${requestId}`,updatedAt:now};
+    const values={id:newId(),userId,trustedDeviceId:deviceId,capability:row.key,manifestVersion:input.manifestVersion,userGrant:row.userGrant,systemPermission:row.systemPermission,health:spec.implemented&&(row.key!=='accessibility.read'||input.manifestVersion==='android-local-v5')?row.health:'UNAVAILABLE',checkedAt:new Date(row.checkedAt),evidenceRef:`signed-request:${requestId}`,updatedAt:now};
     const prior=(await tx.select().from(localCapabilityStates).where(and(eq(localCapabilityStates.userId,userId),eq(localCapabilityStates.trustedDeviceId,deviceId),eq(localCapabilityStates.capability,row.key))))[0];
     if(prior&&(prior.userGrant!==values.userGrant||prior.systemPermission!==values.systemPermission))authorityChanged=true;
+    if(row.key==='accessibility.read' && prior && (prior.userGrant!==values.userGrant || prior.systemPermission!==values.systemPermission || prior.health!==values.health || values.manifestVersion!=='android-local-v5')) {
+     const sessions=await tx.select().from(appReadSessions).where(and(eq(appReadSessions.userId,userId),eq(appReadSessions.activeDeviceKey,deviceId)));
+     for(const session of sessions.filter(s=>s.modesJson.includes('UI_READ')))await tx.update(appReadSessions).set({status:'FAILED',activeDeviceKey:null,endedAt:now,terminalReason:'UI_READ_AUTHORITY_CHANGED',updatedAt:now}).where(eq(appReadSessions.id,session.id));
+    }
     await tx.insert(localCapabilityStates).values(values).onDuplicateKeyUpdate({set:{manifestVersion:values.manifestVersion,userGrant:values.userGrant,systemPermission:values.systemPermission,health:values.health,checkedAt:values.checkedAt,evidenceRef:values.evidenceRef,updatedAt:now}});
    }
    if(authorityChanged)await tx.update(runtimeTargets).set({authorityEpoch:sql`${runtimeTargets.authorityEpoch}+1`,updatedAt:now}).where(and(eq(runtimeTargets.userId,userId),eq(runtimeTargets.backingRef,deviceId),eq(runtimeTargets.targetType,'ANDROID_DEVICE')));

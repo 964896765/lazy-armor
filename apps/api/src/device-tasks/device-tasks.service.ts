@@ -128,12 +128,23 @@ export class DeviceTasksService {
         await tx.update(sideEffectOperations).set({status:'executing',attemptCount:op.attemptCount+1,startedAt:op.startedAt??now,updatedAt:now}).where(eq(sideEffectOperations.id,op.id));
       }
       const response=this.toResponse(claimed,{revealClaimToken:true});
+      if(claimed.taskType==='APP_STRUCTURED_READ')return {...response,dispatchAuthorization:await this.modules.get(StructuredReadService,{strict:false}).observationTicket(tx,userId,claimed)};
       return ['NATIVE_CALENDAR_CREATE','NATIVE_CALENDAR_WRITE'].includes(claimed.taskType)?{...response,dispatchAuthorization:await this.modules.get(NativeCalendarRuntimeService,{strict:false}).executionTicket(tx,userId,claimed)}:response;
     });
   }
 
   async heartbeat(userId: string, trustedDeviceId: string, deviceId: string, taskId: string, claimToken: string) {
     const task = await this.getRowForDevice(userId, trustedDeviceId, deviceId, taskId);
+    if(task.taskType==='APP_STRUCTURED_READ')return this.db.transaction(async tx=>{
+      const row=(await tx.select().from(deviceTasks).where(and(eq(deviceTasks.id,taskId),eq(deviceTasks.userId,userId),eq(deviceTasks.trustedDeviceId,trustedDeviceId),eq(deviceTasks.deviceId,deviceId))).for('update'))[0];
+      if(!row)throw new NotFoundException('Device task not found');
+      this.assertClaim(row,claimToken);
+      if(!['CLAIMED','RUNNING'].includes(row.status))throw new ConflictException('Device task is not running');
+      const leaseExpiresAt=new Date(Date.now()+LEASE_TTL_MS),active={...row,status:'RUNNING',leaseExpiresAt};
+      const dispatchAuthorization=await this.modules.get(StructuredReadService,{strict:false}).observationTicket(tx,userId,active);
+      await tx.update(deviceTasks).set({status:'RUNNING',leaseExpiresAt,updatedAt:new Date()}).where(eq(deviceTasks.id,taskId));
+      return {id:taskId,claimToken,leaseExpiresAt:leaseExpiresAt.toISOString(),dispatchAuthorization};
+    });
     if(['NATIVE_CALENDAR_CREATE','NATIVE_CALENDAR_WRITE'].includes(task.taskType)){
       return this.db.transaction(async tx=>{
         const row=(await tx.select().from(deviceTasks).where(eq(deviceTasks.id,taskId)).for('update'))[0];
@@ -198,7 +209,7 @@ export class DeviceTasksService {
       if (!task) throw new NotFoundException('Device task not found');
       await this.assertNotificationSource(tx,userId,task);
       await this.invocations.assertDeviceTaskCurrent(tx,userId,taskId,trustedDeviceId,task.payloadJson);
-      if (task.status === 'SUCCEEDED' && (['NATIVE_CALENDAR_READ','NATIVE_NOTIFICATION_READ'].includes(task.taskType) || STRUCTURED_READ_TASK_TYPES.has(task.taskType))) {
+      if ((task.status === 'SUCCEEDED' || (task.taskType === 'APP_STRUCTURED_READ' && task.status === 'FAILED' && task.errorCode === 'NEEDS_CONFIRMATION')) && (['NATIVE_CALENDAR_READ','NATIVE_NOTIFICATION_READ'].includes(task.taskType) || STRUCTURED_READ_TASK_TYPES.has(task.taskType))) {
         await this.trustedDevices.assertActive(userId, trustedDeviceId, deviceId);
         if (task.taskType === 'NATIVE_CALENDAR_READ' && !proofRequestId) throw new ForbiddenException('Signed native read proof is required');
         if (task.claimToken !== claimToken || task.resultHash !== resultHash || realityValueHash(task.resultJson) !== resultHash) throw new ConflictException('Completed device task receipt does not match');
@@ -245,6 +256,14 @@ export class DeviceTasksService {
       // Notification acquisition verifies collection, not the semantic candidate.
       // Its original Goal stays WAITING_FACT_CONFIRMATION until formal Truth exists.
       const verifiedNotificationRead=task.taskType==='NATIVE_NOTIFICATION_READ' && reality && 'acquisitionId' in reality && ['VERIFIED_EMPTY','VERIFIED_PRESENT'].includes(reality.acquisitionState);
+      if (task.taskType === 'APP_STRUCTURED_READ' && reality && 'candidateIds' in reality && reality.candidateIds.length > 0 && reality.truthRecordIds.length === 0) {
+        await this.assertOwnershipCurrent(tx, task, claimToken);
+        // Preserve the existing unverified terminal state, but acknowledge collected
+        // evidence so the runner does not repeat the read while the user verifies it.
+        await this.markVerificationFailed(tx, task, result, resultHash, 'NEEDS_CONFIRMATION');
+        const pending = (await tx.select().from(deviceTasks).where(eq(deviceTasks.id, taskId)).limit(1))[0]!;
+        return { success: { ...this.toResponse(pending, { revealClaimToken: true }), reality } } as const;
+      }
       if (!hasVerifiedReality(reality) && !verifiedNotificationRead) {
         await this.markVerificationFailed(tx, task, result, resultHash, deviceTaskVerificationError(reality));
         return { failure: new BadRequestException('Device task result produced no verified reality') } as const;
@@ -416,8 +435,8 @@ export class DeviceTasksService {
       ));
     if (updated.affectedRows !== 1) return;
     await this.audit.append({
-      actorType: 'system', actorUserId: null, action: 'DEVICE_TASK_FAILED', resourceType: 'device_task', resourceId: task.id,
-      userId: task.userId, correlationId: task.id, reasonCode: errorCode, changeSummary: 'Device task result failed reality pipeline verification', source: 'api', result: 'failure',
+      actorType: 'system', actorUserId: null, action: errorCode === 'NEEDS_CONFIRMATION' ? 'DEVICE_TASK_EVIDENCE_AWAITING_CONFIRMATION' : 'DEVICE_TASK_FAILED', resourceType: 'device_task', resourceId: task.id,
+      userId: task.userId, correlationId: task.id, reasonCode: errorCode, changeSummary: errorCode === 'NEEDS_CONFIRMATION' ? 'Captured page observation; user verification is still required' : 'Device task result failed reality pipeline verification', source: 'api', result: errorCode === 'NEEDS_CONFIRMATION' ? 'pending' : 'failure',
     }, tx);
   }
 

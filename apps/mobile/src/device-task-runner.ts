@@ -117,13 +117,13 @@ export class DeviceTaskRunner {
     this.timer = setInterval(() => void this.tick().catch(() => {}), this.options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS);
   }
 
-  stop() {
+  stop(preservePageReadHandoff = false) {
     this.running = false;
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = null;
     }
-    this.stopKeepalive();
+    if (!(preservePageReadHandoff && this.keepaliveTask?.taskType === 'APP_STRUCTURED_READ' && this.keepaliveTask.dispatchAuthorization)) this.stopKeepalive();
   }
 
   /** App teardown / logout / device revoke：停止并丢弃本机未完成 claim 状态。 */

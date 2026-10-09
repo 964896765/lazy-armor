@@ -83,13 +83,14 @@ export default function AppWorkspace() {
 
         <SectionTitle title="安装信息" /><Text style={styles.heroDetail}>已安装：{installed?'是':discoveredApps.isSuccess?'未发现':'待检查'} · 版本：{installation?.versionName??app.versionName??'未知'}</Text>
         <SectionTitle title="基础能力与增强能力" />
-        {(app.capabilities??[]).map(cap=><View key={cap.key} style={styles.notice}><View><Text style={styles.openTitle}>{cap.key} · {appCapabilityLabel(cap.status,installed)}</Text><Text style={styles.heroDetail}>系统权限：{resourceStatus(cap.systemPermission)} · 用户授权：{cap.userGrant?'已授权':'需要授权'}</Text><Text style={styles.heroDetail}>健康：{cap.healthy?'正常':'待检查'} · 证据：{cap.evidenceRefs.join(' · ')||'暂无'}</Text></View></View>)}
+        {(app.capabilities??[]).map(cap=><View key={cap.key} style={styles.notice}><View><Text style={styles.openTitle}>{cap.key === 'page_read' ? '限时页面读取' : cap.key} · {appCapabilityLabel(cap.status,installed)}</Text><Text style={styles.heroDetail}>系统权限：{resourceStatus(cap.systemPermission)} · 用户授权：{cap.userGrant?'已授权':'需要授权'}</Text>{cap.key === 'page_read' ? <Text style={styles.heroDetail}>每次还需确认 App、读取字段与限时会话</Text> : null}<Text style={styles.heroDetail}>健康：{cap.healthy?'正常':'待检查'} · 证据：{cap.evidenceRefs.join(' · ')||'暂无'}</Text></View></View>)}
 
         <SectionTitle title="隐私边界" />
         <View style={styles.notice}><Ionicons name="shield-checkmark-outline" size={20} color={colors.primary} /><Text style={styles.noticeText}>只使用你确认过的能力；真实数据必须来自通知、分享或受控读取，不会把“已安装”当成“已授权”。应用离开前台、会话过期或权限撤销时，采集会立即停止。</Text></View>
 
         <SectionTitle title="管理" />
         <View style={styles.actions}>
+          {installed && app.enabled && app.capabilities?.some(capability => capability.key === 'page_read' && app.packageName === 'com.miui.calculator') ? <ActionButton label="限时读取页面" onPress={() => router.push({ pathname: '/connections/app-read-session', params: { connectionId: app.id, packageName: app.packageName, displayName: app.displayName, mode: 'UI_READ' } } as unknown as Href)} /> : null}
           {installed&&app.capabilities?.some(c=>c.key==='app_read_session'&&c.status==='AVAILABLE') ? <ActionButton label="受控读取" onPress={() => router.push({ pathname: '/connections/app-read-session', params: { connectionId: app.id, packageName: app.packageName, displayName: app.displayName, notificationEnabled: String(app.modes.includes('notification_read')) } } as unknown as Href)} /> : null}
           {app.enabled ? <ActionButton label="通知来源" tone="quiet" onPress={() => router.push('/connections/notification-sources' as Href)} /> : null}
           <ActionButton label={app.enabled ? '停用连接' : trustedDeviceStatus === 'revoked' ? '重新验证并启用' : '重新启用'} tone={app.enabled ? 'danger' : 'primary'} onPress={changeEnabled} disabled={update.isPending} />

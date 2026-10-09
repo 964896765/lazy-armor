@@ -1,5 +1,7 @@
 # 当前任务书 — V84–V90
 
+2026-10-10：V87-COMPUTER-02 独立页面授权与只读 native observer 已实现、自动验证与构建通过（API 79、Mobile 44、Shared 11）。完整 Backend/Frontend/Database/Runtime/Tests/Acceptance 见 [V87 当前任务](V87_COMPUTER_RUNTIME.md)。页面结果先候选，用户独立核实；五页不变，不推送。下一任务 V87-COMPUTER-03 原 Conversation/Goal 页面需求与合法确认入口，真人登录/系统授权独立待验。
+
 2026-10-09 当前主线：[V87-COMPUTER-01](V87_COMPUTER_RUNTIME.md)已完成受控页面观察的范围/会话 fencing、原子回滚与任务读取范围表面，41 项 API 和 38 项 Mobile 回归通过，已本地部署/安装。下一任务 V87-COMPUTER-02 显式页面读取授权与 native observer。前序 V86 本地 fda37c0 已部署/安装；V86/V87 的本人真机结果独立待验。无新迁移，不推送。
 
 2026-10-09：[V86-RESOURCE-02](V86_GOAL_RESOURCE_MATCH.md)已实现版本绑定的目标资源核对、公开接口读取来源 fencing 和二级返回入口；自动回归、构建与 APK 安装已有证据，本人正常登录后的 UI/目标调用独立待验。下一任务 V87-COMPUTER-01，沿既有 DeviceTask/受控读取合同推进，不推送 GitHub。

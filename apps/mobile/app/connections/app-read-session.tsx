@@ -1,30 +1,43 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useState } from 'react';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, View, Switch } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/api';
 import { appReadEventRequest, appReadHeartbeatRequest } from '../../src/app-read-session-api-contract';
 import { useAuthStore } from '../../src/auth-store';
 import {
   acknowledgeAppReadSessionEvents, appReadSessionStatus, drainAppReadSessionEvents, openDeviceApp,
-  openUsageAccessSettings, startNativeAppReadSession, stopNativeAppReadSession,
+  openUsageAccessSettings, openPageReadSettings, startNativeAppReadSession, stopNativeAppReadSession,
 } from '../../src/device-app-bridge';
 import { ActionButton, EmptyState, Surface, WorkspaceHeader, colors, radius, spacing, typography } from '../../src/design';
 import { deviceBoundApi, ensureTrustedDevice } from '../../src/trusted-device-api';
+import { syncLocalCapabilities } from '../../src/local-capability-client';
+import { resolveAppReadProfile } from '../../src/app-read-profiles';
+import type { UiReadConsent } from '@lazy-armor/plan-schema/mobile';
 
 interface AppReadSession {
   id: string; connectionId: string; targetPackage: string; modes: string[]; status: string;
+  uiReadConsent?: UiReadConsent & { sourceVersion: string };
   startedAt: string | null; lastHeartbeatAt: string | null; expiresAt: string; endedAt: string | null;
   terminalReason: string | null; events: Array<{ id: string; eventKey: string; eventType: string; sourceMode: string | null; candidateFactId: string | null; createdAt: string }>;
 }
 
 export default function AppReadSessionPage() {
-  const params = useLocalSearchParams<{ connectionId?: string; packageName?: string; displayName?: string; notificationEnabled?: string }>();
+  const params = useLocalSearchParams<{ connectionId?: string; packageName?: string; displayName?: string; notificationEnabled?: string; mode?: string }>();
   const router = useRouter();
   const token = useAuthStore((state) => state.token);
   const client = useQueryClient();
+  const pageRead = params.mode === 'UI_READ';
+  const profile = params.packageName ? resolveAppReadProfile(params.packageName) : null;
+  const [confirmed, setConfirmed] = useState(false);
+  const [taskId, setTaskId] = useState<string | null>(null);
+  const grant = useQuery({ queryKey: ['page-read-grant', token], enabled: Boolean(token && pageRead), queryFn: async () => {
+    await syncLocalCapabilities(token!);
+    const resources = await deviceBoundApi<Array<{ kind: string; capabilityState?: { key: string; availability: string } }>>('/consumer/resources', token!, { method: 'GET' });
+    return resources.some(resource => resource.kind === 'LOCAL' && resource.capabilityState?.key === 'accessibility.read' && resource.capabilityState.availability === 'AVAILABLE');
+  } });
   const current = useQuery({
     queryKey: ['app-read-session', token],
     queryFn: () => api<AppReadSession | null>('/app-read-sessions/current', token),
@@ -39,6 +52,8 @@ export default function AppReadSessionPage() {
     },
   });
   useFocusEffect(useCallback(() => {
+    void native.refetch();
+    if (pageRead) void grant.refetch();
     let cancelled = false;
     void current.refetch().then(async (result) => {
       if (cancelled || !token || !result.data?.id) return;
@@ -46,21 +61,34 @@ export default function AppReadSessionPage() {
       if (!cancelled) await Promise.all([current.refetch(), native.refetch()]);
     }).catch(() => undefined);
     return () => { cancelled = true; };
-  }, [token]));
+  }, [token, pageRead]));
 
   const start = useMutation({
     mutationFn: async () => {
       if (!token || !params.connectionId || !params.packageName) throw new Error('missing_connection');
       await ensureTrustedDevice(token);
-      const modes = params.notificationEnabled === 'true' ? ['NOTIFICATION', 'SHARE'] : ['SHARE'];
-      const body = { connectionId: params.connectionId, targetPackage: params.packageName, modes, durationSeconds: 300 };
+      const accountId = await syncLocalCapabilities(token);
+      if (pageRead && (!confirmed || !profile)) throw new Error('请先确认页面读取范围');
+      const modes = pageRead ? ['UI_READ'] : params.notificationEnabled === 'true' ? ['NOTIFICATION', 'SHARE'] : ['SHARE'];
+      const body = { connectionId: params.connectionId, targetPackage: params.packageName, modes, durationSeconds: 300,
+        ...(pageRead && profile ? { uiReadConsent: { version: 'ui-read.v1', requestedFields: [...profile.allowedSelectors] } } : {}) };
       const session = await deviceBoundApi<AppReadSession>('/app-read-sessions', token, { method: 'POST', body: JSON.stringify(body) });
-      const nativeStarted = await startNativeAppReadSession(session.id, session.targetPackage, session.modes, session.expiresAt);
-      const appOpened = nativeStarted && await openDeviceApp(session.targetPackage);
+      const nativeStarted = await startNativeAppReadSession(accountId, session.id, session.targetPackage, session.modes, session.expiresAt, session.uiReadConsent);
+      const appOpened = nativeStarted && (pageRead || await openDeviceApp(session.targetPackage));
       if (!nativeStarted || !appOpened) {
         await stopNativeAppReadSession();
         await deviceBoundApi('/app-read-sessions/' + session.id + '/stop', token, { method: 'POST', body: '{}' }).catch(() => undefined);
         throw new Error(nativeStarted ? 'target_app_open_failed' : 'native_start_failed');
+      }
+      if (pageRead && profile) {
+        try {
+          const result = await api<{ acceptance: { deviceTaskId: string } }>('/structured-reads', token, { method: 'POST', body: JSON.stringify({ requestId: 'page-' + session.id, sourceType: 'DEVICE_APP', resourceType: profile.resourceType, resourceId: session.id, packageName: session.targetPackage, appReadSessionId: session.id, requestedFields: session.uiReadConsent!.requestedFields }) });
+          setTaskId(result.acceptance.deviceTaskId);
+        } catch (error) {
+          await stopNativeAppReadSession();
+          await deviceBoundApi('/app-read-sessions/' + session.id + '/stop', token, { method: 'POST', body: '{}' }).catch(() => undefined);
+          throw error;
+        }
       }
       return session;
     },
@@ -77,27 +105,31 @@ export default function AppReadSessionPage() {
   });
 
   const session = current.data;
-  const canStart = Boolean(token && params.connectionId && params.packageName && native.data?.usageAccessGranted && !session);
+  const activeSession = session && ['CREATED', 'WAITING_FOREGROUND', 'READING'].includes(session.status);
+  const canStart = Boolean(token && params.connectionId && params.packageName && native.data?.usageAccessGranted && !activeSession
+    && (!pageRead || (profile && confirmed && grant.data && native.data?.observerConnected && native.data?.observerPermissionGranted)));
   return <SafeAreaView style={styles.safeArea} edges={['top']}>
     <ScrollView contentContainerStyle={styles.content}>
-      <WorkspaceHeader title="受控读取会话" onBack={() => router.back()} />
-      <Text style={styles.subtitle}>只在目标应用位于前台时接收你允许的线索</Text>
+      <WorkspaceHeader title={pageRead ? '限时页面读取' : '受控读取会话'} onBack={() => router.canGoBack() ? router.back() : router.replace('/phone-apps' as never)} />
+      <Text style={styles.subtitle}>{pageRead ? '核对本次应用和字段范围，确认后按次观察' : '只在目标应用位于前台时接收你允许的线索'}</Text>
       {current.isLoading || native.isLoading ? <ActivityIndicator color={colors.primary} /> : null}
       {!native.data?.usageAccessGranted ? <Surface>
         <View style={styles.cardHeading}><Ionicons name="shield-checkmark-outline" size={24} color={colors.warning} /><Text style={styles.cardTitle}>需要前台验证权限</Text></View>
         <Text style={styles.body}>Android 的“使用情况访问”仅用于核对当前前台包名。权限缺失时会话无法开始，不会降级为后台读取。</Text>
         <View style={styles.actions}><ActionButton label="打开系统设置" onPress={() => void openUsageAccessSettings()} /></View>
       </Surface> : null}
-      {session ? <SessionPanel session={session} nativeStatus={native.data?.status ?? 'IDLE'} /> : <Surface>
+      {pageRead ? <Surface><Text style={styles.cardTitle}>页面读取授权</Text><Text style={styles.body}>系统权限：{native.data?.observerPermissionGranted ? '已开启' : '需要授权'} · 观察器：{native.data?.observerConnected ? '已连接' : '未连接'}</Text><Text style={styles.body}>应用内页面读取许可：{grant.data ? '已授权' : '需要授权'}。通知与分享许可不包含页面读取。</Text><View style={styles.actions}><ActionButton label="系统辅助功能设置" tone="quiet" onPress={() => void openPageReadSettings()} /><ActionButton label="管理页面读取许可" tone="quiet" onPress={() => router.push('/resources' as never)} /></View></Surface> : null}
+      {activeSession && session ? <SessionPanel session={session} nativeStatus={native.data?.status ?? 'IDLE'} /> : <Surface>
         <View style={styles.cardHeading}><Ionicons name="phone-portrait-outline" size={24} color={colors.primary} /><Text style={styles.cardTitle}>{params.displayName ?? '目标应用'}</Text></View>
         <Text style={styles.package}>{params.packageName ?? '未选择应用'}</Text>
         <Text style={styles.body}>会话最长 5 分钟；离开目标应用、失去权限、心跳超时或主动停止都会立即收口。</Text>
-        <View style={styles.modeRow}><Text style={styles.mode}>主动分享</Text>{params.notificationEnabled === 'true' ? <Text style={styles.mode}>已授权通知</Text> : null}</View>
-        <View style={styles.actions}><ActionButton label={start.isPending ? '正在启动…' : '启动并打开应用'} onPress={() => start.mutate()} disabled={!canStart || start.isPending} /></View>
+        {pageRead ? <><Text style={styles.body}>本次范围：{params.packageName === 'com.miui.calculator' ? '计算器当前结果' : '已登记的页面字段'}。最多 5 分钟，读取一次；字段仅形成线索，仍需核实。</Text><View style={styles.modeRow}><Text style={styles.body}>我确认本次应用与读取范围</Text><Switch accessibilityLabel="确认本次页面读取范围" value={confirmed} onValueChange={setConfirmed} /></View></> : <View style={styles.modeRow}><Text style={styles.mode}>主动分享</Text>{params.notificationEnabled === 'true' ? <Text style={styles.mode}>已授权通知</Text> : null}</View>}
+        <View style={styles.actions}><ActionButton label={start.isPending ? '正在启动…' : pageRead ? '确认并读取一次' : '启动并打开应用'} onPress={() => start.mutate()} disabled={!canStart || start.isPending} /></View>
       </Surface>}
-      {session ? <View style={styles.actions}><ActionButton label={sync.isPending ? '正在同步…' : '同步会话事件'} tone="quiet" onPress={() => sync.mutate()} disabled={sync.isPending} /><ActionButton label="停止会话" tone="danger" onPress={() => stop.mutate()} disabled={stop.isPending} /></View> : null}
+      {activeSession ? <View style={styles.actions}><ActionButton label={sync.isPending ? '正在同步…' : '同步会话状态'} tone="quiet" onPress={() => sync.mutate()} disabled={sync.isPending} /><ActionButton label="停止会话" tone="danger" onPress={() => stop.mutate()} disabled={stop.isPending} /></View> : null}
+      {taskId ? <Surface><Text style={styles.cardTitle}>本次读取</Text><Text style={styles.body}>返回后查看读取状态与待核实线索。不会把节点内容直接标成事实。</Text><ActionButton label="查看读取结果" onPress={() => router.push({ pathname: '/connections/device-tasks/[id]', params: { id: taskId } } as never)} /></Surface> : null}
       {start.isError || sync.isError || stop.isError ? <Text style={styles.error}>本次操作未完成。系统保持 fail-closed，不会把未验证线索写成事实。</Text> : null}
-      <Surface><Text style={styles.cardTitle}>明确边界</Text><Text style={styles.body}>不使用 Accessibility，不自动点击，不截屏，不做视觉识别，也不在目标应用离开前台后继续采集。通知与分享只生成候选，仍需进入 Generic Reality Pipeline 核实。</Text></Surface>
+      <Surface><Text style={styles.cardTitle}>读取边界</Text><Text style={styles.body}>{pageRead ? '系统辅助功能权限范围较广，应用内仅按你确认的 App、字段和限时会话读取。不会自动点击、输入、提交、截屏或读取密码。离开目标应用后停止采集。' : '本次只接收通知或主动分享，不读取页面。离开目标应用后停止采集。'}</Text></Surface>
     </ScrollView>
   </SafeAreaView>;
 }

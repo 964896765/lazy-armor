@@ -13,6 +13,7 @@ import { DATABASE, type InjectedDatabase } from '../common/database.module';
 import { MobileObservationService } from '../reality-pipeline/mobile-observation.service';
 import { TrustedDevicesService } from '../trusted-devices/trusted-devices.service';
 import type { AppReadHeartbeatDto, CreateAppReadSessionDto, CreateAppReadSessionEventDto } from './dto';
+import { assertUiReadCapability, frozenUiReadConsent, uiConsentEventKey, validateUiReadConsent } from './ui-read-consent';
 
 const ACTIVE = new Set<AppReadSessionStatus>(['CREATED', 'WAITING_FOREGROUND', 'READING']);
 const CAPTURE_EVENTS = new Set<AppReadSessionEventType>(['NOTIFICATION_CAPTURED', 'SHARE_CAPTURED']);
@@ -23,6 +24,7 @@ export interface AppReadSessionResponse {
   trustedDeviceId: string;
   targetPackage: string;
   modes: string[];
+  uiReadConsent?: { version: 'ui-read.v1'; requestedFields: string[]; sourceVersion: string };
   status: string;
   correlationId: string;
   startedAt: string | null;
@@ -55,6 +57,9 @@ export class AppReadSessionsService {
     if (connection.packageName !== input.targetPackage) throw new ForbiddenException('Session package must exactly match the connected app');
     await this.trustedDevices.assertActive(userId, signedDeviceId, connection.deviceId);
     const modes = [...new Set(input.modes)];
+    if (modes.includes('UI_READ') && modes.length !== 1) throw new BadRequestException('Page read consent cannot be combined with notification/share consent');
+    if (!modes.includes('UI_READ') && input.uiReadConsent) throw new BadRequestException('UI consent requires UI_READ mode');
+    const uiConsent = modes.includes('UI_READ') ? validateUiReadConsent(connection.packageName, input.uiReadConsent) : null;
     if (modes.includes('NOTIFICATION') && !connection.modesJson.includes('notification_read')) {
       throw new ForbiddenException('Notification acquisition is not enabled for this app connection');
     }
@@ -64,10 +69,19 @@ export class AppReadSessionsService {
     }
     const id = newId(); const now = new Date(); const expiresAt = new Date(now.getTime() + input.durationSeconds * 1000);
     try {
-      await this.db.insert(appReadSessions).values({
+      await this.db.transaction(async tx => {
+      const source = (await tx.select().from(deviceAppConnections).where(and(eq(deviceAppConnections.id, connection.id), eq(deviceAppConnections.userId, userId))).for('update'))[0];
+      if (!source?.enabled || source.updatedAt.getTime() !== connection.updatedAt.getTime()) throw new ConflictException('App source changed before consent');
+      const grant = uiConsent ? await assertUiReadCapability(tx, userId, signedDeviceId, true) : null;
+      await tx.insert(appReadSessions).values({
         id, userId, trustedDeviceId: signedDeviceId, deviceAppConnectionId: connection.id, targetPackage: connection.packageName,
         modesJson: modes, status: 'WAITING_FOREGROUND', activeDeviceKey: signedDeviceId, correlationId: sha256(id),
         startedAt: now, lastHeartbeatAt: null, expiresAt, endedAt: null, terminalReason: null, createdAt: now, updatedAt: now,
+      });
+      if (uiConsent && grant) {
+        const payload = { ...uiConsent, sourceVersion: source.updatedAt.toISOString(), grantEvidenceRef: grant.evidenceRef };
+        await tx.insert(appReadSessionEvents).values({ id: newId(), sessionId: id, userId, eventKey: uiConsentEventKey(id), eventType: 'SESSION_STARTED', sourceMode: 'UI_READ', packageName: source.packageName, payloadHash: eventPayloadHash('SESSION_STARTED', payload, null), payloadJson: payload, createdAt: now });
+      }
       });
     } catch (error) {
       if (isDuplicate(error)) throw new ConflictException('This trusted device already has an active read session');
@@ -96,7 +110,9 @@ export class AppReadSessionsService {
     }
     const events = await this.db.select().from(appReadSessionEvents)
       .where(eq(appReadSessionEvents.sessionId, id)).orderBy(appReadSessionEvents.createdAt);
-    return this.response(row, events);
+    const response = this.response(row, events);
+    const consent = row.modesJson.includes('UI_READ') ? await frozenUiReadConsent(this.db, userId, id) : undefined;
+    return { ...response, ...(consent ? { uiReadConsent: { version: consent.version, requestedFields: consent.requestedFields, sourceVersion: consent.sourceVersion } } : {}) };
   }
 
   async heartbeat(userId: string, id: string, input: AppReadHeartbeatDto, signedDeviceId: string) {

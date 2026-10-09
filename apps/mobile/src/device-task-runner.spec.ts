@@ -49,6 +49,22 @@ const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 describe('mobile DeviceTask runner', () => {
   beforeEach(() => vi.resetAllMocks());
 
+  it('settles only the signed active page read during a foreground handoff; shutdown still discards it', async () => {
+    const claimed = claimedTask({ dispatchAuthorization: { payload: 'ticket', signature: 'signature' } });
+    mocks.listDeviceTasks.mockResolvedValue([makeTask()]); mocks.claimDeviceTask.mockResolvedValue(claimed);
+    mocks.completeDeviceTask.mockResolvedValue({ ...claimed, status: 'SUCCEEDED' });
+    let release!: (result: StructuredReadResult) => void;
+    const execute = vi.fn(() => new Promise<StructuredReadResult>(resolve => { release = resolve; }));
+    const runner = new DeviceTaskRunner({ token, executeStructuredRead: execute });
+    const pending = runner.tick(); await flush(); runner.stop(true);
+    release({ nodes: [{ resourceId: 'wallet.balance', text: '25' }] }); await pending;
+    expect(mocks.completeDeviceTask).toHaveBeenCalledTimes(1);
+    mocks.completeDeviceTask.mockClear();
+    const interrupted = runner.tick(); await flush(); await runner.shutdown();
+    release({ nodes: [{ resourceId: 'wallet.balance', text: '30' }] }); await interrupted;
+    expect(mocks.completeDeviceTask).not.toHaveBeenCalled();
+  });
+
   it('does not let a fenced old invocation starve a current authorized task', async () => {
     const old=makeTask({id:'old',taskType:'NATIVE_CALENDAR_CREATE'});
     const current=makeTask({id:'current'});

@@ -15,6 +15,9 @@ const BLOCKED_DEBUG_PERMISSIONS = [
 const KOTLIN_FILES = [
   'AppReadForegroundService.kt',
   'AppReadSessionStore.kt',
+  'ReadOnlyPageObserver.kt',
+  'ArtifactShareReceipt.kt',
+  'CalendarInvocationExecutor.kt',
   'DeviceAppBridgeModule.kt',
   'DeviceAppBridgePackage.kt',
   'ForegroundPackageGuard.kt',
@@ -52,6 +55,7 @@ function withRuntimeManifest(config) {
       queryIntents.push({ action: [{ $: { 'android:name': 'android.speech.action.RECOGNIZE_SPEECH' } }] });
     }
     queryRoot.intent = queryIntents;
+    queryRoot.package = upsertByAndroidName(queryRoot.package, { $: { 'android:name': 'com.miui.calculator' } });
     queries[0] = queryRoot;
     manifest.queries = queries;
 
@@ -68,6 +72,16 @@ function withRuntimeManifest(config) {
     });
     application.service = upsertByAndroidName(application.service, {
       $: {
+        'android:name': '.ReadOnlyPageObserver',
+        'android:label': '@string/read_only_page_observer_label',
+        'android:permission': 'android.permission.BIND_ACCESSIBILITY_SERVICE',
+        'android:exported': 'true',
+      },
+      'intent-filter': [{ action: [{ $: { 'android:name': 'android.accessibilityservice.AccessibilityService' } }] }],
+      'meta-data': [{ $: { 'android:name': 'android.accessibilityservice', 'android:resource': '@xml/read_only_page_observer' } }],
+    });
+    application.service = upsertByAndroidName(application.service, {
+      $: {
         'android:name': '.AppReadForegroundService',
         'android:exported': 'false',
         'android:foregroundServiceType': 'dataSync',
@@ -81,9 +95,9 @@ function withRuntimeManifest(config) {
         'android:theme': '@style/AppTheme',
       },
       'intent-filter': [{
-        action: [{ $: { 'android:name': 'android.intent.action.SEND' } }],
+        action: [{ $: { 'android:name': 'android.intent.action.SEND' } }, { $: { 'android:name': 'android.intent.action.SEND_MULTIPLE' } }],
         category: [{ $: { 'android:name': 'android.intent.category.DEFAULT' } }],
-        data: [{ $: { 'android:mimeType': 'text/plain' } }],
+        data: ['text/plain', 'text/html', 'image/*', 'application/pdf'].map(mimeType => ({ $: { 'android:mimeType': mimeType } })),
       }],
     });
     return current;
@@ -119,6 +133,11 @@ function withRuntimeSources(config) {
     fs.mkdirSync(targetDir, { recursive: true });
     for (const file of KOTLIN_FILES) {
       fs.copyFileSync(path.join(sourceDir, file), path.join(targetDir, file));
+    }
+    const resources = path.join(current.modRequest.platformProjectRoot, 'app', 'src', 'main', 'res');
+    for (const [directory, file] of [['xml', 'read_only_page_observer.xml'], ['values', 'page_observer_strings.xml']]) {
+      fs.mkdirSync(path.join(resources, directory), { recursive: true });
+      fs.copyFileSync(path.join(sourceDir, file), path.join(resources, directory, file));
     }
 
     // Expo's debug overlays add SYSTEM_ALERT_WINDOW after the main manifest mod

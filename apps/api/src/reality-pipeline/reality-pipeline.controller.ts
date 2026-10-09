@@ -15,6 +15,7 @@ export class RealityPipelineController {
     return this.pipeline.registerManual(user.id, input);
   }
   @Get('candidates/pending') pending(@CurrentUser() user: AuthenticatedUser) { return this.pipeline.listPending(user.id); }
+  @Get('candidates/:id') candidate(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) { return this.pipeline.candidateDetail(user.id, id); }
   @Post('candidates/:id/confirm') confirm(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) { return this.pipeline.confirmCandidate(user.id, id); }
   @Post('candidates/:id/reject') reject(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) { return this.pipeline.rejectCandidate(user.id, id); }
   @Get('truth') listTruth(@CurrentUser() user: AuthenticatedUser) { return this.pipeline.listTruth(user.id); }

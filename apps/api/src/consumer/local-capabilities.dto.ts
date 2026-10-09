@@ -9,6 +9,6 @@ class NativeCapabilityStateDto {
  @IsNumber() checkedAt!:number;
 }
 export class NativeCapabilitiesDto {
- @IsIn(['android-local-v2','android-local-v3','android-local-v4']) manifestVersion!:string;
+ @IsIn(['android-local-v2','android-local-v3','android-local-v4','android-local-v5']) manifestVersion!:string;
  @IsArray() @ArrayMaxSize(32) @ValidateNested({each:true}) @Type(()=>NativeCapabilityStateDto) capabilities!:NativeCapabilityStateDto[];
 }

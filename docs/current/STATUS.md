@@ -1,4 +1,6 @@
-# 当前状态 — 2026-10-09
+# 当前状态 — 2026-10-10
+
+2026-10-10 当前主线：[V87-COMPUTER-02](V87_COMPUTER_RUNTIME.md)已实现独立 UI_READ consent、只读 native observer、原 Task 签名 dispatch、资源范围确认及候选核实入口。API 79/79、Mobile 44/44、Shared 11/11 与构建通过；无迁移，不推送。本人登录/系统授权/真实页面读取仍待验，V87 IN_PROGRESS。本地部署安装另记证据；下一任务 V87-COMPUTER-03 原 Goal 页面事实需求与合法确认续接。
 
 2026-10-09 当前主线：[V87-COMPUTER-01](V87_COMPUTER_RUNTIME.md)已完成受控页面观察的范围/会话 fencing、原子回滚与任务读取范围表面，41 项 API 和 38 项 Mobile 回归通过，已本地部署/安装。下一任务 V87-COMPUTER-02 显式页面读取授权与 native observer。前序 V86 本地 fda37c0 已部署/安装；V86/V87 的本人真机结果独立待验。无新迁移，不推送。
 

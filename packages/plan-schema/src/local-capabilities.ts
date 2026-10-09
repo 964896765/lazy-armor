@@ -24,7 +24,7 @@ export const LOCAL_CAPABILITY_CATALOG = [
   {key:'battery.status',name:'电池状态',implemented:true,readable:true},
   {key:'calllog.read',name:'通话记录',implemented:false,readable:false},
   {key:'location.background',name:'后台位置',implemented:false,readable:false},
-  {key:'accessibility.read',name:'无障碍读取',implemented:false,readable:false},
+  {key:'accessibility.read',name:'限时页面读取',implemented:true,readable:false},
 ] as const;
 export type LocalCapabilityKey = typeof LOCAL_CAPABILITY_CATALOG[number]['key'];
 export interface LocalCapabilityEvidence {
@@ -57,5 +57,5 @@ export function normalizeLocalSourceId(sourceId:string):string {
 
 /** Canonical names use existing grants/IDs; aliases never create duplicate resources. */
 export const LOCAL_CAPABILITY_CANONICAL_KEYS:Readonly<Record<string,string>>={'files.read':'file.pick/read','photos.read':'media.pick','location.read':'location.foreground','appusage.read':'app.usage.read','share.read':'share.receive','voice.input':'microphone.transcribe','app.open':'app.launch','background.task':'background.device_task'};
-export const LOCAL_CAPABILITY_RESTRICTIONS:Readonly<Record<string,'PLATFORM_RESTRICTED'|'SPECIAL_PERMISSION'|'UNSUPPORTED'>>={'sms.read':'PLATFORM_RESTRICTED','calllog.read':'PLATFORM_RESTRICTED','location.background':'SPECIAL_PERMISSION','accessibility.read':'SPECIAL_PERMISSION','notification.send':'UNSUPPORTED'};
+export const LOCAL_CAPABILITY_RESTRICTIONS:Readonly<Record<string,'PLATFORM_RESTRICTED'|'SPECIAL_PERMISSION'|'UNSUPPORTED'>>={'sms.read':'PLATFORM_RESTRICTED','calllog.read':'PLATFORM_RESTRICTED','location.background':'SPECIAL_PERMISSION','notification.send':'UNSUPPORTED'};
 export function localCapabilityGroup(key:string):'信息获取'|'设备执行'|'高级能力'{return LOCAL_CAPABILITY_RESTRICTIONS[key]||['background.task','appread.session'].includes(key)?'高级能力':['calendar.create','calendar.update','calendar.delete','app.open','deep_link.open','notification.send','camera.capture'].includes(key)?'设备执行':'信息获取';}

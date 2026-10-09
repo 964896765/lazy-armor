@@ -7,6 +7,7 @@ import { AuditService } from '../audit/audit.service';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
 import { TrustedDevicesService } from '../trusted-devices/trusted-devices.service';
 import type { CreateDeviceAppConnectionDto, UpdateDeviceAppConnectionDto } from './dto';
+import { resolveUiReadProfile } from '../structured-read/app-read-profiles';
 
 const IMPLEMENTED_MODES = new Set<DeviceAppConnectionMode>(['open_app', 'notification_read','receive_share']);
 
@@ -150,15 +151,17 @@ export class DeviceAppsService {
     const native=states.find(s=>s.capability==='notification.read');
     const healthy=!!active;
     const now=Date.now();
-    const capabilities=['open_app','notification_read','receive_share','deep_link','app_read_session','structured_read','vision','execute'].map(key=>{
-     const notification=key==='notification_read';const open=key==='open_app';const share=key==='receive_share';const state=share?states.find(s=>s.capability==='share.read'):native;
-     const implemented=open||notification||share;
-     const permission=notification||share?state?.systemPermission??'UNKNOWN':open?'GRANTED':'UNKNOWN';
-     const userGrant=row.enabled===1&&row.modesJson.includes(key as DeviceAppConnectionMode)&&(!(notification||share)||state?.userGrant===true);
-     const checkedAt=notification||share?state&&row.lastSeenAt?Math.min(state.checkedAt.getTime(),row.lastSeenAt.getTime()):null:open?row.lastSeenAt?.getTime()??null:null;
-     const evidenceRefs=(notification||share)&&state?[state.evidenceRef,`discovery:${row.discoveryFingerprint}`]:open?[`discovery:${row.discoveryFingerprint}`]:[];
-     const evidence={installed:installed&&!!active,systemPermission:permission as 'GRANTED'|'DENIED'|'UNKNOWN',userGrant,adapterImplemented:implemented,healthy:!!active&&(!(notification||share)||state?.health==='HEALTHY'),checkedAt,evidenceRefs,...(key==='execute'?{restricted:'UNSUPPORTED' as const}:{})};
-     return {key,acquisitionMode:({open_app:'OPEN_APP',notification_read:'NOTIFICATION',receive_share:'SHARE',deep_link:'DEEP_LINK',app_read_session:'APP_READ_SESSION',structured_read:'STRUCTURED_READ',vision:'ARTIFACT/VISION'} as Record<string,string>)[key]??null,...evidence,status:appCapabilityAvailability(evidence,now)};
+    const capabilities=['open_app','notification_read','receive_share','page_read','deep_link','app_read_session','structured_read','vision','execute'].map(key=>{
+     const notification=key==='notification_read';const open=key==='open_app';const share=key==='receive_share';const page=key==='page_read';
+     const state=page?states.find(s=>s.capability==='accessibility.read'):share?states.find(s=>s.capability==='share.read'):native;
+     const gated=notification||share||page;
+     const implemented=open||notification||share||(page&&!!resolveUiReadProfile(row.packageName));
+     const permission=gated?state?.systemPermission??'UNKNOWN':open?'GRANTED':'UNKNOWN';
+     const userGrant=row.enabled===1&&(page||row.modesJson.includes(key as DeviceAppConnectionMode))&&(!gated||state?.userGrant===true);
+     const checkedAt=gated?state&&row.lastSeenAt?Math.min(state.checkedAt.getTime(),row.lastSeenAt.getTime()):null:open?row.lastSeenAt?.getTime()??null:null;
+     const evidenceRefs=gated&&state?[state.evidenceRef,`discovery:${row.discoveryFingerprint}`]:open?[`discovery:${row.discoveryFingerprint}`]:[];
+     const evidence={installed:installed&&!!active,systemPermission:permission as 'GRANTED'|'DENIED'|'UNKNOWN',userGrant,adapterImplemented:implemented,healthy:!!active&&(!gated||state?.health==='HEALTHY')&&(!page||state?.manifestVersion==='android-local-v5'),checkedAt,evidenceRefs,...(key==='execute'?{restricted:'UNSUPPORTED' as const}:{})};
+     return {key,acquisitionMode:({open_app:'OPEN_APP',notification_read:'NOTIFICATION',receive_share:'SHARE',page_read:'UI_READ',deep_link:'DEEP_LINK',app_read_session:'APP_READ_SESSION',structured_read:'STRUCTURED_READ',vision:'ARTIFACT/VISION'} as Record<string,string>)[key]??null,...evidence,status:appCapabilityAvailability(evidence,now),...(page?{requiresSessionConsent:true,executionAuthorized:false}:{})};
     });
     return {
       id: row.id,

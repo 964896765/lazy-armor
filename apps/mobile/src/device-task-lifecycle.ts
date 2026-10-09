@@ -10,7 +10,8 @@ export interface DeviceTaskRunnerLifecycleDeps {
  * Foreground-only lifecycle wiring for the DeviceTask runner. It starts the
  * runner only when every gate passes and stops it (clearing the keepalive timer)
  * on logout, token change, device revoke / authorization loss, app background,
- * and app teardown. It never starts background polling.
+ * and app teardown. An explicitly scoped, already claimed page read may settle
+ * during its visible native handoff; background polling never starts.
  */
 export class DeviceTaskRunnerLifecycle {
   private started = false;
@@ -41,7 +42,9 @@ export class DeviceTaskRunnerLifecycle {
     if (active) {
       void this.sync(this.activeToken);
     } else {
-      this.stop();
+      this.started = false;
+      // Stop polling. Only an already leased, explicitly scoped page read may settle.
+      this.deps.runner.stop(true);
     }
   }
 

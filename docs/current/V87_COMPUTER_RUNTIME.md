@@ -55,3 +55,31 @@ Tests：真实 source consent + profile 字段边界、native 数据最小化、
 Acceptance：正常 UI 明确授权→原 Goal/Plan 的受控读取→真实 App 字段→Observation→Verification/Result；来源失效不能污染 Truth，结果回原对象。真人手机证据和隔离自动化分开；V87 关闭仍需真实 Observe/Act/Verify 全阶段验收。
 
 状态：任务书已准备，尚未实现 native observer；主线保持 V87 IN_PROGRESS。
+
+## V87-COMPUTER-02 · 2026-10-10 当前实现
+
+目标：独立明确授权一个 App 的限时页面读取，接入只读 native observer，沿原 DeviceTask 保存 Observation/Candidate，并提供独立核实入口。
+
+Backend：新增 UI_READ mode 与 ui-read.v1 consent，通知/分享会话不能使用页面能力。签名设备请求冻结 App、字段和 sourceVersion；许可证据保存在原 AppReadSessionEvent。原 Task 的 claim/heartbeat 签发 ui-observation.v1 ticket，绑定账户、session、字段、sourceVersion、claimToken/lease，并核对当前 grant/系统权限/health。复用原 native verifier 身份，Calendar ticket schema 保持独立。
+
+接口：原 POST /app-read-sessions 在 UI_READ 时要求 uiReadConsent；原 APP_STRUCTURED_READ 返回签名 dispatchAuthorization。App 资源投影增加 page_read，requiresSessionConsent=true、executionAuthorized=false。新增 owner-scoped GET /candidates/:id；确认/拒绝沿原 RealityPipeline，并发确认锁住原候选，重复确认返回同一 Truth。
+
+Frontend：资源→App→限时读取页面，显示系统权限、观察器健康、本机独立 grant 和字段范围。用户确认后通过原 structured-reads 取得受控 Task；客户端不直接制造执行授权。结果页显示“已采集，等待确认”，可核实/拒绝线索和查看事实依据。二级入口保留返回 fallback，读取期间的系统通知可返回应用或停止读取。五个一级页不变。
+
+Database：无迁移。复用 LocalCapabilityState、DeviceAppConnection、AppReadSession/Event、DeviceTask、ReadEvidence、Observation、Candidate、Truth 与审计。grant revoke/regrant、权限或健康变化终止旧 UI 会话；sourceVersion 变化拒绝旧来源，旧 Task/Result 保留。
+
+Runtime：ReadOnlyPageObserver 为按次 AccessibilityService。系统权限范围较广，仍需应用内独立许可和每次范围确认。仅原账户、原 App 前台、原 session、签名 ticket 和有效 lease 内读取精确 selector；禁止 wildcard、模糊匹配、密码/可编辑/敏感节点及整屏文本。遍历、深度、字段数和长度有上限，歧义节点拒绝。采集前后检查会话、权限、前台、账户及 App 包版本，保留实际 native observedAt。不提供 click/input/submit/截图。切到目标 App 时停止任务轮询，仅已经领取的签名按次读可完成交付。
+
+Truth：字段格式通过只产生 Observation/Candidate，不自动确认业务事实。沿原 FAILED/NEEDS_CONFIRMATION 终态确认收到了证据，并对相同结果 replay 保留同身份，避免 runner 重读；独立用户核实不将历史 Task 改写成早先已验证的成功。
+
+真实目标：23049RAD8C 已安装 com.miui.calculator；实际 APK 资源表核对 com.miui.calculator:id/result。资源表读取不等于页面采集验收。支付宝旧语义 Profile 未取得真实 view-ID 映射，不开放 native UI_READ；fixture Profile 仅在隔离测试准入，不作为生产来源。插件模板与已生成 Native 源码同步，保留原 Calendar/Artifact/Share 实现，防止 prebuild 覆盖既有能力。
+
+Tests：API 8 文件 79/79，Mobile 6 文件 44/44，Shared 3 文件 11/11；覆盖独立 consent、源版本与 grant fencing、事务回滚、历史保留、精确 selector/整屏内容拒绝、ticket 签名、并发确认同 Truth、账号/会话切换、按次 handoff 与 shutdown、同身份 replay。API 数据仅在隔离 3311 schema/Redis 15；模拟节点不作为真机证明。Shared/API/Mobile 类型检查、API/Web/Android bundle/APK 构建已通过。
+
+本机证据：artifacts/v87-page-observer-tests-final-r5.log、v87-page-observer-mobile-final-r1.log、v87-page-observer-api-build-r1.log、v87-page-observer-web-build-r1.log、v87-page-observer-bundle-final-r2.log、v87-page-observer-apk-final-r2.log。初轮失败保留，已修正 Shared export/build 顺序、候选交付语义与隔离 fixture 的 verified_by 字段使用错误，没有放宽来源门。
+
+Acceptance / 完成状态：IMPLEMENTED / AUTOMATION_VERIFIED / BUILD_VERIFIED；本地部署与安装证据另附。本人正常登录、独立系统辅助功能授权、真实页面 Observation→候选核实仍 REAL_PENDING；不通过 ADB 开权限或替本人登录，V87 overall IN_PROGRESS。
+
+下一任务：V87-COMPUTER-03 将明确页面事实需求接回原 Conversation/Goal 的资源建议与合法确认入口，复用本轮冻结范围与签名 Task。不先加入 click/input，不把资源页按次 inspection 冒充 Goal Runtime Golden Flow。
+
+本地部署/安装：2026-10-10 已完成三角色 readiness 核对与 2c696fe 覆盖安装，保留应用数据。最终 APK SHA256 d5b0c81eb519f8c1f73d178795a0b4e660a8602de3e17a016efffb890578c420；源码 bundle、APK 内 bundle 与安装包字节均一致。证据 artifacts/v87-page-observer-deployment-r1.json、v87-page-observer-readiness-r1.json、v87-page-observer-r1-install-real.json、v87-page-observer-apk-final-r3.log。完成状态补充 DEPLOYED / APK_INSTALLED；真实页面读取及本人核实保持 REAL_PENDING。

@@ -24,4 +24,10 @@ describe('device task presenter', () => {
     expect(leaseState('2026-09-23T00:00:00.000Z', Date.parse('2026-09-23T00:00:01.000Z'))).toBe('租约已过期');
     expect(leaseState(null)).toBe('没有活动租约');
   });
+  it('keeps acquired page candidates awaiting verification rather than presenting success or a read failure', () => {
+    const read = evidence({ status: 'FAILED', errorCode: 'NEEDS_CONFIRMATION', attemptCount: 1 });
+    read.observations.push({ id: 'observation', status: 'NORMALIZED', observedAt: '2026-10-09T00:00:00Z' });
+    expect(deviceTaskStages(read).find(stage => stage.key === 'evidence')?.state).toBe('done');
+    expect(deviceTaskStages(read).find(stage => stage.key === 'complete')).toMatchObject({ state: 'waiting', label: '等待核实线索' });
+  });
 });

@@ -528,6 +528,10 @@ class DeviceAppBridgeModule(reactContext: ReactApplicationContext) : ReactContex
       result.putString("status", status.optString("status", "IDLE"))
       result.putDouble("expiresAt", status.optLong("expiresAt", 0).toDouble())
       result.putBoolean("usageAccessGranted", status.optBoolean("usageAccessGranted", false))
+      result.putBoolean("observerPermissionGranted", status.optBoolean("observerPermissionGranted", false))
+      result.putBoolean("observerConnected", status.optBoolean("observerConnected", false))
+      result.putString("accountId", status.optString("accountId", ""))
+      result.putArray("modes", Arguments.fromList(status.optJSONArray("modes")?.let { array -> (0 until array.length()).map { array.getString(it) } } ?: emptyList<String>()))
       if (status.isNull("foregroundPackage")) result.putNull("foregroundPackage") else result.putString("foregroundPackage", status.getString("foregroundPackage"))
       result.putInt("pendingEventCount", status.optInt("pendingEventCount", 0))
       promise.resolve(result)
@@ -547,15 +551,26 @@ class DeviceAppBridgeModule(reactContext: ReactApplicationContext) : ReactContex
   }
 
   @ReactMethod
-  fun startAppReadSession(sessionId: String, targetPackage: String, modes: ReadableArray, expiresAt: Double, promise: Promise) {
+  fun openPageReadSettings(promise: Promise) {
+    try {
+      reactApplicationContext.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+      promise.resolve(true)
+    } catch (error: Exception) { promise.reject("E_PAGE_READ_SETTINGS", "无法打开系统辅助功能设置。", error) }
+  }
+
+  @ReactMethod
+  fun startAppReadSession(accountId: String, sessionId: String, targetPackage: String, modes: ReadableArray, expiresAt: Double, fields: ReadableArray, sourceVersion: String, promise: Promise) {
     try {
       check(reactApplicationContext.getSharedPreferences("lazy_armor_runtime_settings", android.content.Context.MODE_PRIVATE).getBoolean("background", true)) { "后台服务已关闭" }
       val selectedModes = (0 until modes.size()).mapNotNull { modes.getString(it) }.toSet()
-      AppReadSessionStore.start(reactApplicationContext, sessionId, targetPackage, selectedModes, expiresAt.toLong())
+      val requested = (0 until fields.size()).mapNotNull { fields.getString(it) }.toSet()
+      AppReadSessionStore.start(reactApplicationContext, accountId, sessionId, targetPackage, selectedModes, expiresAt.toLong(), requested, sourceVersion)
       ContextCompat.startForegroundService(reactApplicationContext, Intent(reactApplicationContext, AppReadForegroundService::class.java))
+      if ("UI_READ" !in selectedModes) {
       val launch = reactApplicationContext.packageManager.getLaunchIntentForPackage(targetPackage)
         ?: throw IllegalArgumentException("目标应用不可启动")
       reactApplicationContext.startActivity(launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+      }
       promise.resolve(true)
     } catch (error: Exception) {
       AppReadSessionStore.stop(reactApplicationContext, "NATIVE_ERROR", "START_FAILED")
@@ -594,12 +609,30 @@ class DeviceAppBridgeModule(reactContext: ReactApplicationContext) : ReactContex
   }
 
   @ReactMethod
-  fun captureAppReadUiNodes(targetPackage: String, allowedSelectors: ReadableArray, promise: Promise) {
-    try {
-      val selectors = (0 until allowedSelectors.size()).mapNotNull { allowedSelectors.getString(it) }.toSet()
-      promise.resolve(AppReadSessionStore.captureUiNodes(reactApplicationContext, targetPackage, selectors).toString())
-    } catch (error: Exception) {
-      promise.reject("E_APP_READ_UI_NODES_UNAVAILABLE", "无法读取目标应用的可控节点。", error)
+  fun captureAppReadUiNodes(taskText: String, promise: Promise) {
+    if (taskText.length > 32000) { promise.reject("E_PAGE_SCOPE", "页面读取范围无效。"); return }
+    val handler = Handler(Looper.getMainLooper())
+    val deadline = System.currentTimeMillis() + 10_000
+    handler.post {
+      try {
+        val task = org.json.JSONObject(taskText)
+        // Verify before opening the App; raw JS selectors never authorize a capture.
+        ReadOnlyPageObserver.validateTicket(reactApplicationContext, task)
+        val target = task.getJSONObject("payload").getString("packageName")
+        val launch = reactApplicationContext.packageManager.getLaunchIntentForPackage(target) ?: throw IllegalStateException("TARGET_UNAVAILABLE")
+        reactApplicationContext.startActivity(launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        val poll = object : Runnable {
+          override fun run() {
+            try {
+              ReadOnlyPageObserver.validateTicket(reactApplicationContext, task)
+              val session = AppReadSessionStore.active(reactApplicationContext) ?: throw IllegalStateException("SESSION_STOPPED")
+              if (session.optString("status") != "READING" && System.currentTimeMillis() < deadline) { handler.postDelayed(this, 250); return }
+              promise.resolve(ReadOnlyPageObserver.capture(reactApplicationContext, task).toString())
+            } catch (error: Exception) { promise.reject("E_APP_READ_UI_NODES_UNAVAILABLE", "页面读取未完成，请保持目标应用在前台。", error) }
+          }
+        }
+        handler.postDelayed(poll, 250)
+      } catch (error: Exception) { promise.reject("E_APP_READ_UI_NODES_UNAVAILABLE", "页面读取授权已失效。", error) }
     }
   }
 

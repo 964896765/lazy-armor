@@ -8,6 +8,7 @@ import { deviceTaskStages, deviceTaskStatusLabel, leaseState } from '../../../sr
 import { ActionButton, colors, radius, spacing, typography } from '../../../src/design';
 import { shortEvidenceHash } from '../../../src/evidence-presenter';
 import { displayTime } from '../../../src/runtime-details-presenter';
+import { deviceTaskOutcomeLabel } from '../../../src/structured-read-presenter';
 import { LoginRequired, RuntimeCard, RuntimeDetailScreen, RuntimeKeyValue, RuntimeLoadState, RuntimeSection, RuntimeText } from '../../../src/runtime-details-ui';
 
 export default function DeviceTaskDetailPage() {
@@ -26,11 +27,11 @@ export default function DeviceTaskDetailPage() {
     {!token ? <LoginRequired /> : null}
     {token ? <RuntimeLoadState loading={detail.isLoading} error={detail.isError} onRetry={() => detail.refetch()} loadingText="正在核对设备任务…" /> : null}
     {evidence ? <>
-      <View style={styles.hero}><Text style={styles.eyebrow}>{evidence.task.deviceOnline ? '手机在线' : '手机当前离线'}</Text><Text style={styles.heroTitle}>{deviceTaskStatusLabel(evidence.task.status)}</Text><Text style={styles.heroDetail}>{evidence.task.factKey}</Text></View>
+      <View style={styles.hero}><Text style={styles.eyebrow}>{evidence.task.deviceOnline ? '手机在线' : '手机当前离线'}</Text><Text style={styles.heroTitle}>{evidence.task.errorCode === 'NEEDS_CONFIRMATION' ? deviceTaskOutcomeLabel(evidence.task) : deviceTaskStatusLabel(evidence.task.status)}</Text><Text style={styles.heroDetail}>{evidence.readScope ? '本次页面读取' : evidence.task.factKey}</Text></View>
       <RuntimeSection title="任务在手机上做到哪一步"><RuntimeCard>{stages.map((stage, index) => <View key={stage.key} style={[styles.stage, index < stages.length - 1 && styles.divider]}><View style={[styles.dot, stage.state === 'done' ? styles.done : stage.state === 'current' ? styles.current : stage.state === 'failed' ? styles.failed : styles.waiting]} /><View style={styles.stageCopy}><Text style={styles.stageTitle}>{stage.label}</Text><Text style={styles.stageDetail}>{stage.detail}</Text></View></View>)}</RuntimeCard></RuntimeSection>
       {evidence.readScope ? <RuntimeSection title="读取范围"><RuntimeCard>
         <RuntimeText>只在原读取时段内读取目标应用的前台页面。</RuntimeText>
-        {evidence.readScope.fields.map(field => <RuntimeKeyValue key={field} label="读取内容" value={({ 'wallet.balance': '余额', 'transaction.latest.amount': '最近交易金额', 'transaction.latest.time': '最近交易时间' } as Record<string, string>)[field] ?? '已选择的页面字段'} />)}
+        {evidence.readScope.fields.map(field => <RuntimeKeyValue key={field} label="读取内容" value={({ 'wallet.balance': '余额', 'transaction.latest.amount': '最近交易金额', 'transaction.latest.time': '最近交易时间', 'com.miui.calculator:id/result': '计算器当前结果' } as Record<string, string>)[field] ?? '已选择的页面字段'} />)}
       </RuntimeCard></RuntimeSection> : null}
       <RuntimeSection title="现实数据证据"><RuntimeCard>
         {evidence.observations.length === 0 ? <RuntimeText>尚无已记录的来源观察；不会把待执行任务显示为已验证。</RuntimeText> : evidence.observations.map((item) =>
@@ -39,6 +40,7 @@ export default function DeviceTaskDetailPage() {
       </RuntimeCard></RuntimeSection>
       <RuntimeSection title="事实确认"><RuntimeCard>
         {evidence.candidates.length > 0 ? <RuntimeKeyValue label="候选事实" value={`${evidence.candidates.length} 条`} /> : null}
+        {evidence.candidates.filter(item => item.status === 'PENDING').map(item => <ActionButton key={item.id} label="核实读取线索" tone="quiet" onPress={() => router.push(`/candidates/${item.id}` as never)} />)}
         {evidence.truths.length === 0 ? <RuntimeText>尚未形成可信事实；任务状态不能替代 Truth 验证。</RuntimeText> : evidence.truths.map((item) =>
           <RuntimeCard key={item.id} title={item.current ? '当前可信事实' : '历史或已撤销事实'}>
             <RuntimeKeyValue label="状态" value={item.status} />

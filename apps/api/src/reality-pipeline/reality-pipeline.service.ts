@@ -113,6 +113,13 @@ export class RealityPipelineService implements OnModuleInit {
     return rows.map((row) => this.candidateResponse(row));
   }
 
+  async candidateDetail(userId: string, id: string) {
+    const candidate = await this.getCandidate(userId, id);
+    const observation = (await this.db.select({ providerKey: sourceObservations.providerKey, observedAt: sourceObservations.observedAt, sourceMode: sourceObservations.sourceMode }).from(sourceObservations).where(and(eq(sourceObservations.id, candidate.observationId), eq(sourceObservations.userId, userId))).limit(1))[0];
+    if (!observation) throw new NotFoundException('Candidate source not found');
+    return { ...this.candidateResponse(candidate), source: { providerKey: observation.providerKey, sourceMode: observation.sourceMode, observedAt: observation.observedAt.toISOString() } };
+  }
+
   async listTruth(userId: string) {
     const rows = await this.db.select({ id: truthRecords.id }).from(truthRecords).where(and(eq(truthRecords.userId, userId), eq(truthRecords.status, 'verified'))).orderBy(desc(truthRecords.verifiedAt));
     return Promise.all(rows.map((row) => this.truthResponse(userId, row.id)));
@@ -130,10 +137,15 @@ export class RealityPipelineService implements OnModuleInit {
     const observation = (await db.select().from(sourceObservations).where(eq(sourceObservations.id, existing.observationId)).limit(1))[0];
     if (!observation) throw new ConflictException('Candidate provenance is incomplete');
     const now = new Date(); const truthId = newId(); const versionId = newId();
+    let resolvedTruthId = truthId;
     const value = existing.compatibilityResourceKey
       ? { resource: existing.compatibilityResourceKey, ...existing.valueJson, occurredAt: observation.occurredAt?.toISOString() ?? observation.observedAt.toISOString() }
       : { resourceType: existing.resourceType, resourceKey: existing.resourceKey, subjectKey: existing.subjectKey, factKey: existing.factKey, value: existing.valueJson, observedAt: observation.observedAt.toISOString(), occurredAt: observation.occurredAt?.toISOString() ?? null, confidence: existing.confidence / 100, realityLevel: 'VERIFIED' };
     const confirmOnce = async (tx: RealityExecutor) => {
+      const current = (await tx.select().from(candidateFacts).where(and(eq(candidateFacts.id, candidateId), eq(candidateFacts.userId, userId))).limit(1).for('update'))[0];
+      if (!current) throw new NotFoundException('Candidate fact not found');
+      if (current.status === 'VERIFIED' && current.truthRecordId) { resolvedTruthId = current.truthRecordId; return; }
+      if (current.status !== 'PENDING') throw new ConflictException('Candidate has already been decided');
       await tx.insert(truthRecords).values({ id: truthId, userId, resourceKey: existing.compatibilityResourceKey ?? existing.resourceType, subjectKey: existing.subjectKey, status: 'verified', currentVersionId: null, sourceReceiptId: options.sourceReceiptId ?? null, verifiedBy: options.verifiedBy ?? 'user_confirmation', verifiedAt: now, revokedAt: null, createdAt: now, updatedAt: now });
       await tx.insert(truthRecordVersions).values({ id: versionId, truthRecordId: truthId, versionNumber: 1, valueJson: value, valueHash: realityValueHash(value), verificationMethod: options.verificationMethod ?? options.verifiedBy ?? 'user_confirmation', evidenceHash: observation.evidenceHash, createdAt: now });
       await tx.insert(truthProvenance).values({ id: newId(), truthRecordVersionId: versionId, candidateFactId: candidateId, observationId: observation.id, providerKey: observation.providerKey, sourceMode: observation.sourceMode, evidenceHash: observation.evidenceHash, observedAt: observation.observedAt, createdAt: now });
@@ -148,11 +160,13 @@ export class RealityPipelineService implements OnModuleInit {
     };
     if (executor) {
       await confirmOnce(executor);
+      if (resolvedTruthId !== truthId) return this.truthResponse(userId, resolvedTruthId, executor);
       await this.audit.append({ actorType: 'user', actorUserId: userId, action: 'GENERIC_TRUTH_VERIFIED', resourceType: 'truth_record', resourceId: truthId, userId, correlationId: observation.id, changeSummary: `Verified ${existing.factKey} through the generic reality pipeline`, source: 'api', result: 'success' }, executor);
       return this.truthResponse(userId, truthId, executor);
     }
     try {
       await this.db.transaction(async (tx) => { await confirmOnce(tx); });
+      if (resolvedTruthId !== truthId) return this.truthResponse(userId, resolvedTruthId);
     } catch (error) {
       if (!isDuplicate(error) && !isDeadlock(error)) throw error;
       const raced = await this.getCandidate(userId, candidateId);

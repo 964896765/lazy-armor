@@ -8,6 +8,11 @@ import { assertAppReadProfile, type AppReadProfile } from '@lazy-armor/plan-sche
  */
 export const ANDROID_STRUCTURED_READ_PROFILES: readonly AppReadProfile[] = Object.freeze([
   Object.freeze({
+    packageName: 'com.miui.calculator', profileKey: 'miui.calculator.result', resourceType: 'CalculatorDisplay',
+    factKeys: ['com.miui.calculator:id/result'], allowedSelectors: ['com.miui.calculator:id/result'],
+    requiredForeground: true, sensitiveFields: [], blockedFields: [], parserId: 'generic.structured-read.v1', verificationPolicy: 'STRUCTURED_ONLY',
+  } as AppReadProfile),
+  Object.freeze({
     packageName: 'com.eg.android.AlipayGphone',
     profileKey: 'alipay.wallet',
     resourceType: 'AlipayWallet',
@@ -37,4 +42,10 @@ for (const profile of ANDROID_STRUCTURED_READ_PROFILES) assertAppReadProfile(pro
 
 export function resolveAppReadProfile(packageName: string): AppReadProfile | null {
   return ANDROID_STRUCTURED_READ_PROFILES.find((profile) => profile.packageName === packageName) ?? null;
+}
+
+/** A historical semantic profile is not evidence of actual Android view IDs. */
+export function resolveUiReadProfile(packageName: string): AppReadProfile | null {
+  if (packageName !== 'com.miui.calculator' && !(process.env.NODE_ENV === 'test' && packageName === 'com.lazyarmor.fixture.wallet')) return null;
+  return resolveAppReadProfile(packageName);
 }

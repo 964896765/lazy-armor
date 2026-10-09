@@ -23,6 +23,7 @@ export function deviceTaskStages(evidence: DeviceTaskEvidence): DeviceTaskStage[
   const task = evidence.task;
   const terminal = task.status === 'SUCCEEDED' || task.status === 'FAILED';
   const failed = task.status === 'FAILED';
+  const needsConfirmation = task.errorCode === 'NEEDS_CONFIRMATION';
   const hasClaim = task.attemptCount > 0 || Boolean(task.claimedAt);
   const hasEvidence = evidence.observations.length > 0 || evidence.readEvidence.length > 0;
   return [
@@ -30,7 +31,7 @@ export function deviceTaskStages(evidence: DeviceTaskEvidence): DeviceTaskStage[
     { key: 'queued', label: '等待手机', state: hasClaim ? 'done' : 'current', detail: hasClaim ? '手机已经领取任务' : '等待可信设备在线领取' },
     { key: 'claimed', label: '手机处理', state: terminal ? 'done' : hasClaim ? 'current' : 'waiting', detail: hasClaim ? `第 ${task.attemptCount || 1} 次领取` : '尚未开始' },
     { key: 'evidence', label: '结果与证据', state: hasEvidence ? 'done' : failed ? 'failed' : terminal ? 'waiting' : 'waiting', detail: hasEvidence ? '已记录现实来源证据' : '尚未记录可验证证据' },
-    { key: 'complete', label: '完成验证', state: failed ? 'failed' : task.status === 'SUCCEEDED' ? 'done' : 'waiting', detail: failed ? (task.errorCode || '任务失败') : task.status === 'SUCCEEDED' ? '结果已进入事实链' : '等待任务完成' },
+    { key: 'complete', label: needsConfirmation ? '等待核实线索' : '完成验证', state: needsConfirmation ? 'waiting' : failed ? 'failed' : task.status === 'SUCCEEDED' ? 'done' : 'waiting', detail: needsConfirmation ? '已保存页面观察；字段格式通过不能代替事实核实' : failed ? (task.errorCode || '任务失败') : task.status === 'SUCCEEDED' ? '结果已进入事实链' : '等待任务完成' },
   ];
 }
 

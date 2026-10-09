@@ -1,5 +1,8 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable, forwardRef } from '@nestjs/common';
-import { createHash } from 'node:crypto';
+import { createHash, sign } from 'node:crypto';
+import { ConfigService } from '@nestjs/config';
+import { nativeDispatchSigningKey } from '../execution/native-dispatch-signing';
+import { assertUiReadCapability, frozenUiReadConsent } from '../app-read-sessions/ui-read-consent';
 import { appReadSessions, deviceTasks, deviceAppConnections, trustedDevices, truthRecordVersions, truthRecords } from '@lazy-armor/database';
 import {
   canonicalRecords, canonicalTable, readEvidenceStatusForOutcome, redactSensitiveFields, realityValueHash,
@@ -48,6 +51,7 @@ export class StructuredReadService {
     private readonly audit: AuditService,
     @Inject(forwardRef(() => DeviceTasksService)) private readonly deviceTasks: DeviceTasksService,
     @Inject(VISION_READ_ADAPTER) private readonly vision: VisionReadAdapter,
+    private readonly config: ConfigService,
   ) {}
 
   async structuredRead(userId: string, request: StructuredReadRequest): Promise<StructuredReadResult> {
@@ -78,11 +82,13 @@ export class StructuredReadService {
     const profile = this.requireProfile(request.packageName);
     this.assertUiSelectors(profile, request.requestedFields);
     const session = await this.assertReadSession(userId, request);
+    const consent = (await frozenUiReadConsent(this.db, userId, session.id))!;
     const task = await this.deviceTasks.enqueue(userId, session.trustedDeviceId, 'APP_STRUCTURED_READ', 'structured_read.field', profile.resourceType, {
       requestId: request.requestId, packageName: profile.packageName, resourceType: profile.resourceType, resourceId: request.resourceId,
       requestedFields: request.requestedFields, fieldExpectations: request.fieldExpectations ?? {}, appReadSessionId: session.id,
       structuredSelector: request.structuredSelector ?? null, resourceHint: request.resourceHint ?? null,
-    });
+      uiSourceVersion: consent.sourceVersion,
+    }, 'ui-read:' + session.id + ':' + request.requestId);
     return {
       requestId: request.requestId,
       status: AWAITING_ANDROID_STRUCTURED_READ_EVIDENCE,
@@ -95,8 +101,28 @@ export class StructuredReadService {
     };
   }
 
+  /** Issued only for the original, currently leased server Task and frozen read consent. */
+  async observationTicket(store: RealityExecutor, userId: string, task: typeof deviceTasks.$inferSelect) {
+    if (task.taskType !== 'APP_STRUCTURED_READ' || task.userId !== userId || !['CLAIMED', 'RUNNING'].includes(task.status)
+      || !task.claimToken || !task.leaseExpiresAt || task.leaseExpiresAt.getTime() <= Date.now()) throw new StaleClaimError();
+    const payload = task.payloadJson;
+    const request = { packageName: payload.packageName, appReadSessionId: payload.appReadSessionId, requestedFields: payload.requestedFields } as StructuredReadRequest;
+    const session = await this.assertReadSession(userId, request, store, true);
+    this.assertUiSelectors(this.requireProfile(session.targetPackage), request.requestedFields);
+    if (session.status === 'READING') this.assertFreshReadingSession(session);
+    if (session.trustedDeviceId !== task.trustedDeviceId) throw new StructuredReadSourceInvalidError('Original read device changed');
+    const consent = (await frozenUiReadConsent(store, userId, session.id))!;
+    if (payload.uiSourceVersion !== consent.sourceVersion) throw new StructuredReadSourceInvalidError('Frozen task source changed');
+    const bytes = Buffer.from(JSON.stringify({ version: 'ui-observation.v1', userId, taskId: task.id, claimToken: task.claimToken,
+      sessionId: session.id, packageName: session.targetPackage, requestedFields: request.requestedFields,
+      sourceVersion: consent.sourceVersion, expiresAt: task.leaseExpiresAt.toISOString() }));
+    return { payload: bytes.toString('base64'), signature: sign('sha256', bytes, nativeDispatchSigningKey(this.config.getOrThrow<string>('JWT_SECRET'))).toString('base64') };
+  }
+
   /** Called by DeviceTasksService.complete for APP_STRUCTURED_READ / SCREEN_CAPTURE_FOR_READ results. */
   async ingestDeviceResult(userId: string, task: typeof deviceTasks.$inferSelect, result: Record<string, unknown>, executor?: RealityExecutor, claimToken?: string): Promise<{ observationId: string; candidateIds: string[]; truthRecordIds: string[] }> {
+    const resultKeys = new Set(['packageName', 'resourceId', 'screenId', 'activityName', 'observedAt', 'nodes', 'evidenceHash']);
+    if (Object.keys(result).some(key => !resultKeys.has(key))) throw new ForbiddenException('Unrequested page content cannot be delivered');
     const payload = task.payloadJson as Record<string, unknown>;
     const profile = this.requireProfile(typeof payload.packageName === 'string' ? payload.packageName : null);
     const observedPackage = typeof result.packageName === 'string' ? result.packageName : null;
@@ -121,7 +147,10 @@ export class StructuredReadService {
     this.assertFreshReadingSession(session);
     const observedAt = typeof result.observedAt === 'string' ? Date.parse(result.observedAt) : NaN;
     if (!Number.isFinite(observedAt) || observedAt > Date.now() + 1000 || observedAt < (session.startedAt ?? session.createdAt).getTime() || observedAt >= session.expiresAt.getTime()) throw new StructuredReadSourceInvalidError('Device observation is outside the original session');
-    if (nodes.some(node => !node || typeof node !== 'object' || Array.isArray(node) || node.isPassword === true
+    const nodeFields = new Set(['text', 'contentDescription', 'role', 'bounds', 'enabled', 'selected', 'resourceId']);
+    if (nodes.some(node => !node || typeof node !== 'object' || Array.isArray(node) || Object.keys(node).some(key => !nodeFields.has(key))
+      || (node.text !== undefined && (typeof node.text !== 'string' || node.text.length > 256))
+      || (node.contentDescription !== undefined && (typeof node.contentDescription !== 'string' || node.contentDescription.length > 256))
       || isSensitiveField(String(node.resourceId ?? '')) || isSensitiveField(String(node.contentDescription ?? ''))
       || !request.requestedFields.some(field => uiSelectorMatches(String(node.resourceId ?? node.contentDescription ?? ''), field)))) throw new ForbiddenException('Device result exceeds the requested UI field scope');
     const beforeConfirm = executor && claimToken ? async () => {
@@ -229,7 +258,8 @@ export class StructuredReadService {
     await this.evidence.advance(userId, evidenceRecord.id, 'CANDIDATE_CREATED', { observationId: observed.observationId, candidateIds }, executor);
 
     const truthRecordIds: string[] = [];
-    const validCandidates = observed.candidates.filter((candidate) => candidate.value && typeof candidate.value === 'object' && (candidate.value as Record<string, unknown>).confidence !== undefined && Number((candidate.value as Record<string, unknown>).confidence) >= 0.8);
+    // A readable page and valid field format prove an observation, not the business fact.
+    const validCandidates = envelope.sourceType === 'DEVICE_APP' ? [] : observed.candidates.filter((candidate) => candidate.value && typeof candidate.value === 'object' && (candidate.value as Record<string, unknown>).confidence !== undefined && Number((candidate.value as Record<string, unknown>).confidence) >= 0.8);
     for (const candidate of validCandidates) {
       if (await this.isStaleVersion(userId, candidate.subjectKey, envelope.resourceVersion, executor)) {
         await this.pipeline.rejectCandidate(userId, candidate.id, executor).catch(() => undefined);
@@ -240,6 +270,7 @@ export class StructuredReadService {
       truthRecordIds.push(truth.id);
     }
     const finalStatus = resolveStructuredReadOutcome({ candidateIds, truthRecordIds });
+    await beforeConfirm?.(); // Also fence candidate-only publication before completion commits.
     await this.evidence.advance(userId, evidenceRecord.id, readEvidenceStatusForOutcome(finalStatus), { truthRecordIds }, executor);
     await this.audit.append({
       actorType: 'user', actorUserId: userId, action: 'STRUCTURED_READ_COMPLETED', resourceType: 'read_evidence', resourceId: evidenceRecord.id,
@@ -291,12 +322,17 @@ export class StructuredReadService {
       throw new StructuredReadSourceInvalidError('App read session is expired or no longer active');
     }
     if (session.targetPackage !== request.packageName) throw new StructuredReadSourceInvalidError('App read session package does not match the request');
+    if (!session.modesJson.includes('UI_READ')) throw new StructuredReadSourceInvalidError('Notification/share consent does not authorize UI reads');
     const deviceQuery = executor.select().from(trustedDevices).where(and(eq(trustedDevices.id, session.trustedDeviceId), eq(trustedDevices.userId, userId))).limit(1);
     const device = (await (lock ? deviceQuery.for('update') : deviceQuery))[0];
     if (!device || device.status !== 'active' || device.revokedAt || (request.deviceId && device.deviceId !== request.deviceId)) throw new StructuredReadSourceInvalidError('App read session device does not match the request');
     const appQuery = executor.select().from(deviceAppConnections).where(and(eq(deviceAppConnections.id, session.deviceAppConnectionId), eq(deviceAppConnections.userId, userId))).limit(1);
     const app = (await (lock ? appQuery.for('update') : appQuery))[0];
     if (!app?.enabled || !app.launchable || app.trustedDeviceId !== session.trustedDeviceId || app.packageName !== session.targetPackage || app.deviceId !== device.deviceId) throw new StructuredReadSourceInvalidError('Original app source is no longer available');
+    const consent = await frozenUiReadConsent(executor, userId, session.id);
+    if (!consent || consent.version !== 'ui-read.v1' || consent.sourceVersion !== app.updatedAt.toISOString() || !Array.isArray(request.requestedFields) || request.requestedFields.some(field => !consent.requestedFields.includes(field))) throw new StructuredReadSourceInvalidError('Original UI read consent or source version changed');
+    try { await assertUiReadCapability(executor, userId, session.trustedDeviceId, lock); }
+    catch { throw new StructuredReadSourceInvalidError('Original UI read grant, system permission or observer health unavailable'); }
     return session;
   }
 
@@ -392,7 +428,7 @@ export class StructuredReadService {
   }
 }
 
-function uiSelectorMatches(selector: string, field: string) { return selector === field || selector.endsWith('/' + field) || selector.endsWith('.' + field); }
+function uiSelectorMatches(selector: string, field: string) { return selector === field; }
 
 function fieldToJson(field: StructuredReadField): Record<string, JsonValue> {
   return {

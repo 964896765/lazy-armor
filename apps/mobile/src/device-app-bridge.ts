@@ -1,4 +1,6 @@
 import { NativeModules, Platform } from 'react-native';
+import type { DeviceTask } from './device-task-client';
+import type { UiReadConsent } from '@lazy-armor/plan-schema/mobile';
 
 export interface DiscoveredDeviceApp {
   packageName: string;
@@ -50,6 +52,10 @@ export interface MobileNotificationPreview {
 }
 
 export interface NativeAppReadSessionStatus {
+  accountId?: string;
+  modes?: string[];
+  observerPermissionGranted?: boolean;
+  observerConnected?: boolean;
   active: boolean;
   sessionId: string | null;
   targetPackage: string | null;
@@ -73,6 +79,7 @@ export interface CapturedUiNode {
 export interface CapturedAppReadUiNodes {
   nodes: CapturedUiNode[];
   evidenceHash: string | null;
+  observedAt?: number;
 }
 
 export interface NativeAppReadSessionEvent {
@@ -103,11 +110,12 @@ interface NativeDeviceBridge {
   acknowledgeNotificationPreviews(eventIds: string[]): Promise<boolean>;
   getAppReadSessionStatus(): Promise<NativeAppReadSessionStatus>;
   openUsageAccessSettings(): Promise<boolean>;
-  startAppReadSession(sessionId: string, targetPackage: string, modes: string[], expiresAt: number): Promise<boolean>;
+  openPageReadSettings(): Promise<boolean>;
+  startAppReadSession(accountId: string, sessionId: string, targetPackage: string, modes: string[], expiresAt: number, fields: string[], sourceVersion: string): Promise<boolean>;
   stopAppReadSession(): Promise<boolean>;
   drainAppReadSessionEventsJson(): Promise<string>;
   acknowledgeAppReadSessionEvents(eventKeys: string[]): Promise<boolean>;
-  captureAppReadUiNodes(targetPackage: string, allowedSelectors: string[]): Promise<string>;
+  captureAppReadUiNodes(taskJson: string): Promise<string>;
   startSpeechRecognition(accountId:string,locale: string): Promise<string>;
   cancelSpeechRecognition(): Promise<boolean>;
 }
@@ -290,11 +298,17 @@ export async function openUsageAccessSettings(): Promise<boolean> {
   try { return await native.openUsageAccessSettings(); } catch { return false; }
 }
 
-export async function startNativeAppReadSession(sessionId: string, targetPackage: string, modes: string[], expiresAt: string): Promise<boolean> {
+export async function openPageReadSettings(): Promise<boolean> {
+  const native = bridge();
+  if (!native || typeof native.openPageReadSettings !== 'function') return false;
+  try { return await native.openPageReadSettings(); } catch { return false; }
+}
+
+export async function startNativeAppReadSession(accountId: string, sessionId: string, targetPackage: string, modes: string[], expiresAt: string, consent?: UiReadConsent & { sourceVersion: string }): Promise<boolean> {
   const native = bridge();
   const expiry = new Date(expiresAt).getTime();
   if (!native || typeof native.startAppReadSession !== 'function' || !sessionId || !targetPackage || !Number.isFinite(expiry)) return false;
-  try { return await native.startAppReadSession(sessionId, targetPackage, modes, expiry); } catch { return false; }
+  try { return await native.startAppReadSession(accountId, sessionId, targetPackage, modes, expiry, consent?.requestedFields ?? [], consent?.sourceVersion ?? ''); } catch { return false; }
 }
 
 export async function stopNativeAppReadSession(): Promise<boolean> {
@@ -327,19 +341,18 @@ export async function acknowledgeAppReadSessionEvents(eventKeys: string[]): Prom
   try { return await native.acknowledgeAppReadSessionEvents(accepted); } catch { return false; }
 }
 
-export async function captureAppReadUiNodes(packageName: string, allowedSelectors: string[]): Promise<CapturedAppReadUiNodes | null> {
-  if (!packageName.trim()) return null;
-  const selectors = [...new Set(allowedSelectors.filter((item) => typeof item === 'string' && item.trim() && item !== '*'))].slice(0, 200);
-  if (selectors.length === 0) return null;
+export async function captureAppReadUiNodes(task: DeviceTask): Promise<CapturedAppReadUiNodes | null> {
+  if (task.taskType !== 'APP_STRUCTURED_READ' || !task.dispatchAuthorization || !task.claimToken || !task.leaseExpiresAt || Date.parse(task.leaseExpiresAt) <= Date.now()) return null;
   const native = bridge();
   if (!native || typeof native.captureAppReadUiNodes !== 'function') return null;
   try {
-    const parsed = JSON.parse(await native.captureAppReadUiNodes(packageName, selectors)) as unknown;
+    const parsed = JSON.parse(await native.captureAppReadUiNodes(JSON.stringify(task))) as unknown;
     if (!parsed || typeof parsed !== 'object' || !Array.isArray((parsed as { nodes?: unknown }).nodes)) return null;
     const nodes = (parsed as { nodes: unknown[]; evidenceHash?: unknown }).nodes.filter(isSafeCapturedUiNode).slice(0, 200);
     if (nodes.length === 0) return null;
     const evidenceHash = /^[a-f0-9]{64}$/.test(String((parsed as { evidenceHash?: unknown }).evidenceHash)) ? (parsed as { evidenceHash: string }).evidenceHash : null;
-    return { nodes, evidenceHash };
+    const observedAt = (parsed as { observedAt?: unknown }).observedAt;
+    return { nodes, evidenceHash, ...(typeof observedAt === 'number' && Number.isFinite(observedAt) ? { observedAt } : {}) };
   } catch {
     return null;
   }

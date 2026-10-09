@@ -1,7 +1,10 @@
-import { createHash, generateKeyPairSync, sign, randomUUID } from 'node:crypto';
+import { createHash, generateKeyPairSync, sign, randomUUID, createPublicKey, verify } from 'node:crypto';
+import { NativeCalendarRuntimeService } from '../src/execution/native-calendar-runtime.service';
+import { LocalCapabilitiesService } from '../src/consumer/local-capabilities.service';
+import { LOCAL_CAPABILITY_CATALOG } from '@lazy-armor/plan-schema';
 import { createServer, type Server } from 'node:http';
 import type { INestApplication } from '@nestjs/common';
-import { deviceAppConnections } from '@lazy-armor/database';
+import { deviceAppConnections, localCapabilityStates } from '@lazy-armor/database';
 import { newId } from '@lazy-armor/shared';
 import { createPool, type Pool, type RowDataPacket } from 'mysql2/promise';
 import request from 'supertest';
@@ -116,7 +119,11 @@ describe.skipIf(!enabled).sequential('R6 Controlled Structured Read golden reads
     trustedDeviceId = verified.body.id as string;
     appConnectionId = newId();
     await db.insert(deviceAppConnections).values({ id: appConnectionId, userId: owner.userId, deviceId, trustedDeviceId, packageName: 'com.lazyarmor.fixture.wallet', displayName: 'Fixture Wallet', connectionType: 'generic', enabled: 1, modesJson: ['share'], trustLevel: 'key_proven', createdAt: new Date(), updatedAt: new Date() });
+    await db.insert(localCapabilityStates).values({ id: newId(), userId: owner.userId, trustedDeviceId, capability: 'accessibility.read', manifestVersion: 'android-local-v5', userGrant: true, systemPermission: 'GRANTED', health: 'HEALTHY', checkedAt: new Date(), evidenceRef: 'isolated-native-ui-consent', updatedAt: new Date() });
   });
+
+  const createUiSession = () => sessions.create(owner.userId, { connectionId: appConnectionId, targetPackage: 'com.lazyarmor.fixture.wallet', modes: ['UI_READ'], durationSeconds: 300,
+    uiReadConsent: { version: 'ui-read.v1', requestedFields: ['wallet.balance', 'transaction.latest.amount', 'transaction.latest.time'] } }, trustedDeviceId);
 
   afterAll(async () => {
     if (pool) await pool.query("UPDATE provider_capability_manifests SET status='SUPERSEDED',superseded_at=UTC_TIMESTAMP(6) WHERE provider_key='feishu'");
@@ -164,8 +171,8 @@ describe.skipIf(!enabled).sequential('R6 Controlled Structured Read golden reads
     expect(await findTruthValue(pool, owner.userId, 'totalAmount')).toBe(128.5);
   });
 
-  it('Golden 5: Android simulated structured read -> Truth (real device stays AWAITING)', async () => {
-    const session = await sessions.create(owner.userId, { connectionId: appConnectionId, targetPackage: 'com.lazyarmor.fixture.wallet', modes: ['SHARE'], durationSeconds: 300 }, trustedDeviceId);
+  it('Golden 5: consented Android fixture -> Candidate; Truth needs separate verification (real device stays AWAITING)', async () => {
+    const session = await createUiSession();
     const awaiting = await structuredRead.androidRead(owner.userId, {
       requestId: `android-${unique}`, userId: owner.userId, sourceType: 'DEVICE_APP', resourceType: 'FixtureWallet', resourceId: 'wallet-1',
       packageName: 'com.lazyarmor.fixture.wallet', appReadSessionId: session.id, deviceId, requestedFields: ['wallet.balance'],
@@ -176,18 +183,30 @@ describe.skipIf(!enabled).sequential('R6 Controlled Structured Read golden reads
     // Isolated simulated foreground evidence; not native capture acceptance.
     await pool.query("UPDATE app_read_sessions SET status='READING',last_heartbeat_at=UTC_TIMESTAMP(6) WHERE id=UUID_TO_BIN(?)", [session.id]);
     const claimed = await deviceTasks.claim(owner.userId, trustedDeviceId, deviceId, taskId);
+    const ticket = (claimed as typeof claimed & { dispatchAuthorization: { payload: string; signature: string } }).dispatchAuthorization;
+    const verifier = createPublicKey({ format: 'der', type: 'spki', key: Buffer.from(app.get(NativeCalendarRuntimeService).publicSigningKey(), 'base64') });
+    expect(verify('sha256', Buffer.from(ticket.payload, 'base64'), verifier, Buffer.from(ticket.signature, 'base64'))).toBe(true);
+    expect(JSON.parse(Buffer.from(ticket.payload, 'base64').toString())).toMatchObject({ version: 'ui-observation.v1', taskId, userId: owner.userId, sessionId: session.id, requestedFields: ['wallet.balance'], claimToken: claimed.claimToken });
     expect((await deviceTasks.evidence(owner.userId, trustedDeviceId, deviceId, taskId)).readScope?.fields).toEqual(['wallet.balance']);
     const completed = await deviceTasks.complete(owner.userId, trustedDeviceId, deviceId, taskId, claimed.claimToken!, {
       packageName: 'com.lazyarmor.fixture.wallet', resourceId: 'wallet-1', screenId: session.id, activityName: 'WalletActivity', observedAt: new Date().toISOString(),
       nodes: [{ resourceId: 'wallet.balance', text: '1,234.50', role: 'TextView', enabled: true }],
     });
-    expect(completed.reality).toMatchObject({ truthRecordIds: [expect.stringMatching(/^[0-9a-f-]{36}$/)] });
+    expect(completed.reality).toMatchObject({ truthRecordIds: [], candidateIds: [expect.stringMatching(/^[0-9a-f-]{36}$/)] });
+    expect(await findTruthValue(pool, owner.userId, 'wallet.balance')).toBeNull();
+    // Explicit isolated user verification is independent of field parsing.
+    const candidateId = (completed.reality as { candidateIds: string[] }).candidateIds[0];
+    const detail = await request(app.getHttpServer()).get('/api/candidates/' + candidateId).set(auth(owner.token)).expect(200);
+    expect(detail.body).toMatchObject({ status: 'PENDING', value: { field: 'wallet.balance', value: 1234.5 }, source: { providerKey: 'edge-device' } });
+    expect(detail.body).not.toHaveProperty('nodes');
+    const confirmations = await Promise.all([0, 1].map(() => request(app.getHttpServer()).post('/api/candidates/' + candidateId + '/confirm').set(auth(owner.token)).send({}).expect(201)));
+    expect(confirmations[0].body.id).toBe(confirmations[1].body.id);
     expect(await findTruthValue(pool, owner.userId, 'wallet.balance')).toBe(1234.5);
   });
 
   it('rejects wrong package, wrong device, wrong user and expired AppReadSession', async () => {
     await clearActiveSessions(pool, trustedDeviceId);
-    const session = await sessions.create(owner.userId, { connectionId: appConnectionId, targetPackage: 'com.lazyarmor.fixture.wallet', modes: ['SHARE'], durationSeconds: 300 }, trustedDeviceId);
+    const session = await createUiSession();
     const base = {
       userId: owner.userId, sourceType: 'DEVICE_APP' as const, resourceType: 'FixtureWallet', resourceId: 'wallet-1',
       packageName: 'com.lazyarmor.fixture.wallet', appReadSessionId: session.id, deviceId, requestedFields: ['wallet.balance'],
@@ -195,15 +214,35 @@ describe.skipIf(!enabled).sequential('R6 Controlled Structured Read golden reads
     await expect(structuredRead.androidRead(owner.userId, { ...base, requestId: `r-${unique}-wp`, packageName: 'com.other.app' })).rejects.toThrow(/package/);
     await expect(structuredRead.androidRead(owner.userId, { ...base, requestId: `r-${unique}-wd`, deviceId: 'wrong-device' })).rejects.toThrow(/device/);
     const stranger = await register(app, `r6-stranger-${unique}@example.com`, 'R6 Stranger');
+    const candidateId = (await app.get(RealityPipelineService).listPending(owner.userId))[0]?.id;
+    if (candidateId) await request(app.getHttpServer()).get('/api/candidates/' + candidateId).set(auth(stranger.token)).expect(404);
     await expect(structuredRead.androidRead(stranger.userId, { ...base, requestId: `r-${unique}-wu`, userId: stranger.userId })).rejects.toThrow();
     await pool.query('UPDATE app_read_sessions SET expires_at=UTC_TIMESTAMP(6)-INTERVAL 1 SECOND WHERE id=UUID_TO_BIN(?)', [session.id]);
     await expect(structuredRead.androidRead(owner.userId, { ...base, requestId: `r-${unique}-we` })).rejects.toThrow(/expired|active/);
   });
 
+  it('rejects SHARE as UI consent, narrowed-scope escalation, revoked grants and source-version ABA', async () => {
+    await clearActiveSessions(pool, trustedDeviceId);
+    const shared = await sessions.create(owner.userId, { connectionId: appConnectionId, targetPackage: 'com.lazyarmor.fixture.wallet', modes: ['SHARE'], durationSeconds: 300 }, trustedDeviceId);
+    const read = (sessionId: string, fields = ['wallet.balance']) => structuredRead.androidRead(owner.userId, { requestId: 'consent-' + sessionId, userId: owner.userId, sourceType: 'DEVICE_APP', resourceType: 'FixtureWallet', resourceId: 'scope-wallet', packageName: 'com.lazyarmor.fixture.wallet', appReadSessionId: sessionId, deviceId, requestedFields: fields });
+    await expect(read(shared.id)).rejects.toThrow(/does not authorize UI/);
+    await clearActiveSessions(pool, trustedDeviceId);
+    await expect(sessions.create(owner.userId, { connectionId: appConnectionId, targetPackage: 'com.lazyarmor.fixture.wallet', modes: ['UI_READ'], durationSeconds: 300 }, trustedDeviceId)).rejects.toThrow(/consent/);
+    const scoped = await sessions.create(owner.userId, { connectionId: appConnectionId, targetPackage: 'com.lazyarmor.fixture.wallet', modes: ['UI_READ'], durationSeconds: 300, uiReadConsent: { version: 'ui-read.v1', requestedFields: ['wallet.balance'] } }, trustedDeviceId);
+    await expect(read(scoped.id, ['transaction.latest.amount'])).rejects.toThrow(/consent/);
+    const one = await read(scoped.id), two = await read(scoped.id);
+    expect(one.acceptance.deviceTaskId).toBe(two.acceptance.deviceTaskId);
+    await pool.query("UPDATE local_capability_states SET user_grant=0 WHERE user_id=UUID_TO_BIN(?) AND capability='accessibility.read'", [owner.userId]);
+    await expect(read(scoped.id)).rejects.toThrow(/grant/);
+    await pool.query("UPDATE local_capability_states SET user_grant=1 WHERE user_id=UUID_TO_BIN(?) AND capability='accessibility.read'", [owner.userId]);
+    await pool.query('UPDATE device_app_connections SET updated_at=DATE_ADD(updated_at,INTERVAL 1 SECOND) WHERE id=UUID_TO_BIN(?)', [appConnectionId]);
+    await expect(read(scoped.id)).rejects.toThrow(/source version/);
+  });
+
   it('rejects observations from a stopped or replaced session and fields outside the requested scope before Truth', async () => {
-    for (const change of ['stopped', 'replaced', 'extra-field', 'future-observation', 'stale-heartbeat', 'disabled-source']) {
+    for (const change of ['stopped', 'replaced', 'extra-field', 'future-observation', 'stale-heartbeat', 'disabled-source', 'screen-dump', 'selector-suffix']) {
       await clearActiveSessions(pool, trustedDeviceId);
-      const session = await sessions.create(owner.userId, { connectionId: appConnectionId, targetPackage: 'com.lazyarmor.fixture.wallet', modes: ['SHARE'], durationSeconds: 300 }, trustedDeviceId);
+      const session = await createUiSession();
       const requestId = 'scope-' + change + '-' + unique;
       const awaiting = await structuredRead.androidRead(owner.userId, { requestId, userId: owner.userId, sourceType: 'DEVICE_APP', resourceType: 'FixtureWallet', resourceId: 'wallet-1',
         packageName: 'com.lazyarmor.fixture.wallet', appReadSessionId: session.id, deviceId, requestedFields: ['wallet.balance'] });
@@ -211,7 +250,7 @@ describe.skipIf(!enabled).sequential('R6 Controlled Structured Read golden reads
       const taskId = awaiting.acceptance.deviceTaskId as string, claim = await deviceTasks.claim(owner.userId, trustedDeviceId, deviceId, taskId);
       const result = { packageName: 'com.lazyarmor.fixture.wallet', resourceId: 'wallet-1', screenId: change === 'replaced' ? randomUUID() : session.id,
         observedAt: new Date(Date.now() + (change === 'future-observation' ? 60000 : 0)).toISOString(),
-        nodes: [{ resourceId: change === 'extra-field' ? 'transaction.latest.amount' : 'wallet.balance', text: '999' }] };
+        nodes: [{ resourceId: change === 'extra-field' ? 'transaction.latest.amount' : change === 'selector-suffix' ? 'unrequested/wallet.balance' : 'wallet.balance', text: '999' }], ...(change === 'screen-dump' ? { rawScreenText: 'unrequested content' } : {}) };
       if (change === 'stopped') await clearActiveSessions(pool, trustedDeviceId);
       if (change === 'stale-heartbeat') await pool.query('UPDATE app_read_sessions SET last_heartbeat_at=DATE_SUB(UTC_TIMESTAMP(6),INTERVAL 1 MINUTE) WHERE id=UUID_TO_BIN(?)', [session.id]);
       if (change === 'disabled-source') await pool.query('UPDATE device_app_connections SET enabled=0 WHERE id=UUID_TO_BIN(?)', [appConnectionId]);
@@ -223,9 +262,23 @@ describe.skipIf(!enabled).sequential('R6 Controlled Structured Read golden reads
     }
   });
 
+  it('signed grant revoke/regrant terminates the old UI session and preserves its Task identity', async () => {
+    await clearActiveSessions(pool, trustedDeviceId);
+    const session = await createUiSession();
+    const result = await structuredRead.androidRead(owner.userId, { requestId: 'grant-revoke-' + unique, userId: owner.userId, sourceType: 'DEVICE_APP', resourceType: 'FixtureWallet', resourceId: 'revoked-wallet', packageName: 'com.lazyarmor.fixture.wallet', appReadSessionId: session.id, deviceId, requestedFields: ['wallet.balance'] });
+    const manifest = (enabled: boolean) => ({ manifestVersion: 'android-local-v5', capabilities: LOCAL_CAPABILITY_CATALOG.map(spec => ({ key: spec.key, userGrant: spec.key === 'accessibility.read' && enabled, systemPermission: 'GRANTED', health: 'HEALTHY', checkedAt: Date.now() })) });
+    const receiver = app.get(LocalCapabilitiesService);
+    await receiver.receive(owner.userId, trustedDeviceId, 'isolated-revoke', manifest(false));
+    await receiver.receive(owner.userId, trustedDeviceId, 'isolated-regrant', manifest(true));
+    expect(await sessions.get(owner.userId, session.id)).toMatchObject({ status: 'FAILED', terminalReason: 'UI_READ_AUTHORITY_CHANGED' });
+    await expect(deviceTasks.claim(owner.userId, trustedDeviceId, deviceId, result.acceptance.deviceTaskId)).rejects.toThrow(/no longer active/);
+    const [rows] = await pool.query<any[]>('SELECT status,result_hash FROM device_tasks WHERE id=UUID_TO_BIN(?)', [result.acceptance.deviceTaskId]);
+    expect(rows[0]).toMatchObject({ status: 'PENDING', result_hash: null });
+  });
+
   it('rolls back all partial fields if publication loses its source, retaining the original claim and historical Truth', async () => {
     await clearActiveSessions(pool, trustedDeviceId);
-    const session = await sessions.create(owner.userId, { connectionId: appConnectionId, targetPackage: 'com.lazyarmor.fixture.wallet', modes: ['SHARE'], durationSeconds: 300 }, trustedDeviceId);
+    const session = await createUiSession();
     const requestId = 'publication-rollback-' + unique;
     const awaiting = await structuredRead.androidRead(owner.userId, { requestId, userId: owner.userId, sourceType: 'DEVICE_APP', resourceType: 'FixtureWallet', resourceId: 'rollback-wallet',
       packageName: 'com.lazyarmor.fixture.wallet', appReadSessionId: session.id, deviceId, requestedFields: ['wallet.balance', 'transaction.latest.amount'],
@@ -233,16 +286,16 @@ describe.skipIf(!enabled).sequential('R6 Controlled Structured Read golden reads
     await pool.query("UPDATE app_read_sessions SET status='READING',last_heartbeat_at=UTC_TIMESTAMP(6) WHERE id=UUID_TO_BIN(?)", [session.id]);
     const taskId = awaiting.acceptance.deviceTaskId as string, claim = await deviceTasks.claim(owner.userId, trustedDeviceId, deviceId, taskId);
     const countVersions = async () => (await pool.query<any[]>('SELECT COUNT(*) n FROM truth_record_versions v JOIN truth_records r ON r.id=v.truth_record_id WHERE r.user_id=UUID_TO_BIN(?)', [owner.userId]))[0][0].n;
-    const before = await countVersions(), pipeline = app.get(RealityPipelineService), original = pipeline.confirmCandidate.bind(pipeline);
-    let confirmations = 0;
-    const spy = vi.spyOn(pipeline, 'confirmCandidate').mockImplementation(async (...args) => {
-      if (++confirmations === 2) throw new StructuredReadSourceInvalidError('Isolated source invalidation during final publication');
+    const before = await countVersions(), original = (structuredRead as any).assertReadSession.bind(structuredRead);
+    let sourceChecks = 0;
+    const spy = vi.spyOn(structuredRead as any, 'assertReadSession').mockImplementation(async (...args) => {
+      if (++sourceChecks === 2) throw new StructuredReadSourceInvalidError('Isolated source invalidation during final publication');
       return original(...args);
     });
     try {
       await expect(deviceTasks.complete(owner.userId, trustedDeviceId, deviceId, taskId, claim.claimToken!, { packageName: 'com.lazyarmor.fixture.wallet', resourceId: 'rollback-wallet',
         screenId: session.id, observedAt: new Date().toISOString(), nodes: [{ resourceId: 'wallet.balance', text: '999' }, { resourceId: 'transaction.latest.amount', text: '2' }] })).rejects.toThrow('source invalidation');
-      expect(confirmations).toBe(2); expect(await countVersions()).toBe(before);
+      expect(sourceChecks).toBe(2); expect(await countVersions()).toBe(before);
       const [rows] = await pool.query<any[]>('SELECT status,result_hash FROM device_tasks WHERE id=UUID_TO_BIN(?)', [taskId]);
       expect(rows[0]).toMatchObject({ status: 'CLAIMED', result_hash: null });
       const [observations] = await pool.query<any[]>('SELECT COUNT(*) n FROM source_observations WHERE user_id=UUID_TO_BIN(?) AND external_event_key=?', [owner.userId, 'structured-read:' + requestId]);
@@ -252,7 +305,7 @@ describe.skipIf(!enabled).sequential('R6 Controlled Structured Read golden reads
 
   it('rejects unsigned or changed completion while replay retains the same terminal identity', async () => {
     await clearActiveSessions(pool, trustedDeviceId);
-    const session = await sessions.create(owner.userId, { connectionId: appConnectionId, targetPackage: 'com.lazyarmor.fixture.wallet', modes: ['SHARE'], durationSeconds: 300 }, trustedDeviceId);
+    const session = await createUiSession();
 
     // unsigned completion
     const unsignedTask = await structuredRead.androidRead(owner.userId, {
@@ -279,7 +332,7 @@ describe.skipIf(!enabled).sequential('R6 Controlled Structured Read golden reads
     const good = { packageName: 'com.lazyarmor.fixture.wallet', resourceId: 'wallet-1', screenId: session.id, observedAt: new Date().toISOString(), nodes: [{ resourceId: 'wallet.balance', text: '5' }] };
     const completed = await deviceTasks.complete(owner.userId, trustedDeviceId, deviceId, dupTask.acceptance.deviceTaskId as string, dupClaim.claimToken!, good);
     const replay = await deviceTasks.complete(owner.userId, trustedDeviceId, deviceId, dupTask.acceptance.deviceTaskId as string, dupClaim.claimToken!, good);
-    expect(replay).toMatchObject({ id: completed.id, status: 'SUCCEEDED', resultHash: completed.resultHash });
+    expect(replay).toMatchObject({ id: completed.id, status: 'FAILED', errorCode: 'NEEDS_CONFIRMATION', resultHash: completed.resultHash });
     await expect(deviceTasks.complete(owner.userId, trustedDeviceId, deviceId, dupTask.acceptance.deviceTaskId as string, dupClaim.claimToken!, { ...good, nodes: [{ resourceId: 'wallet.balance', text: 'changed' }] })).rejects.toThrow();
   });
 });

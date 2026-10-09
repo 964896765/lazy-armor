@@ -8,6 +8,11 @@ import { assertAppReadProfile, type AppReadProfile } from '@lazy-armor/plan-sche
  */
 export const ANDROID_STRUCTURED_READ_PROFILES: readonly AppReadProfile[] = Object.freeze([
   Object.freeze({
+    packageName: 'com.miui.calculator', profileKey: 'miui.calculator.result', resourceType: 'CalculatorDisplay',
+    factKeys: ['com.miui.calculator:id/result'], allowedSelectors: ['com.miui.calculator:id/result'],
+    requiredForeground: true, sensitiveFields: [], blockedFields: [], parserId: 'generic.structured-read.v1', verificationPolicy: 'STRUCTURED_ONLY',
+  } as AppReadProfile),
+  Object.freeze({
     packageName: 'com.eg.android.AlipayGphone',
     profileKey: 'alipay.wallet',
     resourceType: 'AlipayWallet',

@@ -1,4 +1,10 @@
-export const APP_READ_SESSION_MODES = ['NOTIFICATION', 'SHARE'] as const;
+export const APP_READ_SESSION_MODES = ['NOTIFICATION', 'SHARE', 'UI_READ'] as const;
+export const UI_READ_CONSENT_VERSION = 'ui-read.v1' as const;
+/** Frozen per-session scope. This is read consent, never click/input authority. */
+export interface UiReadConsent {
+  version: typeof UI_READ_CONSENT_VERSION;
+  requestedFields: string[];
+}
 export const APP_READ_SESSION_STATUSES = [
   'CREATED', 'WAITING_FOREGROUND', 'READING', 'TIMEOUT', 'APP_LEFT_FOREGROUND', 'CANCELLED', 'FAILED',
 ] as const;

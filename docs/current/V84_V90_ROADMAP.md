@@ -58,3 +58,5 @@ V85 Memory 基础、候选/引用/关系与真实模型隔离 API 已验，手�
 2026-10-09：V86-RESOURCE-02 的版本绑定资源核对与手动只读来源 fencing 已自动验证、部署与安装，详见 [任务与证据](V86_GOAL_RESOURCE_MATCH.md)。本人合法入口/真实 Goal Runtime 验收继续待正常登录；不以手动 inspection 宣称 V86 CLOSED。随后进入 V87-COMPUTER-01，先收既有受控页面观察的来源/字段/发布边界。
 
 2026-10-09：已完成 [V87-COMPUTER-01 受控页面观察边界](V87_COMPUTER_RUNTIME.md)，后端字段/来源/事务 fencing、Mobile 读取范围及原会话/请求字段最小化同步实现。native UI-node provider 尚未接入；不因 guard、fixtures 或构建把 Computer Use 标记为 REAL_VERIFIED。下一任务为显式页面 consent/mode + 一个真实只读 native observer。
+
+2026-10-10：V87-COMPUTER-02 已实现独立页面授权/健康门、只读 native observer、原 Task 签名 dispatch 和候选核实入口。仅实际 resource ID 已核对的计算器字段开放原生观察；API 79、Mobile 44、Shared 11 回归及构建通过。真人登录/系统授权/页面采集仍 REAL_PENDING，V87 IN_PROGRESS；下一任务接回原 Conversation/Goal，继续复用本轮冻结范围与原 Runtime。

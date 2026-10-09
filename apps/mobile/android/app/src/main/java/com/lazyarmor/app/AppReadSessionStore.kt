@@ -12,13 +12,23 @@ object AppReadSessionStore {
   private const val MAX_EVENTS = 80
   private val packagePattern = Regex("[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+")
 
-  fun start(context: Context, sessionId: String, targetPackage: String, modes: Set<String>, expiresAt: Long): JSONObject {
+  fun start(context: Context, accountId: String, sessionId: String, targetPackage: String, modes: Set<String>, expiresAt: Long, requestedFields: Set<String>, sourceVersion: String): JSONObject {
     require(sessionId.isNotBlank() && targetPackage.matches(packagePattern))
-    require(modes.isNotEmpty() && modes.all { it == "NOTIFICATION" || it == "SHARE" })
+    require(accountId.isNotBlank() && LocalCapabilityManifest.activeAccount(context) == accountId)
+    require(modes.isNotEmpty() && modes.all { it == "NOTIFICATION" || it == "SHARE" || it == "UI_READ" })
+    require(active(context) == null) { "SESSION_ALREADY_ACTIVE" }
+    if ("UI_READ" in modes) {
+      require(modes.size == 1 && requestedFields.isNotEmpty() && requestedFields.size <= 30 && requestedFields.all { it.isNotBlank() && !it.contains('*') })
+      require(sourceVersion.isNotBlank() && LocalCapabilityManifest.activeGrant(context, "accessibility.read") && ReadOnlyPageObserver.connected(context))
+    } else require(requestedFields.isEmpty())
     val now = System.currentTimeMillis()
     require(expiresAt in (now + 5_000)..(now + 15 * 60 * 1000))
     val session = JSONObject()
       .put("sessionId", sessionId)
+      .put("accountId", accountId)
+      .put("requestedFields", JSONArray(requestedFields.sorted()))
+      .put("sourceVersion", sourceVersion)
+      .put("packageVersionCode", packageVersionCode(context, targetPackage))
       .put("targetPackage", targetPackage)
       .put("modes", JSONArray(modes.sorted()))
       .put("status", "WAITING_FOREGROUND")
@@ -31,9 +41,11 @@ object AppReadSessionStore {
 
   fun status(context: Context): JSONObject {
     val session = active(context) ?: return JSONObject().put("active", false).put("usageAccessGranted", ForegroundPackageGuard.hasUsageAccess(context))
+      .put("observerPermissionGranted", ReadOnlyPageObserver.permissionGranted(context)).put("observerConnected", ReadOnlyPageObserver.connected(context))
     return JSONObject(session.toString())
       .put("active", true)
       .put("usageAccessGranted", ForegroundPackageGuard.hasUsageAccess(context))
+      .put("observerPermissionGranted", ReadOnlyPageObserver.permissionGranted(context)).put("observerConnected", ReadOnlyPageObserver.connected(context))
       .put("foregroundPackage", ForegroundPackageGuard.currentPackage(context))
       .put("pendingEventCount", readEvents(context).length())
   }
@@ -41,6 +53,11 @@ object AppReadSessionStore {
   fun active(context: Context): JSONObject? {
     val raw = preferences(context).getString(SESSION_KEY, null) ?: return null
     val session = try { JSONObject(raw) } catch (_: Exception) { return null }
+    if (session.optString("accountId").isBlank() || session.optString("accountId") != LocalCapabilityManifest.activeAccount(context)
+      || (hasMode(session, "UI_READ") && (!LocalCapabilityManifest.activeGrant(context, "accessibility.read") || !ReadOnlyPageObserver.connected(context)))) {
+      appendLifecycle(context, "NATIVE_ERROR", session.optString("targetPackage"), JSONObject().put("reason", "UI_READ_AUTHORITY_CHANGED"))
+      clearSession(context); return null
+    }
     if (session.optLong("expiresAt") <= System.currentTimeMillis()) {
       appendLifecycle(context, "SESSION_TIMED_OUT", session.optString("targetPackage"), JSONObject())
       clearSession(context)
@@ -68,6 +85,15 @@ object AppReadSessionStore {
       session.optString("targetPackage") == packageName &&
       (0 until modes.length()).any { modes.optString(it) == mode }
   }
+
+  fun hasMode(session: JSONObject, mode: String): Boolean = session.optJSONArray("modes")?.let { modes -> (0 until modes.length()).any { modes.optString(it) == mode } } ?: false
+
+  fun packageVersionCode(context: Context, targetPackage: String): Long {
+    val info = context.packageManager.getPackageInfo(targetPackage, 0)
+    return if (android.os.Build.VERSION.SDK_INT >= 28) info.longVersionCode else info.versionCode.toLong()
+  }
+
+  fun clearAccountState(context: Context) { preferences(context).edit().remove(SESSION_KEY).remove(EVENTS_KEY).commit() }
 
   fun appendLifecycle(context: Context, eventType: String, packageName: String, payload: JSONObject) {
     val session = activeWithoutExpiry(context) ?: return
@@ -120,25 +146,6 @@ object AppReadSessionStore {
       if (!eventKeys.contains(item.optString("eventKey"))) retained.put(item)
     }
     preferences(context).edit().putString(EVENTS_KEY, retained.toString()).apply()
-  }
-
-  /**
-   * Controlled UI-node capture for APP_STRUCTURED_READ. It validates the active
-   * session, usage access and foreground package, then returns nodes. Real
-   * node capture requires an accessibility node provider which this app does
-   * not enable; the boundary fails closed with an empty node set rather than
-   * fabricating evidence.
-   */
-  fun captureUiNodes(context: Context, targetPackage: String, selectors: Set<String>): JSONObject {
-    val result = JSONObject().put("nodes", JSONArray()).put("evidenceHash", JSONObject.NULL)
-    if (targetPackage.isBlank() || selectors.isEmpty() || selectors.any { it.isBlank() || it == "*" }) return result
-    val session = active(context) ?: return result
-    if (!ForegroundPackageGuard.hasUsageAccess(context)) return result
-    if (session.optString("targetPackage") != targetPackage) return result
-    if (session.optString("status") != "READING") return result
-    if (ForegroundPackageGuard.currentPackage(context) != targetPackage) return result
-    // No accessibility node provider is enabled by design; capture remains unavailable.
-    return result
   }
 
   private fun append(context: Context, event: JSONObject) {

@@ -601,7 +601,7 @@ export {
   APP_READ_SESSION_EVENT_TYPES, APP_READ_SESSION_HEARTBEAT_GRACE_SECONDS, APP_READ_SESSION_MAX_SECONDS,
   APP_READ_SESSION_MODES, APP_READ_SESSION_STATUSES, APP_READ_SESSION_TERMINAL_STATUSES,
   appReadSessionStatusForEvent, canTransitionAppReadSession, isExactAndroidPackage,
-  type AppReadSessionEventType, type AppReadSessionMode, type AppReadSessionStatus,
+  UI_READ_CONSENT_VERSION, type UiReadConsent, type AppReadSessionEventType, type AppReadSessionMode, type AppReadSessionStatus,
 } from './app-read-session';
 export {
   READ_EVIDENCE_STATUSES, REDACTED_VALUE, SECURITY_BLOCKED_FIELD, SENSITIVE_FIELD_PATTERN,

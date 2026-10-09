@@ -43,6 +43,32 @@ import java.util.TimeZone
  * QUERY_ALL_PACKAGES, does not infer providers, and does not persist an app inventory.
  */
 class DeviceAppBridgeModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModule(reactContext) {
+  /** Canonical server-approved task only; no raw calendar-write entry point. */
+  @ReactMethod
+  fun executeClaimedRuntimeTask(account:String,taskText:String,promise:Promise) {
+    Thread {
+      try {
+        require(android.os.Build.VERSION.SDK_INT >= 26 && taskText.length <= 60000)
+        val task=org.json.JSONObject(taskText)
+        require(task.getString("taskType") in listOf("NATIVE_CALENDAR_CREATE","NATIVE_CALENDAR_WRITE") && task.getString("status") in listOf("CLAIMED","RUNNING"))
+        val ticket=task.getJSONObject("dispatchAuthorization")
+        require(BuildConfig.NATIVE_DISPATCH_PUBLIC_KEY.isNotEmpty()) { "DISPATCH_KEY_UNCONFIGURED" }
+        val payload=Base64.decode(ticket.getString("payload"),Base64.NO_WRAP)
+        val signature=Base64.decode(ticket.getString("signature"),Base64.NO_WRAP)
+        val key=java.security.KeyFactory.getInstance("EC").generatePublic(java.security.spec.X509EncodedKeySpec(Base64.decode(BuildConfig.NATIVE_DISPATCH_PUBLIC_KEY,Base64.NO_WRAP)))
+        val verifier=Signature.getInstance("SHA256withECDSA");verifier.initVerify(key);verifier.update(payload)
+        require(verifier.verify(signature)) { "INVALID_DISPATCH_SIGNATURE" }
+        val claims=org.json.JSONObject(String(payload,Charsets.UTF_8))
+        require(claims.getString("version")=="1" && claims.getString("userId")==account
+          && claims.getString("taskId")==task.getString("id") && claims.getString("claimToken")==task.getString("claimToken")) { "DISPATCH_BINDING_MISMATCH" }
+        require(java.time.OffsetDateTime.parse(claims.getString("expiresAt")).toInstant().toEpochMilli()>System.currentTimeMillis()) { "DISPATCH_LEASE_EXPIRED" }
+        val invocation=org.json.JSONObject(claims.getString("invocationJson"))
+        require(invocation.getString("verificationContractRef")==claims.getString("verificationContractHash"))
+        val result=CalendarInvocationExecutor.execute(reactApplicationContext,account,invocation,claims.getString("targetId"),claims.getLong("authorityEpoch"),invocation.getString("invocationId"),claims.optBoolean("lookupOnly",false))
+        promise.resolve(result.toString())
+      } catch(error:Exception) {promise.reject("DEVICE_WRITE_EXECUTION_FAILED",error)}
+    }.start()
+  }
   private val maxDiscoveryResults = 200
   private val iconSizePx = 48
   private val maxIconBytes = 24_000
@@ -50,6 +76,77 @@ class DeviceAppBridgeModule(reactContext: ReactApplicationContext) : ReactContex
   private val speechPermissionRequestCode = 7104
   private var speechPromise: Promise? = null
   private var speechRecognizer: SpeechRecognizer? = null
+
+  @ReactMethod
+  fun readClipboardOnDemand(promise:Promise){
+    val activity=reactApplicationContext.currentActivity
+    if(activity==null||!activity.hasWindowFocus()){promise.reject("FOREGROUND_REQUIRED","请在前台主动粘贴");return}
+    if(!LocalCapabilityManifest.activeGrant(reactApplicationContext,"clipboard.read_on_demand")){promise.reject("USER_GRANT_REQUIRED","请先开启剪贴板按需读取授权");return}
+    val clipboard=reactApplicationContext.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+    val text=clipboard.primaryClip?.getItemAt(0)?.coerceToText(reactApplicationContext)?.toString().orEmpty()
+    if(text.length>12000){promise.reject("PAYLOAD_TOO_LARGE","分享内容过长");return};promise.resolve(text)
+  }
+  @ReactMethod
+  fun pendingShareArtifact(account:String,receiptId:String,promise:Promise){
+    val receipt=ArtifactShareReceipt.get(reactApplicationContext,account,receiptId)
+    if(receipt==null){promise.resolve(null);return}
+    val bytes=receipt.bytes
+    promise.resolve(org.json.JSONObject().put("contentBase64",Base64.encodeToString(bytes,Base64.NO_WRAP)).put("receivedAt",receipt.receivedAt).put("rawText",receipt.text).put("mimeType",receipt.mimeType).put("fileName",receipt.fileName).put("children",org.json.JSONArray(receipt.children)).toString())
+  }
+  @ReactMethod
+  fun artifactShareReceipt(account:String,receiptId:String,artifactId:String,expectedHash:String,promise:Promise){
+    try{
+      val receipt=ArtifactShareReceipt.get(reactApplicationContext,account,receiptId)?:throw IllegalArgumentException()
+      val hash=MessageDigest.getInstance("SHA-256").digest(receipt.bytes).joinToString(""){"%02x".format(it)}
+      require(hash==expectedHash)
+      val now=receipt.receivedAt
+      val item=org.json.JSONObject().put("artifactId",artifactId).put("sourceSha256",hash).put("acquisitionMethod","ANDROID_SHARE_INTENT").put("userConfirmed",true).put("operationPermission","GRANTED").put("readSucceeded",true).put("receivedAt",now)
+      val items=org.json.JSONArray().put(item);val content=items.toString()
+      val contentHash=MessageDigest.getInstance("SHA-256").digest(content.toByteArray(Charsets.UTF_8)).joinToString(""){"%02x".format(it)}
+      promise.resolve(org.json.JSONObject().put("manifestVersion","android-artifact-v1").put("capability","share.read").put("state","VERIFIED_PRESENT").put("observedAt",now).put("scopeStart",now-1000).put("scopeEnd",now+1000).put("itemCount",1).put("items",items).put("contentJson",content).put("contentHash",contentHash).toString())
+    }catch(_:Exception){promise.reject("E_SHARE_EVIDENCE","分享来源证据已失效，请重新分享")}
+  }
+  @ReactMethod
+  fun artifactFileReceipt(account:String,uriText:String,artifactId:String,expectedHash:String,promise:Promise){
+    if(LocalCapabilityManifest.activeAccount(reactApplicationContext)!=account||!LocalCapabilityManifest.granted(reactApplicationContext,account,"files.read")){promise.resolve(null);return}
+    Thread {
+      try{
+        require(expectedHash.matches(Regex("[a-f0-9]{64}")))
+        val uri=android.net.Uri.parse(uriText)
+        require(uri.scheme=="content"||uri.scheme=="file")
+        if(uri.scheme=="file"){
+          val file=java.io.File(uri.path?:throw IllegalArgumentException()).canonicalFile
+          val cache=reactApplicationContext.cacheDir.canonicalFile
+          require(file.path.startsWith(cache.path+java.io.File.separator))
+        }
+        val bytes=reactApplicationContext.contentResolver.openInputStream(uri)?.use {stream->
+          val output=ByteArrayOutputStream();val buffer=ByteArray(8192)
+          while(true){val count=stream.read(buffer);if(count<0)break;require(output.size()+count<=2_000_000);output.write(buffer,0,count)}
+          output.toByteArray()
+        }?:throw IllegalArgumentException()
+        require(bytes.isNotEmpty()&&bytes.size<=2_000_000)
+        val actual=MessageDigest.getInstance("SHA-256").digest(bytes).joinToString(""){"%02x".format(it)}
+        require(actual==expectedHash)
+        val now=System.currentTimeMillis()
+        val item=org.json.JSONObject().put("artifactId",artifactId).put("sourceSha256",actual).put("acquisitionMethod","ANDROID_DOCUMENT_PICKER").put("userConfirmed",true).put("operationPermission","GRANTED").put("readSucceeded",true).put("receivedAt",now)
+        val items=org.json.JSONArray().put(item);val content=items.toString()
+        val contentHash=MessageDigest.getInstance("SHA-256").digest(content.toByteArray(Charsets.UTF_8)).joinToString(""){"%02x".format(it)}
+        promise.resolve(org.json.JSONObject().put("manifestVersion","android-artifact-v1").put("capability","files.read").put("state","VERIFIED_PRESENT").put("observedAt",now).put("scopeStart",now-1000).put("scopeEnd",now+1000).put("itemCount",1).put("items",items).put("contentJson",content).put("contentHash",contentHash).toString())
+      }catch(_:Exception){promise.reject("E_ARTIFACT_EVIDENCE","文件读取证据未完成，请重新选择文件")}
+    }.start()
+  }
+  @ReactMethod
+  fun clearLocalCapabilityAccount(promise:Promise){ArtifactShareReceipt.clear();LocalCapabilityManifest.activateAccount(reactApplicationContext,null);promise.resolve(true)}
+  @ReactMethod
+  fun localCapabilities(account:String,promise:Promise){try{LocalCapabilityManifest.activateAccount(reactApplicationContext,account);promise.resolve(LocalCapabilityManifest.snapshot(reactApplicationContext,account).toString())}catch(error:Exception){promise.reject("E_MANIFEST",error)}}
+  @ReactMethod
+  fun setLocalCapabilityGrant(account:String,key:String,enabled:Boolean,promise:Promise){try{LocalCapabilityManifest.setGrant(reactApplicationContext,account,key,enabled);promise.resolve(true)}catch(error:Exception){promise.reject("E_GRANT",error)}}
+  @ReactMethod
+  fun acquireLocalResource(account:String,capability:String,start:Double,end:Double,promise:Promise) {
+    if(!LocalCapabilityManifest.granted(reactApplicationContext,account,capability)){promise.reject("E_USER_GRANT","请先开启此本机能力");return}
+    Thread { try { promise.resolve(LocalAcquisition.read(reactApplicationContext,capability,start.toLong(),end.toLong()).toString()) }
+    catch (_:Exception) {promise.reject("E_ACQUISITION","本轮本机读取未完成")} }.start()
+  }
 
   @ReactMethod
   fun runtimeSettings(promise: Promise) {
@@ -88,7 +185,8 @@ class DeviceAppBridgeModule(reactContext: ReactApplicationContext) : ReactContex
   override fun getName(): String = "LazyArmorDeviceBridge"
 
   @ReactMethod
-  fun startSpeechRecognition(locale: String, promise: Promise) {
+  fun startSpeechRecognition(account:String, locale: String, promise: Promise) {
+    if(!LocalCapabilityManifest.granted(reactApplicationContext,account,"voice.input")){promise.reject("E_USER_GRANT","请先在资源页开启语音输入");return}
     if (speechPromise != null) {
       promise.reject("E_SPEECH_BUSY", "已有语音输入正在进行。")
       return
@@ -113,6 +211,7 @@ class DeviceAppBridgeModule(reactContext: ReactApplicationContext) : ReactContex
 
   private fun beginSpeechRecognition(locale: String) {
     Handler(Looper.getMainLooper()).post {
+      if(speechPromise==null)return@post
       if (!SpeechRecognizer.isRecognitionAvailable(reactApplicationContext)) {
         finishSpeechWithError("E_SPEECH_UNAVAILABLE", "此设备没有可用的系统语音识别服务。")
         return@post
@@ -125,12 +224,23 @@ class DeviceAppBridgeModule(reactContext: ReactApplicationContext) : ReactContex
             override fun onBeginningOfSpeech() = Unit
             override fun onRmsChanged(rmsdB: Float) = Unit
             override fun onBufferReceived(buffer: ByteArray?) = Unit
-            override fun onEndOfSpeech() = Unit
+            override fun onEndOfSpeech() { reactApplicationContext.getJSModule(com.facebook.react.modules.core.DeviceEventManagerModule.RCTDeviceEventEmitter::class.java).emit("LazyArmorVoiceState","TRANSCRIBING") }
             override fun onPartialResults(partialResults: Bundle?) = Unit
             override fun onEvent(eventType: Int, params: Bundle?) = Unit
             override fun onError(error: Int) {
-              val cancelled = error == SpeechRecognizer.ERROR_CLIENT
-              finishSpeechWithError(if (cancelled) "E_SPEECH_CANCELLED" else "E_SPEECH_RECOGNITION_FAILED", if (cancelled) "语音输入已取消。" else "没有识别到语音内容，请重试。")
+              val message = when (error) {
+                SpeechRecognizer.ERROR_AUDIO -> "麦克风被占用或录音失败，请关闭其它录音后重试。"
+                SpeechRecognizer.ERROR_NETWORK, SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "系统语音识别网络连接失败，请检查网络后重试。"
+                SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "系统语音识别缺少麦克风权限，请在系统设置中允许。"
+                SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "系统语音识别正在被占用，请稍后重试。"
+                SpeechRecognizer.ERROR_SERVER -> "系统语音识别服务暂不可用，请稍后重试。"
+                SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "没有检测到讲话，请点麦克风后开始说话。"
+                SpeechRecognizer.ERROR_NO_MATCH -> "未能听清，请靠近麦克风后重试。"
+                SpeechRecognizer.ERROR_CLIENT -> "语音输入已取消。"
+                else -> "系统语音识别失败，请检查系统语音服务后重试。"
+              }
+              android.util.Log.w("LazyArmorVoice", "recognition_error=$error")
+              finishSpeechWithError("E_SPEECH_$error", message)
             }
             override fun onResults(results: Bundle?) {
               val transcript = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull { it.isNotBlank() }?.trim()
@@ -374,6 +484,7 @@ class DeviceAppBridgeModule(reactContext: ReactApplicationContext) : ReactContex
   @ReactMethod
   fun drainNotificationPreviews(promise: Promise) {
     try {
+      if(!LocalCapabilityManifest.activeGrant(reactApplicationContext,"notification.read")){promise.resolve(Arguments.createArray());return}
       val queue = LazyArmorNotificationListener.readQueue(reactApplicationContext)
       val results = Arguments.createArray()
       for (index in 0 until queue.length()) {
@@ -417,6 +528,10 @@ class DeviceAppBridgeModule(reactContext: ReactApplicationContext) : ReactContex
       result.putString("status", status.optString("status", "IDLE"))
       result.putDouble("expiresAt", status.optLong("expiresAt", 0).toDouble())
       result.putBoolean("usageAccessGranted", status.optBoolean("usageAccessGranted", false))
+      result.putBoolean("observerPermissionGranted", status.optBoolean("observerPermissionGranted", false))
+      result.putBoolean("observerConnected", status.optBoolean("observerConnected", false))
+      result.putString("accountId", status.optString("accountId", ""))
+      result.putArray("modes", Arguments.fromList(status.optJSONArray("modes")?.let { array -> (0 until array.length()).map { array.getString(it) } } ?: emptyList<String>()))
       if (status.isNull("foregroundPackage")) result.putNull("foregroundPackage") else result.putString("foregroundPackage", status.getString("foregroundPackage"))
       result.putInt("pendingEventCount", status.optInt("pendingEventCount", 0))
       promise.resolve(result)
@@ -436,15 +551,26 @@ class DeviceAppBridgeModule(reactContext: ReactApplicationContext) : ReactContex
   }
 
   @ReactMethod
-  fun startAppReadSession(sessionId: String, targetPackage: String, modes: ReadableArray, expiresAt: Double, promise: Promise) {
+  fun openPageReadSettings(promise: Promise) {
+    try {
+      reactApplicationContext.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+      promise.resolve(true)
+    } catch (error: Exception) { promise.reject("E_PAGE_READ_SETTINGS", "无法打开系统辅助功能设置。", error) }
+  }
+
+  @ReactMethod
+  fun startAppReadSession(accountId: String, sessionId: String, targetPackage: String, modes: ReadableArray, expiresAt: Double, fields: ReadableArray, sourceVersion: String, promise: Promise) {
     try {
       check(reactApplicationContext.getSharedPreferences("lazy_armor_runtime_settings", android.content.Context.MODE_PRIVATE).getBoolean("background", true)) { "后台服务已关闭" }
       val selectedModes = (0 until modes.size()).mapNotNull { modes.getString(it) }.toSet()
-      AppReadSessionStore.start(reactApplicationContext, sessionId, targetPackage, selectedModes, expiresAt.toLong())
+      val requested = (0 until fields.size()).mapNotNull { fields.getString(it) }.toSet()
+      AppReadSessionStore.start(reactApplicationContext, accountId, sessionId, targetPackage, selectedModes, expiresAt.toLong(), requested, sourceVersion)
       ContextCompat.startForegroundService(reactApplicationContext, Intent(reactApplicationContext, AppReadForegroundService::class.java))
+      if ("UI_READ" !in selectedModes) {
       val launch = reactApplicationContext.packageManager.getLaunchIntentForPackage(targetPackage)
         ?: throw IllegalArgumentException("目标应用不可启动")
       reactApplicationContext.startActivity(launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+      }
       promise.resolve(true)
     } catch (error: Exception) {
       AppReadSessionStore.stop(reactApplicationContext, "NATIVE_ERROR", "START_FAILED")
@@ -483,12 +609,30 @@ class DeviceAppBridgeModule(reactContext: ReactApplicationContext) : ReactContex
   }
 
   @ReactMethod
-  fun captureAppReadUiNodes(targetPackage: String, allowedSelectors: ReadableArray, promise: Promise) {
-    try {
-      val selectors = (0 until allowedSelectors.size()).mapNotNull { allowedSelectors.getString(it) }.toSet()
-      promise.resolve(AppReadSessionStore.captureUiNodes(reactApplicationContext, targetPackage, selectors).toString())
-    } catch (error: Exception) {
-      promise.reject("E_APP_READ_UI_NODES_UNAVAILABLE", "无法读取目标应用的可控节点。", error)
+  fun captureAppReadUiNodes(taskText: String, promise: Promise) {
+    if (taskText.length > 32000) { promise.reject("E_PAGE_SCOPE", "页面读取范围无效。"); return }
+    val handler = Handler(Looper.getMainLooper())
+    val deadline = System.currentTimeMillis() + 10_000
+    handler.post {
+      try {
+        val task = org.json.JSONObject(taskText)
+        // Verify before opening the App; raw JS selectors never authorize a capture.
+        ReadOnlyPageObserver.validateTicket(reactApplicationContext, task)
+        val target = task.getJSONObject("payload").getString("packageName")
+        val launch = reactApplicationContext.packageManager.getLaunchIntentForPackage(target) ?: throw IllegalStateException("TARGET_UNAVAILABLE")
+        reactApplicationContext.startActivity(launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        val poll = object : Runnable {
+          override fun run() {
+            try {
+              ReadOnlyPageObserver.validateTicket(reactApplicationContext, task)
+              val session = AppReadSessionStore.active(reactApplicationContext) ?: throw IllegalStateException("SESSION_STOPPED")
+              if (session.optString("status") != "READING" && System.currentTimeMillis() < deadline) { handler.postDelayed(this, 250); return }
+              promise.resolve(ReadOnlyPageObserver.capture(reactApplicationContext, task).toString())
+            } catch (error: Exception) { promise.reject("E_APP_READ_UI_NODES_UNAVAILABLE", "页面读取未完成，请保持目标应用在前台。", error) }
+          }
+        }
+        handler.postDelayed(poll, 250)
+      } catch (error: Exception) { promise.reject("E_APP_READ_UI_NODES_UNAVAILABLE", "页面读取授权已失效。", error) }
     }
   }
 

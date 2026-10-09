@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="read_only_page_observer_label">懒人装甲 · 限时页面读取</string>
+  <string name="read_only_page_observer_description">仅在你确认的应用、限时会话和字段范围内按次读取页面。系统辅助功能权限范围较广，应用内另需授权。不会自动点击、输入、提交或读取密码。</string>
+</resources>

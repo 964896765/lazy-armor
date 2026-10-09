@@ -17,6 +17,7 @@
   <uses-permission android:name="android.permission.VIBRATE"/>
   <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" tools:node="remove"/>
   <queries>
+    <package android:name="com.miui.calculator"/>
     <intent>
       <action android:name="android.speech.action.RECOGNIZE_SPEECH"/>
     </intent>
@@ -37,6 +38,10 @@
       </intent-filter>
     </service>
     <service android:name=".AppReadForegroundService" android:exported="false" android:foregroundServiceType="dataSync"/>
+    <service android:name=".ReadOnlyPageObserver" android:label="@string/read_only_page_observer_label" android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE" android:exported="true">
+      <intent-filter><action android:name="android.accessibilityservice.AccessibilityService"/></intent-filter>
+      <meta-data android:name="android.accessibilityservice" android:resource="@xml/read_only_page_observer"/>
+    </service>
     <activity android:name=".MainActivity" android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|uiMode|smallestScreenSize|assetsPaths" android:launchMode="singleTask" android:windowSoftInputMode="adjustResize" android:theme="@style/Theme.App.SplashScreen" android:exported="true" android:screenOrientation="portrait">
       <intent-filter>
         <action android:name="android.intent.action.MAIN"/>

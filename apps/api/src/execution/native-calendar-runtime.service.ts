@@ -10,7 +10,8 @@ import { actionAdapterBindings, approvalRequests, capabilityInvocations, deviceT
 import { ANDROID_CALENDAR_WRITE_POLICY, ANDROID_CALENDAR_UPDATE_POLICY, ANDROID_CALENDAR_DELETE_POLICY, prepareAndroidCalendarUpdate, prepareAndroidCalendarDelete, nativeCalendarGrant, capabilityInvocationSchema, canonicalStringify, catalogHash, prepareAndroidCalendarCreate, verificationContractHash, type CapabilityInvocation, type VerificationContract } from '@lazy-armor/plan-schema';
 import { newId } from '@lazy-armor/shared';
 import { and, eq, inArray, notInArray, sql } from 'drizzle-orm';
-import { createHash,createPrivateKey,createPublicKey,createECDH,sign } from 'node:crypto';
+import { createHash,createPublicKey,sign } from 'node:crypto';
+import { nativeDispatchSigningKey } from './native-dispatch-signing';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
 import { CapabilityInvocationsService } from '../capability-invocations/capability-invocations.service';
 import { ActionAdapter } from './action-adapter.service';
@@ -34,9 +35,7 @@ export class NativeCalendarRuntimeService {
     private readonly adapter:ActionAdapter,private readonly operations:SideEffectOperationsService,
     private readonly steps:ExecutionStepStateService,private readonly verification:VerificationService,private readonly modules:ModuleRef,private readonly config:ConfigService,private readonly audit:AuditService) {}
   private signingKey() {
-    const seed=createHash('sha256').update('native-device-dispatch-v1:'+this.config.getOrThrow<string>('JWT_SECRET')).digest();
-    const ec=createECDH('prime256v1');ec.setPrivateKey(seed);const publicBytes=ec.getPublicKey();
-    return createPrivateKey({format:'jwk',key:{kty:'EC',crv:'P-256',d:seed.toString('base64url'),x:publicBytes.subarray(1,33).toString('base64url'),y:publicBytes.subarray(33).toString('base64url')}});
+    return nativeDispatchSigningKey(this.config.getOrThrow<string>('JWT_SECRET'));
   }
   publicSigningKey() {return createPublicKey(this.signingKey()).export({format:'der',type:'spki'}).toString('base64');}
   async executionTicket(tx:Tx,userId:string,task:typeof deviceTasks.$inferSelect) {

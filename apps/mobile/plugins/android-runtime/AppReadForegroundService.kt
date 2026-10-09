@@ -3,6 +3,7 @@ package com.lazyarmor.app
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
+import android.app.PendingIntent
 import android.content.Intent
 import android.os.Handler
 import android.os.IBinder
@@ -27,11 +28,14 @@ class AppReadForegroundService : Service() {
       .setSmallIcon(R.mipmap.ic_launcher)
       .setContentTitle("懒人装甲正在验证目标应用")
       .setContentText("只在目标应用位于前台时接收已授权线索")
+      .setContentIntent(PendingIntent.getActivity(this, 4103, packageManager.getLaunchIntentForPackage(packageName), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT))
+      .addAction(0, "停止读取", PendingIntent.getService(this, 4104, Intent(this, AppReadForegroundService::class.java).setAction("STOP_READ_SESSION"), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT))
       .setOngoing(true).build()
     startForeground(4102, notification)
   }
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+    if (intent?.action == "STOP_READ_SESSION") { AppReadSessionStore.stop(applicationContext); stopSelf(); return START_NOT_STICKY }
     handler.removeCallbacks(tick)
     handler.post(tick)
     return START_NOT_STICKY
