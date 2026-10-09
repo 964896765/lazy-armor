@@ -19,6 +19,8 @@ import { Module } from '@nestjs/common';
 import { MemoryModule } from '../memory/memory.module';
 import { ProviderCapabilitiesModule } from '../provider-capabilities/provider-capabilities.module';
 import { GoalResourceMatchService } from './goal-resource-match.service';
+import { GoalPageReadService } from './goal-page-read.service';
+import { AppReadSessionsModule } from '../app-read-sessions/app-read-sessions.module';
 import { AiAdapterModule } from '../ai-adapter/ai-adapter.module';
 import { PlansModule } from '../plans/plans.module';
 import { ConnectionsModule } from '../connections/connections.module';
@@ -27,5 +29,5 @@ import { ConnectorsModule } from '../connectors/connectors.module';
 import { TemplatesModule } from '../templates/templates.module';
 import { ConsumerController } from './consumer.controller';
 import { ConsumerService } from './consumer.service';
-@Module({ imports: [ProviderCapabilitiesModule, MemoryModule, ProfilesModule, RealityPipelineModule,FactDemandsModule,AcquisitionModule, ArtifactModule, AuditModule, CreationDraftsModule, ExecutionModule, CapabilityResolverModule, AiAdapterModule, PlansModule, ConnectionsModule, TrustedDevicesModule, ConnectorsModule, TemplatesModule], controllers: [ConsumerController], providers: [GoalResourceMatchService, PersistentNotificationPlanService, ResourceGapContinuationService, CalendarProjectionService, PlanStateAssessmentService, LocalCapabilitiesService, WorkItemProjectionService, ConsumerService, ConversationOnceService] })
+@Module({ imports: [AppReadSessionsModule, ProviderCapabilitiesModule, MemoryModule, ProfilesModule, RealityPipelineModule,FactDemandsModule,AcquisitionModule, ArtifactModule, AuditModule, CreationDraftsModule, ExecutionModule, CapabilityResolverModule, AiAdapterModule, PlansModule, ConnectionsModule, TrustedDevicesModule, ConnectorsModule, TemplatesModule], controllers: [ConsumerController], providers: [GoalPageReadService, GoalResourceMatchService, PersistentNotificationPlanService, ResourceGapContinuationService, CalendarProjectionService, PlanStateAssessmentService, LocalCapabilitiesService, WorkItemProjectionService, ConsumerService, ConversationOnceService] })
 export class ConsumerModule {}

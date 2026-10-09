@@ -25,11 +25,13 @@ interface AppReadSession {
 }
 
 export default function AppReadSessionPage() {
-  const params = useLocalSearchParams<{ connectionId?: string; packageName?: string; displayName?: string; notificationEnabled?: string; mode?: string }>();
+  const params = useLocalSearchParams<{ connectionId?: string; packageName?: string; displayName?: string; notificationEnabled?: string; mode?: string; conversationId?: string; messageId?: string; version?: string }>();
   const router = useRouter();
   const token = useAuthStore((state) => state.token);
   const client = useQueryClient();
   const pageRead = params.mode === 'UI_READ';
+  const goalRead = Boolean(params.conversationId || params.messageId || params.version);
+  const validGoal = /^[0-9a-f-]{36}$/i.test(params.conversationId ?? '') && /^[0-9a-f-]{36}$/i.test(params.messageId ?? '') && /^\d+$/.test(params.version ?? '');
   const profile = params.packageName ? resolveAppReadProfile(params.packageName) : null;
   const [confirmed, setConfirmed] = useState(false);
   const [taskId, setTaskId] = useState<string | null>(null);
@@ -44,6 +46,11 @@ export default function AppReadSessionPage() {
     enabled: Boolean(token), staleTime: 0,
   });
   const native = useQuery({ queryKey: ['native-app-read-session'], queryFn: appReadSessionStatus, staleTime: 0 });
+  const goal = useQuery({ queryKey: ['goal-page-read', token, params.conversationId, params.messageId], enabled: Boolean(token && goalRead && validGoal), staleTime: 0,
+    queryFn: () => api<{ pageReads: import('@lazy-armor/plan-schema/mobile').GoalPageReadResult[] }>('/conversations/' + params.conversationId, token),
+    refetchInterval: 3000 });
+  const goalResult = goal.data?.pageReads.find(result => result.messageId === params.messageId);
+  const canResumeConfirmed = goalResult?.status === 'CONFIRMED' && !goalResult.deviceTaskId && goalResult.sessionId === current.data?.id;
 
   const sync = useMutation({
     mutationFn: async () => syncNativeEvents(token, current.data?.id ?? null),
@@ -68,11 +75,15 @@ export default function AppReadSessionPage() {
       if (!token || !params.connectionId || !params.packageName) throw new Error('missing_connection');
       await ensureTrustedDevice(token);
       const accountId = await syncLocalCapabilities(token);
-      if (pageRead && (!confirmed || !profile)) throw new Error('请先确认页面读取范围');
+      if (pageRead && ((!confirmed && !canResumeConfirmed) || !profile)) throw new Error('请先确认页面读取范围');
+      if (goalRead && (!pageRead || !validGoal)) throw new Error('请从原会话的资源建议重新打开');
       const modes = pageRead ? ['UI_READ'] : params.notificationEnabled === 'true' ? ['NOTIFICATION', 'SHARE'] : ['SHARE'];
       const body = { connectionId: params.connectionId, targetPackage: params.packageName, modes, durationSeconds: 300,
         ...(pageRead && profile ? { uiReadConsent: { version: 'ui-read.v1', requestedFields: [...profile.allowedSelectors] } } : {}) };
-      const session = await deviceBoundApi<AppReadSession>('/app-read-sessions', token, { method: 'POST', body: JSON.stringify(body) });
+      const session = goalRead
+        ? await deviceBoundApi<AppReadSession>(`/conversations/${params.conversationId}/messages/${params.messageId}/page-read/confirm`, token, { method: 'POST', body: JSON.stringify({ version: Number(params.version), connectionId: params.connectionId, confirmed: true }) })
+        : await deviceBoundApi<AppReadSession>('/app-read-sessions', token, { method: 'POST', body: JSON.stringify(body) });
+      if (!['CREATED', 'WAITING_FOREGROUND', 'READING'].includes(session.status)) return session;
       const nativeStarted = await startNativeAppReadSession(accountId, session.id, session.targetPackage, session.modes, session.expiresAt, session.uiReadConsent);
       const appOpened = nativeStarted && (pageRead || await openDeviceApp(session.targetPackage));
       if (!nativeStarted || !appOpened) {
@@ -82,17 +93,21 @@ export default function AppReadSessionPage() {
       }
       if (pageRead && profile) {
         try {
-          const result = await api<{ acceptance: { deviceTaskId: string } }>('/structured-reads', token, { method: 'POST', body: JSON.stringify({ requestId: 'page-' + session.id, sourceType: 'DEVICE_APP', resourceType: profile.resourceType, resourceId: session.id, packageName: session.targetPackage, appReadSessionId: session.id, requestedFields: session.uiReadConsent!.requestedFields }) });
+          const result = await api<{ acceptance: { deviceTaskId: string } }>('/structured-reads', token, { method: 'POST', body: JSON.stringify({ requestId: (goalRead ? 'goal-page-' : 'page-') + session.id, sourceType: 'DEVICE_APP', resourceType: profile.resourceType, resourceId: session.id, packageName: session.targetPackage, appReadSessionId: session.id, requestedFields: session.uiReadConsent!.requestedFields }) });
           setTaskId(result.acceptance.deviceTaskId);
         } catch (error) {
-          await stopNativeAppReadSession();
-          await deviceBoundApi('/app-read-sessions/' + session.id + '/stop', token, { method: 'POST', body: '{}' }).catch(() => undefined);
+          // A lost enqueue response may already have committed the Task. Preserve
+          // the frozen goal consent for an idempotent resume; expiry still bounds it.
+          if (!goalRead) {
+            await stopNativeAppReadSession();
+            await deviceBoundApi('/app-read-sessions/' + session.id + '/stop', token, { method: 'POST', body: '{}' }).catch(() => undefined);
+          }
           throw error;
         }
       }
       return session;
     },
-    onSuccess: async () => { await Promise.all([current.refetch(), native.refetch()]); },
+    onSuccess: async () => { await Promise.all([current.refetch(), native.refetch(), goalRead ? goal.refetch() : Promise.resolve(), client.invalidateQueries({ queryKey: ['conversation'] })]); },
   });
 
   const stop = useMutation({
@@ -107,11 +122,14 @@ export default function AppReadSessionPage() {
   const session = current.data;
   const activeSession = session && ['CREATED', 'WAITING_FOREGROUND', 'READING'].includes(session.status);
   const canStart = Boolean(token && params.connectionId && params.packageName && native.data?.usageAccessGranted && !activeSession
+    && (!goalRead || validGoal)
+    && !goalResult
     && (!pageRead || (profile && confirmed && grant.data && native.data?.observerConnected && native.data?.observerPermissionGranted)));
   return <SafeAreaView style={styles.safeArea} edges={['top']}>
     <ScrollView contentContainerStyle={styles.content}>
       <WorkspaceHeader title={pageRead ? '限时页面读取' : '受控读取会话'} onBack={() => router.canGoBack() ? router.back() : router.replace('/phone-apps' as never)} />
       <Text style={styles.subtitle}>{pageRead ? '核对本次应用和字段范围，确认后按次观察' : '只在目标应用位于前台时接收你允许的线索'}</Text>
+      {goalRead && validGoal ? <Surface><Text style={styles.body}>本次读取属于原会话目标。核实后的结果会回到同一会话。</Text><ActionButton label="返回原会话" tone="quiet" onPress={() => router.replace({ pathname: '/chat', params: { conversationId: params.conversationId } } as never)} /></Surface> : null}
       {current.isLoading || native.isLoading ? <ActivityIndicator color={colors.primary} /> : null}
       {!native.data?.usageAccessGranted ? <Surface>
         <View style={styles.cardHeading}><Ionicons name="shield-checkmark-outline" size={24} color={colors.warning} /><Text style={styles.cardTitle}>需要前台验证权限</Text></View>
@@ -127,8 +145,9 @@ export default function AppReadSessionPage() {
         <View style={styles.actions}><ActionButton label={start.isPending ? '正在启动…' : pageRead ? '确认并读取一次' : '启动并打开应用'} onPress={() => start.mutate()} disabled={!canStart || start.isPending} /></View>
       </Surface>}
       {activeSession ? <View style={styles.actions}><ActionButton label={sync.isPending ? '正在同步…' : '同步会话状态'} tone="quiet" onPress={() => sync.mutate()} disabled={sync.isPending} /><ActionButton label="停止会话" tone="danger" onPress={() => stop.mutate()} disabled={stop.isPending} /></View> : null}
-      {taskId ? <Surface><Text style={styles.cardTitle}>本次读取</Text><Text style={styles.body}>返回后查看读取状态与待核实线索。不会把节点内容直接标成事实。</Text><ActionButton label="查看读取结果" onPress={() => router.push({ pathname: '/connections/device-tasks/[id]', params: { id: taskId } } as never)} /></Surface> : null}
-      {start.isError || sync.isError || stop.isError ? <Text style={styles.error}>本次操作未完成。系统保持 fail-closed，不会把未验证线索写成事实。</Text> : null}
+      {canResumeConfirmed ? <ActionButton label={start.isPending ? '正在恢复…' : '继续已确认的读取'} disabled={start.isPending || !grant.data || !native.data?.observerConnected || !native.data?.usageAccessGranted} onPress={() => start.mutate()} /> : null}
+      {taskId || goalResult?.deviceTaskId ? <Surface><Text style={styles.cardTitle}>本次读取</Text><Text style={styles.body}>返回后查看读取状态与待核实线索。</Text><ActionButton label="查看读取结果" onPress={() => router.push({ pathname: '/connections/device-tasks/[id]', params: { id: taskId ?? goalResult!.deviceTaskId! } } as never)} /></Surface> : null}
+      {start.isError || sync.isError || stop.isError ? <Text style={styles.error}>本次操作未完成，请检查权限与来源后重试。</Text> : null}
       <Surface><Text style={styles.cardTitle}>读取边界</Text><Text style={styles.body}>{pageRead ? '系统辅助功能权限范围较广，应用内仅按你确认的 App、字段和限时会话读取。不会自动点击、输入、提交、截屏或读取密码。离开目标应用后停止采集。' : '本次只接收通知或主动分享，不读取页面。离开目标应用后停止采集。'}</Text></Surface>
     </ScrollView>
   </SafeAreaView>;

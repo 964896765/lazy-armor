@@ -1,5 +1,6 @@
 /** Presentation only: never establishes health, authorization or execution success. */
 const reasons: Record<string, string> = {
+ PAGE_READ_AUTHORIZATION_REQUIRED: '需要开启系统页面读取权限与应用内独立许可', SESSION_CONSENT_REQUIRED: '每次读取前需要确认应用与字段范围',
  SCENARIO_NOT_RESOLVED: '还需要明确计划类型', SUBJECT_NOT_SELECTED: '请选择这个计划使用的资源',
  SCENARIO_REVISION_CHANGED: '计划类型已更新，请重新确认', SCENARIO_CONTRACT_CHANGED: '计划配置已更新，请重新确认',
  SCENARIO_CONTRACT_V2_REQUIRED: '还需要补充资源配置', SCENARIO_CONTRACT_V2_UNAVAILABLE: '当前计划类型还需完善资源配置',

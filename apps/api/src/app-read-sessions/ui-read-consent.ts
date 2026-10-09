@@ -1,6 +1,6 @@
 import { ForbiddenException } from '@nestjs/common';
 import { appReadSessionEvents, localCapabilityStates } from '@lazy-armor/database';
-import { isSensitiveField, localCapabilityAvailability, UI_READ_CONSENT_VERSION, type UiReadConsent } from '@lazy-armor/plan-schema';
+import { frozenGoalPageReadSchema, isSensitiveField, localCapabilityAvailability, UI_READ_CONSENT_VERSION, type UiReadConsent } from '@lazy-armor/plan-schema';
 import { and, eq } from 'drizzle-orm';
 import { createHash } from 'node:crypto';
 import type { RealityExecutor } from '../reality-pipeline/reality-pipeline.service';
@@ -33,5 +33,6 @@ export async function frozenUiReadConsent(store: RealityExecutor, userId: string
   if (!value || value.version !== UI_READ_CONSENT_VERSION || !Array.isArray(value.requestedFields)
     || !value.requestedFields.length || value.requestedFields.some(field => typeof field !== 'string')
     || typeof value.sourceVersion !== 'string' || typeof value.grantEvidenceRef !== 'string') return undefined;
-  return { version: UI_READ_CONSENT_VERSION, requestedFields: value.requestedFields as string[], sourceVersion: value.sourceVersion, grantEvidenceRef: value.grantEvidenceRef };
+  const goal = value.goal === undefined ? undefined : frozenGoalPageReadSchema.parse(value.goal);
+  return { version: UI_READ_CONSENT_VERSION, requestedFields: value.requestedFields as string[], sourceVersion: value.sourceVersion, grantEvidenceRef: value.grantEvidenceRef, ...(goal ? { goal } : {}) };
 }

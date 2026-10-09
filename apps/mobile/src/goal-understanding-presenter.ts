@@ -25,7 +25,7 @@ export function presentGoalUnderstanding(raw: unknown, result: string | undefine
     })),
     missingRequirements: value.missingRequirements.map(reason => presentation.reason(reason)),
     policy: value.policy.confirmationRequired
-      ? value.policy.approval === 'RUNTIME_POLICY' ? '确认方案后，执行仍按权限和独立审批处理。' : '确认后保存为内部事项。'
+      ? value.policy.approval === 'RUNTIME_POLICY' ? '确认方案后，执行仍按权限和独立审批处理。' : value.lifecycle === 'USER_EVENT' ? '确认后保存为内部事项。' : '确认本次应用与字段范围后读取，线索仍需独立核实。'
       : value.lifecycle ? '按当前授权读取与分析所需信息。' : '补充信息后再生成方案。',
   };
 }

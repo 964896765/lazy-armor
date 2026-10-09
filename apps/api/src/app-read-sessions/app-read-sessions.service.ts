@@ -14,6 +14,9 @@ import { MobileObservationService } from '../reality-pipeline/mobile-observation
 import { TrustedDevicesService } from '../trusted-devices/trusted-devices.service';
 import type { AppReadHeartbeatDto, CreateAppReadSessionDto, CreateAppReadSessionEventDto } from './dto';
 import { assertUiReadCapability, frozenUiReadConsent, uiConsentEventKey, validateUiReadConsent } from './ui-read-consent';
+import { assertGoalPageReadCurrent, goalPageSessionId } from './goal-page-read-authority';
+import type { FrozenGoalPageRead } from '@lazy-armor/plan-schema';
+import { resolveUiReadProfile } from '../structured-read/app-read-profiles';
 
 const ACTIVE = new Set<AppReadSessionStatus>(['CREATED', 'WAITING_FOREGROUND', 'READING']);
 const CAPTURE_EVENTS = new Set<AppReadSessionEventType>(['NOTIFICATION_CAPTURED', 'SHARE_CAPTURED']);
@@ -47,7 +50,19 @@ export class AppReadSessionsService {
     private readonly trustedDevices: TrustedDevicesService,
   ) {}
 
-  async create(userId: string, input: CreateAppReadSessionDto, signedDeviceId: string) {
+  async create(userId: string, input: CreateAppReadSessionDto, signedDeviceId: string, goal?: FrozenGoalPageRead) {
+    const id = goal ? goalPageSessionId(userId, goal.messageId) : newId();
+    if (goal) {
+      const saved = await assertGoalPageReadCurrent(this.db, userId, goal);
+      if (input.targetPackage !== saved.proposal.packageName || input.modes.length !== 1 || input.modes[0] !== 'UI_READ'
+        || JSON.stringify(input.uiReadConsent?.requestedFields) !== JSON.stringify(resolveUiReadProfile(saved.proposal.packageName)!.allowedSelectors)) throw new ForbiddenException('Goal read scope must come from the saved proposal');
+      const prior = (await this.db.select().from(appReadSessions).where(and(eq(appReadSessions.id, id), eq(appReadSessions.userId, userId))).limit(1))[0];
+      if (prior) {
+        if (prior.deviceAppConnectionId !== input.connectionId || prior.trustedDeviceId !== signedDeviceId
+          || JSON.stringify((await frozenUiReadConsent(this.db, userId, id))?.goal) !== JSON.stringify(goal)) throw new ConflictException('已经确认的页面读取不能换来源或目标');
+        return this.get(userId, id);
+      }
+    }
     if (!isExactAndroidPackage(input.targetPackage)) throw new BadRequestException('A concrete Android target package is required');
     const connection = (await this.db.select().from(deviceAppConnections).where(and(
       eq(deviceAppConnections.id, input.connectionId), eq(deviceAppConnections.userId, userId),
@@ -64,12 +79,22 @@ export class AppReadSessionsService {
       throw new ForbiddenException('Notification acquisition is not enabled for this app connection');
     }
     await this.expireActiveForDevice(signedDeviceId);
-    if ((await this.db.select({ id: appReadSessions.id }).from(appReadSessions).where(eq(appReadSessions.activeDeviceKey, signedDeviceId)).limit(1))[0]) {
+    if (!goal && (await this.db.select({ id: appReadSessions.id }).from(appReadSessions).where(eq(appReadSessions.activeDeviceKey, signedDeviceId)).limit(1))[0]) {
       throw new ConflictException('This trusted device already has an active read session');
     }
-    const id = newId(); const now = new Date(); const expiresAt = new Date(now.getTime() + input.durationSeconds * 1000);
+    const now = new Date(); const expiresAt = new Date(now.getTime() + input.durationSeconds * 1000);
+    let inserted = false;
     try {
       await this.db.transaction(async tx => {
+      if (goal) {
+        await assertGoalPageReadCurrent(tx, userId, goal, true);
+        const prior = (await tx.select().from(appReadSessions).where(eq(appReadSessions.id, id)).for('update'))[0];
+        if (prior) {
+          if (prior.userId !== userId || prior.deviceAppConnectionId !== input.connectionId || prior.trustedDeviceId !== signedDeviceId
+            || JSON.stringify((await frozenUiReadConsent(tx, userId, id))?.goal) !== JSON.stringify(goal)) throw new ConflictException('已经确认的页面读取不能换来源或目标');
+          return;
+        }
+      }
       const source = (await tx.select().from(deviceAppConnections).where(and(eq(deviceAppConnections.id, connection.id), eq(deviceAppConnections.userId, userId))).for('update'))[0];
       if (!source?.enabled || source.updatedAt.getTime() !== connection.updatedAt.getTime()) throw new ConflictException('App source changed before consent');
       const grant = uiConsent ? await assertUiReadCapability(tx, userId, signedDeviceId, true) : null;
@@ -79,17 +104,19 @@ export class AppReadSessionsService {
         startedAt: now, lastHeartbeatAt: null, expiresAt, endedAt: null, terminalReason: null, createdAt: now, updatedAt: now,
       });
       if (uiConsent && grant) {
-        const payload = { ...uiConsent, sourceVersion: source.updatedAt.toISOString(), grantEvidenceRef: grant.evidenceRef };
+        const payload = { ...uiConsent, sourceVersion: source.updatedAt.toISOString(), grantEvidenceRef: grant.evidenceRef, ...(goal ? { goal } : {}) };
         await tx.insert(appReadSessionEvents).values({ id: newId(), sessionId: id, userId, eventKey: uiConsentEventKey(id), eventType: 'SESSION_STARTED', sourceMode: 'UI_READ', packageName: source.packageName, payloadHash: eventPayloadHash('SESSION_STARTED', payload, null), payloadJson: payload, createdAt: now });
       }
+      inserted = true;
       });
     } catch (error) {
       if (isDuplicate(error)) throw new ConflictException('This trusted device already has an active read session');
       throw error;
     }
-    await this.audit.append({
+    if (inserted) await this.audit.append({
       actorType: 'user', actorUserId: userId, action: 'APP_READ_SESSION_CREATED', resourceType: 'app_read_session', resourceId: id,
       userId, correlationId: sha256(id), changeSummary: 'Created a bounded foreground-only app read session', source: 'api', result: 'success',
+      ...(goal ? { after: { goal, connectionId: connection.id, trustedDeviceId: signedDeviceId, consentVersion: 'ui-read.v1' } } : {}),
     });
     return this.get(userId, id);
   }

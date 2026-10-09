@@ -10,6 +10,12 @@ const proposed: GoalUnderstanding = {
   provenance: { modelId: 'test-model', generatedAt: '2026-10-09T00:00:00Z' },
 };
 describe('goal understanding consumer contract', () => {
+  it('requires scope confirmation for a temporary page read without calling it a saved personal item', () => {
+    const view = presentGoalUnderstanding({ ...proposed, lifecycle: 'TEMPORARY', summary: '读取计算器当前结果', capabilities: [{ key: 'structured_read.field', availability: 'UNRESOLVED', reasons: ['SESSION_CONSENT_REQUIRED'], sourcePackage: 'com.miui.calculator' }], steps: ['CONFIRM', 'ACQUIRE', 'ASSESS'] }, 'ANSWER');
+    expect(view?.policy).toContain('字段范围');
+    expect(view?.policy).not.toContain('内部事项');
+    expect(view?.steps[0]).toBe('确认方案');
+  });
   it('presents a personal item without external capabilities, completion or fabricated estimates', () => {
     const view = presentGoalUnderstanding(proposed, 'USER_EVENT_DRAFT');
     expect(view?.lifecycle).toBe('个人事项');

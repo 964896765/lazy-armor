@@ -665,5 +665,6 @@ export * from './agent-task';
 export * from './personal-memory';
 export * from './connection-capability';
 export * from './goal-resource-match';
+export * from './goal-page-read';
 export * from './user-event-sync';
 export * from './runtime-authority-source';

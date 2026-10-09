@@ -12,12 +12,12 @@ interface CandidateDetail {
 }
 
 export default function CandidateReview() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, returnConversationId } = useLocalSearchParams<{ id: string; returnConversationId?: string }>();
   const token = useAuthStore(state => state.token);
   const client = useQueryClient();
   const query = useQuery({ queryKey: ['candidate', id, token], enabled: Boolean(id && token), queryFn: () => api<CandidateDetail>('/candidates/' + id, token) });
   const decide = useMutation({ mutationFn: (confirmed: boolean) => api('/candidates/' + id + (confirmed ? '/confirm' : '/reject'), token, { method: 'POST', body: '{}' }),
-    onSuccess: async () => { await query.refetch(); await client.invalidateQueries({ queryKey: ['device-task-evidence'] }); } });
+    onSuccess: async () => { await query.refetch(); await client.invalidateQueries({ queryKey: ['device-task-evidence'] }); await client.invalidateQueries({ queryKey: ['conversation'] }); } });
   const candidate = query.data;
   const field = typeof candidate?.value.field === 'string' ? candidate.value.field : '';
   const label = ({ 'wallet.balance': '余额', 'transaction.latest.amount': '最近交易金额', 'transaction.latest.time': '最近交易时间', 'com.miui.calculator:id/result': '计算器当前结果' } as Record<string, string>)[field] ?? '读取线索';
@@ -31,6 +31,7 @@ export default function CandidateReview() {
       <RuntimeText>这里记录的是该时间点读到的线索。只有你核对并确认后，才记入可信事实。</RuntimeText>
       {candidate.status === 'PENDING' ? <><ActionButton label={decide.isPending ? '正在保存…' : '确认这条线索'} disabled={decide.isPending} onPress={() => decide.mutate(true)} /><ActionButton label="内容不正确" tone="quiet" disabled={decide.isPending} onPress={() => decide.mutate(false)} /></> : <RuntimeText>{candidate.status === 'VERIFIED' ? '你已核实这条线索。' : '这条线索已被拒绝。'}</RuntimeText>}
       {candidate.truthRecordId ? <ActionButton label="查看事实依据" tone="quiet" onPress={() => router.push(`/truth/${candidate.truthRecordId}` as never)} /> : null}
+      {returnConversationId && /^[0-9a-f-]{36}$/i.test(returnConversationId) ? <ActionButton label="返回原会话" tone="quiet" onPress={() => router.replace({ pathname: '/chat', params: { conversationId: returnConversationId } } as never)} /> : null}
       {decide.isError ? <RuntimeText>本次未保存，请重试。原来源和历史状态会保留。</RuntimeText> : null}
     </RuntimeCard> : null}
   </RuntimeDetailScreen>;

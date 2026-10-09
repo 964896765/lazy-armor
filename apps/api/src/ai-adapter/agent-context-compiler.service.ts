@@ -187,6 +187,7 @@ export class AgentContextCompiler {
           memoryExtraction: { enabled: input.memoryContext?.enabled ?? false },
           memoryRelationRefs: input.memoryContext?.enabled ? input.memoryContext.relations?.map(({ id, version }) => ({ id, version })) ?? [] : [],
           authoringNow:new Date(now).toISOString(),goalExecutionContext:input.timeContext ?? normalizeGoalTimeContext(),recipes:[{...SCHEDULED_CALENDAR_RECIPE,scenarioRevision:SCENARIO_DEFINITIONS.find(s=>s.key===SCHEDULED_CALENDAR_RECIPE.scenarioKey)?.revision},NOTIFICATION_WATCH_RECIPE],
+          pageReadSources:input.capabilities.filter(c=>c.key==='structured_read.field'&&c.connectionId&&c.trustedDeviceId&&c.providerKey==='com.miui.calculator').map(c=>({packageName:c.providerKey,identityOnly:true,requiresSessionConsent:true})),
           notificationSources:input.capabilities.filter(c=>c.key==='app.notification.read'&&c.connectionId&&c.trustedDeviceId).map(c=>({connectionId:c.connectionId,trustedDeviceId:c.trustedDeviceId,sourcePackage:c.providerKey,usable:c.usable,reasons:c.reasons,identityOnly:true})),
           // Resource identity remains useful for authoring even when its facts are stale.
           calendarSubjects:input.truths.filter(t=>t.resourceType==='CalendarEvent'&&t.subjectKey?.startsWith('local:')).map(t=>({subjectKey:t.subjectKey,calendarId:t.subjectKey!.split(':')[3],reality:'RESOURCE_IDENTITY_ONLY'})),

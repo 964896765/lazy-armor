@@ -1,4 +1,5 @@
 import { userEventInputSchema, userEventExternalSyncIntentSchema, type UserEventExternalSyncIntent, type UserEventInput } from '@lazy-armor/plan-schema';
+import { goalPageReadSchema } from '@lazy-armor/plan-schema';
 import { GoalUnderstandingService } from '../agent/planner/goal-understanding.service';
 import { GoalExecutionContextService, type GoalTimeContext } from '../agent/goal-execution-context.service';
 import {LocalAcquisitionService} from '../consumer/local-acquisition.service';
@@ -59,6 +60,7 @@ export interface AgentPlanProposal {
 }
 
 export interface PlannerResult {
+  pageRead?: import('@lazy-armor/plan-schema').GoalPageRead;
   /** Internal only: Consumer persists candidates separately, never in assistant JSON. */
   memoryCandidateProposal?: { settingsVersion: number; modelId: string; suggestions: import('@lazy-armor/plan-schema').MemorySuggestion[] };
   memoryRefs?: Array<{ id: string; version: number; settingsVersion: number }>;
@@ -146,6 +148,7 @@ export class AgentPlannerService {
     }
     if (output.notificationWatch && options.workContext !== 'PLAN') { validation.valid = false; validation.errors.push('Persistent notification watch requires Plan context'); }
     if (output.result === 'ACTION_PROPOSAL' && options.workContext !== 'TEMPORARY') { validation.valid = false; validation.errors.push('ActionProposal requires temporary conversation context'); }
+    if (output.pageRead && options.workContext !== 'TEMPORARY') { validation.valid = false; validation.errors.push('Page read requires temporary conversation context'); }
 
     const result: PlannerResult = {
       proposalId,
@@ -164,8 +167,9 @@ export class AgentPlannerService {
       if (output.factQuery && output.result === 'ANSWER' && options.workContext === 'TEMPORARY') {
         result.factQuery = output.factQuery;
       }
+      if (output.pageRead && output.result === 'ANSWER') result.pageRead = goalPageReadSchema.parse(output.pageRead);
       if (output.result === 'USER_EVENT_DRAFT') { result.userEvent = userEventInputSchema.parse(output.userEvent); result.sourceTruthRefs = output.selectedTruthRefs; result.sourceTruthVersions = facts.truths.filter(t=>output.selectedTruthRefs.includes(t.truthId) && t.truthVersionId).map(t=>({truthId:t.truthId,versionId:t.truthVersionId!})); result.externalSync = output.externalSync ? userEventExternalSyncIntentSchema.parse(output.externalSync) : null; result.answer = { explanation: output.explanation }; }
-      if (output.result === 'ANSWER') result.answer = { explanation: output.explanation };
+      if (output.result === 'ANSWER') result.answer = { explanation: result.pageRead ? '我需要按次读取手机计算器当前显示结果。请核对应用与字段范围，读取后核实线索。' : output.explanation };
       if (output.result === 'CLARIFICATION_REQUIRED') result.clarification = { missingRequirements: output.missingRequirements };
       if (output.result === 'PLAN_DRAFT') result.proposal = { ...validation.proposal!, proposalId };
       if (output.result === 'ACTION_PROPOSAL') { result.actionProposal = compileActionProposal(output.actionProposal).proposal; result.answer = { explanation: output.explanation }; }
@@ -251,6 +255,8 @@ export class AgentPlannerService {
     if(this.moduleRef){
       const {PersistentNotificationPlanService}=await import('../consumer/persistent-notification-plan.service');
       for(const source of await this.moduleRef.get(PersistentNotificationPlanService,{strict:false}).sources(userId))capabilities.push({key:'app.notification.read',connectionId:source.connectionId,trustedDeviceId:source.trustedDeviceId,providerKey:source.sourcePackage,usable:false,reasons:['SOURCE_IDENTITY_ONLY']});
+      const { GoalPageReadService } = await import('../consumer/goal-page-read.service');
+      for (const source of await this.moduleRef.get(GoalPageReadService, { strict: false }).sources(userId)) if (source.trustedDeviceId) capabilities.push({ key: 'structured_read.field', connectionId: source.id, trustedDeviceId: source.trustedDeviceId, providerKey: source.packageName, usable: false, reasons: ['SOURCE_IDENTITY_ONLY', 'SESSION_CONSENT_REQUIRED'] });
     }
     const coverage=this.acquisitions?await this.acquisitions.coverage(userId):null;
     const acquisitionCoverage:AcquisitionCoverage[]|undefined=coverage?.sources.map(round=>({sourceId:round.sourceId,factKey:round.capability,state:round.state as AcquisitionCoverage['state'],observedAt:round.observedAt?.toISOString()??null,evidenceRefs:round.evidenceRefsJson,reason:round.reason}));
@@ -260,6 +266,16 @@ export class AgentPlannerService {
   /** Pure fail-closed validation of model output against collected runtime facts. */
   validateOutput(output: AgentModelOutput, facts: PlannerRuntimeFacts, intent: string): { valid: boolean; errors: string[]; proposal?: AgentPlanProposal } {
     const errors: string[] = [];
+    if (output.pageRead) {
+      if (!goalPageReadSchema.safeParse(output.pageRead).success || output.result !== 'ANSWER'
+        || output.factQuery || output.notificationWatch || output.scheduledCalendar || output.userEvent || output.actionProposal || output.externalSync
+        || output.draftDefinition || output.scenarioKey || output.scenarioRevision || output.strategyKey || output.domain
+        || output.toolRequirements.length || output.requiredCapabilities.length || output.requiredFacts.length || output.selectedTruthRefs.length || output.selectedSkillIds.length
+        || !/计算器/.test(intent) || !/读取|读一下|看看|看一下|显示|屏幕|页面/.test(intent)
+        || !facts.capabilities.some(c => c.key === 'structured_read.field' && c.providerKey === output.pageRead!.packageName && c.connectionId && c.trustedDeviceId)) {
+        errors.push('Page read needs an explicit bounded intent and an owned discovered App; it grants no execution authority');
+      }
+    }
     if(output.notificationWatch&&(output.result!=='PLAN_DRAFT'||output.scheduledCalendar||output.factQuery||output.userEvent||output.actionProposal||output.externalSync))errors.push('Notification watch is a persistent read-only Recipe parameter contract');
     if (output.factQuery && (!notificationFactQuerySchema.safeParse(output.factQuery).success || output.result !== 'ANSWER'
       || output.actionProposal || output.userEvent || output.draftDefinition || output.toolRequirements.length

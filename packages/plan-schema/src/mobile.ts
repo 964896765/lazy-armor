@@ -58,3 +58,4 @@ export * from './source-resolver';
 export * from './work-item';
 export * from './local-capabilities';
 export { UI_READ_CONSENT_VERSION, type UiReadConsent } from './app-read-session';
+export * from './goal-page-read';

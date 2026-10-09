@@ -1,5 +1,7 @@
 # 当前任务书 — V84–V90
 
+2026-10-10 最新任务：[V87-COMPUTER-03](V87_COMPUTER_RUNTIME.md)原 Goal 页面需求、合法确认及原会话结果已实现并通过自动回归。服务端决定字段，原消息/版本/建议 hash 冻结进已有 consent event；同建议重复确认/启动保持同 session/Task，结果投影核对实际 Task、证据、候选、Truth/provenance 与现行来源。Backend/Frontend/Database/Runtime/Tests/Acceptance 见当前 V87 文档。接续 V87-COMPUTER-04 本人正常入口的真实 Observe/核实/原目标结果验收，独立待登录和系统授权，不用构建或 fixtures 代替。
+
 2026-10-10：V87-COMPUTER-02 独立页面授权与只读 native observer 已实现、自动验证与构建通过（API 79、Mobile 44、Shared 11）。完整 Backend/Frontend/Database/Runtime/Tests/Acceptance 见 [V87 当前任务](V87_COMPUTER_RUNTIME.md)。页面结果先候选，用户独立核实；五页不变，不推送。下一任务 V87-COMPUTER-03 原 Conversation/Goal 页面需求与合法确认入口，真人登录/系统授权独立待验。
 
 2026-10-09 当前主线：[V87-COMPUTER-01](V87_COMPUTER_RUNTIME.md)已完成受控页面观察的范围/会话 fencing、原子回滚与任务读取范围表面，41 项 API 和 38 项 Mobile 回归通过，已本地部署/安装。下一任务 V87-COMPUTER-02 显式页面读取授权与 native observer。前序 V86 本地 fda37c0 已部署/安装；V86/V87 的本人真机结果独立待验。无新迁移，不推送。

@@ -6,6 +6,7 @@ import { DATABASE, type InjectedDatabase } from '../common/database.module';
 import { CapabilityUsabilityService } from '../provider-capabilities/capability-usability.service';
 import { FactDemandResolverService } from '../fact-demands/fact-demand-resolver.service';
 import { LocalCapabilitiesService } from './local-capabilities.service';
+import { assertUiReadCapability } from '../app-read-sessions/ui-read-consent';
 
 @Injectable()
 export class GoalResourceMatchService {
@@ -39,6 +40,20 @@ export class GoalResourceMatchService {
         resources.push({ resourceId: selected?.connectionId ?? 'notification-source', name: app?.displayName ?? '应用通知来源',
           state: selected ? 'READY' : reason?.state === 'NEEDS_SOURCE_SELECTION' ? 'NEEDS_SELECTION' : 'UNAVAILABLE',
           reasons: reason?.reasons ?? ['APP_SOURCE_REQUIRED'], action: { label: '核对通知来源', path: '/connections/notification-sources?returnTo=' + encodeURIComponent(returnPath) } });
+      } else if (key === 'structured_read.field' && need.sourcePackage === 'com.miui.calculator') {
+        const sources = await this.db.select().from(deviceAppConnections).where(and(eq(deviceAppConnections.userId, userId), eq(deviceAppConnections.packageName, need.sourcePackage)));
+        for (const app of sources) {
+          const row = devices.find(d => d.device.id === app.trustedDeviceId);
+          const online = row?.device.status === 'active' && !row.device.revokedAt && row.heartbeat?.onlineState === 'online'
+            && row.heartbeat.lastHeartbeatAt <= new Date() && Date.now() - row.heartbeat.lastHeartbeatAt.getTime() <= 30000;
+          const reasons: string[] = [];
+          if (!app.enabled || !app.launchable) reasons.push('APP_SOURCE_REQUIRED');
+          if (!online) reasons.push('WAITING_DEVICE');
+          try { await assertUiReadCapability(this.db, userId, app.trustedDeviceId!); } catch { reasons.push('PAGE_READ_AUTHORIZATION_REQUIRED'); }
+          const query = `connectionId=${app.id}&packageName=${encodeURIComponent(app.packageName)}&displayName=${encodeURIComponent(app.displayName)}&mode=UI_READ&conversationId=${conversationId}&messageId=${messageId}&version=${version}`;
+          resources.push({ resourceId: app.id, name: app.displayName, state: reasons.length ? 'UNAVAILABLE' : 'READY', reasons,
+            action: { label: reasons.length ? '补充权限并核对范围' : '核对本次读取范围', path: '/connections/app-read-session?' + query } });
+        }
       } else {
         for (const view of views) for (const capability of view.capabilities.filter(c => (canonicalCapabilityId(c.key) ?? c.key) === key)) {
           resources.push({ resourceId: 'connection:' + view.connectionId, name: view.providerName, state: capability.usable ? 'READY' : 'UNAVAILABLE', reasons: capability.reasons,

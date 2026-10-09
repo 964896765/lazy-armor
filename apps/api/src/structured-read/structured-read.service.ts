@@ -3,6 +3,7 @@ import { createHash, sign } from 'node:crypto';
 import { ConfigService } from '@nestjs/config';
 import { nativeDispatchSigningKey } from '../execution/native-dispatch-signing';
 import { assertUiReadCapability, frozenUiReadConsent } from '../app-read-sessions/ui-read-consent';
+import { assertGoalPageReadCurrent } from '../app-read-sessions/goal-page-read-authority';
 import { appReadSessions, deviceTasks, deviceAppConnections, trustedDevices, truthRecordVersions, truthRecords } from '@lazy-armor/database';
 import {
   canonicalRecords, canonicalTable, readEvidenceStatusForOutcome, redactSensitiveFields, realityValueHash,
@@ -106,7 +107,7 @@ export class StructuredReadService {
     if (task.taskType !== 'APP_STRUCTURED_READ' || task.userId !== userId || !['CLAIMED', 'RUNNING'].includes(task.status)
       || !task.claimToken || !task.leaseExpiresAt || task.leaseExpiresAt.getTime() <= Date.now()) throw new StaleClaimError();
     const payload = task.payloadJson;
-    const request = { packageName: payload.packageName, appReadSessionId: payload.appReadSessionId, requestedFields: payload.requestedFields } as StructuredReadRequest;
+    const request = { requestId: payload.requestId, resourceId: payload.resourceId, packageName: payload.packageName, appReadSessionId: payload.appReadSessionId, requestedFields: payload.requestedFields } as StructuredReadRequest;
     const session = await this.assertReadSession(userId, request, store, true);
     this.assertUiSelectors(this.requireProfile(session.targetPackage), request.requestedFields);
     if (session.status === 'READING') this.assertFreshReadingSession(session);
@@ -315,6 +316,14 @@ export class StructuredReadService {
 
   private async assertReadSession(userId: string, request: StructuredReadRequest, executor: RealityExecutor = this.db, lock = false) {
     if (!request.appReadSessionId || !request.packageName) throw new BadRequestException('Android structured read requires appReadSessionId and packageName');
+    const frozen = await frozenUiReadConsent(executor, userId, request.appReadSessionId);
+    if (frozen?.goal) {
+      try { await assertGoalPageReadCurrent(executor, userId, frozen.goal, lock); }
+      catch { throw new StructuredReadSourceInvalidError('Original page-read goal changed'); }
+      if (request.requestId !== 'goal-page-' + request.appReadSessionId || request.resourceId !== request.appReadSessionId
+        || JSON.stringify(request.requestedFields) !== JSON.stringify(frozen.requestedFields)
+        || request.structuredSelector || request.resourceHint || (request.fieldExpectations && Object.keys(request.fieldExpectations).length)) throw new StructuredReadSourceInvalidError('Frozen goal read cannot change scope or request identity');
+    }
     const query = executor.select().from(appReadSessions).where(and(eq(appReadSessions.id, request.appReadSessionId), eq(appReadSessions.userId, userId))).limit(1);
     const session = (await (lock ? query.for('update') : query))[0];
     if (!session) throw new StructuredReadSourceInvalidError('App read session not found for this user');

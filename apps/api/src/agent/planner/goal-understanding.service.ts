@@ -19,10 +19,11 @@ export class GoalUnderstandingService {
       ...(result.actionProposal?.requiredCapability ? [result.actionProposal.requiredCapability] : []),
       ...(result.factQuery || result.proposal?.notificationWatch ? ['app.notification.read'] : []),
       ...(result.externalSync ? ['calendar.event.create'] : []),
+      ...(result.pageRead ? ['structured_read.field'] : []),
     ].map(key => canonicalCapabilityId(key) ?? key));
-    const sourcePackage = result.factQuery?.sourcePackage ?? result.proposal?.notificationWatch?.sourcePackage;
+    const sourcePackage = result.factQuery?.sourcePackage ?? result.proposal?.notificationWatch?.sourcePackage ?? result.pageRead?.packageName;
     const capabilities = [...keys].map(key => {
-      const scoped = key === 'app.notification.read' && Boolean(sourcePackage);
+      const scoped = ['app.notification.read', 'structured_read.field'].includes(key) && Boolean(sourcePackage);
       const matching = facts.capabilities.filter(row => (canonicalCapabilityId(row.key) ?? row.key) === key
         && (!scoped || row.providerKey === sourcePackage));
       // Source identity is evidence of ownership only, not of permission/health.
@@ -39,16 +40,16 @@ export class GoalUnderstandingService {
     const steps: GoalUnderstanding['steps'] = [];
     if (policy.confirmationRequired) steps.push('CONFIRM');
     if (lifecycle === 'USER_EVENT') steps.push('SAVE_EVENT');
-    if (lifecycle === 'PERSISTENT' || result.factQuery) steps.push('ACQUIRE', 'ASSESS');
+    if (lifecycle === 'PERSISTENT' || result.factQuery || result.pageRead) steps.push('ACQUIRE', 'ASSESS');
     if (lifecycle === 'PERSISTENT' || result.actionProposal || result.externalSync) steps.push('EXECUTE', 'VERIFY');
     if (lifecycle === 'PERSISTENT' || lifecycle === 'USER_EVENT') steps.push('WAIT');
     const timeContext = facts.timeContext ?? normalizeGoalTimeContext();
     return goalUnderstandingSchema.parse({
       schemaVersion: 'goal-understanding.v1', proposalId: result.proposalId, stage: 'AI_PROPOSED',
-      summary: (result.userEvent?.title ?? result.actionProposal?.name ?? result.proposal?.intentSummary ?? output.intentSummary).trim() || '请核对你的目标',
+      summary: (result.pageRead ? '读取手机计算器当前结果' : result.userEvent?.title ?? result.actionProposal?.name ?? result.proposal?.intentSummary ?? output.intentSummary).trim() || '请核对你的目标',
       domain: result.proposal?.domain ?? output.domain,
       lifecycle,
-      executionMode: lifecycle === null ? null : lifecycle === 'PERSISTENT' || result.externalSync || result.factQuery ? 'COMPOSED' : 'DIRECT',
+      executionMode: lifecycle === null ? null : lifecycle === 'PERSISTENT' || result.externalSync || result.factQuery || result.pageRead ? 'COMPOSED' : 'DIRECT',
       requiredFacts: result.factQuery ? [result.factQuery.factKey] : result.proposal?.requiredFacts ?? output.requiredFacts,
       capabilities, steps,
       missingRequirements: result.clarification?.missingRequirements ?? result.proposal?.missingRequirements ?? output.missingRequirements,

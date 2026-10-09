@@ -1,3 +1,4 @@
+import { GoalPageReadService } from './goal-page-read.service';
 import { MemoryService } from '../memory/memory.service';
 import { CapabilityUsabilityService } from '../provider-capabilities/capability-usability.service';
 import { MemoryCandidatesService } from '../memory/memory-candidates.service';
@@ -126,7 +127,7 @@ export class ConsumerService {
   }
   return sources;
  }
- async conversation(userId: string, id: string) { const row = (await this.db.select().from(consumerConversations).where(and(eq(consumerConversations.id, id), eq(consumerConversations.userId, userId), isNull(consumerConversations.deletedAt))).limit(1))[0]; if (!row) throw new NotFoundException('会话不存在'); const messages = await this.db.select().from(consumerMessages).where(eq(consumerMessages.conversationId, id)).orderBy(consumerMessages.createdAt); const attachments = await this.db.select({ id: consumerAttachments.id, artifactId: consumerAttachments.artifactId, fileName: consumerAttachments.fileName, mimeType: consumerAttachments.mimeType, sizeBytes: consumerAttachments.sizeBytes, contentSha256: consumerAttachments.contentSha256 }).from(consumerAttachments).where(eq(consumerAttachments.conversationId, id)); return { ...row, conversationId: id, messages, attachments, creationDraft: row.draftId ? await this.drafts.get(userId, row.draftId) : null }; }
+ async conversation(userId: string, id: string) { const row = (await this.db.select().from(consumerConversations).where(and(eq(consumerConversations.id, id), eq(consumerConversations.userId, userId), isNull(consumerConversations.deletedAt))).limit(1))[0]; if (!row) throw new NotFoundException('会话不存在'); const messages = await this.db.select().from(consumerMessages).where(eq(consumerMessages.conversationId, id)).orderBy(consumerMessages.createdAt); const attachments = await this.db.select({ id: consumerAttachments.id, artifactId: consumerAttachments.artifactId, fileName: consumerAttachments.fileName, mimeType: consumerAttachments.mimeType, sizeBytes: consumerAttachments.sizeBytes, contentSha256: consumerAttachments.contentSha256 }).from(consumerAttachments).where(eq(consumerAttachments.conversationId, id)); return { ...row, conversationId: id, messages, attachments, pageReads: await this.modules.get(GoalPageReadService,{strict:false}).results(userId, id, messages.filter(m=>m.structuredPayload?.pageRead).map(m=>m.id)), creationDraft: row.draftId ? await this.drafts.get(userId, row.draftId) : null }; }
  async attach(userId: string, id: string, input: ConversationAttachmentDto) {
   const decoded = decodeTextAttachment(input.fileName, input.mimeType, input.contentBase64);
   return this.db.transaction(async tx => {

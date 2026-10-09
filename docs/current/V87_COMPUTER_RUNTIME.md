@@ -83,3 +83,33 @@ Acceptance / 完成状态：IMPLEMENTED / AUTOMATION_VERIFIED / BUILD_VERIFIED�
 下一任务：V87-COMPUTER-03 将明确页面事实需求接回原 Conversation/Goal 的资源建议与合法确认入口，复用本轮冻结范围与签名 Task。不先加入 click/input，不把资源页按次 inspection 冒充 Goal Runtime Golden Flow。
 
 本地部署/安装：2026-10-10 已完成三角色 readiness 核对与 2c696fe 覆盖安装，保留应用数据。最终 APK SHA256 d5b0c81eb519f8c1f73d178795a0b4e660a8602de3e17a016efffb890578c420；源码 bundle、APK 内 bundle 与安装包字节均一致。证据 artifacts/v87-page-observer-deployment-r1.json、v87-page-observer-readiness-r1.json、v87-page-observer-r1-install-real.json、v87-page-observer-apk-final-r3.log。完成状态补充 DEPLOYED / APK_INSTALLED；真实页面读取及本人核实保持 REAL_PENDING。
+
+## V87-COMPUTER-03 · 原目标页面需求与确认入口
+
+目标：把一个明确的临时页面事实需求连接到原 Conversation/Goal、合法范围确认及核实后的结果。首个 Target 保持手机计算器当前结果，沿用 02 的真实 selector；不是计算任务，也不扩新 App。
+
+背景：资源页按次 inspection 已有 observer 与独立许可，仍需原目标关联。02 本地 checkpoint e8a6582；不返回 P3、不创建临时 Plan、不推送。
+
+Backend：模型只能提出严格的 goal-page-read.v1 语义需求（App 与 currentResult），不输出 selector 或执行对象。Planner 要求明确读取意图、TEMPORARY 上下文和本人已有来源身份；实际权限仍由当前来源门判断。理解卡片解释确认范围，模型解释不作为尚未取得的页面结果。资源核对返回来源缺口和携带原会话/消息/版本的范围入口，executionAuthorized=false。
+
+确认：POST /conversations/:id/messages/:messageId/page-read/confirm 只接受 version、connectionId、confirmed，并要求原可信设备签名。服务端核对当前有效消息/理解/版本、原 App 和许可，冻结 conversation/message/version/proposal/hash 到原 ui-read.v1 event。在原目标锁内复核并创建按建议确定的 session identity；并发/重复确认返回同 session，不覆写确认。页面字段来自服务器已登记 Profile，客户端不能注入 selector、Task 或 Truth。
+
+Runtime：使用已有 APP_STRUCTURED_READ/DeviceTask 签名读取。冻结目标会话只接受原固定 requestId、resourceId 和字段；发 ticket、heartbeat、completion 前重验当前目标，completion 在原事务内锁住原目标与来源，失效时回滚 Observation/Candidate。相同开始请求保持同一 Task，旧 Task/Result 的终态不改写。已确认后丢失入队响应时保留原限时 scope，正常 UI 可恢复同身份；不无依据重开会话。
+
+结果：原 GET /conversations/:id 增加派生 pageReads 卡片，关联原消息；不插入第二条“最终答案”消息，也不改变 Goal 版本。只消费实际 Task 的原始结果 hash、原 DEVICE_APP/ANDROID_STRUCTURED ReadEvidence、edge-device Observation 和精确 Candidate lineage。独立确认后匹配 Truth 当前版本、候选值 hash、Evidence/Provenance，再核对目标、App sourceVersion、当前 grant/health、设备身份和 Truth 撤回状态。未核实不展示为事实；目标/来源/核实依据失效时隐藏内容，保留原历史记录。
+
+Frontend：原理解卡片→目标所需资源→本次范围确认→读取记录/核实→原会话结果。结果显示观察时间，只称该时间点的计算器线索；不冒充持续监控或最新屏幕。原会话与核实页有返回入口，账号/来源/会话边界继续由 02 处理。读取确认后的状态和已领取结果从后端投影恢复；五个一级页不变。
+
+Database：无新表/迁移/Engine。原 AppReadSession/Event 保存不可变 confirmed reference；原 DeviceTask、ReadEvidence、Observation、Candidate、Truth/Provenance 与 Audit 保存执行、证据及核实结果。会话结果是 derived projection，零 Plan 新建，零历史 Task 回写。
+
+Tests：隔离 DB/模型/节点 fixture；完整 7 文件 59/59，通过证据归属加强后原目标/模型 3 文件 20/20；Mobile 6 文件 47/47，类型检查通过。覆盖合法设备签名、owner、最新消息/版本、独立许可、客户端扩范围拒绝、并发确认/启动同身份、候选和 Truth 分离、同 completion replay、旧目标拒绝、源版本变化及 Truth 撤回。首轮 56 PASS / 2 FAIL 为投影误将候选 resourceKey 对照 Truth 的 resourceKey；改按原 Truth 的 resourceType、候选值 hash 和真实 provenance 核对，未放宽来源或证据门。原失败日志保留。
+
+证据：artifacts/v87-goal-page-read-tests-r1.log（原失败）、v87-goal-page-read-tests-r2.log（专项修正6/6）、v87-goal-page-read-tests-final-r3.log（59/59）、v87-goal-page-read-tests-final-r4.log（最后20/20）。这些是自动化合同证据，模拟节点不是真机页面采集，模型 fixture 不是真实 DeepSeek 意图验收。
+
+Acceptance/完成状态：IMPLEMENTED / AUTOMATION_VERIFIED；Web/Android bundle 已构建，最终部署/安装另记。正常登录→真实模型建议→独立系统授权和范围确认→真实页面→候选→本人核实→原会话卡片仍 REAL_PENDING。V87 overall IN_PROGRESS。
+
+下一任务 V87-COMPUTER-04：沿正常登录和系统 UI 独立授权，完成上述一个真实只读 Golden Flow。保持 02/03 的签名、范围、来源、时间、核实与原对象证据，不用 ADB 开权限、模拟节点或代登录填补。首次真实 Observe 收齐后再实施有明确风险/审批和 read-back 的受控 Act，当前不宣称 click/input/Browser 可用。用户此前说明暂时无法登录，此依赖保留，不重复催问或把资源页 inspection 宣称 Goal 验收。
+
+最终收口：20/20 后又补同 requestId 的 FILE Truth 不得代替实际页面 Task 的归属断言，完整 Goal 文件 7/7 通过（artifacts/v87-goal-page-read-tests-lineage-final-r5.log）。59 与后续专项含重叠，不累计宣称 86 个独立测试。最终类型检查发现旧 ReadEvidence 的 candidateIdsJson 可空，补空数组保护后最终 API typecheck/build 通过；前一失败日志保留。
+
+本地部署/安装：execution/outbox/deviceTask 活跃 leases 均为 0 后，仅替换本项目三角色；API 34760、Execution Worker 19900、Outbox Worker 19816，health/ready 均通过。2c696fe 覆盖安装保留数据，APK SHA256 5727419a36752fa9110ea755f18a516ae11977d92ee23d40633293684996b46c，bundle 与 APK/安装包字节核对一致。证据 artifacts/v87-goal-page-read-deployment-r1.json、v87-goal-page-read-readiness-r1.json、v87-goal-page-read-r1-install-real.json、v87-goal-page-read-apk-build-r1.log、v87-goal-page-read-api-typecheck-final-r2.log、v87-goal-page-read-api-build-final-r2.log。完成状态 IMPLEMENTED / AUTOMATION_VERIFIED / BUILD_VERIFIED / DEPLOYED / APK_INSTALLED；本人真实入口/页面/核实保留 REAL_PENDING，V87 IN_PROGRESS。

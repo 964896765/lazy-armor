@@ -11,6 +11,14 @@ function model(mode = 'FAST') {
 const answer = { result: 'ANSWER', intentSummary: '问题', domain: null, scenarioKey: null, scenarioRevision: null, strategyKey: null, requiredFacts: [], selectedTruthRefs: [], requiredCapabilities: [], selectedSkillIds: [], toolRequirements: [], draftDefinition: null, explanation: '回答', missingRequirements: [], warnings: [], riskHints: [] };
 afterEach(() => vi.unstubAllGlobals());
 describe('DeepSeek proposal adapter', () => {
+ it('accepts only a semantic bounded page proposal and rejects executable selectors', async () => {
+  const pageRead = { version: 'goal-page-read.v1', packageName: 'com.miui.calculator', fields: ['currentResult'] };
+  const fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify({ ...answer, pageRead }) } }] }) });
+  vi.stubGlobal('fetch', fetch);
+  expect((await model().adapter.complete(request)).pageRead).toEqual(pageRead);
+  fetch.mockResolvedValue({ ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify({ ...answer, pageRead: { ...pageRead, selectors: ['*'], execute: true } }) } }] }) });
+  await expect(model().adapter.complete(request)).rejects.toThrow('模型输出未通过安全合同验证');
+ });
  it('reports an insufficient upstream balance without falling back to a fixture', async () => {
   const fetch = vi.fn().mockResolvedValue({ok:false,status:402});vi.stubGlobal('fetch',fetch);
   await expect(model().adapter.complete(request)).rejects.toThrow('AI_PROVIDER_BALANCE_INSUFFICIENT');expect(fetch).toHaveBeenCalledTimes(1);
