@@ -42,7 +42,7 @@ export default function RootLayout() {
           <Stack.Screen name="attention" options={{ headerShown: false }} />
           <Stack.Screen name="plan-center" options={{ headerShown: false }} />
           <Stack.Screen name="connections/trusted-devices" options={{ headerShown: false }} />
-          <Stack.Screen name="connections/notification-sources" options={{ title: '通知来源' }} />
+          <Stack.Screen name="connections/notification-sources" options={{ headerShown: false }} />
           <Stack.Screen name="truth-store" options={{ title: '已验证事实' }} />
           <Stack.Screen name="domains/[domain]" options={{ headerShown: false }} />
           <Stack.Screen name="domains/[domain]/[scenario]" options={{ headerShown: false }} />

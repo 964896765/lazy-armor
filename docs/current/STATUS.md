@@ -1,8 +1,12 @@
 # 当前状态 — 2026-10-09
 
+2026-10-09 17:41 导航修复：GitHub checkpoint `7fdbb90` 已推送并核对远端一致后，补上通知来源页固定顶部返回按钮、移除重复导航标题。普通进入使用已有页面历史返回，直达且没有上一页时回到资源；五个一级入口保持不变。Mobile typecheck、Android bundle/APK 构建通过，r8 已覆盖安装并核对手机 APK 与构建字节相同，SHA256 `b5b72d4f17d99556ef1c0f5d1512c044e5352585cce5243e4b2fea95039f2cd4`。已提交的本机来源过滤和监听状态提示随此次源码打包。
+
+真机导航脚本首次采集为全黑画面，返回按钮检查未通过；唤醒后确认手机停在系统锁屏（`mDreamingLockscreen=true`）。这是未完成点按验收，不能记为导航路径 REAL_VERIFIED；原失败记录保留，等待合法解锁后检查正常返回和直达回资源。安装证据与失败记录保留在本机 `artifacts/v83-notification-back-r8-install-real.json`、`artifacts/v83-notification-back-r8-navigation-real.json`。本次仅修用户指出的返回入口，不产生新的 P3 关闭证据或故障矩阵。
+
 2026-10-09 GitHub checkpoint：提交当前源码、测试、数据库迁移和设计文档到 `codex/v83-persistent-runtime`。新产生的本地 `artifacts/` 验收快照、截图、bundle、APK 备份及运行进程文件保留在本机，不随本次提交上传；本文与验收文档中的本地证据链接须在原验收工作区查看。已有受 Git 跟踪的历史文件保留。
 
-本 checkpoint 不改变阶段关闭结论。r7 候选刷新 APK 已安装；安装后快照中通知监听健康为 UNKNOWN、原 Plan 为 WAITING_RESOURCE，安装复核为 15/16，失败记录保留。随后当前手机来源过滤与监听状态提示已写入源码、Mobile typecheck 通过，尚未打入 APK；通知来源页缺少直达返回入口的问题尚未修复。GitHub 备份优先，暂停继续部署与真机检查。
+该 checkpoint 时不改变阶段关闭结论。r7 候选刷新 APK 已安装；安装后快照中通知监听健康为 UNKNOWN、原 Plan 为 WAITING_RESOURCE，安装复核为 15/16，失败记录保留。当时当前手机来源过滤与监听状态提示已写入源码、Mobile typecheck 通过，尚未打入 APK；通知来源页缺少直达返回入口的问题尚未修复。GitHub 备份优先，其后的导航修复见页首记录。
 
 最新前后端一体化总计划已落实为 [V83_MAINLINE.md](V83_MAINLINE.md)：五个一级页面的名称/数量/顺序/职责永久冻结；P4～P11按后端能力、产品表面、真实证据三轨同步，Contract/Runtime/Product/Real Evidence四项DoD及统一Gate齐全后关闭。[Mobile Product System Track](MOBILE_PRODUCT_SYSTEM_TRACK.md)伴随后续阶段，非新P。此次仅统一设计/任务文档；P0 Phase1 CLOSED、P1/P2 CLOSED、P3 IN_PROGRESS，不提前实施P4～P11或增加P3待验项。
 

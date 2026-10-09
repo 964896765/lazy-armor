@@ -9,7 +9,7 @@ import { useAuthStore } from '../../src/auth-store';
 import { createMobileNotificationReceiptRequest } from '../../src/device-app-api-contract';
 import { deviceBoundApi, ensureTrustedDevice } from '../../src/trusted-device-api';
 import { acknowledgeNotificationPreviews, deviceDiscoveryStatus, drainNotificationPreviews, notificationSourceStatus, openNotificationAccessSettings, setNotificationSourceEnabled } from '../../src/device-app-bridge';
-import { ActionButton, EmptyState, Surface, colors, spacing, typography } from '../../src/design';
+import { ActionButton, EmptyState, Surface, WorkspaceHeader, colors, spacing, typography } from '../../src/design';
 
 interface DeviceAppConnection { id: string; trustedDeviceId: string | null; packageName: string; displayName: string; enabled: boolean; modes: string[] }
 interface ReceiptResult { receiptId: string; duplicate: boolean; status: string }
@@ -93,8 +93,8 @@ export default function NotificationSourcesPage() {
       await Promise.all([client.invalidateQueries({ queryKey: ['mobile-notification-receipts', token] }), client.invalidateQueries({ queryKey: ['today', token] }), client.invalidateQueries({ queryKey: ['notifications', token] })]);
     },
   });
-  return <SafeAreaView style={styles.safeArea} edges={['top']}><ScrollView style={styles.page} contentContainerStyle={styles.content}>
-    <View style={styles.header}><Text style={styles.title}>通知来源</Text><Text style={styles.subtitle}>逐个选择已添加的应用。通知正文只在手机上短暂处理，系统只会同步最小化指纹线索等待核实。</Text></View>
+  return <SafeAreaView style={styles.safeArea} edges={['top']}><View style={styles.pageHeader}><WorkspaceHeader title="通知来源" onBack={() => router.canGoBack() ? router.back() : router.replace('/resources' as never)} /></View><ScrollView style={styles.page} contentContainerStyle={styles.content}>
+    <View style={styles.header}><Text style={styles.subtitle}>逐个选择已添加的应用。通知正文只在手机上短暂处理，系统只会同步最小化指纹线索等待核实。</Text></View>
     {!token ? <Surface><EmptyState icon="log-in-outline" title="请先登录" description="需要先确认当前账号，才能管理通知来源。" /></Surface> : null}
     {token && nativeUnavailable ? <Surface><EmptyState icon="notifications-off-outline" title="暂时无法管理通知来源" description="请使用包含原生模块的 Android 构建。Web、iOS 或 Expo Go 不会假装已经获得系统通知访问。" /></Surface> : null}
     {token && !nativeUnavailable ? <>
@@ -138,5 +138,5 @@ function NotificationSourceRow({ connection, accessGranted, pending, onToggle }:
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: colors.background }, page: { flex: 1, backgroundColor: colors.background }, content: { paddingHorizontal: spacing.page, paddingTop: spacing.xl, paddingBottom: 48, gap: spacing.md }, header: { marginBottom: spacing.lg }, title: { ...typography.display, color: colors.text }, subtitle: { ...typography.body, color: colors.textSecondary, marginTop: spacing.sm, lineHeight: 22 }, cardTitle: { ...typography.cardTitle, color: colors.text }, cardCopy: { ...typography.body, color: colors.textSecondary, marginTop: spacing.sm, lineHeight: 21 }, action: { alignItems: 'flex-start', marginTop: spacing.lg }, quietText: { ...typography.caption, color: colors.textMuted, marginTop: spacing.md }, sectionTitle: { ...typography.section, color: colors.text, marginTop: spacing.xl, marginBottom: spacing.xs }, list: { gap: spacing.md }, receiptActions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.md }, row: { flexDirection: 'row', alignItems: 'center', gap: spacing.md }, rowCopy: { flex: 1 }, rowTitle: { ...typography.bodyStrong, color: colors.text }, rowDescription: { ...typography.caption, color: colors.textSecondary, marginTop: spacing.xs, lineHeight: 18 }, error: { ...typography.caption, color: colors.danger, lineHeight: 18 }, safetyText: { ...typography.caption, color: colors.textMuted, lineHeight: 18, marginTop: spacing.md },
+  safeArea: { flex: 1, backgroundColor: colors.background }, pageHeader: { paddingHorizontal: spacing.page }, page: { flex: 1, backgroundColor: colors.background }, content: { paddingHorizontal: spacing.page, paddingTop: spacing.md, paddingBottom: 48, gap: spacing.md }, header: { marginBottom: spacing.lg }, subtitle: { ...typography.body, color: colors.textSecondary, marginTop: spacing.sm, lineHeight: 22 }, cardTitle: { ...typography.cardTitle, color: colors.text }, cardCopy: { ...typography.body, color: colors.textSecondary, marginTop: spacing.sm, lineHeight: 21 }, action: { alignItems: 'flex-start', marginTop: spacing.lg }, quietText: { ...typography.caption, color: colors.textMuted, marginTop: spacing.md }, sectionTitle: { ...typography.section, color: colors.text, marginTop: spacing.xl, marginBottom: spacing.xs }, list: { gap: spacing.md }, receiptActions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.md }, row: { flexDirection: 'row', alignItems: 'center', gap: spacing.md }, rowCopy: { flex: 1 }, rowTitle: { ...typography.bodyStrong, color: colors.text }, rowDescription: { ...typography.caption, color: colors.textSecondary, marginTop: spacing.xs, lineHeight: 18 }, error: { ...typography.caption, color: colors.danger, lineHeight: 18 }, safetyText: { ...typography.caption, color: colors.textMuted, lineHeight: 18, marginTop: spacing.md },
 });
