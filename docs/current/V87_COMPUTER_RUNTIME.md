@@ -113,3 +113,25 @@ Acceptance/完成状态：IMPLEMENTED / AUTOMATION_VERIFIED；Web/Android bundle
 最终收口：20/20 后又补同 requestId 的 FILE Truth 不得代替实际页面 Task 的归属断言，完整 Goal 文件 7/7 通过（artifacts/v87-goal-page-read-tests-lineage-final-r5.log）。59 与后续专项含重叠，不累计宣称 86 个独立测试。最终类型检查发现旧 ReadEvidence 的 candidateIdsJson 可空，补空数组保护后最终 API typecheck/build 通过；前一失败日志保留。
 
 本地部署/安装：execution/outbox/deviceTask 活跃 leases 均为 0 后，仅替换本项目三角色；API 34760、Execution Worker 19900、Outbox Worker 19816，health/ready 均通过。2c696fe 覆盖安装保留数据，APK SHA256 5727419a36752fa9110ea755f18a516ae11977d92ee23d40633293684996b46c，bundle 与 APK/安装包字节核对一致。证据 artifacts/v87-goal-page-read-deployment-r1.json、v87-goal-page-read-readiness-r1.json、v87-goal-page-read-r1-install-real.json、v87-goal-page-read-apk-build-r1.log、v87-goal-page-read-api-typecheck-final-r2.log、v87-goal-page-read-api-build-final-r2.log。完成状态 IMPLEMENTED / AUTOMATION_VERIFIED / BUILD_VERIFIED / DEPLOYED / APK_INSTALLED；本人真实入口/页面/核实保留 REAL_PENDING，V87 IN_PROGRESS。
+
+## V87-COMPUTER-04 · 真实模型入口与确认恢复准备
+
+目标：推进正常入口的真实只读 Golden Flow；修复验收准备中发现的原生会话恢复问题，独立核对真实模型，不扩新 App 或 Act。
+
+背景：2026-10-10 恢复检查中，2c696fe 已连接，API / Execution Worker / Outbox Worker 均 200。手机实际停在首次使用协议页；系统 accessibility_enabled=0，页面系统权限未开启。此前本人表示暂时无法登录；本轮不替本人接受协议、登录或开启系统权限。
+
+Backend：现行 API/确认合同不变。新增 opt-in 真实 DeepSeek 验收，以隔离 3311 _test 数据库、Redis 15、开发虚构账号及 App 来源身份调用真实 Conversation/Planner。三次实际模型请求分别证明：明确计算器页面意图得到受控 pageRead 建议与 TEMPORARY 理解；普通数学题不提出页面读取；没有本人来源身份时不编造来源。三个分支均没有创建 consent、DeviceTask、Plan 或 Truth。隔离来源身份不是手机 App 发现证据。
+
+Frontend：入队响应丢失后，原限时 confirmed scope 允许沿原入口恢复。startNativeAppReadSession 先核对原生会话；相同账号、session、App、UI_READ mode、字段、sourceVersion、到期时间及当前权限/健康/前台条件一致时复用现有会话，不再调用会拒绝 SESSION_ALREADY_ACTIVE 的原生 start，不清事件队列或延长有效期。不同活动范围拒绝恢复。Goal 原生启动失败时保留冻结确认以限时重试，不停止未由本次启动的原生会话，不取消原确认。
+
+Database：无新表、迁移或生产数据修改。真实模型验收仅新增隔离账号/会话/开发来源记录；生产 Plan、Task、Truth 与历史证据均保留。
+
+Runtime：仍沿原 signed DeviceTask / native observer；恢复只复用已存在的本机范围，不产生 ticket 或执行授权。页面许可、Task lease、原目标和来源 fencing 仍由原 native / API 检查。native start/stop 增加同 Store 同步门，启动失败只清理本次确实创建且仍匹配账号/session 的范围，拒绝的并发启动不再停止原会话；插件模板与生成源码保持一致。native 清理门为代码/构建验证，尚无本人真机并发恢复证据。
+
+Tests：Mobile 5 文件 42/42（含恢复专项 5 项），真实 DeepSeek + 隔离 Goal API 3/3；API/Mobile typecheck 通过。证据 artifacts/v87-page-read-recovery-mobile-r1.log、v87-page-read-real-model-r1.log、v87-page-read-real-model-r1.json、v87-page-read-recovery-mobile-typecheck-r1.log、v87-page-read-model-api-typecheck-r1.log。与之前 02/03 回归有重叠，不累计成新的独立总数。
+
+Acceptance / 完成状态：恢复修复 AUTOMATION_VERIFIED，真实模型入口 MODEL_API_VERIFIED；本人真实页面观察、本人核实及原会话最终结果仍 REAL_PENDING。首次 Android bundle 因误用 apps/mobile/node_modules 入口路径失败，日志保留；改为实际 workspace hoisted entry 后构建与安装另记，不通过降级配置解决。
+
+下一任务：继续 V87-COMPUTER-04 本人正常入口→独立系统/应用许可→真实页面 Observation→Candidate→本人核实→Truth→原会话卡片。真实 Observe 收齐之前不开放 click/input、Browser 或提前进入 V88。当前已知登录依赖不重复催问，不推送 GitHub。
+
+构建/安装：Web、最终 Android bundle 与含 native 清理门的 r2 APK 构建通过；2c696fe 已覆盖安装，保留数据。源码 bundle、APK 内 bundle 和已安装 APK 的字节一致，APK SHA256 612d5bdc476a26a0638793b901adef9550447d16ecb7a2f6f54eab23463f39cf。系统 Accessibility 仍未开启；安装不等于用户授权。API/两个 Worker 就绪，无后端生产实现变化，无需本轮重启。证据 artifacts/v87-page-read-recovery-bundle-r2.log、v87-page-read-recovery-web-build-r1.log、v87-page-read-recovery-apk-build-r2.log、v87-page-read-recovery-r1-install-real.json、v87-page-read-recovery-readiness-r1.json。repository hygiene / terminology / diff check 通过；真实 Golden Flow 保持 REAL_PENDING，V87 IN_PROGRESS。

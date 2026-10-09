@@ -1,5 +1,7 @@
 # 当前状态 — 2026-10-10
 
+2026-10-10 最新进展：[V87-COMPUTER-04](V87_COMPUTER_RUNTIME.md)准备检查发现入队响应丢失后的原生 scope 重启会拒绝已有会话；已修复为同冻结范围复用，保留原队列/有效期及 Goal 确认，变更范围或失效权限拒绝恢复。Mobile 42/42、API/Mobile typecheck 通过；真实 DeepSeek + 隔离 Goal API 3/3，明确页面读取/普通数学/缺少来源分支均无执行或 Truth 创建。Web/bundle/APK 已构建通过并覆盖安装，APK hash 612d5bdc476a26a0638793b901adef9550447d16ecb7a2f6f54eab23463f39cf；源码/内嵌 bundle/安装包字节一致。原生启动失败清理已限制为本次创建且仍匹配的范围。手机当前首次协议页、系统页面权限未开启，本人正常入口/真实页面/核实仍 REAL_PENDING，V87 IN_PROGRESS。本轮仅本地，不推送。
+
 2026-10-10 最新主线：[V87-COMPUTER-03](V87_COMPUTER_RUNTIME.md)已实现原会话页面需求→资源建议→设备签名确认→冻结原目标版本→原 Task 按次读取→候选核实→原会话结果卡片。复用原权威，无迁移；API 主回归 59/59、证据归属/模型补验 20/20、最终原目标归属专项 7/7、Mobile 47/47 通过。Shared/API/Mobile 类型检查、Web/Android/API 构建通过，已本地三角色部署及 APK 覆盖安装并核对字节。本人登录/独立系统授权/真实页面 Golden Flow 仍 REAL_PENDING，V87 IN_PROGRESS。不推送 GitHub。
 
 2026-10-10 当前主线：[V87-COMPUTER-02](V87_COMPUTER_RUNTIME.md)已实现独立 UI_READ consent、只读 native observer、原 Task 签名 dispatch、资源范围确认及候选核实入口。API 79/79、Mobile 44/44、Shared 11/11 与构建通过；无迁移，不推送。本人登录/系统授权/真实页面读取仍待验，V87 IN_PROGRESS。本地部署安装另记证据；下一任务 V87-COMPUTER-03 原 Goal 页面事实需求与合法确认续接。

@@ -87,8 +87,10 @@ export default function AppReadSessionPage() {
       const nativeStarted = await startNativeAppReadSession(accountId, session.id, session.targetPackage, session.modes, session.expiresAt, session.uiReadConsent);
       const appOpened = nativeStarted && (pageRead || await openDeviceApp(session.targetPackage));
       if (!nativeStarted || !appOpened) {
-        await stopNativeAppReadSession();
-        await deviceBoundApi('/app-read-sessions/' + session.id + '/stop', token, { method: 'POST', body: '{}' }).catch(() => undefined);
+        // A failed native start may belong to a different active scope. Preserve
+        // the frozen Goal consent for a bounded retry instead of destroying it.
+        if (nativeStarted) await stopNativeAppReadSession();
+        if (!goalRead) await deviceBoundApi('/app-read-sessions/' + session.id + '/stop', token, { method: 'POST', body: '{}' }).catch(() => undefined);
         throw new Error(nativeStarted ? 'target_app_open_failed' : 'native_start_failed');
       }
       if (pageRead && profile) {

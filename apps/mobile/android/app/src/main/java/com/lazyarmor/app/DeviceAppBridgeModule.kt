@@ -560,11 +560,13 @@ class DeviceAppBridgeModule(reactContext: ReactApplicationContext) : ReactContex
 
   @ReactMethod
   fun startAppReadSession(accountId: String, sessionId: String, targetPackage: String, modes: ReadableArray, expiresAt: Double, fields: ReadableArray, sourceVersion: String, promise: Promise) {
+    var started = false
     try {
       check(reactApplicationContext.getSharedPreferences("lazy_armor_runtime_settings", android.content.Context.MODE_PRIVATE).getBoolean("background", true)) { "后台服务已关闭" }
       val selectedModes = (0 until modes.size()).mapNotNull { modes.getString(it) }.toSet()
       val requested = (0 until fields.size()).mapNotNull { fields.getString(it) }.toSet()
       AppReadSessionStore.start(reactApplicationContext, accountId, sessionId, targetPackage, selectedModes, expiresAt.toLong(), requested, sourceVersion)
+      started = true
       ContextCompat.startForegroundService(reactApplicationContext, Intent(reactApplicationContext, AppReadForegroundService::class.java))
       if ("UI_READ" !in selectedModes) {
       val launch = reactApplicationContext.packageManager.getLaunchIntentForPackage(targetPackage)
@@ -573,7 +575,9 @@ class DeviceAppBridgeModule(reactContext: ReactApplicationContext) : ReactContex
       }
       promise.resolve(true)
     } catch (error: Exception) {
-      AppReadSessionStore.stop(reactApplicationContext, "NATIVE_ERROR", "START_FAILED")
+      // A rejected concurrent/replayed start did not create the incumbent scope.
+      // Only undo a scope this call actually created, while it is still current.
+      if (started) AppReadSessionStore.stopIfCurrent(reactApplicationContext, accountId, sessionId, "NATIVE_ERROR", "START_FAILED")
       promise.reject("E_APP_READ_START_FAILED", "无法启动受控读取会话。", error)
     }
   }

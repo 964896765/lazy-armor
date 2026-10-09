@@ -54,6 +54,8 @@ export interface MobileNotificationPreview {
 export interface NativeAppReadSessionStatus {
   accountId?: string;
   modes?: string[];
+  requestedFields?: string[];
+  sourceVersion?: string;
   observerPermissionGranted?: boolean;
   observerConnected?: boolean;
   active: boolean;
@@ -307,8 +309,28 @@ export async function openPageReadSettings(): Promise<boolean> {
 export async function startNativeAppReadSession(accountId: string, sessionId: string, targetPackage: string, modes: string[], expiresAt: string, consent?: UiReadConsent & { sourceVersion: string }): Promise<boolean> {
   const native = bridge();
   const expiry = new Date(expiresAt).getTime();
-  if (!native || typeof native.startAppReadSession !== 'function' || !sessionId || !targetPackage || !Number.isFinite(expiry)) return false;
-  try { return await native.startAppReadSession(accountId, sessionId, targetPackage, modes, expiry, consent?.requestedFields ?? [], consent?.sourceVersion ?? ''); } catch { return false; }
+  if (!native || typeof native.startAppReadSession !== 'function' || typeof native.getAppReadSessionStatus !== 'function'
+    || !accountId || !sessionId || !targetPackage || !Number.isFinite(expiry) || expiry <= Date.now()) return false;
+  try {
+    const current = await native.getAppReadSessionStatus();
+    if (current.active) {
+      // A lost enqueue response keeps this native scope alive. Reuse it without
+      // resetting its event queue, start time, foreground state or expiry.
+      // A different active scope is never replaced by a confirmation replay.
+      const fields = consent?.requestedFields ?? [];
+      return modes.length === 1 && modes[0] === 'UI_READ' && consent?.version === 'ui-read.v1'
+        && current.accountId === accountId && current.sessionId === sessionId && current.targetPackage === targetPackage
+        && current.modes?.length === 1 && current.modes[0] === 'UI_READ'
+        && current.sourceVersion === consent.sourceVersion && Boolean(consent.sourceVersion)
+        && fields.length > 0 && new Set(fields).size === fields.length
+        && JSON.stringify([...(current.requestedFields ?? [])].sort()) === JSON.stringify([...fields].sort())
+        && current.expiresAt === expiry && current.expiresAt > Date.now()
+        && ['WAITING_FOREGROUND', 'READING'].includes(current.status)
+        && current.usageAccessGranted && current.observerPermissionGranted === true && current.observerConnected === true
+        && (current.status !== 'READING' || current.foregroundPackage === targetPackage);
+    }
+    return await native.startAppReadSession(accountId, sessionId, targetPackage, modes, expiry, consent?.requestedFields ?? [], consent?.sourceVersion ?? '');
+  } catch { return false; }
 }
 
 export async function stopNativeAppReadSession(): Promise<boolean> {

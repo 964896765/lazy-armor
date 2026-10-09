@@ -12,6 +12,7 @@ object AppReadSessionStore {
   private const val MAX_EVENTS = 80
   private val packagePattern = Regex("[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+")
 
+  @Synchronized
   fun start(context: Context, accountId: String, sessionId: String, targetPackage: String, modes: Set<String>, expiresAt: Long, requestedFields: Set<String>, sourceVersion: String): JSONObject {
     require(sessionId.isNotBlank() && targetPackage.matches(packagePattern))
     require(accountId.isNotBlank() && LocalCapabilityManifest.activeAccount(context) == accountId)
@@ -72,10 +73,17 @@ object AppReadSessionStore {
     preferences(context).edit().putString(SESSION_KEY, session.toString()).apply()
   }
 
+  @Synchronized
   fun stop(context: Context, eventType: String = "SESSION_STOPPED", reason: String = "USER_STOPPED") {
     val session = active(context) ?: return
     appendLifecycle(context, eventType, session.optString("targetPackage"), JSONObject().put("reason", reason))
     clearSession(context)
+  }
+
+  @Synchronized
+  fun stopIfCurrent(context: Context, accountId: String, sessionId: String, eventType: String, reason: String) {
+    val session = active(context) ?: return
+    if (session.optString("accountId") == accountId && session.optString("sessionId") == sessionId) stop(context, eventType, reason)
   }
 
   fun isReadingTarget(context: Context, packageName: String, mode: String): Boolean {
