@@ -251,6 +251,7 @@ export default function PlanDetailPage() {
               {summary.data.latestExecution ? <ControlRow title="查看完整记录" onPress={() => router.push(`/executions/${summary.data?.latestExecution?.id}` as never)} /> : null}
             </View>
             <Text style={local.sectionTitle}>运行记录</Text>
+            <View style={local.sectionBody}><ControlRow title="任务进度" detail="查看每次运行的处理进展" onPress={()=>router.push(`/plans/${id}/tasks` as never)}/></View>
             <View style={local.sectionBody}>{control.data?.records?.slice(0,3).map(record=><ControlRow key={record.id} title={formatTime(record.createdAt)} detail={`${controlResultLabel(record)} · ${controlVerificationLabel(record.verificationState)}`} onPress={()=>router.push(`/executions/${record.id}` as never)}/>)}{control.data?.records?.length===0?<Text style={local.text}>还没有运行记录</Text>:null}<ControlRow title="查看运行记录" onPress={()=>router.push(`/plans/${id}/runs` as never)}/></View>
 
             {summary.data.missingConnections.length > 0 ? (

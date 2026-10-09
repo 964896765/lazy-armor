@@ -1,4 +1,7 @@
 import { UserEventSyncLaunchService } from './user-event-sync-launch.service';
+import { RuntimeTaskScheduler } from '../agent/tasks/task-scheduler.service';
+import { TaskGraphsController } from '../agent/tasks/task-graphs.controller';
+import { TaskGraphsService } from '../agent/tasks/task-graphs.service';
 import { RuntimeSourceContinuationService } from './runtime-source-continuation.service';
 import {CapabilityInvocationsModule} from '../capability-invocations/capability-invocations.module';
 import {NativeCalendarRuntimeService} from './native-calendar-runtime.service';
@@ -66,9 +69,11 @@ export const OUTBOX_SERVICE = 'OUTBOX_SERVICE';
 
 @Module({
   imports: [CapabilityInvocationsModule,RuntimeTargetsModule,TerminalHandoffGuardModule, CapabilityResolverModule, PlansModule, ConnectorsModule, ConnectionsModule, RiskModule, NotificationsModule, AuditModule, CredentialsModule, BillingModule, ContentModule, DailySummaryModule, LogisticsModule, HouseholdModule, StudyModule, DeviceModule, ProfilesModule, OperationsModule, UsageModule, TruthStoreModule],
-  controllers: [ExecutionsController, VerificationController],
+  controllers: [ExecutionsController, VerificationController, TaskGraphsController],
   providers: [
     SnapshotSanitizer,
+    RuntimeTaskScheduler,
+    TaskGraphsService,
     ExecutionEventService,
     ExecutionStateService,
     ExecutionStepStateService,

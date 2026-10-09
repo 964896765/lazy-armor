@@ -72,6 +72,7 @@ export default function RootLayout() {
           <Stack.Screen name="templates/[key]" options={{ title: '模板详情' }} />
           <Stack.Screen name="plans/[id]" options={{ headerShown: false }} />
           <Stack.Screen name="plans/[id]/lifecycle" options={{ headerShown: false }} />
+          <Stack.Screen name="plans/[id]/tasks" options={{ headerShown: false }} />
           <Stack.Screen name="strategies/index" options={{ headerShown: false }} />
           <Stack.Screen name="strategies/[strategy]" options={{ headerShown: false }} />
           <Stack.Screen name="truth/[id]" options={{ headerShown: false }} />

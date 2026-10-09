@@ -1,5 +1,7 @@
 # 当前任务书 — V84–V90
 
+最新任务：V84-TASK-01 [Task Orchestrator Foundation](V84_TASK_ORCHESTRATOR.md)。按照用户冻结顺序连续推进：Task → V85 Memory → V86 Resource Capability → V87 Computer Runtime → V88 Agent Loop → V89 Skill → V90 Beta。实现后端、数据库和移动端任务进度，沿既有多来源 Shared Runtime，不再次返回 P3 空读验收。当前 VALIDATING；正常登录待恢复不阻塞独立开发。
+
 2026-10-09 最新指令：按 [V84–V90 总方案](V84_V90_ROADMAP.md)继续开发。[V84.1 Agent Core / V84.2 GoalExecutionContext](V84_AGENT_CORE.md)已实现会话理解、受控确认解释与本人时间设置，并完成回归/构建/本地API部署/Android安装。只读真实模型合同通过，手机确认链待正常登录；V84 不提前 CLOSED。五个一级页保持日程 | 计划 | 会话 | 资源 | 服务。
 
 P1/P2 CLOSED，P3 核心恢复机制从主开发线移除，物流正向证据独立待验，不循环空读、不阻塞 V84。复用既有权威，每个任务同步 Backend/Frontend/Database/Runtime/Tests/Acceptance，自动回归与真机分别记账。

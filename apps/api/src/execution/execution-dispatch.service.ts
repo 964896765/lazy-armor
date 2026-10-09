@@ -14,7 +14,8 @@ import { newId } from '@lazy-armor/shared';
 import { and, asc, eq } from 'drizzle-orm';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
 import { AuditService } from '../audit/audit.service';
-import { QueueService } from '../infrastructure/queue.service';
+import { RuntimeTaskScheduler } from '../agent/tasks/task-scheduler.service';
+import { materializeTaskGraph } from '../agent/tasks/task-runtime';
 import { PlanDefinitionAssembler } from '../plans/plan-definition.assembler';
 import { ExecutionEventService } from './execution-event.service';
 import { ExecutionPolicyService } from './execution-policy.service';
@@ -40,7 +41,7 @@ export class ExecutionDispatchService {
     private readonly invocations:CapabilityInvocationsService,
     private readonly targets:RuntimeTargetsService,
     private readonly assembler: PlanDefinitionAssembler,
-    private readonly queue: QueueService,
+    private readonly queue: RuntimeTaskScheduler,
     private readonly policy: ExecutionPolicyService,
     private readonly states: ExecutionStateService,
     private readonly events: ExecutionEventService,
@@ -282,6 +283,7 @@ export class ExecutionDispatchService {
           });
         }
         await this.audit.append({ actorType: 'user', actorUserId: userId, action: 'EXECUTION_CREATED', resourceType: 'execution', resourceId: id, userId, executionId: id, requestId, correlationId: requestId, changeSummary: planId ? `Execution created for plan ${planId}` : `Execution created for controlled USER_EVENT_SYNC source`, source: 'api', result: 'success' }, tx);
+        await materializeTaskGraph(tx, id);
         if (handoff) await tx.update(strategyRuntimeWakeups).set({ handoffStatus: 'DISPATCHED', handoffExecutionId: id, handoffReason: null })
           .where(and(eq(strategyRuntimeWakeups.id, wakeupId!), eq(strategyRuntimeWakeups.userId, userId)));
         handoff?.assertCurrent(); // Final deadline barrier; the Execution and ActionIntents roll back together.
@@ -316,7 +318,7 @@ export class ExecutionDispatchService {
   }
 
   async enqueue(executionId: string) {
-    await this.queue.addExecution(executionId, this.policy.current);
+    await this.queue.enqueueExecution(executionId);
     const rows = await this.db.select({ status: executions.status }).from(executions).where(eq(executions.id, executionId)).limit(1);
     if (rows[0]?.status === 'created' || rows[0]?.status === 'retry_wait') {
       await this.states.transition(executionId, 'queued', { queuedAt: new Date() });

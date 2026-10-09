@@ -3,6 +3,7 @@ import { executions } from '@lazy-armor/database';
 import { and, eq, isNull, lt, or } from 'drizzle-orm';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
 import { QueueService } from '../infrastructure/queue.service';
+import { RuntimeTaskScheduler } from '../agent/tasks/task-scheduler.service';
 import { ExecutionEventService } from './execution-event.service';
 import { ExecutionPolicyService } from './execution-policy.service';
 import { ExecutionStateService } from './execution-state.service';
@@ -19,6 +20,7 @@ export class ExecutionQueueReconciler implements OnModuleInit, OnApplicationShut
     private readonly states: ExecutionStateService,
     private readonly events: ExecutionEventService,
     private readonly audit: AuditService,
+    private readonly tasks: RuntimeTaskScheduler,
   ) {}
 
   onModuleInit() {
@@ -43,7 +45,11 @@ export class ExecutionQueueReconciler implements OnModuleInit, OnApplicationShut
     let recovered = 0;
     for (const execution of candidates) {
       if (await this.queue.hasExecutionJob(execution.id)) continue;
-      await this.queue.addExecution(execution.id, this.policy.current);
+      try { await this.tasks.enqueueExecution(execution.id); }
+      catch (error) {
+        if (error instanceof Error && error.message === 'TASK_OUTCOME_UNKNOWN_REQUIRES_RECONCILIATION') continue;
+        throw error;
+      }
       if (execution.status === 'created') await this.states.transition(execution.id, 'queued', { queuedAt: new Date() });
       await this.events.append(execution.id, 'queue_reconciled', { jobId: execution.id });
       await this.audit.append({

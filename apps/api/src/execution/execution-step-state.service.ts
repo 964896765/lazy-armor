@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { syncTaskSnapshots } from '../agent/tasks/task-runtime';
 import { executionSteps,executions } from '@lazy-armor/database';
 import {assertExecutionOwner,executionOwnerContext} from './execution-owner-context';
 import { and, eq } from 'drizzle-orm';
@@ -39,6 +40,7 @@ export class ExecutionStepStateService {
       if (STEP_TERMINAL_STATES.has(current)) throw new ConflictException('Terminal ExecutionStep is immutable');
       if (!TRANSITIONS[current].includes(target)) throw new BadRequestException(`Illegal ExecutionStep state transition: ${current} -> ${target}`);
       await client.update(executionSteps).set({ ...patch, status: target, updatedAt: new Date() }).where(and(eq(executionSteps.id, id), eq(executionSteps.status, current)));
+      await syncTaskSnapshots(client, executionId!);
       await this.events.append(executionId!, 'step_state_changed', { from: current, to: target }, id, client);
     };
     if (executor.transaction) await executor.transaction(body);

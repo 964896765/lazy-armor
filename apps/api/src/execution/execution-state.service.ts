@@ -1,4 +1,5 @@
 import {RuntimeResultsService} from '../capability-invocations/runtime-results.service';
+import { syncTaskSnapshots } from '../agent/tasks/task-runtime';
 import {assertExecutionOwner} from './execution-owner-context';
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { executions } from '@lazy-armor/database';
@@ -39,6 +40,7 @@ export class ExecutionStateService {
       if (EXECUTION_TERMINAL_STATES.has(current)) throw new ConflictException('Terminal Execution cannot be revived');
       if (!TRANSITIONS[current].includes(target)) throw new BadRequestException(`Illegal Execution state transition: ${current} -> ${target}`);
       await tx.update(executions).set({ ...patch, status: target, updatedAt: new Date() }).where(and(eq(executions.id, id), eq(executions.status, current)));
+      await syncTaskSnapshots(tx, id);
       changed = true;
       await this.events.append(id, 'execution_state_changed', { from: current, to: target }, null, tx);
       // 终态转换与 Audit 同事务（§35）。

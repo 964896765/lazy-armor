@@ -661,5 +661,6 @@ export * from './notification-watch-authoring';
 
 export * from './user-event';
 export * from './goal-understanding';
+export * from './agent-task';
 export * from './user-event-sync';
 export * from './runtime-authority-source';

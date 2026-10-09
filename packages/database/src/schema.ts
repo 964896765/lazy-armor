@@ -1,4 +1,4 @@
-import { boolean, bigint, char, customType, datetime, index, int, json, mysqlTable, text, uniqueIndex, varchar } from 'drizzle-orm/mysql-core';
+import { boolean, bigint, char, customType, datetime, index, int, json, mysqlTable, text, uniqueIndex, varchar, type AnyMySqlColumn } from 'drizzle-orm/mysql-core';
 import { parse as parseUuid, stringify as stringifyUuid } from 'uuid';
 
 export const uuidBinary = customType<{ data: string; driverData: Buffer }>({
@@ -1367,6 +1367,33 @@ export const executionSteps = mysqlTable('execution_steps', {
   index('execution_steps_action_intent_idx').on(table.actionIntentId),
 ]);
 
+// Agent tasks organize existing Runtime work; they never grant execution authority.
+export const agentTaskGraphs = mysqlTable('agent_task_graphs', {
+  id: uuidBinary('id').primaryKey(),
+  userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  planId: uuidBinary('plan_id').references(() => plans.id, { onDelete: 'restrict' }),
+  planVersionId: uuidBinary('plan_version_id').references(() => planVersions.id, { onDelete: 'restrict' }),
+  executionId: uuidBinary('execution_id').notNull().references(() => executions.id, { onDelete: 'restrict' }),
+  status: varchar('status', { length: 32 }).notNull(),
+  ...timestamps,
+}, t => [uniqueIndex('agent_task_graph_execution_uq').on(t.executionId), index('agent_task_graph_owner_plan_idx').on(t.userId, t.planId, t.createdAt, t.id)]);
+
+export const agentTasks = mysqlTable('agent_tasks', {
+  id: uuidBinary('id').primaryKey(),
+  graphId: uuidBinary('graph_id').notNull().references(() => agentTaskGraphs.id, { onDelete: 'restrict' }),
+  parentTaskId: uuidBinary('parent_task_id').references((): AnyMySqlColumn => agentTasks.id, { onDelete: 'restrict' }),
+  executionStepId: uuidBinary('execution_step_id').references(() => executionSteps.id, { onDelete: 'restrict' }),
+  taskOrder: int('task_order').notNull(),
+  title: varchar('title', { length: 200 }).notNull(),
+  status: varchar('status', { length: 32 }).notNull(),
+  priority: int('priority').notNull().default(5),
+  dependsOnJson: json('depends_on_json').$type<string[]>().notNull(),
+  retryCount: int('retry_count').notNull().default(0),
+  // References the existing whole-Execution lease, not a new resource mutex.
+  resourceLock: varchar('resource_lock', { length: 100 }).notNull(),
+  ...timestamps,
+}, t => [uniqueIndex('agent_task_graph_order_uq').on(t.graphId, t.taskOrder), uniqueIndex('agent_task_step_uq').on(t.executionStepId)]);
+
 export const executionEvents = mysqlTable('execution_events', {
   id: uuidBinary('id').primaryKey(),
   executionId: uuidBinary('execution_id').notNull().references(() => executions.id, { onDelete: 'restrict' }),
@@ -1778,6 +1805,8 @@ export const schema = {
   actionIntents,
   actionAdapterBindings,
   executionSteps,
+  agentTaskGraphs,
+  agentTasks,
   executionEvents,
   approvalPolicies,
   approvalRequests,

@@ -603,6 +603,13 @@
       "when": 1791399600000,
       "tag": "0085_calendar_mutation_identities",
       "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "7",
+      "when": 1791403200000,
+      "tag": "0086_agent_tasks",
+      "breakpoints": true
     }
   ]
 }

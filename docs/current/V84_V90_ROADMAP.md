@@ -1,4 +1,4 @@
-# V84–V90 持续开发总方案 · V1.0
+# V84–V90 持续开发总方案 · V1.1
 
 2026-10-09：按用户最新总方案进入持续开发。目标是具备感知、理解、规划、执行和验证能力的 Personal Life OS。本文为当前主线；V8.3 合同与验收历史继续保留。
 
@@ -37,15 +37,15 @@ Agent Core 编排现有能力。Plan、USER_EVENT、Approval、Execution、Resul
 
 | 版本 | 目标 | Backend / Runtime | Frontend | 关闭所需真实结果 |
 | --- | --- | --- | --- | --- |
-| V84 Agent Core | 理解目标并提出受控方案 | Intent、Planner、Context、Policy、可解释步骤；复用真实模型和确认权威 | 会话中的目标理解、信息/能力、资源缺口与确认 | 真实模型→合法确认→既有权威；建议不冒充执行 |
+| V84 Agent Core + Task | 理解目标并形成稳定任务入口 | Intent、Planner、Context、Policy、TaskGraph/Task/Scheduler；复用确认、租约与 Runtime | 会话理解卡片、计划任务进度 | 真实模型→合法确认→原 Runtime；任务状态与实际结果一致 |
 | V85 Memory System | 记住用户信息和偏好 | Profile/Preference/History/Asset/Relationship/Event；owner、来源、撤回、版本；短期与长期记忆分开 | 资源中的个人知识、编辑/删除/使用范围 | 用户可控记忆被 Planner 消费；隔离与撤回生效 |
-| V86 Computer Runtime | 真实设备与网页执行 | Android Screenshot/OCR/Vision/Accessibility/Input/Notification；Browser Observe/Act/Verify；权限与单步风险门 | 设备权限/在线状态、执行确认与恢复 | 真实 App/Web 观察→执行→回读；目录不是实现证据 |
-| V87 Autonomous Loop | 持续观察与跟进 | Observe→Think→Act→Verify→Learn；已有 Plan/Replan/WAIT 与受控偏好学习 | 计划进展、最近发现、下一步与反馈 | 真实变化→判断→行动→验证→等待 |
-| V88 Skill Capability System | 版本化方法能力生态 | name/description/input/output/requiredResource/permission/risk/verification/version；Repository/Entry/Revision/冻结引用 | 计划中的方法仓库、详情与使用入口 | 方法组合真实资源；更新不暗改计划；Skill 不修改 Truth |
-| V89 Service Marketplace | 能力交付与专业服务 | Service/Skill/Resource/Execution/Result；供给、请求、履约证据 | 发现、详情、确认、状态、结果与问题处理 | 真实请求→履约→Verification→Truth/Result |
+| V86 Resource Capability | 按目标匹配真实能力 | Provider/Capability/Permission/Credential/Health；复用现有 Registry/Resolver，不另造工具执行权威 | 资源能力与授权/健康状态 | 至少一个能力被真实调用并验证 |
+| V87 Computer Runtime | 真实设备与网页执行 | Android Screenshot/OCR/Vision/Accessibility/Input/Notification；Browser Observe/Act/Verify；权限与单步风险门 | 设备权限/在线状态、执行确认与恢复 | 真实手机 App/Web 观察→执行→回读；目录不是实现证据 |
+| V88 Autonomous Loop | 持续观察与跟进 | Observe→Understand→Plan→Act→Verify→Reflect；复用 Plan/Replan/WAIT 与 Task | 日程关注/建议/自动运行、计划反馈 | 连续真实运行 7 天，结果与等待可追踪 |
+| V89 Skill Ecosystem | 版本化方法能力生态 | name/description/input/output/requiredCapability/risk/verification/version；Repository/Entry/Revision/冻结引用 | 方法仓库与服务中的能力交付 | 第三方方法组合真实资源；Skill 不修改 Truth |
 | V90 Personal Life OS Beta | 完整生活目标管理 | 跨来源理解、记忆、规划、执行、验证、恢复和最终 gate | 五个页面构成完整产品链 | 持续真实使用闭环，未验能力与权限边界可见 |
 
-旧 P4 Plan Detail 体验随 V84–V87 同步优化，旧 P5 Service Runtime 对应 V89，旧 P6 方法仓库对应 V88；历史合同仍有效，未实现能力不宣称完成。
+2026-10-09 最新版本顺序永久沿用上述映射。Task foundation 先于 Memory；不提前跳 Computer Use。旧 P4 计划体验随主线同步优化，旧 P5 服务与旧 P6 方法仓库保留合同并在 V89 生态范围接入，未实现能力不宣称完成。
 
 ## 持续执行规则
 
@@ -53,4 +53,4 @@ Agent Core 编排现有能力。Plan、USER_EVENT、Approval、Execution、Resul
 
 来源、时间、权限、执行与验证历史必须可追踪。自动化、构建、部署、安装与真机分别记账；缺真实数据或手机锁屏时保留待验并推进独立工作。不重复询问已确定方向，不模拟生产事实，不改历史终态，不扩大已冻结矩阵。
 
-当前任务见 [V84 Agent Core](V84_AGENT_CORE.md)。
+当前任务见 [Task Orchestrator](V84_TASK_ORCHESTRATOR.md)，已完成的理解入口见 [V84 Agent Core](V84_AGENT_CORE.md)。

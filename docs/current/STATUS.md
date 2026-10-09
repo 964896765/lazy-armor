@@ -6,6 +6,8 @@ V84.1 已实现 `goal-understanding.v1`、Agent intent/planner/policy、原 Plan
 
 本地 API 已更新；V84 r1b APK 覆盖安装成功，构建/已安装 SHA256 一致：`ad52ccb785118dd36b7ed70540cbc17821c7828472fda7382ec3288c8c03b8bd`。只读真实 DeepSeek 探针 8/8：按本人时区正确解析次日下午15:00，USER_EVENT 建议不生成 Plan、外部同步或执行授权。该探针未保存会话/事项，不冒充手机确认链。用户回复暂时无法登录，真机理解卡片与确认验收保留 REAL_PENDING，V84 IN_PROGRESS。详见 [当前任务](V84_AGENT_CORE.md)。
 
+当前进入 [V84 Task Orchestrator](V84_TASK_ORCHESTRATOR.md) 实现/验证：任务图与冻结执行身份同事务生成，运行转换保持原 fencing，计划中展示任务进度。最新顺序为 Task → V85 Memory → V86 Resource Capability → V87 Computer Runtime → V88 Loop → V89 Skill → V90 Beta；下方历史顺序不作为当前阻塞。
+
 ## V8.3 历史 checkpoint
 
 2026-10-09 17:41 导航修复：GitHub checkpoint `7fdbb90` 已推送并核对远端一致后，补上通知来源页固定顶部返回按钮、移除重复导航标题。普通进入使用已有页面历史返回，直达且没有上一页时回到资源；五个一级入口保持不变。Mobile typecheck、Android bundle/APK 构建通过，r8 已覆盖安装并核对手机 APK 与构建字节相同，SHA256 `b5b72d4f17d99556ef1c0f5d1512c044e5352585cce5243e4b2fea95039f2cd4`。已提交的本机来源过滤和监听状态提示随此次源码打包。
