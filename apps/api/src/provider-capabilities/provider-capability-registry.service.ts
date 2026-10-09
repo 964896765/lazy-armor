@@ -7,6 +7,7 @@ import { DATABASE, type InjectedDatabase } from '../common/database.module';
 import { dingtalkManifest } from '../providers/dingtalk/dingtalk-manifest';
 import { feishuManifest } from '../providers/feishu/feishu-manifest';
 import { wecomManifest } from '../providers/wecom/wecom-manifest';
+import { publicJsonManifest } from '../connectors/public-json.manifest';
 
 @Injectable()
 export class ProviderCapabilityRegistryService implements OnModuleInit {
@@ -15,6 +16,7 @@ export class ProviderCapabilityRegistryService implements OnModuleInit {
   constructor(@Inject(DATABASE) private readonly db: InjectedDatabase) {}
 
   async onModuleInit() {
+    this.installRevision(publicJsonManifest);
     this.installRevision(feishuManifest);
     this.installRevision(dingtalkManifest);
     this.installRevision(wecomManifest);
@@ -41,6 +43,19 @@ export class ProviderCapabilityRegistryService implements OnModuleInit {
   }
 
   private async syncManifest(manifest: VersionedProviderCapabilityManifest) {
+    // Several deployed roles register the same immutable revision on startup.
+    // Retry only rolled-back metadata races, then re-read and enforce its hash.
+    for (let attempt = 0; ; attempt++) {
+      try { return await this.persistManifest(manifest); }
+      catch (error) {
+        const code = databaseErrorCode(error);
+        if (attempt >= 3 || !['ER_LOCK_DEADLOCK', 'ER_DUP_ENTRY'].includes(code ?? '')) throw error;
+        await new Promise(resolve => setTimeout(resolve, 25 * (attempt + 1)));
+      }
+    }
+  }
+
+  private async persistManifest(manifest: VersionedProviderCapabilityManifest) {
     const existingRevision = (await this.db
       .select({
         id: providerCapabilityManifests.id,
@@ -141,4 +156,13 @@ export class ProviderCapabilityRegistryService implements OnModuleInit {
       });
     });
   }
+}
+
+function databaseErrorCode(error: unknown): string | undefined {
+  for (let depth = 0; depth < 4 && error && typeof error === 'object'; depth++) {
+    const current = error as { code?: string; cause?: unknown };
+    if (current.code) return current.code;
+    error = current.cause;
+  }
+  return undefined;
 }

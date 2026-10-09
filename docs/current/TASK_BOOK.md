@@ -1,5 +1,7 @@
 # 当前任务书 — V84–V90
 
+2026-10-09：[V86-RESOURCE-02](V86_GOAL_RESOURCE_MATCH.md)已实现版本绑定的目标资源核对、公开接口读取来源 fencing 和二级返回入口；自动回归、构建与 APK 安装已有证据，本人正常登录后的 UI/目标调用独立待验。下一任务 V87-COMPUTER-01，沿既有 DeviceTask/受控读取合同推进，不推送 GitHub。
+
 2026-10-09 最新授权：**继续本地开发，暂不推送 GitHub**。V85-MEMORY-02/03 已构建、部署、覆盖安装并保存本地 `316ec96`；V85-MEMORY-04 真实 DeepSeek 与隔离 API 生命周期 5/5 通过，本地 `5f101cd`。本人手机授权/核对/消费仍待正常登录，不绕过、不重复催问、不提前 CLOSED。当前连续主任务为 [V86-RESOURCE-01 逐项资源能力与时效一致性](V86_RESOURCE_CAPABILITY.md)，沿已有 Registry/Resolver 和五页面同步能力与入口，先前推送是历史 checkpoint，不构成本轮推送授权。
 
 当前任务 V85-MEMORY-01 [Controlled Memory Store & Planner Context](V85_MEMORY_SYSTEM.md)：Backend/Frontend/Database/Runtime 均已实现，自动检查与构建通过后保存 checkpoint。Memory 的 AI 候选提取/确认、关系图与真实消费仍属 V85 后续任务；不提前切到 Computer Use。

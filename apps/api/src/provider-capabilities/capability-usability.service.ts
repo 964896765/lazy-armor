@@ -8,6 +8,7 @@ import {
   connections,
   connectorCapabilities,
   connectors,
+  credentialRefs,
   providerCapabilityHealth,
 } from '@lazy-armor/database';
 import { and, eq } from 'drizzle-orm';
@@ -31,7 +32,11 @@ export class CapabilityUsabilityService {
       status: connections.status,
       statusReason: connections.statusReason,
       expiresAt: connections.expiresAt,
+      authenticationType: connectors.authenticationType,
+      credentialStatus: credentialRefs.status,
+      credentialExpiresAt: credentialRefs.expiresAt,
     }).from(connections).innerJoin(connectors, eq(connections.connectorId, connectors.id))
+      .leftJoin(credentialRefs, eq(credentialRefs.id, connections.credentialRefId))
       .where(and(eq(connections.id, connectionId), eq(connections.userId, userId))).limit(1))[0];
     if (!connection) throw new NotFoundException('Connection not found');
 
@@ -60,7 +65,9 @@ export class CapabilityUsabilityService {
       const health = healthRows.find((item) => item.capabilityKey === key);
       const official = declared?.officialAvailability ?? 'TO_VERIFY_OFFICIAL';
       const implementation = old ? implementationFromLegacy(old.providerAvailability) : declared?.implementationStatus ?? 'NOT_IMPLEMENTED';
-      const state = capabilityAvailability({ providerKey: connection.providerKey, connection, scopes: declared?.oauthScopes ?? [], grant, health, now });
+      const state = capabilityAvailability({ providerKey: connection.providerKey, connection, scopes: declared?.oauthScopes ?? [], grant, health, now,
+        credentialRequired: connection.authenticationType !== 'none' || connection.providerKey === 'public_http_json',
+        credential: connection.credentialStatus ? {status:connection.credentialStatus, expiresAt:connection.credentialExpiresAt} : null });
       const usability = resolveCapabilityUsability({ providerKey: connection.providerKey, capabilityKey: key, providerAvailability: official,
         implementation, grant: state.grantStatus, health: state.healthStatus,
         explicitlyDenied: !!manifest?.explicitDenials.includes(key) || (declared?.explicitDenials.length ?? 0) > 0 });

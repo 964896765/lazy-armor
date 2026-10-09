@@ -13,6 +13,7 @@ import { UsageService } from '../usage/usage.service';
 import { ConnectorRateLimitCoordinator } from '../infrastructure/connector-rate-limit-coordinator.service';
 import { ProviderCircuitBreakerService } from '../infrastructure/provider-circuit-breaker.service';
 import { publicJsonUrl } from '../connectors/public-json.connector';
+import { ConsumerReadSourceService, type ConsumerReadSource } from './consumer-read-source.service';
 import type {
   CompleteOAuthConnectionDto,
   CreateConnectionDto,
@@ -33,6 +34,7 @@ export class ConnectionsService {
     private readonly usage: UsageService,
     private readonly rateLimits: ConnectorRateLimitCoordinator,
     private readonly circuits: ProviderCircuitBreakerService,
+    private readonly readSources: ConsumerReadSourceService,
   ) {}
 
   async create(userId: string, input: CreateConnectionDto) {
@@ -329,7 +331,7 @@ export class ConnectionsService {
     return { connection: await this.get(userId, id), credentialVersion: rotated.version };
   }
 
-  async invoke(userId: string, id: string, input: InvokeConnectorDto) {
+  async invoke(userId: string, id: string, input: InvokeConnectorDto, source?: ConsumerReadSource) {
     const grant = await this.permissions.assertGranted(userId, id, input.capability);
     const current = await this.getWithSecretRef(userId, id);
     const adapter = this.registry.get(current.connectorKey);
@@ -351,10 +353,12 @@ export class ConnectionsService {
         await this.rateLimits.acquire({ provider: current.connectorKey, connectionId: current.id });
         this.telemetry.increment('connector.calls', 1, { connectorKey: current.connectorKey, operation: grant.operation, capability: input.capability });
         let result;
+        if (source) await this.readSources.assertCurrent(source);
         if (grant.operation === 'read' && adapter.read) result = await adapter.read(request);
         else if (grant.operation === 'execute' && adapter.execute) result = await adapter.execute(request);
         else if (grant.operation === 'subscribe' && adapter.subscribe) result = await adapter.subscribe(request);
         else throw new BadRequestException('Connector does not implement the requested operation');
+        if (source) await this.readSources.assertCurrent(source);
         await this.circuits.recordSuccess(current.connectorKey);
         this.telemetry.increment('connector.success', 1, { connectorKey: current.connectorKey, operation: grant.operation, capability: input.capability });
         this.telemetry.histogram('connector.duration', Date.now() - startedAt, { connectorKey: current.connectorKey, operation: grant.operation, capability: input.capability });
@@ -375,8 +379,10 @@ export class ConnectionsService {
           usageIdentity: 'connector.operation:' + logicalIdentity,
           billable: true,
         });
+        if (source) await this.readSources.assertCurrent(source);
         return result;
       } catch (error) {
+        if (source && (error instanceof ForbiddenException || error instanceof NotFoundException)) throw error;
         const connectorError = asConnectorError(error);
         const mapped = mapConnectorError(error);
         if (connectorError?.category === 'RATE_LIMITED' && connectorError.retryAfterMs) {
@@ -402,7 +408,8 @@ export class ConnectionsService {
     if (grant.operation !== 'read') {
       throw new ForbiddenException('External write capabilities must run through the Execution Engine');
     }
-    return this.invoke(userId, id, input);
+    const source = input.capability === 'READ_PUBLIC_HTTP_JSON' ? await this.readSources.capture(userId, id, input.capability) : undefined;
+    return this.invoke(userId, id, input, source);
   }
 
   private baseSelect() {

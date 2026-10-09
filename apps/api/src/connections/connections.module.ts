@@ -9,11 +9,13 @@ import { WebhookSignatureVerifier } from './webhook-signature-verifier.service';
 import { WebhooksService } from './webhooks.service';
 import { WebhookRetentionService } from './webhook-retention.service';
 import { UsageModule } from '../usage/usage.module';
+import { ProviderCapabilitiesModule } from '../provider-capabilities/provider-capabilities.module';
+import { ConsumerReadSourceService } from './consumer-read-source.service';
 
 @Module({
-  imports: [ConnectorsModule, CredentialsModule, PermissionsModule, AuditModule, UsageModule],
+  imports: [ProviderCapabilitiesModule, ConnectorsModule, CredentialsModule, PermissionsModule, AuditModule, UsageModule],
   controllers: [ConnectionsController],
-  providers: [ConnectionsService, WebhooksService, WebhookSignatureVerifier, WebhookRetentionService, { provide: 'CONNECTOR_INVOCATION_SERVICE', useExisting: ConnectionsService }, { provide: 'WEBHOOK_RETENTION_SERVICE', useExisting: WebhookRetentionService }],
+  providers: [ConsumerReadSourceService, ConnectionsService, WebhooksService, WebhookSignatureVerifier, WebhookRetentionService, { provide: 'CONNECTOR_INVOCATION_SERVICE', useExisting: ConnectionsService }, { provide: 'WEBHOOK_RETENTION_SERVICE', useExisting: WebhookRetentionService }],
   exports: [ConnectionsService, WebhookRetentionService, 'CONNECTOR_INVOCATION_SERVICE', 'WEBHOOK_RETENTION_SERVICE'],
 })
 export class ConnectionsModule {}

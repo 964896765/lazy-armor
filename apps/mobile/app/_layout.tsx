@@ -41,6 +41,7 @@ export default function RootLayout() {
           <Stack.Screen name="approvals/[id]" options={{ headerShown: false }} />
           <Stack.Screen name="attention" options={{ headerShown: false }} />
           <Stack.Screen name="plan-center" options={{ headerShown: false }} />
+          <Stack.Screen name="goal-resources" options={{ headerShown: false }} />
           <Stack.Screen name="connections/trusted-devices" options={{ headerShown: false }} />
           <Stack.Screen name="connections/notification-sources" options={{ headerShown: false }} />
           <Stack.Screen name="truth-store" options={{ title: '已验证事实' }} />

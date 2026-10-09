@@ -5,6 +5,7 @@ const reasons: Record<string, string> = {
  SCENARIO_CONTRACT_V2_REQUIRED: '还需要补充资源配置', SCENARIO_CONTRACT_V2_UNAVAILABLE: '当前计划类型还需完善资源配置',
  SOURCE_NOT_SELECTED: '请选择数据来源', SUBJECT_REQUIRED: '请选择计划关联对象', SOURCE_CHOICE_REQUIRED: '请选择数据来源',
  PROVIDER_UNAVAILABLE: '当前数据来源暂不可用', PROVIDER_NOT_CONNECTED: '请连接数据来源',
+ APP_SOURCE_REQUIRED: '请添加并授权所需应用通知来源', APP_SOURCE_GRANT_REQUIRED: '请允许读取此应用的通知', NOTIFICATION_GRANT_REQUIRED: '请开启通知读取授权', NOTIFICATION_ACCESS_REQUIRED: '请开启系统通知访问权限', NOTIFICATION_COLLECTION_UNAVAILABLE: '请开启消息获取并检查通知监听', FRESH_CAPABILITY_EVIDENCE_REQUIRED: '请重新检查设备权限与健康状态', FRESH_APP_DISCOVERY_REQUIRED: '请刷新手机应用来源', WAITING_DEVICE: '设备暂未在线，请打开应用恢复连接', TRUSTED_DEVICE_REQUIRED: '请连接可信设备', AMBIGUOUS_NOTIFICATION_DEVICE: '多个设备可读取，请选择来源', RUNTIME_TARGET_REQUIRED: '请打开手机应用恢复连接',
  NO_CAPABILITY_PROVIDER: '暂时没有可提供此能力的资源', DEVICE_NOT_ONLINE: '设备暂未在线',
  BLOCKED_PROVIDER: '还需要连接可用资源', BLOCKED_FACT: '还需要补充信息', NEEDS_SUBJECT: '请选择资源',
  AI_PROVIDER_BALANCE_INSUFFICIENT: 'AI 服务余额不足，请充值后重试', AI_NOT_CONFIGURED: '请先配置 AI 服务',
@@ -26,7 +27,7 @@ const reasons: Record<string, string> = {
 const internalCode = /\b[A-Z][A-Z0-9]+(?:_[A-Z0-9]+)+\b/;
 const technical = /OAuth|\bScenario\s+[a-z]|Execution\s*ID|\b(?:outbox|schema|worker|capabilityKey|connectionId|planVersionId|structuredPayload)\b|\b(?:truths|capabilities|tools)\s*(?:为空|=|\/)|\bmanual\/internal\b|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f-]{23}/i;
 export const ConsumerPresentationMapper = {
- capability(value: string) { return ({ 'notification.send': '发送提醒', 'notification.read': '读取消息', 'app.notification.read': '读取已授权的应用通知', 'calendar.event.read': '读取日历事项', 'calendar.event.create': '创建外部日历事项', 'calendar.event.update': '修改外部日历事项', 'calendar.event.delete': '删除外部日历事项', 'calendar.read': '读取日历', 'calendar.write': '创建日程', 'email.read': '读取邮件', 'email.send': '发送邮件', 'file.read': '读取文件', 'http.json.read': '读取接口数据' } as Record<string,string>)[value] ?? (/^[a-z][a-z0-9_.:-]+$/i.test(value) ? '所需数据与操作权限' : this.text(value, '所需数据与操作权限')); },
+ capability(value: string) { return ({ 'notification.send': '发送提醒', 'notification.read': '读取消息', 'app.notification.read': '读取已授权的应用通知', 'calendar.event.read': '读取日历事项', 'calendar.event.create': '创建外部日历事项', 'calendar.event.update': '修改外部日历事项', 'calendar.event.delete': '删除外部日历事项', 'calendar.read': '读取日历', 'calendar.write': '创建日程', 'email.read': '读取邮件', 'email.send': '发送邮件', 'file.read': '读取文件', 'http.json.read': '读取接口数据', 'READ_PUBLIC_HTTP_JSON': '读取公开接口数据' } as Record<string,string>)[value] ?? (/^[a-z][a-z0-9_.:-]+$/i.test(value) ? '所需数据与操作权限' : this.text(value, '所需数据与操作权限')); },
  reason(value: string) { return reasons[value] ?? (value.startsWith('MISSING_FACT:') ? '还需要补充计划信息' : value.startsWith('MISSING_CAPABILITY:') ? '还需要补充可用资源' : technical.test(value) || internalCode.test(value) ? '需要补充信息或检查资源授权' : this.text(value, '需要补充信息或检查资源授权')); },
  text(value: string | null | undefined, fallback = '') {
   if (!value) return fallback;

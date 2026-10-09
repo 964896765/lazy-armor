@@ -1,9 +1,10 @@
 import { StyleSheet, Text, View } from 'react-native';
 import { presentGoalUnderstanding } from './goal-understanding-presenter';
 import { consumerTokens } from './consumer-ui';
+import { Button } from './editor-ui';
 
 /** Interpretation only. Confirmation buttons remain bound to the server's saved proposal. */
-export function GoalUnderstandingCard({ understanding, result }: { understanding: unknown; result?: string }) {
+export function GoalUnderstandingCard({ understanding, result, onResources }: { understanding: unknown; result?: string; onResources?: () => void }) {
   const view = presentGoalUnderstanding(understanding, result);
   if (!view) return null;
   return <View accessibilityLabel="AI理解的目标" style={styles.container}>
@@ -18,6 +19,7 @@ export function GoalUnderstandingCard({ understanding, result }: { understanding
         {capability.reasons.length ? <Text style={styles.detail}>{capability.reasons.join('、')}</Text> : null}
       </View>)}
       <Text style={styles.note}>执行前会再次检查权限和资源状态。</Text>
+      {onResources ? <Button secondary label="核对所需资源" onPress={onResources} /> : null}
     </View> : null}
     {view.steps.length ? <Text style={styles.detail}>{view.steps.join(' → ')}</Text> : null}
     {view.missingRequirements.length ? <Text style={styles.detail}>{view.missingRequirements.join('\n')}</Text> : null}

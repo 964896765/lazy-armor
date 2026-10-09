@@ -50,8 +50,8 @@ type AcquisitionHandoff = {
 @Injectable()
 export class FactDemandResolverService {
   /** Read-only native source recomputation, independent of a persistent Plan. */
-  async resolveNotificationQuery(userId: string, sourcePackage: string) {
-    await this.moduleRef.get(RuntimeTargetsService,{strict:false}).refresh(userId);
+  async resolveNotificationQuery(userId: string, sourcePackage: string, options: { refreshTargets?: boolean } = {}) {
+    if (options.refreshTargets !== false) await this.moduleRef.get(RuntimeTargetsService,{strict:false}).refresh(userId);
     const apps = await this.db.select().from(deviceAppConnections).where(and(eq(deviceAppConnections.userId,userId),eq(deviceAppConnections.packageName,sourcePackage)));
     const reasons = new Set<string>();
     const usable: Array<{connectionId:string;trustedDeviceId:string;sourcePackage:string;targetId:string;authorityEpoch:number;sourceVersion:string}> = [];

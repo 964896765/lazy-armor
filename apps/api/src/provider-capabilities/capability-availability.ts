@@ -6,10 +6,11 @@ type HealthEvidence = { providerKey: string; status: string; checkedAt: Date; va
 
 /** Shared temporal gates for the owner projection and Resolver. No execution authority. */
 export function capabilityAvailability(input: { providerKey: string; connection: ConnectionState; scopes: readonly string[];
-  grant?: GrantEvidence; health?: HealthEvidence; now: Date }) {
+  grant?: GrantEvidence; health?: HealthEvidence; credentialRequired?: boolean; credential?: { status: string; expiresAt: Date | null } | null; now: Date }) {
   const { providerKey, connection, scopes, grant, health, now } = input;
   const connectionExpired = !!connection.expiresAt && connection.expiresAt <= now;
-  const connectionReady = connection.status === 'connected' && !connectionExpired;
+  const credentialReady = !input.credentialRequired || !!input.credential && input.credential.status === 'active' && (!input.credential.expiresAt || input.credential.expiresAt > now);
+  const connectionReady = connection.status === 'connected' && !connectionExpired && credentialReady;
   let grantStatus: ConnectionCapabilityGrantStatus = 'NOT_GRANTED';
   if (grant) {
     if (grant.providerKey !== providerKey) grantStatus = 'UNKNOWN';
@@ -26,7 +27,7 @@ export function capabilityAvailability(input: { providerKey: string; connection:
     // Old negative evidence cannot become healthy through expiry; explicit successful checking clears it.
     healthStatus = health.status === 'HEALTHY' && !healthFresh ? 'UNKNOWN' : health.status as ProviderCapabilityHealthStatus;
   }
-  if (connectionExpired || ['expired', 'reauthorization_required'].includes(connection.status)) healthStatus = 'REAUTHORIZATION_REQUIRED';
+  if (connectionExpired || !credentialReady || ['expired', 'reauthorization_required'].includes(connection.status)) healthStatus = 'REAUTHORIZATION_REQUIRED';
   else if (connection.status === 'revoked') healthStatus = 'PERMISSION_REVOKED';
   else if (connection.status === 'offline') healthStatus = 'DEVICE_OFFLINE';
   else if (connection.status === 'provider_error') healthStatus = 'PROVIDER_UNAVAILABLE';

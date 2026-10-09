@@ -17,6 +17,8 @@ import { CapabilityResolverModule } from '../capability-resolver/capability-reso
 import { ConversationOnceService } from './conversation-once.service';
 import { Module } from '@nestjs/common';
 import { MemoryModule } from '../memory/memory.module';
+import { ProviderCapabilitiesModule } from '../provider-capabilities/provider-capabilities.module';
+import { GoalResourceMatchService } from './goal-resource-match.service';
 import { AiAdapterModule } from '../ai-adapter/ai-adapter.module';
 import { PlansModule } from '../plans/plans.module';
 import { ConnectionsModule } from '../connections/connections.module';
@@ -25,5 +27,5 @@ import { ConnectorsModule } from '../connectors/connectors.module';
 import { TemplatesModule } from '../templates/templates.module';
 import { ConsumerController } from './consumer.controller';
 import { ConsumerService } from './consumer.service';
-@Module({ imports: [MemoryModule, ProfilesModule, RealityPipelineModule,FactDemandsModule,AcquisitionModule, ArtifactModule, AuditModule, CreationDraftsModule, ExecutionModule, CapabilityResolverModule, AiAdapterModule, PlansModule, ConnectionsModule, TrustedDevicesModule, ConnectorsModule, TemplatesModule], controllers: [ConsumerController], providers: [PersistentNotificationPlanService, ResourceGapContinuationService, CalendarProjectionService, PlanStateAssessmentService, LocalCapabilitiesService, WorkItemProjectionService, ConsumerService, ConversationOnceService] })
+@Module({ imports: [ProviderCapabilitiesModule, MemoryModule, ProfilesModule, RealityPipelineModule,FactDemandsModule,AcquisitionModule, ArtifactModule, AuditModule, CreationDraftsModule, ExecutionModule, CapabilityResolverModule, AiAdapterModule, PlansModule, ConnectionsModule, TrustedDevicesModule, ConnectorsModule, TemplatesModule], controllers: [ConsumerController], providers: [GoalResourceMatchService, PersistentNotificationPlanService, ResourceGapContinuationService, CalendarProjectionService, PlanStateAssessmentService, LocalCapabilitiesService, WorkItemProjectionService, ConsumerService, ConversationOnceService] })
 export class ConsumerModule {}

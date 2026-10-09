@@ -37,3 +37,6 @@ Execution/Outbox 活跃租约均为 0 后替换本地三个角色，3001/3011/30
 资源能力 APK 已安装在 `2c696fe`，源码 bundle 与 APK 内 bundle 一致，安装包 SHA256 与构建一致：`60e9dcef7f264e1bfcf7cf12787c8963480ecf2543fbb0d4c640ad44aa470760`。安装不是本人手机能力页点按或真实目标调用证明；V86 保持 IN_PROGRESS，不推送 GitHub。
 
 本机证据：`artifacts/v86-resource-capability-tests-final-r4.log`、`v86-github-dispatch-diagnostic-r3.log`、`v86-resource-fresh-test-db-r2.json`、`v86-resource-deployment-r1.json`、`v86-resource-readiness-r1.json`、`v86-resource-development-authority-counts-r1.json`、`v86-resource-capability-r1-install-real.json`。前面的失败日志独立保留。
+
+
+2026-10-09：V86-RESOURCE-02 的实现/验证见 [目标资源核对与来源检查](V86_GOAL_RESOURCE_MATCH.md)。手动接口读取属于既有 consumer inspection，不作为新的 Goal Runtime Golden Flow 或 V86 CLOSED 证据；本人入口待验继续独立保留。

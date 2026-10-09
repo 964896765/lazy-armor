@@ -5,7 +5,7 @@ import { ConflictException, Inject, Injectable, NotFoundException } from '@nestj
 import { resolveCapability, candidateCapability, type ResolutionCandidate } from '@lazy-armor/connector-sdk';
 import { runtimeTargetCandidateId, type RuntimeTargetActionBinding } from '@lazy-armor/plan-schema';
 import { canonicalStringify,canonicalCapabilityId,sameCapabilityIdentity,capabilityIdentity,localCapabilitySourceId,normalizeLocalSourceId,localCapabilityAvailability } from '@lazy-armor/plan-schema';
-import { runtimeTargets, planActions, capabilityResolutionDecisions, connections, connectors, connectionCapabilityGrants, providerCapabilityHealth, plans, planVersions,planCreationContracts,planTriggers,localCapabilityStates,trustedDevices,deviceTasks } from '@lazy-armor/database';
+import { runtimeTargets, planActions, capabilityResolutionDecisions, connections, connectors, credentialRefs, connectionCapabilityGrants, providerCapabilityHealth, plans, planVersions,planCreationContracts,planTriggers,localCapabilityStates,trustedDevices,deviceTasks } from '@lazy-armor/database';
 import { newId } from '@lazy-armor/shared';
 import { createHash } from 'node:crypto';
 import { capabilityAvailability } from '../provider-capabilities/capability-availability';
@@ -179,8 +179,9 @@ export class CapabilityResolverService {
   }
 
   private async collectCandidates(userId: string, input: ResolutionInput, now: Date): Promise<Array<ResolutionCandidate & {runtimeTargetBinding?: RuntimeTargetActionBinding}>> {
-    const rows = await this.db.select({ connection: connections, providerKey: connectors.key }).from(connections)
-      .innerJoin(connectors, eq(connectors.id, connections.connectorId)).where(eq(connections.userId, userId));
+    const rows = await this.db.select({ connection: connections, providerKey: connectors.key, authenticationType: connectors.authenticationType, credential: credentialRefs }).from(connections)
+      .innerJoin(connectors, eq(connectors.id, connections.connectorId))
+      .leftJoin(credentialRefs, eq(credentialRefs.id, connections.credentialRefId)).where(eq(connections.userId, userId));
     const candidates: Array<ResolutionCandidate & {runtimeTargetBinding?: RuntimeTargetActionBinding}> = [];
     const nativeCapability=canonicalCapabilityId(input.requirement.capabilityKey);
     if (nativeCapability && ['calendar.event.create','calendar.event.update','calendar.event.delete'].includes(nativeCapability)) {
@@ -209,7 +210,8 @@ export class CapabilityResolverService {
       for (const capability of manifest.capabilities.filter((item) => sameCapabilityIdentity(item.key,input.requirement.capabilityKey))) {
         const grant = grants.find((item) => item.capabilityKey === capability.key);
         const check = health.find((item) => item.capabilityKey === capability.key);
-        const availability = capabilityAvailability({ providerKey: row.providerKey, connection: row.connection, scopes: capability.oauthScopes, grant, health: check, now });
+        const availability = capabilityAvailability({ providerKey: row.providerKey, connection: row.connection, scopes: capability.oauthScopes, grant, health: check, now,
+          credentialRequired: row.authenticationType !== 'none' || row.providerKey === 'public_http_json', credential: row.credential });
         const evidence = await this.evidence.read(row.providerKey, { userId, connectionId: row.connection.id,
           capabilityKey: capability.key, resource: input.requirement.resource, planVersionId: input.planVersionId });
         candidates.push({ id: `${row.connection.id}:${capability.key}`, providerKey: row.providerKey,

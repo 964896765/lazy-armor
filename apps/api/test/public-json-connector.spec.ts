@@ -19,6 +19,11 @@ function response(statusCode: number, body: string) {
  });
 }
 describe('bounded public JSON reads', () => {
+ it('rejects operation parameters and unknown capabilities before network access', async () => {
+  await expect(new PublicJsonConnector().read({ ...input, input: { endpoint: 'https://other.example/data' } })).rejects.toThrow('额外操作参数');
+  await expect(new PublicJsonConnector().read({ ...input, capability: 'WRITE_PUBLIC_HTTP_JSON' })).rejects.toThrow('额外操作参数');
+  expect(mocks.lookup).not.toHaveBeenCalled(); expect(mocks.request).not.toHaveBeenCalled();
+ });
  it('rejects local, reserved, mapped and private network addresses', () => {
   for (const address of ['127.0.0.1', '10.1.2.3', '172.16.0.1', '192.168.1.1', '169.254.169.254', '100.64.0.1', '198.18.1.1', '224.0.0.1', '::1', '::ffff:127.0.0.1', 'fc00::1', '2001:db8::1']) expect(publicAddress(address)).toBe(false);
   expect(publicAddress('93.184.216.34')).toBe(true);

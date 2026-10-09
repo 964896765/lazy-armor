@@ -26,10 +26,11 @@ export class PublicJsonConnector implements Connector {
   metadata = () => ({ key: 'public_http_json', name: '公开 JSON 接口', description: '读取无需密钥的公开 HTTPS JSON 数据', version: '1.0.0', connectorSdkVersion: '0.1.0', providerType: 'file' as const, productionStatus: 'BETA' as const, authentication: { type: 'none' as const }, supportsRefresh: false, supportsRevoke: true, supportsWebhook: false, supportsHealthCheck: true, sandboxSupport: 'none' as const, rateLimitStrategy: 'unknown' as const });
   capabilities = () => [{ key: 'READ_PUBLIC_HTTP_JSON', name: '读取公开 JSON', riskLevel: 'R0' as const, operation: 'read' as const, requiredPermission: 'READ_PUBLIC_HTTP_JSON', providerAvailability: 'beta' as const }];
   async validateConnection(request: ConnectorRequest) {
-    try { await this.read(request); const now = new Date(); return { status: 'healthy' as const, checkedAt: now.toISOString(), validUntil: new Date(now.getTime() + 300000).toISOString() }; }
+    try { await this.read({ ...request, capability: 'READ_PUBLIC_HTTP_JSON', input: {} }); const now = new Date(); return { status: 'healthy' as const, checkedAt: now.toISOString(), validUntil: new Date(now.getTime() + 300000).toISOString() }; }
     catch { return { status: 'unhealthy' as const, checkedAt: new Date().toISOString(), reason: 'PUBLIC_JSON_UNREACHABLE' }; }
   }
   async read(input: ConnectorRequest): Promise<ConnectorResult> {
+    if (input.capability !== 'READ_PUBLIC_HTTP_JSON' || Object.keys(input.input).length) throw new ConnectorError('INVALID_READ_INPUT', 'INVALID_REQUEST', '此接口只读取已保存地址，不接受额外操作参数');
     const url = publicJsonUrl(input.credentials?.data?.endpoint ?? '');
     const host = url.hostname.replace(/^\[|\]$/g, '');
     const addresses = await new Promise<Array<{ address: string; family: number }>>((resolve, reject) => {
