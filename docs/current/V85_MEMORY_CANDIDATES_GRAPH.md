@@ -43,3 +43,13 @@ r2 APK 已覆盖安装在 `2c696fe`，APK 内 bundle 与源码 bundle 一致，�
 真实 DeepSeek 只读 extraction/schema probe 8 项通过，使用明确虚构的个人陈述与合成开启上下文，保存对象数为 0；这不是本人记忆授权、确认、消费或手机 Golden Flow。正常登录暂不可用，相关 UI 验收保持 REAL_PENDING。
 
 本机证据：`artifacts/v85-memory-composition-final-tests.log`、`v85-memory-candidates-r3-tests.log`、`v85-memory-composition-deployment-r2.json`、`v85-memory-composition-readiness-r2.json`、`v85-memory-composition-authority-counts-r2.json`、`v85-memory-composition-r2-install-real.json`、`v85-memory-model-contract-r1.json`。本轮仅本地保存，不推送 GitHub；V85 仍 IN_PROGRESS。
+
+## V85-MEMORY-04 · 真实模型与隔离 API 生命周期
+
+新增显式 opt-in 的 `memory-real-model.integration.spec.ts`，默认回归不调用付费模型。启用验收必须使用 `_test` MySQL、Redis 15、已启用的开发 DeepSeek 配置和新的证据文件；账户经正常注册/鉴权接口创建，记录均为明确虚构的开发样例，不访问手机登录或本人账户。
+
+真实 DeepSeek 五次请求贯穿实际 Conversation/Planner/Memory API：候选仍待核对→本人测试账户确认并重放同一身份→确认资料与关系被真实模型引用→编辑后消费 v2、旧引用仍标记 CHANGED、旧关系撤回→关闭使用后不发送 Memory 内容/引用→删除后清除正文、跨 owner 拒绝、0 Truth/Execution。5/5 通过，未覆盖用户手机核对、真实个人授权和实际生活目标；这些继续 REAL_PENDING。
+
+证据：`artifacts/v85-memory-real-api-r2.json`、`v85-memory-real-api-r2.log`。首次 runner 缺 Vitest CLI 路径的失败日志保留，改用已安装的 pnpm exec 后执行通过。源码 API typecheck 通过。本地 checkpoint `316ec96` 已保存候选/引用/关系实现，无 push。
+
+V85 后端/前端基础与真实模型 API 验证具备，手机验收独立保留；按用户连续开发要求进入 V86 的已有 Registry/Resolver 资源能力投影，不提前 V87，也不把 V85 标记 CLOSED。
