@@ -1,3 +1,5 @@
+import { z } from 'zod';
+
 export const MEMORY_TYPES = ['PROFILE', 'PREFERENCE', 'ASSET', 'PERSON', 'LOCATION', 'EVENT', 'DECISION', 'HISTORY'] as const;
 export type MemoryType = typeof MEMORY_TYPES[number];
 
@@ -6,7 +8,8 @@ export interface PersonalMemory {
   type: MemoryType;
   title: string;
   content: string;
-  sourceKind: 'USER_INPUT';
+  sourceKind: 'USER_INPUT' | 'CONVERSATION_CONFIRMED';
+  sourceRef?: { conversationId: string; messageId: string; candidateId: string; modelId: string } | null;
   version: number;
   confirmedAt: string;
   createdAt: string;
@@ -17,6 +20,40 @@ export interface MemoryContextSnapshot {
   enabled: boolean;
   settingsVersion: number;
   items: PersonalMemory[];
+  relations?: MemoryRelation[];
+}
+export const MEMORY_RELATIONS = ['OWNS', 'USES', 'PREFERS', 'RELATED_TO'] as const;
+export type MemoryRelationType = typeof MEMORY_RELATIONS[number];
+export interface MemoryRelation {
+  id: string; version: number; fromId: string; fromVersion: number; toId: string; toVersion: number;
+  relation: MemoryRelationType; weight: number; fromTitle: string; toTitle: string; createdAt: string;
+}
+
+/** Extraction is a suggestion. quote must be an exact substring of the current user intent. */
+export const memorySuggestionSchema = z.object({ type: z.enum(MEMORY_TYPES), title: z.string().trim().min(1).max(120), quote: z.string().trim().min(2).max(1000) }).strict();
+export type MemorySuggestion = z.infer<typeof memorySuggestionSchema>;
+export interface MemoryCandidate {
+  id: string; version: number; status: 'PENDING' | 'CONFIRMED' | 'DISMISSED' | 'UNAVAILABLE';
+  conversationId: string; sourceMessageId: string; proposalMessageId: string;
+  type: MemoryType; title: string | null; quote: string | null; modelId: string; createdAt: string;
+  memoryId: string | null; confirmedMemoryVersion: number | null;
+}
+export interface MemoryReference {
+  id: string; requestedVersion: number;
+  state: 'CURRENT' | 'CHANGED' | 'DELETED' | 'EXPIRED' | 'DISABLED';
+  memory: PersonalMemory | null;
+  source: { kind: 'USER_INPUT' | 'CONVERSATION_CONFIRMED'; available: boolean; conversationId?: string; messageId?: string; content?: string };
+}
+
+export function groundedMemorySuggestions(intent: string, raw: unknown): MemorySuggestion[] {
+  const parsed = z.array(memorySuggestionSchema).max(3).safeParse(raw);
+  if (!parsed.success) return [];
+  const seen = new Set<string>();
+  return parsed.data.filter(item => {
+    const identity = `${item.type}:${item.quote}`;
+    if (!intent.includes(item.quote) || seen.has(identity)) return false;
+    seen.add(identity); return true;
+  });
 }
 
 /** Bounded relevance ranking over owned, enabled, unexpired, confirmed memories only. */

@@ -1,5 +1,7 @@
 # 当前任务书 — V84–V90
 
+2026-10-09 最新授权：**继续本地开发，暂不推送 GitHub**。当前 V85-MEMORY-02/03 [候选确认、引用核对和关系图](V85_MEMORY_CANDIDATES_GRAPH.md)已实现并通过自动验证；继续本地构建、部署、安装与 V85-MEMORY-04 的独立验收工作，不重复问是否继续。先前推送记录是历史 checkpoint，不构成本轮推送授权。
+
 当前任务 V85-MEMORY-01 [Controlled Memory Store & Planner Context](V85_MEMORY_SYSTEM.md)：Backend/Frontend/Database/Runtime 均已实现，自动检查与构建通过后保存 checkpoint。Memory 的 AI 候选提取/确认、关系图与真实消费仍属 V85 后续任务；不提前切到 Computer Use。
 
 最新任务：V84-TASK-01 [Task Orchestrator Foundation](V84_TASK_ORCHESTRATOR.md)。按照用户冻结顺序连续推进：Task → V85 Memory → V86 Resource Capability → V87 Computer Runtime → V88 Agent Loop → V89 Skill → V90 Beta。实现后端、数据库和移动端任务进度，沿既有多来源 Shared Runtime，不再次返回 P3 空读验收。当前 VALIDATING；正常登录待恢复不阻塞独立开发。

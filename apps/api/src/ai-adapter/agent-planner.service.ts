@@ -59,7 +59,10 @@ export interface AgentPlanProposal {
 }
 
 export interface PlannerResult {
+  /** Internal only: Consumer persists candidates separately, never in assistant JSON. */
+  memoryCandidateProposal?: { settingsVersion: number; modelId: string; suggestions: import('@lazy-armor/plan-schema').MemorySuggestion[] };
   memoryRefs?: Array<{ id: string; version: number; settingsVersion: number }>;
+  memoryRelationRefs?: Array<{ id: string; version: number }>;
   understanding?: import('@lazy-armor/plan-schema').GoalUnderstanding;
   factQuery?: import('../consumer/notification-fact-query.contract').NotificationFactQuery;
   externalSync?: UserEventExternalSyncIntent | null;
@@ -134,7 +137,9 @@ export class AgentPlannerService {
     });
     const output = await this.model.complete({ userId: options.userId, workContext: options.workContext, intent, context, systemPolicy: '见 SYSTEM_POLICY section', allowedResults: [...AGENT_PLANNER_RESULTS] });
     const validation = this.validateOutput(output, facts, intent);
-    if (facts.memoryContext?.items.length && (!options.userId || !this.executionContext ||
+    const { groundedMemorySuggestions } = await import('@lazy-armor/plan-schema');
+    const memorySuggestions = facts.memoryContext?.enabled ? groundedMemorySuggestions(intent, output.memorySuggestions) : [];
+    if (facts.memoryContext && (facts.memoryContext.items.length || memorySuggestions.length) && (!options.userId || !this.executionContext ||
       !(await this.executionContext.memoryContextCurrent(options.userId, facts.memoryContext)))) {
       validation.valid = false;
       validation.errors.push('MEMORY_CONTEXT_CHANGED');
@@ -153,7 +158,9 @@ export class AgentPlannerService {
       result.clarification={missingRequirements:['请补充要安排的事项、日期时间及使用的日历，以确定计划场景。']};
     }
     if (validation.valid) {
+      if (memorySuggestions.length && facts.memoryContext) result.memoryCandidateProposal = { settingsVersion: facts.memoryContext.settingsVersion, modelId: this.model.modelId(), suggestions: memorySuggestions };
       if (facts.memoryContext?.items.length) result.memoryRefs = facts.memoryContext.items.map(item => ({ id: item.id, version: item.version, settingsVersion: facts.memoryContext!.settingsVersion }));
+      if (facts.memoryContext?.relations?.length) result.memoryRelationRefs = facts.memoryContext.relations.map(({ id, version }) => ({ id, version }));
       if (output.factQuery && output.result === 'ANSWER' && options.workContext === 'TEMPORARY') {
         result.factQuery = output.factQuery;
       }
@@ -180,6 +187,7 @@ export class AgentPlannerService {
           after: {
             plannerRunId: proposalId,
             memoryRefs: result.memoryRefs ?? [],
+            memoryRelationRefs: result.memoryRelationRefs ?? [],
             goalUnderstanding: result.understanding ? {
               schemaVersion: result.understanding.schemaVersion,
               lifecycle: result.understanding.lifecycle,

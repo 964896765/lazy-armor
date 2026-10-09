@@ -20,9 +20,9 @@ Tests：8 项真实隔离 MySQL 集成覆盖默认关闭/明确确认、并发�
 
 Acceptance：本人正常登录→开启使用→确认保存设备或偏好→后续真实模型理解引用→关闭/删除后不再引用。真实模型记忆消费与移动端操作在尚未恢复正常登录时保留 REAL_PENDING，不能以构建替代。
 
-完成状态：Store/Permission/Retrieval/Ranking + Frontend 已实现并通过自动化验证；V85 整体 IN_PROGRESS。尚未实现自动 Memory Extractor 候选确认、Memory Relation Graph、来源引用交互与这些功能的真实验收，不宣称完整 Memory OS 已完成。
+完成状态：Store/Permission/Retrieval/Ranking + Frontend 已实现并通过自动化验证；V85 整体 IN_PROGRESS。[后续本地开发](V85_MEMORY_CANDIDATES_GRAPH.md)已补会话 Memory Extractor 候选确认、Memory Relation Graph 与来源引用交互，真实连续模型/手机验收仍待完成，不宣称完整 Memory OS 已关闭。
 
-下一任务：V85-MEMORY-02 — 会话中的 Memory Candidate、受控确认与引用核对，再扩展 owner-bound Relation Graph。V85 后进入 V86 Resource Capability，后续 V87 Computer Runtime / V88 Loop / V89 Skill / V90 Beta 顺序不变。
+当前后续任务见 [V85-MEMORY-02/03](V85_MEMORY_CANDIDATES_GRAPH.md)。候选与关系图自动验证后继续 V85-MEMORY-04 真实模型/产品闭环。V85 后进入 V86 Resource Capability，后续 V87 Computer Runtime / V88 Loop / V89 Skill / V90 Beta 顺序不变。
 
 ## 验证与部署记录 · 2026-10-09
 

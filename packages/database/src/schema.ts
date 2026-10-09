@@ -33,6 +33,7 @@ export const personalMemories = mysqlTable('personal_memories', {
   title: varchar('title', { length: 120 }),
   content: text('content'),
   sourceKind: varchar('source_kind', { length: 32 }).notNull(),
+  sourceRefJson: json('source_ref_json').$type<{ conversationId: string; messageId: string; candidateId: string; modelId: string }>(),
   status: varchar('status', { length: 16 }).notNull(),
   version: int('version').notNull(),
   confirmedAt: datetime('confirmed_at', { mode: 'date', fsp: 6 }).notNull(),
@@ -1756,6 +1757,33 @@ export const aiProviderConfigs = mysqlTable('ai_provider_configs', {
  id: uuidBinary('id').primaryKey(), userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }), provider: varchar('provider', { length: 32 }).notNull(), model: varchar('model', { length: 80 }).notNull(), thinkingMode: varchar('thinking_mode', { length: 16 }).notNull(), credentialId: uuidBinary('credential_id').notNull().references(() => credentialRefs.id, { onDelete: 'restrict' }), maskedKey: varchar('masked_key', { length: 40 }).notNull(), enabled: int('enabled').notNull().default(1), testedAt: datetime('tested_at', { mode: 'date', fsp: 6 }), ...timestamps,
 }, table => [uniqueIndex('ai_provider_configs_user_uq').on(table.userId)]);
 
+export const memoryCandidates = mysqlTable('memory_candidates', {
+  id: uuidBinary('id').primaryKey(), userId: uuidBinary('user_id').notNull().references(() => users.id),
+  conversationId: uuidBinary('conversation_id').notNull().references(() => consumerConversations.id),
+  sourceMessageId: uuidBinary('source_message_id').notNull().references(() => consumerMessages.id),
+  proposalMessageId: uuidBinary('proposal_message_id').notNull().references(() => consumerMessages.id),
+  proposalOrder: int('proposal_order').notNull(), settingsVersion: int('settings_version').notNull(),
+  type: varchar('type', { length: 32 }).notNull(), title: varchar('title', { length: 120 }), quote: text('quote'),
+  sourceContentHash: char('source_content_hash', { length: 64 }).notNull(), proposalHash: char('proposal_hash', { length: 64 }).notNull(),
+  confirmationHash: char('confirmation_hash', { length: 64 }), modelId: varchar('model_id', { length: 120 }).notNull(),
+  status: varchar('status', { length: 16 }).notNull(), version: int('version').notNull(),
+  memoryId: uuidBinary('memory_id').references(() => personalMemories.id), confirmedMemoryVersion: int('confirmed_memory_version'),
+  ...timestamps,
+}, t => [uniqueIndex('memory_candidate_proposal_order_uq').on(t.proposalMessageId, t.proposalOrder), index('memory_candidate_owner_conversation_idx').on(t.userId, t.conversationId, t.createdAt)]);
+
+export const memoryRelations = mysqlTable('memory_relations', {
+  id: uuidBinary('id').primaryKey(), userId: uuidBinary('user_id').notNull().references(() => users.id),
+  requestId: varchar('request_id', { length: 160 }).notNull(),
+  fromId: uuidBinary('from_id').notNull().references(() => personalMemories.id), fromVersion: int('from_version').notNull(),
+  toId: uuidBinary('to_id').notNull().references(() => personalMemories.id), toVersion: int('to_version').notNull(),
+  relation: varchar('relation', { length: 32 }).notNull(), weight: int('weight').notNull().default(1),
+  activeIdentity: char('active_identity', { length: 64 }),
+  status: varchar('status', { length: 16 }).notNull(), version: int('version').notNull(),
+  ...timestamps,
+}, t => [uniqueIndex('memory_relation_request_uq').on(t.userId, t.requestId),
+  uniqueIndex('memory_relation_active_identity_uq').on(t.activeIdentity),
+  index('memory_relation_owner_from_idx').on(t.userId, t.fromId, t.status), index('memory_relation_owner_to_idx').on(t.userId, t.toId, t.status)]);
+
 export const schema = {
   userEventSyncRequests,
  conversationOnceRequests,
@@ -1830,6 +1858,8 @@ export const schema = {
   agentTasks,
   personalMemorySettings,
   personalMemories,
+  memoryCandidates,
+  memoryRelations,
   executionEvents,
   approvalPolicies,
   approvalRequests,

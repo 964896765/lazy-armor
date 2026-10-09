@@ -1,0 +1,31 @@
+ALTER TABLE personal_memories ADD COLUMN source_ref_json json NULL;
+--> statement-breakpoint
+CREATE TABLE memory_candidates (
+  id binary(16) NOT NULL PRIMARY KEY,
+  user_id binary(16) NOT NULL,
+  conversation_id binary(16) NOT NULL,
+  source_message_id binary(16) NOT NULL,
+  proposal_message_id binary(16) NOT NULL,
+  proposal_order int NOT NULL,
+  settings_version int NOT NULL,
+  type varchar(32) NOT NULL,
+  title varchar(120) NULL,
+  quote text NULL,
+  source_content_hash char(64) NOT NULL,
+  proposal_hash char(64) NOT NULL,
+  confirmation_hash char(64) NULL,
+  model_id varchar(120) NOT NULL,
+  status varchar(16) NOT NULL,
+  version int NOT NULL,
+  memory_id binary(16) NULL,
+  confirmed_memory_version int NULL,
+  created_at datetime(6) NOT NULL,
+  updated_at datetime(6) NOT NULL,
+  UNIQUE KEY memory_candidate_proposal_order_uq (proposal_message_id, proposal_order),
+  KEY memory_candidate_owner_conversation_idx (user_id, conversation_id, created_at),
+  CONSTRAINT memory_candidate_owner_fk FOREIGN KEY (user_id) REFERENCES users(id),
+  CONSTRAINT memory_candidate_conversation_fk FOREIGN KEY (conversation_id) REFERENCES consumer_conversations(id),
+  CONSTRAINT memory_candidate_source_message_fk FOREIGN KEY (source_message_id) REFERENCES consumer_messages(id),
+  CONSTRAINT memory_candidate_proposal_message_fk FOREIGN KEY (proposal_message_id) REFERENCES consumer_messages(id),
+  CONSTRAINT memory_candidate_memory_fk FOREIGN KEY (memory_id) REFERENCES personal_memories(id)
+);

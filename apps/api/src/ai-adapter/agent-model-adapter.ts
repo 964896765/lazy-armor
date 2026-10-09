@@ -29,6 +29,7 @@ export interface AgentModelRequest {
 }
 
 export interface AgentModelOutput {
+  memorySuggestions?: import('@lazy-armor/plan-schema').MemorySuggestion[];
   notificationWatch?: import('@lazy-armor/plan-schema').NotificationWatchAuthoring | null;
   factQuery?: import('../consumer/notification-fact-query.contract').NotificationFactQuery | null;
   externalSync?: import('@lazy-armor/plan-schema').UserEventExternalSyncIntent | null;

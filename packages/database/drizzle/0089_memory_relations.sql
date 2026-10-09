@@ -1,0 +1,23 @@
+CREATE TABLE memory_relations (
+  id binary(16) NOT NULL PRIMARY KEY,
+  user_id binary(16) NOT NULL,
+  request_id varchar(160) NOT NULL,
+  from_id binary(16) NOT NULL,
+  from_version int NOT NULL,
+  to_id binary(16) NOT NULL,
+  to_version int NOT NULL,
+  relation varchar(32) NOT NULL,
+  weight int NOT NULL DEFAULT 1,
+  active_identity char(64) NULL,
+  status varchar(16) NOT NULL,
+  version int NOT NULL,
+  created_at datetime(6) NOT NULL,
+  updated_at datetime(6) NOT NULL,
+  UNIQUE KEY memory_relation_request_uq (user_id, request_id),
+  UNIQUE KEY memory_relation_active_identity_uq (active_identity),
+  KEY memory_relation_owner_from_idx (user_id, from_id, status),
+  KEY memory_relation_owner_to_idx (user_id, to_id, status),
+  CONSTRAINT memory_relation_owner_fk FOREIGN KEY (user_id) REFERENCES users(id),
+  CONSTRAINT memory_relation_from_fk FOREIGN KEY (from_id) REFERENCES personal_memories(id),
+  CONSTRAINT memory_relation_to_fk FOREIGN KEY (to_id) REFERENCES personal_memories(id)
+);

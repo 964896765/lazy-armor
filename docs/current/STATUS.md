@@ -12,6 +12,8 @@ V84 Task foundation 已自动验证并推送 `3db6f6b`，进入 [V85 Memory](V85
 
 联合更新已部署本地三角色并 ready，0086/0087 已迁移，Task/Memory r1 APK 已安装且字节核对一致，SHA256 `fd4fbf696947b35758d2ec804b3c4ef812f482fb1d5cc57045c5b4a04dd11dce`。Mobile 16 项、API/Web/Android 构建通过；Memory usage 默认关闭，真实操作/模型消费与完整 V85 仍 IN_PROGRESS。历史 0083 production release migration evidence gate 保留未过，不放宽。
 
+最新本地推进：[V85 Memory Candidate/Reference/Graph](V85_MEMORY_CANDIDATES_GRAPH.md) 已实现会话候选、明确确认/忽略、来源与旧版本核对、用户确认的关系和一跳检索；来源/设置/版本与最终发布均受控。63 项 API 与 14 项 Mobile 回归通过，真实模型/手机完整验收仍 pending，V85 IN_PROGRESS。按用户指示本轮不推送 GitHub。
+
 ## V8.3 历史 checkpoint
 
 2026-10-09 17:41 导航修复：GitHub checkpoint `7fdbb90` 已推送并核对远端一致后，补上通知来源页固定顶部返回按钮、移除重复导航标题。普通进入使用已有页面历史返回，直达且没有上一页时回到资源；五个一级入口保持不变。Mobile typecheck、Android bundle/APK 构建通过，r8 已覆盖安装并核对手机 APK 与构建字节相同，SHA256 `b5b72d4f17d99556ef1c0f5d1512c044e5352585cce5243e4b2fea95039f2cd4`。已提交的本机来源过滤和监听状态提示随此次源码打包。

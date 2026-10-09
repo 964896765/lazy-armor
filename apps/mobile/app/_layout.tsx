@@ -75,6 +75,9 @@ export default function RootLayout() {
           <Stack.Screen name="plans/[id]/tasks" options={{ headerShown: false }} />
           <Stack.Screen name="personal-memory/index" options={{ headerShown: false }} />
           <Stack.Screen name="personal-memory/edit" options={{ headerShown: false }} />
+          <Stack.Screen name="personal-memory/candidate" options={{ headerShown: false }} />
+          <Stack.Screen name="personal-memory/reference" options={{ headerShown: false }} />
+          <Stack.Screen name="personal-memory/relations" options={{ headerShown: false }} />
           <Stack.Screen name="strategies/index" options={{ headerShown: false }} />
           <Stack.Screen name="strategies/[strategy]" options={{ headerShown: false }} />
           <Stack.Screen name="truth/[id]" options={{ headerShown: false }} />

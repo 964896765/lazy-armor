@@ -617,6 +617,20 @@
       "when": 1791406800000,
       "tag": "0087_personal_memory",
       "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1791410400000,
+      "tag": "0088_memory_candidates",
+      "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1791414000000,
+      "tag": "0089_memory_relations",
+      "breakpoints": true
     }
   ]
 }

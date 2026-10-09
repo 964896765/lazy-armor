@@ -16,7 +16,7 @@ export default function PersonalMemoryPage() {
   const toggle = useMutation({ mutationFn: (enabled: boolean) => api<MemorySettings>('/memory/settings', token, { method: 'PATCH', body: JSON.stringify({ enabled, version: settings.data!.version }) }),
     onSuccess: data => client.setQueryData(['memory-settings', token], data), onError: () => void settings.refetch() });
   return <EditorPage title="个人记忆">
-    <Card title="用于理解我的目标" detail="开启后，你确认保存的信息会提供给当前 AI，用于后续目标理解。可以随时关闭使用、编辑或删除。">
+    <Card title="用于理解我的目标" detail="开启后，你确认保存的信息会提供给当前 AI，用于后续目标理解。会话也可提出个人记忆建议，核对后才保存。可以随时关闭使用、编辑或删除。">
       {settings.isLoading ? <LoadingState /> : settings.isError ? <ErrorState onRetry={() => void settings.refetch()} /> : <View style={ui.line}><Text style={[ui.title, { flex: 1 }]}>{settings.data?.enabled ? '已开启' : '已关闭'}</Text><Switch accessibilityLabel="使用个人记忆" value={settings.data?.enabled ?? false} disabled={!settings.data || toggle.isPending} onValueChange={value => toggle.mutate(value)} /></View>}
       {toggle.isError ? <Text style={ui.error}>设置未保存，已重新读取当前状态。</Text> : null}
     </Card>

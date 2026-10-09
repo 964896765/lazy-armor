@@ -24,6 +24,8 @@ export default function EditMemory() {
     <Card title="分类"><ChipTabs value={type} options={MEMORY_TYPES.map(value => ({ value, label: memoryTypeLabels[value] }))} onChange={value => setType(value as MemoryType)} /></Card>
     <Field label="名称" value={title} onChange={setTitle} max={120} /><Field label="信息" value={content} onChange={setContent} multiline max={1000} />
     {query.data ? <Text style={ui.detail}>来源：{memorySourceLabel(query.data)}{ '\n' }保存于：{formatTime(query.data.confirmedAt)}</Text> : null}
+    {query.data ? <Button secondary label="查看来源与引用状态" onPress={() => router.push({ pathname: '/personal-memory/reference', params: { id: query.data!.id, version: String(query.data!.version) } } as never)} /> : null}
+    {query.data ? <Button secondary label="关联的个人信息" onPress={() => router.push({ pathname: '/personal-memory/relations', params: { id: query.data!.id } } as never)} /> : null}
     <Text style={ui.detail}>点击保存表示确认这条个人信息，供 AI 理解后续目标。它不会创建计划或修改已验证事实。</Text>
     <Button label="确认保存" disabled={busy || !token || !title.trim() || !content.trim() || Boolean(id && !query.data)} onPress={() => save.mutate()} />
     {id ? <Button secondary label="删除这条信息" disabled={busy || !query.data} onPress={() => Alert.alert('删除个人信息？', '删除后，后续目标理解不再使用这条信息。', [{ text: '取消' }, { text: '删除', style: 'destructive', onPress: () => remove.mutate() }])} /> : null}
