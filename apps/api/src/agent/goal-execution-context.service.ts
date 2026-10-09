@@ -1,4 +1,6 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
+import type { MemoryContextSnapshot } from '@lazy-armor/plan-schema';
+import { MemoryService } from '../memory/memory.service';
 import { profiles } from '@lazy-armor/database';
 import { eq } from 'drizzle-orm';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
@@ -22,10 +24,17 @@ export function normalizeGoalTimeContext(settings?: { timezone: string; locale: 
   return { timezone, locale, settingsSource: valid ? 'PROFILE' : 'DEFAULT' };
 }
 
-/** Read-only context, selecting only owned time settings. Memory/credentials are not copied. */
+/** Read-only context. User memory is explicitly authorized data, never Truth or policy. */
 @Injectable()
 export class GoalExecutionContextService {
-  constructor(@Inject(DATABASE) private readonly db: InjectedDatabase) {}
+  constructor(@Inject(DATABASE) private readonly db: InjectedDatabase, @Optional() private readonly memory?: MemoryService) {}
+
+  memoryContext(userId: string, intent: string): Promise<MemoryContextSnapshot> {
+    return this.memory?.context(userId, intent) ?? Promise.resolve({ enabled: false, settingsVersion: 0, items: [] });
+  }
+  memoryContextCurrent(userId: string, context: MemoryContextSnapshot) {
+    return this.memory?.contextCurrent(userId, context) ?? Promise.resolve(context.items.length === 0);
+  }
 
   async timeContext(userId: string): Promise<GoalTimeContext> {
     const settings = (await this.db.select({ timezone: profiles.timezone, locale: profiles.locale })

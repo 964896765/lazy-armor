@@ -610,6 +610,13 @@
       "when": 1791403200000,
       "tag": "0086_agent_tasks",
       "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1791406800000,
+      "tag": "0087_personal_memory",
+      "breakpoints": true
     }
   ]
 }

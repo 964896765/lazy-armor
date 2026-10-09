@@ -8,6 +8,10 @@ V84.1 已实现 `goal-understanding.v1`、Agent intent/planner/policy、原 Plan
 
 当前进入 [V84 Task Orchestrator](V84_TASK_ORCHESTRATOR.md) 实现/验证：任务图与冻结执行身份同事务生成，运行转换保持原 fencing，计划中展示任务进度。最新顺序为 Task → V85 Memory → V86 Resource Capability → V87 Computer Runtime → V88 Loop → V89 Skill → V90 Beta；下方历史顺序不作为当前阻塞。
 
+V84 Task foundation 已自动验证并推送 `3db6f6b`，进入 [V85 Memory](V85_MEMORY_SYSTEM.md)。用户可控 Store、来源与版本、关闭/编辑/删除、只读 Planner 检索和资源页入口已实现；39 项相关 API 回归通过，最终更正/过期/清除内容专项 8/8。V84/V85 真机体验与记忆模型消费待正常登录，不把构建或隔离模型测试记为 REAL_VERIFIED。
+
+联合更新已部署本地三角色并 ready，0086/0087 已迁移，Task/Memory r1 APK 已安装且字节核对一致，SHA256 `fd4fbf696947b35758d2ec804b3c4ef812f482fb1d5cc57045c5b4a04dd11dce`。Mobile 16 项、API/Web/Android 构建通过；Memory usage 默认关闭，真实操作/模型消费与完整 V85 仍 IN_PROGRESS。历史 0083 production release migration evidence gate 保留未过，不放宽。
+
 ## V8.3 历史 checkpoint
 
 2026-10-09 17:41 导航修复：GitHub checkpoint `7fdbb90` 已推送并核对远端一致后，补上通知来源页固定顶部返回按钮、移除重复导航标题。普通进入使用已有页面历史返回，直达且没有上一页时回到资源；五个一级入口保持不变。Mobile typecheck、Android bundle/APK 构建通过，r8 已覆盖安装并核对手机 APK 与构建字节相同，SHA256 `b5b72d4f17d99556ef1c0f5d1512c044e5352585cce5243e4b2fea95039f2cd4`。已提交的本机来源过滤和监听状态提示随此次源码打包。

@@ -59,6 +59,7 @@ export interface AgentPlanProposal {
 }
 
 export interface PlannerResult {
+  memoryRefs?: Array<{ id: string; version: number; settingsVersion: number }>;
   understanding?: import('@lazy-armor/plan-schema').GoalUnderstanding;
   factQuery?: import('../consumer/notification-fact-query.contract').NotificationFactQuery;
   externalSync?: UserEventExternalSyncIntent | null;
@@ -76,6 +77,7 @@ export interface PlannerResult {
 }
 
 export interface PlannerRuntimeFacts {
+  memoryContext?: import('@lazy-armor/plan-schema').MemoryContextSnapshot;
   timeContext?: GoalTimeContext;
   acquisitionCoverage?:readonly AcquisitionCoverage[];
   domain: string | null;
@@ -119,6 +121,7 @@ export class AgentPlannerService {
     const context = this.compiler.compile({
       intent,
       timeContext: facts.timeContext,
+      memoryContext: facts.memoryContext,
       acquisitionCoverage:facts.acquisitionCoverage,
       domain: facts.domain,
       scenarios: facts.scenarios,
@@ -131,6 +134,11 @@ export class AgentPlannerService {
     });
     const output = await this.model.complete({ userId: options.userId, workContext: options.workContext, intent, context, systemPolicy: '见 SYSTEM_POLICY section', allowedResults: [...AGENT_PLANNER_RESULTS] });
     const validation = this.validateOutput(output, facts, intent);
+    if (facts.memoryContext?.items.length && (!options.userId || !this.executionContext ||
+      !(await this.executionContext.memoryContextCurrent(options.userId, facts.memoryContext)))) {
+      validation.valid = false;
+      validation.errors.push('MEMORY_CONTEXT_CHANGED');
+    }
     if (output.notificationWatch && options.workContext !== 'PLAN') { validation.valid = false; validation.errors.push('Persistent notification watch requires Plan context'); }
     if (output.result === 'ACTION_PROPOSAL' && options.workContext !== 'TEMPORARY') { validation.valid = false; validation.errors.push('ActionProposal requires temporary conversation context'); }
 
@@ -140,11 +148,12 @@ export class AgentPlannerService {
       validationErrors: validation.errors,
       warnings: [...context.warnings, ...output.warnings],
     };
-    if(output.result==='PLAN_DRAFT'&&output.scenarioKey===null){
+    if(validation.valid&&output.result==='PLAN_DRAFT'&&output.scenarioKey===null){
       result.result='CLARIFICATION_REQUIRED';
       result.clarification={missingRequirements:['请补充要安排的事项、日期时间及使用的日历，以确定计划场景。']};
     }
     if (validation.valid) {
+      if (facts.memoryContext?.items.length) result.memoryRefs = facts.memoryContext.items.map(item => ({ id: item.id, version: item.version, settingsVersion: facts.memoryContext!.settingsVersion }));
       if (output.factQuery && output.result === 'ANSWER' && options.workContext === 'TEMPORARY') {
         result.factQuery = output.factQuery;
       }
@@ -170,6 +179,7 @@ export class AgentPlannerService {
           changeSummary: `Agent planner ${intent.slice(0, 80)} -> ${result.result}`,
           after: {
             plannerRunId: proposalId,
+            memoryRefs: result.memoryRefs ?? [],
             goalUnderstanding: result.understanding ? {
               schemaVersion: result.understanding.schemaVersion,
               lifecycle: result.understanding.lifecycle,
@@ -202,6 +212,7 @@ export class AgentPlannerService {
   }
 
   async collectFacts(userId: string, intent: string): Promise<PlannerRuntimeFacts> {
+    const memoryContext = this.executionContext ? await this.executionContext.memoryContext(userId, intent) : undefined;
     const timeContext = this.executionContext ? await this.executionContext.timeContext(userId) : undefined;
     const domain = this.compiler.inferDomain(intent);
     const top = this.compiler.topScenarios(domain, 6);
@@ -235,7 +246,7 @@ export class AgentPlannerService {
     }
     const coverage=this.acquisitions?await this.acquisitions.coverage(userId):null;
     const acquisitionCoverage:AcquisitionCoverage[]|undefined=coverage?.sources.map(round=>({sourceId:round.sourceId,factKey:round.capability,state:round.state as AcquisitionCoverage['state'],observedAt:round.observedAt?.toISOString()??null,evidenceRefs:round.evidenceRefsJson,reason:round.reason}));
-    return { timeContext, domain, scenarios, truths, capabilities, tools, acquisitionCoverage:acquisitionCoverage?.length?acquisitionCoverage:undefined };
+    return { memoryContext, timeContext, domain, scenarios, truths, capabilities, tools, acquisitionCoverage:acquisitionCoverage?.length?acquisitionCoverage:undefined };
   }
 
   /** Pure fail-closed validation of model output against collected runtime facts. */

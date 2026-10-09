@@ -29,3 +29,5 @@ Acceptance：构建、隔离回归、部署和真机分别记录。真实手机�
 下一任务：V85-MEMORY-01，用户可控 Memory Store、资源页入口与 Planner 只读消费。顺序固定为 V85 Memory → V86 Resource Capability → V87 Computer Runtime → V88 Agent Loop → V89 Skill → V90 Beta。
 
 运行底座补充回归：49/49 PASS（Task 8 + Execution 33 + Verification/Reconciliation 8），使用隔离 `_test` MySQL 与 Redis database 15。首次补跑共用开发 Redis 时，两项 job 存在断言受到正在运行的独立 worker 消费影响；保留失败日志，隔离队列重跑后全部通过，不停止正式 worker，不放宽断言。
+
+后续联合部署：0086 已执行本地开发库，三角色更新并 ready，含 Task 进度的 APK 与 Memory 联合构建/安装，见 [V85 部署记录](V85_MEMORY_SYSTEM.md)。任务页真机点按仍待正常登录。

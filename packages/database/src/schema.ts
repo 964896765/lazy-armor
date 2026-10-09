@@ -19,6 +19,27 @@ export const users = mysqlTable('users', {
   ...timestamps,
 });
 
+export const personalMemorySettings = mysqlTable('personal_memory_settings', {
+  userId: uuidBinary('user_id').primaryKey().references(() => users.id, { onDelete: 'restrict' }),
+  enabled: boolean('enabled').notNull().default(false),
+  version: int('version').notNull().default(0),
+  ...timestamps,
+});
+export const personalMemories = mysqlTable('personal_memories', {
+  id: uuidBinary('id').primaryKey(),
+  userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  requestId: varchar('request_id', { length: 160 }).notNull(),
+  type: varchar('type', { length: 32 }).notNull(),
+  title: varchar('title', { length: 120 }),
+  content: text('content'),
+  sourceKind: varchar('source_kind', { length: 32 }).notNull(),
+  status: varchar('status', { length: 16 }).notNull(),
+  version: int('version').notNull(),
+  confirmedAt: datetime('confirmed_at', { mode: 'date', fsp: 6 }).notNull(),
+  expiresAt: datetime('expires_at', { mode: 'date', fsp: 6 }),
+  ...timestamps,
+}, t => [uniqueIndex('personal_memory_request_uq').on(t.userId, t.requestId), index('personal_memory_owner_status_idx').on(t.userId, t.status, t.createdAt, t.id)]);
+
 /** Immutable confirmed authority source for execution; runtime state stays in Execution. */
 export const userEventSyncRequests = mysqlTable('user_event_sync_requests', {
   id: uuidBinary('id').primaryKey(),
@@ -1807,6 +1828,8 @@ export const schema = {
   executionSteps,
   agentTaskGraphs,
   agentTasks,
+  personalMemorySettings,
+  personalMemories,
   executionEvents,
   approvalPolicies,
   approvalRequests,
