@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
-import { canonicalStringify, skillCapabilitySchema, skillMethodRefsSchema, skillRepositoryImportSchema, type ConversationMethodProjection, type SkillMethodRef, type SkillRepositoryProjection } from '@lazy-armor/plan-schema';
+import { canonicalStringify, skillCapabilitySchema, skillMethodRefsSchema, skillRepositoryImportSchema, type ConversationMethodProjection, type SkillMethodRef, type SkillRepositoryProjection, type SkillRevisionHistory } from '@lazy-armor/plan-schema';
 import { plans, planVersions, skillRepositories, skillEntries, skillEntryRevisions, planSkillReferences, users } from '@lazy-armor/database';
 import { and, desc, eq, lt, or } from 'drizzle-orm';
 import { newId } from '@lazy-armor/shared';
@@ -78,9 +78,33 @@ export class SkillRepositoriesService {
     return this.get(userId, id);
   }
 
+  async history(userId: string, repositoryId: string, entryId: string, query: CursorPageDto): Promise<SkillRevisionHistory> {
+    const cursor = decodeCursor(query.cursor);
+    return this.db.transaction(async tx => {
+      const row = (await tx.select({ repo: skillRepositories, entry: skillEntries }).from(skillRepositories)
+        .innerJoin(skillEntries, eq(skillEntries.repositoryId, skillRepositories.id))
+        .where(and(eq(skillRepositories.userId, userId), eq(skillRepositories.id, repositoryId), eq(skillEntries.id, entryId))).limit(1))[0];
+      if (!row) throw new NotFoundException('Skill entry not found');
+      const rows = await tx.select().from(skillEntryRevisions).where(and(eq(skillEntryRevisions.entryId, entryId),
+        ...(cursor ? [or(lt(skillEntryRevisions.createdAt, cursor.createdAt),
+          and(eq(skillEntryRevisions.createdAt, cursor.createdAt), lt(skillEntryRevisions.id, cursor.id)))!] : [])))
+        .orderBy(desc(skillEntryRevisions.createdAt), desc(skillEntryRevisions.id)).limit(query.limit + 1);
+      const page = pageResult(rows, query.limit);
+      return { repositoryId, repositoryVersion: row.repo.version, repositoryStatus: row.repo.status, entryId,
+        currentRevisionId: row.entry.currentRevisionId, nextCursor: page.nextCursor, executionAuthorized: false,
+        items: page.items.map(revision => {
+          const parsed = skillCapabilitySchema.safeParse(revision.manifestJson);
+          if (!parsed.success || digest(parsed.data) !== revision.contentHash || parsed.data.version !== revision.version || parsed.data.name !== row.entry.name)
+            throw new ConflictException('SKILL_REVISION_INTEGRITY_MISMATCH');
+          return { id: revision.id, version: revision.version, contentHash: revision.contentHash, manifest: parsed.data,
+            createdAt: revision.createdAt.toISOString(), current: revision.id === row.entry.currentRevisionId };
+        }) };
+    });
+  }
+
   async revise(userId: string, repositoryId: string, entryId: string, version: number, raw: unknown) {
     const parsed = skillCapabilitySchema.safeParse(raw);
-    if (!parsed.success) throw new BadRequestException('Invalid skill manifest');
+    if (!parsed.success || Buffer.byteLength(JSON.stringify(raw), 'utf8') > 120000) throw new BadRequestException('Invalid or oversized skill manifest');
     const manifest = parsed.data;
     await this.db.transaction(async tx => {
       const repo = (await tx.select().from(skillRepositories).where(and(eq(skillRepositories.id, repositoryId), eq(skillRepositories.userId, userId))).for('update'))[0];

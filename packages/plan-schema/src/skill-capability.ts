@@ -56,3 +56,11 @@ export interface SkillRepositoryProjection {
   entries: Array<{ id: string; revisionId: string; contentHash: string; manifest: SkillCapability }>;
   executionAuthorized: false;
 }
+/** Owned immutable history; a current marker does not grant planning or execution. */
+export interface SkillRevisionHistory {
+  repositoryId: string; repositoryVersion: number; repositoryStatus: string; entryId: string;
+  currentRevisionId: string | null;
+  items: Array<{ id: string; version: string; contentHash: string; manifest: SkillCapability; createdAt: string; current: boolean }>;
+  nextCursor: string | null;
+  executionAuthorized: false;
+}

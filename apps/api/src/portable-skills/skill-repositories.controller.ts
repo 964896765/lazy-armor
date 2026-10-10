@@ -1,5 +1,6 @@
 import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
-import { IsBoolean, IsInt, IsObject, IsString, Matches, MaxLength, MinLength, Min, Max } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsBoolean, IsInt, IsObject, IsOptional, IsString, Matches, MaxLength, MinLength, Min, Max } from 'class-validator';
 import { CurrentUser, type AuthenticatedUser } from '../common/auth-context';
 import { CursorPageDto } from '../common/cursor-pagination';
 import { SkillRepositoriesService } from './skill-repositories.service';
@@ -13,7 +14,7 @@ class ImportDto { @IsObject() package!: Record<string, unknown>; }
 class RepositoryVersionDto { @IsInt() @Min(1) version!: number; }
 class RepositoryPlanningDto extends RepositoryVersionDto { @IsBoolean() enabled!: boolean; }
 class RevisionDto extends RepositoryVersionDto { @IsObject() manifest!: Record<string, unknown>; }
-class RepositoryPageDto extends CursorPageDto { @Max(20) override limit = 10; }
+class RepositoryPageDto extends CursorPageDto { @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(20) override limit = 10; }
 @Controller('plans')
 export class PlanSkillReferencesController {
   constructor(private readonly repositories: SkillRepositoriesService) {}
@@ -30,6 +31,8 @@ export class SkillRepositoriesController {
   @Get(':id') get(@CurrentUser() user: AuthenticatedUser, @Param('id', ParseUUIDPipe) id: string) { return this.repositories.get(user.id, id); }
   @Post(':id/planning') change(@CurrentUser() user: AuthenticatedUser, @Param('id', ParseUUIDPipe) id: string, @Body() input: RepositoryPlanningDto) { return this.repositories.change(user.id, id, input.version, input.enabled); }
   @Delete(':id') archive(@CurrentUser() user: AuthenticatedUser, @Param('id', ParseUUIDPipe) id: string, @Body() input: RepositoryVersionDto) { return this.repositories.change(user.id, id, input.version, false, true); }
+  @Get(':id/entries/:entryId/revisions') history(@CurrentUser() user: AuthenticatedUser, @Param('id', ParseUUIDPipe) id: string,
+    @Param('entryId', ParseUUIDPipe) entryId: string, @Query() query: RepositoryPageDto) { return this.repositories.history(user.id, id, entryId, query); }
   @Post(':id/entries/:entryId/revisions') revise(@CurrentUser() user: AuthenticatedUser, @Param('id', ParseUUIDPipe) id: string,
     @Param('entryId', ParseUUIDPipe) entryId: string, @Body() input: RevisionDto) { return this.repositories.revise(user.id, id, entryId, input.version, input.manifest); }
 }

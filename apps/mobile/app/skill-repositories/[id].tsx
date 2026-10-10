@@ -1,6 +1,7 @@
 import type { SkillRepositoryProjection } from '@lazy-armor/plan-schema';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { useCallback } from 'react';
 import { Linking, Text } from 'react-native';
 import { api } from '../../src/api';
 import { useAuthStore } from '../../src/auth-store';
@@ -12,6 +13,7 @@ import { riskLevelLabel } from '../../src/today-presenter';
 export default function Repository() {
   const { id } = useLocalSearchParams<{ id: string }>(), token = useAuthStore(s => s.token), client = useQueryClient();
   const query = useQuery({ queryKey: ['skill-repository', token, id], queryFn: () => api<SkillRepositoryProjection>(`/skill-repositories/${id}`, token), enabled: Boolean(token && id) });
+  useFocusEffect(useCallback(() => { if (token && id) void query.refetch(); }, [token, id, query.refetch]));
   const change = useMutation({ mutationFn: (archive: boolean) => api<SkillRepositoryProjection>(`/skill-repositories/${id}${archive ? '' : '/planning'}`, token,
     { method: archive ? 'DELETE' : 'POST', body: JSON.stringify({ version: query.data!.version, ...(!archive ? { enabled: !query.data!.enabled } : {}) }) }),
     onSuccess: async (_, archive) => { await client.invalidateQueries({ queryKey: ['skill-repositories', token] }); await query.refetch(); if (archive) router.replace('/plans?view=skills' as never); } });
@@ -33,6 +35,8 @@ export default function Repository() {
       <Text style={ui.detail}>{p.text(entry.manifest.description)}</Text><Text style={ui.detail}>声明风险：{riskLevelLabel(entry.manifest.risk)}</Text>
       <Text style={ui.detail}>所需能力：{entry.manifest.requiredCapabilities.map(capability => p.capability(capability)).join('、') || '无需外部能力'}</Text>
       <Text style={ui.detail}>{p.text(entry.manifest.instruction)}</Text>
+      <Button secondary label="管理方法版本" disabled={change.isPending || start.isPending}
+        onPress={() => router.push({ pathname: '/skill-revision', params: { repositoryId: repo.id, entryId: entry.id } } as never)} />
       {repo.status === 'ACTIVE' ? <><Text style={ui.detail}>先表达你要完成的目标，再由 AI 参考本方法提出方案。你可以在会话中选择一次处理或设为计划。</Text>
         <Button secondary label={repo.enabled ? '用此方法开始会话' : '启用规划参考后使用'} disabled={!repo.enabled || change.isPending || start.isPending} onPress={() => start.mutate(entry.id)} /></> : null}
     </Card>)}{repo.status === 'ACTIVE' ? <Button secondary label="移出仓库列表" disabled={change.isPending || start.isPending} onPress={() => change.mutate(true)} /> : null}
