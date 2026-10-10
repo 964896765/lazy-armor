@@ -1,5 +1,15 @@
 # V90 Personal Life OS Beta · 联合验收记录
 
+2026-10-11 持续目标续接：[V88-GITHUB-01 / V88-LOOP-04](V88_GITHUB_DAILY_DIGEST.md)。本人指定公开 GitHub Trending 日榜前 10、所有语言；原计划每日北京时间 09:00 自动读取、生成提示词/中文摘要、站内通知，七天记录只作只读统计。专项与回归 30/30，启动版本核对增量 8/8，实际公网探针读取十项但不作为个人授权或运行证据。新增授权、原 App 草稿启动、首日和七个真实日期继续收取；V90 联合验收、V87 外部 Act、V89 实际第三方及 0083 发布门保持待验，无新 SQL/Truth/生产发布。
+
+2026-10-10 最新真机资料报告：[V88-REPORT-02](V88_REPORT_WEB_RESEARCH.md)已沿本人在 App 授予的荆门官网范围完成自动提示词（2211 字符）→两条查询→三篇实际官网原文→7783 字符报告与程序计算→一次修订/检查→App 查看。正文引用两篇有限城管/营商背景，另一篇保留未采用；必应当前不可用，明确标注实际网站入口发现。原文 URL、页面日期、读取时间、正文哈希和逐次授权均保留；本地车量、租金和产能仍未核实。只读验收 14/14，最新授权专项 7/7（含正文不足后继续有效来源），原无来源报告和两次 FAILED 均未改写；新增搜索词与选源一致性、无原文不冒充完成、资源检查后范围恢复。零新 SQL/Truth、提交、推送或生产发布；V88 七天、V87 外部 Act、V89 实际第三方、V90 联合验收、0083 发布门及原依赖审计问题仍保留。
+
+2026-10-10 最新真机自主报告：[V88-REPORT-01](V88_AUTONOMOUS_REPORT.md)已通过正常 App 原会话完成荆门洗车店目标 → 1799 字符自动提示词 → 四章 / 7711 字符完整报告 → 程序三情景计算 → 模型检查 → App 查看。离开页面后后台继续完成，六项检查建议保留，五次历史失败未改写。本轮最终 API 26/26、共享合同 258/258、八包 typecheck 和构建通过，原 Mobile 416/416 与已安装界面保持。本次为明确假设稿，未接入任意网站检索或核实当地市场；零新迁移、Truth写入、提交、推送或生产发布。V88 七天、V87 外部 Act、V90 联合验收与 0083 发布门仍待验。
+
+2026-10-10 最新真机闭环：[V87-COMPUTER-04](V87_REAL_OBSERVE.md)通过正常原会话、新范围确认和签名 DeviceTask 实际读取计算器结果 = 36,000,000,000；本人在 App 核实，精确候选→observation→Truth version→provenance 哈希一致，原会话已回显核实结果。原 FAILED / NEEDS_CONFIRMATION 及首次失败记录保留。新增权限返回刷新修复已 typecheck、Mobile 416/416 与 Android 构建验证并保留数据安装，安装 APK hash 与构建一致。真实 Observe 子闭环完成；V87 Act/read-back、V88 七天、V89 第三方、V90 联合验收及 0083 发布门继续待验。无新迁移、提交、推送或发布。
+
+2026-10-10 最新持续开发：[V88-LOOP-03 核实结论与逐次历史](V88_LOOP_REFLECTION.md)完成最新/历史一致的只读核实投影、部分成功/失败表达、未执行步骤保留和逐 Invocation 计数。最终隔离 API 48/48、Mobile 416/416、Plan-schema 252/252，八包 typecheck 及 API/Web/Android Hermes 构建通过；原 Execution、Task、UNKNOWN Ledger 与 Truth 权威保持。零新 SQL，十二个原有文件哈希不变。本地三角色恢复实际 ready；用户告知真机已登录，主页可见，本人已完成应用内页面读取、Android observer 与使用情况访问授权；首次单次读取受验收 UIAutomator 干扰而 FAILED，原记录保留，真实读取和本人核实仍待复测。实际手机/资源/第三方闭环、七天和 0083 发布证据门未齐备，V90 IN_PROGRESS，不按自动回归关闭阶段。
+
 2026-10-10 最新真机续接：[V90-BETA-02 环境恢复](V90_DEVICE_RESUME.md)确认用户连接的 2c696fe，发现开发库尚无 0090 方法表；备份后仅应用该 additive tail，原 90 条 migration ledger 不变，四表齐备。新增拒绝非指定本地 development 目标的只读 preflight 和实际 JS 配置 guard，最终工具专项 9/9（6+3）；0050/0051 的字节差异确认为同一 SQL 的 LF/CRLF，原记录保留，未放宽发布门。API/Execution/Outbox 均 actual ready，手机 reverse 已恢复。
 
 第一包 e819814a 先因锁屏未验 UI，解锁后发现缺少 EXPO_PUBLIC 环境内嵌而白屏；失败包/日志/截图保留。清 Metro cache、核对实际 JS resolver 后重新构建 Hermes/debug APK 并保留数据覆盖安装，最终 APK/已安装 hash 一致为 2532b28adc16607d7098cd09756de49bf91e9fd260605275f46ed1c607694880；内嵌 bundle 与本次输入一致、Runtime verifier 与既有服务器一致，手机正常显示协议页，当前 App 进程无 JS/Runtime error。原 12 个独立源码哈希不变，按当前字节构建、不纳入提交。用户已解锁但没有账密，已说明正常邮箱注册入口；本人注册/登录/五页/真实页面/核实仍 REAL_PENDING，observer 系统许可与 0083 release evidence 门仍未过。没有生产迁移或 Beta 发布，V90 IN_PROGRESS，下一任务继续同一正常入口与原 Goal 联合验收。本机证据、构建与备份不上传，详见续接文档。

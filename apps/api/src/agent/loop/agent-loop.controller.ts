@@ -12,4 +12,5 @@ export class AgentLoopController {
   @Get('agent/loops') list(@CurrentUser() user: AuthenticatedUser, @Query() query: LoopPageDto) { return this.loops.list(user.id, query); }
   @Get('plans/:id/agent-loop') get(@CurrentUser() user: AuthenticatedUser, @Param('id', ParseUUIDPipe) id: string) { return this.loops.forPlan(user.id, id); }
   @Get('plans/:id/agent-loop/history') history(@CurrentUser() user: AuthenticatedUser, @Param('id', ParseUUIDPipe) id: string, @Query() query: LoopPageDto) { return this.loops.history(user.id, id, query); }
+  @Get('plans/:id/agent-loop/coverage') coverage(@CurrentUser() user: AuthenticatedUser, @Param('id', ParseUUIDPipe) id: string) { return this.loops.coverage(user.id, id); }
 }

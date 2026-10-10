@@ -1,8 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View, Switch } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { ActivityIndicator, AppState, ScrollView, StyleSheet, Text, View, Switch } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/api';
 import { appReadEventRequest, appReadHeartbeatRequest } from '../../src/app-read-session-api-contract';
@@ -69,6 +69,14 @@ export default function AppReadSessionPage() {
     }).catch(() => undefined);
     return () => { cancelled = true; };
   }, [token, pageRead]));
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', state => {
+      if (state !== 'active') return;
+      void native.refetch();
+      if (pageRead && token) void grant.refetch();
+    });
+    return () => subscription.remove();
+  }, [token, pageRead, native.refetch, grant.refetch]);
 
   const start = useMutation({
     mutationFn: async () => {

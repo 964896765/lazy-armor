@@ -86,6 +86,9 @@ export default function RootLayout() {
           <Stack.Screen name="devices/[id]" options={{ headerShown: false }} />
           <Stack.Screen name="plans/[id]/edit" options={{ title: '编辑计划' }} />
           <Stack.Screen name="connections/app-read-session" options={{ headerShown: false }} />
+          <Stack.Screen name="report" options={{ headerShown: false }} />
+          <Stack.Screen name="public-web-resource" options={{ headerShown: false }} />
+          <Stack.Screen name="github-digest" options={{ headerShown: false }} />
           <Stack.Screen name="connections/device-tasks/[id]" options={{ headerShown: false }} />
           <Stack.Screen name="create-wizard" options={{ headerShown: false }} />
           <Stack.Screen name="feature-placeholder" options={{ headerShown: false }} />

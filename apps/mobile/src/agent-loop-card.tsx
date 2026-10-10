@@ -5,6 +5,7 @@ import { Pressable, Text, View } from 'react-native';
 import { api } from './api';
 import { ui } from './editor-ui';
 import { ConsumerPresentationMapper as p } from './consumer-presentation';
+import { loopReflectionLabel } from './agent-loop-presenter';
 
 export const loopLabels: Record<AgentLoopState, string> = {
   DRAFT: '等待启用', PAUSED: '已暂停', ENDED: '已结束', WAITING_RESOURCE: '等待资源恢复',
@@ -21,6 +22,6 @@ export function AgentLoopCards({ token }: { token: string | undefined }) {
     onPress={() => router.push(`/plans/${loop.planId}` as never)} accessibilityRole="button">
     <Text style={ui.title}>{p.text(loop.title, '持续计划')}</Text><Text style={ui.detail}>{loopLabels[loop.state]}</Text>
     {loop.nextRunAt ? <Text style={ui.detail}>下次检查 {p.dateTime(loop.nextRunAt)}</Text> : null}
-    {loop.reflection ? <Text style={ui.detail}>{({ VERIFIED: '上次结果已核实', UNVERIFIED: '上次运行已结束，结果尚未核实', UNKNOWN: '上次结果未知，需要核对', FAILED: '上次运行未完成', CANCELLED: '上次运行已取消' })[loop.reflection.outcome]}</Text> : null}
+    {loop.reflection ? <Text style={ui.detail}>上次{loopReflectionLabel(loop.reflection.outcome)}</Text> : null}
   </Pressable>)}{query.data.nextCursor ? <Pressable onPress={() => router.push('/plans' as never)}><Text style={ui.detail}>查看全部关注计划 ›</Text></Pressable> : null}</View>;
 }

@@ -244,6 +244,7 @@ export default function PlanDetailPage() {
             <View style={local.sectionBody}><Text style={local.settingsHint}>{control.data?.resourcePolicy??'按能力要求选择已授权资源'}</Text>{control.data?.resources?.map(resource=><ControlRow key={resource.capabilityId} title={controlActionLabel(resource.capabilityId)} detail={`${resource.name} · 最近使用 ${formatTime(resource.lastUsedAt)}\n当次结果：${controlVerificationLabel(resource.verificationState)}`} onPress={()=>router.push(`/runtime-target-detail?id=${resource.targetId}` as never)}/>)}{control.data?.resources?.length===0?<Text style={local.text}>尚无实际使用资源记录</Text>:null}</View>
 
             <Text style={local.sectionTitle}>最近结果</Text>
+            {version.data.definition.actions.some(action => action.actionType === 'summarize' && action.config.domain === 'github' && action.config.summaryType === 'trending-daily') ? <View style={local.sectionBody}><ControlRow title="GitHub 每日汇总" detail="查看日榜范围、读取一次或审阅启动" onPress={() => router.push({ pathname: '/github-digest', params: { planId: id } } as never)} /></View> : null}
             <View style={local.sectionBody}>
               <Text style={local.resultDate}>{summary.data.latestExecution ? formatTime(summary.data.latestExecution.createdAt) : '还没有运行记录'}</Text>
               <Text style={local.resultTitle}>{control.data?.records?.[0]?controlResultLabel(control.data.records[0]):summary.data.latestExecution?consumerOutcomeLabel(summary.data.latestExecution.outcome?.outcome):'第一次运行后，结果会出现在这里。'}</Text>

@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { executions } from '@lazy-armor/database';
 import { eq } from 'drizzle-orm';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
@@ -16,6 +16,7 @@ import { NotificationService } from '../notifications/notification.service';
 import { StudyService } from '../study/study.service';
 import { ExecutionRuntimeError, asRuntimeError } from './execution.types';
 import { RuntimeConnectionGuard } from './runtime-connection-guard.service';
+import { GithubDigestService } from './github-digest.service';
 
 @Injectable()
 export class ActionExecutor {
@@ -33,6 +34,7 @@ export class ActionExecutor {
     @Inject(DATABASE) private readonly db: InjectedDatabase,
     private readonly terminalGuard: TerminalHandoffGuard,
     private readonly truthGuard: TruthHandoffGuard,
+    @Optional() private readonly github?: GithubDigestService,
   ) {}
 
   supports(actionType: string): boolean { return ['record', 'compare', 'update_internal_record', 'classify', 'summarize', 'notify', 'prepare_purchase', 'generate_content', 'create_draft', 'prepare_publish', 'create_task', 'archive'].includes(actionType); }
@@ -77,6 +79,14 @@ export class ActionExecutor {
       throw new ExecutionRuntimeError('SAFETY_GATE_REQUIRES_APPROVAL_AND_IDEMPOTENCY', 'This action requires P0-6 approval and P0-7 idempotency safeguards');
     }
     const local = this.enrichLocalContext(context);
+    if (!action.connectionId && action.actionType === 'summarize' && action.config.domain === 'github' && action.config.summaryType === 'trending-daily') {
+      if (!this.github) throw new ExecutionRuntimeError('GITHUB_RUNTIME_UNAVAILABLE', 'GitHub 汇总运行不可用');
+      return this.github.summarize(userId, executionId, context);
+    }
+    if (!action.connectionId && action.actionType === 'notify' && action.config.eventType === 'github_trending_digest') {
+      if (!this.github) throw new ExecutionRuntimeError('GITHUB_RUNTIME_UNAVAILABLE', 'GitHub 汇总运行不可用');
+      return this.github.notify(userId, executionId, context);
+    }
     if (action.actionType === 'classify' && !action.connectionId) {
       if (action.config.taxonomy === 'finance') {
         const finance = this.enrichFinanceContext(local);

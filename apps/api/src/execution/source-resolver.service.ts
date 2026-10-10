@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { ConnectorRegistry } from '@lazy-armor/connector-sdk';
 import type { NormalizedSource } from '@lazy-armor/plan-schema';
 import { BillingService } from '../billing/billing.service';
@@ -14,6 +14,12 @@ import { OperationsService } from '../operations/operations.service';
 import { TruthStoreService } from '../truth-store/truth-store.service';
 import { asRuntimeError, ExecutionRuntimeError } from './execution.types';
 import { RuntimeConnectionGuard } from './runtime-connection-guard.service';
+import { WEB_READ } from '../connectors/public-web.connector';
+import { githubDigestSchema, githubTrendingSchema } from '@lazy-armor/plan-schema';
+import { executionSteps, executions } from '@lazy-armor/database';
+import { and, eq } from 'drizzle-orm';
+import { DATABASE, type InjectedDatabase } from '../common/database.module';
+import type { ConsumerReadSource } from '../connections/consumer-read-source.service';
 
 @Injectable()
 export class SourceResolver {
@@ -31,11 +37,35 @@ export class SourceResolver {
     private readonly profiles: ProfilesService,
     private readonly operations: OperationsService,
     private readonly truthStore: TruthStoreService,
+    @Optional() @Inject(DATABASE) private readonly db?: InjectedDatabase,
   ) {}
 
   async resolve(userId: string, sources: NormalizedSource[], triggerPayload: Record<string, unknown>, requestId: string): Promise<Record<string, unknown>> {
     let context = { ...triggerPayload };
     for (const source of sources) {
+      if (source.sourceType === 'file' && source.config.mode === 'github_trending_daily') {
+        if (source.connectorKey !== 'public_web_research' || !source.connectionId || source.config.mode !== 'github_trending_daily') throw new ExecutionRuntimeError('GITHUB_SOURCE_INVALID', '固定 GitHub 日榜来源无效');
+        if (!this.db) throw new ExecutionRuntimeError('GITHUB_SOURCE_INVALID', 'GitHub 来源保存不可用');
+        // Resume only the already committed output of this owned execution. The
+        // original Runner skips succeeded steps, so restore their fenced source.
+        const saved = (await this.db.select({ output: executionSteps.outputSnapshotJson }).from(executions)
+          .innerJoin(executionSteps, and(eq(executionSteps.executionId, executions.id), eq(executionSteps.actionType, 'summarize'), eq(executionSteps.status, 'succeeded')))
+          .where(and(eq(executions.userId, userId), eq(executions.requestId, requestId))).limit(1))[0]?.output;
+        if (saved?.githubDigest) {
+          const digest = githubDigestSchema.parse(saved.githubDigest), authority = saved.githubReadAuthority as ConsumerReadSource | undefined;
+          if (!authority || authority.userId !== userId || authority.connectionId !== source.connectionId || authority.capabilityKey !== WEB_READ) throw new ExecutionRuntimeError('GITHUB_SOURCE_INVALID', '已保存来源授权不匹配');
+          await this.connections.assertConsumerReadAuthority(authority);
+          context = { ...context, githubSource: { authority, data: digest.source }, githubDigest: digest };
+          continue;
+        }
+        await this.connections.preparePublicWebRead(userId, source.connectionId);
+        const authority = await this.connections.captureConsumerReadAuthority(userId, source.connectionId, WEB_READ);
+        const result = await this.connections.invokeConsumerRead(userId, source.connectionId, { capability: WEB_READ, requestId: `${requestId}:source:${source.sortOrder}`, input: { mode: 'github_trending_daily' } });
+        if (!result.ok) throw new ExecutionRuntimeError('GITHUB_READ_FAILED', 'GitHub 日榜读取失败', true);
+        await this.connections.assertConsumerReadAuthority(authority);
+        context = { ...context, githubSource: { authority, data: githubTrendingSchema.parse(result.data.githubTrending) }, githubDigest: null };
+        continue;
+      }
       if (source.sourceType === 'manual') {
         context = this.enrichLocalContext(context);
         continue;

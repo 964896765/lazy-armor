@@ -1,4 +1,4 @@
-import { IsArray, IsIn, IsObject, IsOptional, IsString, Length, MaxLength } from 'class-validator';
+import { IsArray, IsIn, IsObject, IsOptional, IsString, IsUUID, Length, MaxLength } from 'class-validator';
 import { AUTOMATION_LEVELS, PLAN_DOMAINS, PLAN_STATES, type PlanDefinitionInput, type PlanState } from '@lazy-armor/plan-schema';
 
 export class PlanDefinitionDto implements PlanDefinitionInput {
@@ -15,6 +15,7 @@ export class PlanDefinitionDto implements PlanDefinitionInput {
 
 export class ChangePlanStatusDto {
   @IsString() @IsIn(PLAN_STATES) status!: PlanState;
+  @IsOptional() @IsUUID() expectedVersionId?: string;
 }
 
 export class TemplateConfigDto {

@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { writeFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
-import { BETA_ROLE_PROBES, probeRoleReadiness } from './lib/beta-readiness.mjs';
+import { BETA_ROLE_PROBES, probeRoleReadiness, pageObserverSystemEnabled } from './lib/beta-readiness.mjs';
 
 // Read-only local prerequisites. Never starts services, changes permissions or closes a stage.
 const args = process.argv.slice(2), options = {};
@@ -23,7 +23,7 @@ if (device.serial) {
     device.appInstalled = /versionName=/.test(installed); device.appUpdatedAt = /lastUpdateTime=([^\r\n]+)/.exec(installed)?.[1].trim() ?? null;
     const enabled = run('adb', ['-s', device.serial, 'shell', 'settings', 'get', 'secure', 'accessibility_enabled']).trim();
     const listeners = run('adb', ['-s', device.serial, 'shell', 'settings', 'get', 'secure', 'enabled_accessibility_services']);
-    device.observerSystemEnabled = enabled === '1' && listeners.split(':').some(value => /com\.lazyarmor\.app\/.*ReadOnlyPageObserverService/.test(value));
+    device.observerSystemEnabled = pageObserverSystemEnabled(enabled, listeners);
   } catch { /* Retain only obtained facts; no screen contents or permission writes. */ }
 }
 let migrationGate = { passed: false, reason: 'CHECK_FAILED', historicalMigration: null };

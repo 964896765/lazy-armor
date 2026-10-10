@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/api';
+import { GithubDigestCard } from '../../src/github-digest-card';
 import { useAuthStore } from '../../src/auth-store';
 import { consumerErrorMessage, consumerErrorNextStep } from '../../src/connection-presenter';
 import { colors, spacing, typography, WorkspaceHeader } from '../../src/design';
@@ -52,6 +53,7 @@ interface NotificationInfo {
 }
 
 interface Detail {
+  outputs?: Array<{ output: Record<string, unknown> }>;
   resultState?: RuntimeResultState | null;
   reconciliationCases?: ReconciliationCaseSummary[];
   planName: string;
@@ -165,6 +167,7 @@ export default function ExecutionDetail() {
               </Section>
             ) : null}
 
+            <GithubDigestCard outputs={data.outputs} delivered={data.status === 'succeeded' && data.notifications.some(n => n.title === 'GitHub 日榜前 10 汇总')} />
             {data.notifications.length > 0 ? (
               <Section title="相关提醒" accent="#2F80ED">
                 {data.notifications.map((item, index) => (

@@ -1,4 +1,7 @@
 import { ProfilesModule } from '../profiles/profiles.module';
+import { ReportGenerationService } from '../agent/reports/report-generation.service';
+import { ReportModelService } from '../agent/reports/report-model.service';
+import { AiProviderConfigModule } from '../ai-provider-config/ai-provider-config.module';
 import { PersistentNotificationPlanService } from './persistent-notification-plan.service';
 import { ResourceGapContinuationService } from './resource-gap-continuation.service';
 import {RealityPipelineModule} from '../reality-pipeline/reality-pipeline.module';
@@ -30,5 +33,5 @@ import { ConnectorsModule } from '../connectors/connectors.module';
 import { TemplatesModule } from '../templates/templates.module';
 import { ConsumerController } from './consumer.controller';
 import { ConsumerService } from './consumer.service';
-@Module({ imports: [AppReadSessionsModule, ProviderCapabilitiesModule, PortableSkillsModule, MemoryModule, ProfilesModule, RealityPipelineModule,FactDemandsModule,AcquisitionModule, ArtifactModule, AuditModule, CreationDraftsModule, ExecutionModule, CapabilityResolverModule, AiAdapterModule, PlansModule, ConnectionsModule, TrustedDevicesModule, ConnectorsModule, TemplatesModule], controllers: [ConsumerController], providers: [GoalPageReadService, GoalResourceMatchService, PersistentNotificationPlanService, ResourceGapContinuationService, CalendarProjectionService, PlanStateAssessmentService, LocalCapabilitiesService, WorkItemProjectionService, ConsumerService, ConversationOnceService] })
+@Module({ imports: [AiProviderConfigModule, AppReadSessionsModule, ProviderCapabilitiesModule, PortableSkillsModule, MemoryModule, ProfilesModule, RealityPipelineModule,FactDemandsModule,AcquisitionModule, ArtifactModule, AuditModule, CreationDraftsModule, ExecutionModule, CapabilityResolverModule, AiAdapterModule, PlansModule, ConnectionsModule, TrustedDevicesModule, ConnectorsModule, TemplatesModule], controllers: [ConsumerController], providers: [ReportModelService, ReportGenerationService, GoalPageReadService, GoalResourceMatchService, PersistentNotificationPlanService, ResourceGapContinuationService, CalendarProjectionService, PlanStateAssessmentService, LocalCapabilitiesService, WorkItemProjectionService, ConsumerService, ConversationOnceService] })
 export class ConsumerModule {}

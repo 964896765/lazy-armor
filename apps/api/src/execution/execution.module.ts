@@ -56,6 +56,10 @@ import { VerificationService } from './verification.service';
 import { ReconciliationService, ReconciliationWorker } from './reconciliation.service';
 import { VerificationController } from './verification.controller';
 import { TerminalHandoffGuardModule } from '../strategy-runtime/terminal-handoff-guard.module';
+import { GithubDigestService } from './github-digest.service';
+import { GithubDigestModelService } from './github-digest-model.service';
+import { AiProviderConfigModule } from '../ai-provider-config/ai-provider-config.module';
+import { GithubDigestScheduleService } from './github-digest-schedule.service';
 
 export const EXECUTION_WORKER = 'EXECUTION_WORKER';
 export const EXECUTION_RECONCILER = 'EXECUTION_RECONCILER';
@@ -68,9 +72,12 @@ export const SIDE_EFFECT_OPERATIONS_SERVICE = 'SIDE_EFFECT_OPERATIONS_SERVICE';
 export const OUTBOX_SERVICE = 'OUTBOX_SERVICE';
 
 @Module({
-  imports: [CapabilityInvocationsModule,RuntimeTargetsModule,TerminalHandoffGuardModule, CapabilityResolverModule, PlansModule, ConnectorsModule, ConnectionsModule, RiskModule, NotificationsModule, AuditModule, CredentialsModule, BillingModule, ContentModule, DailySummaryModule, LogisticsModule, HouseholdModule, StudyModule, DeviceModule, ProfilesModule, OperationsModule, UsageModule, TruthStoreModule],
+  imports: [AiProviderConfigModule, CapabilityInvocationsModule,RuntimeTargetsModule,TerminalHandoffGuardModule, CapabilityResolverModule, PlansModule, ConnectorsModule, ConnectionsModule, RiskModule, NotificationsModule, AuditModule, CredentialsModule, BillingModule, ContentModule, DailySummaryModule, LogisticsModule, HouseholdModule, StudyModule, DeviceModule, ProfilesModule, OperationsModule, UsageModule, TruthStoreModule],
   controllers: [ExecutionsController, VerificationController, TaskGraphsController],
   providers: [
+    GithubDigestService,
+    GithubDigestModelService,
+    GithubDigestScheduleService,
     SnapshotSanitizer,
     RuntimeTaskScheduler,
     TaskGraphsService,

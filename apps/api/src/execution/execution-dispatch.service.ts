@@ -6,7 +6,7 @@ import {RuntimeTargetsService} from '../runtime-targets/runtime-targets.service'
 import {actionMatchesResolution} from '@lazy-armor/plan-schema';
 import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import {ModuleRef} from '@nestjs/core';
-import { conversationOnceRequests, actionIntents, actionAdapterBindings, connectors, executionSteps, executions, planActions, plans, strategyRuntimeBindings, strategyRuntimeWakeups,planCreationContracts,localCapabilityStates,trustedDevices } from '@lazy-armor/database';
+import { conversationOnceRequests, actionIntents, actionAdapterBindings, connectors, executionSteps, executions, planActions, planTriggers, plans, strategyRuntimeBindings, strategyRuntimeWakeups,planCreationContracts,localCapabilityStates,trustedDevices } from '@lazy-armor/database';
 import { ACTION_ADAPTER_REVISION, TERMINAL_FOLLOW_UP_RULES, buildActionIntent, catalogHash, definitionHash,
   requiresTerminalHandoffProof, riskMaximum, terminalFollowUpRule, buildVerificationContract, verificationContractHash,
   actionResolutionContractHash,localCapabilityAvailability,sameCapabilityIdentity, type ActionResolutionContract, type ContextRiskSignal, type RiskLevel } from '@lazy-armor/plan-schema';
@@ -28,6 +28,7 @@ import { CapabilityResolverService } from '../capability-resolver/capability-res
 import { TerminalHandoffGuard, type TerminalHandoffProof } from '../strategy-runtime/terminal-handoff-guard.service';
 import { TruthHandoffGuard, type HandoffTransaction, type TruthHandoffProof } from '../strategy-runtime/truth-handoff-guard.service';
 import { VerificationPolicyRegistry } from './verification-policy-registry.service';
+import { isGithubDigestDefinition } from '@lazy-armor/plan-schema';
 
 export function requiresServerOwnedTerminalHandoff(actions: readonly { config: Record<string, unknown> }[]): boolean {
   return actions.some((action) => action.config.templateKey==='notification.shipment-watch.v1'||requiresTerminalHandoffProof(action.config)
@@ -58,8 +59,13 @@ export class ExecutionDispatchService {
   ) {}
 
   async dispatchManual(userId: string, planId: string, requestId: string, triggerPayload: Record<string, unknown>, resolutionDecisionIds?: string[], expectedVersionId?: string) {
-    if (requestId.startsWith('strategy:')) throw new ConflictException('Strategy execution identity is server-owned');
+    if (requestId.startsWith('strategy:') || requestId.startsWith('github-schedule:')) throw new ConflictException('Scheduled execution identity is server-owned');
     return this.dispatch(userId, planId, requestId, triggerPayload, resolutionDecisionIds, undefined, expectedVersionId);
+  }
+
+  async dispatchGithubSchedule(userId: string, planId: string, versionId: string, triggerId: string, scheduledAt: Date) {
+    return this.dispatch(userId, planId, `github-schedule:${versionId}:${triggerId}:${scheduledAt.toISOString()}`, {}, undefined, undefined, versionId, undefined, undefined,
+      { triggerId, scheduledAt: scheduledAt.toISOString() });
   }
 
   async dispatchStrategy(userId: string, planId: string, wakeupId: string) {
@@ -117,7 +123,7 @@ export class ExecutionDispatchService {
     return this.dispatch(userId,null,requestId,{},[resolution.id],undefined,undefined,undefined,{source,definition});
   }
 
-  private async dispatch(userId: string, planId: string | null, requestId: string, triggerPayload: Record<string, unknown>, resolutionDecisionIds?: string[], wakeupId?: string, expectedVersionId?: string, onceTaskId?: string, sourceBundle?: {source:RuntimeAuthoritySource;definition:PlanDefinition}) {
+  private async dispatch(userId: string, planId: string | null, requestId: string, triggerPayload: Record<string, unknown>, resolutionDecisionIds?: string[], wakeupId?: string, expectedVersionId?: string, onceTaskId?: string, sourceBundle?: {source:RuntimeAuthoritySource;definition:PlanDefinition}, githubSchedule?: { triggerId: string; scheduledAt: string }) {
     const resolvedDispatchInputHash = resolutionDecisionIds ? catalogHash({ planId, requestId, ...(sourceBundle ? {authoritySource:sourceBundle.source} : {}), triggerPayload: this.sanitizer.sanitize(triggerPayload), resolutionDecisionIds: [...resolutionDecisionIds].sort() }) : null;
     const duplicate = await this.findDuplicate(userId, requestId);
     if (duplicate) {
@@ -187,6 +193,11 @@ export class ExecutionDispatchService {
         if (resolutions.some((resolution) => resolution.row.planVersionId !== pinnedVersionId || resolution.requirement.operation !== 'execute')) throw new ConflictException('Resolution must authorize an execute capability on the active PlanVersion');
         const assembled = sourceBundle ? {definition:sourceBundle.definition,computedHash:definitionHash(sourceBundle.definition),version:{definitionHash:definitionHash(sourceBundle.definition)}} : (planId && pinnedVersionId ? await this.assembler.assembleById(userId, planId, pinnedVersionId, tx) : null);
         if (!assembled) throw new ConflictException('Runtime authority definition required');
+        if (githubSchedule) {
+          const trigger = (await tx.select().from(planTriggers).where(and(eq(planTriggers.id, githubSchedule.triggerId), eq(planTriggers.planVersionId, pinnedVersionId!))))[0];
+          if (!isGithubDigestDefinition(assembled.definition) || trigger?.triggerType !== 'schedule' || trigger.configJson.cronExpression !== '0 9 * * *' || trigger.configJson.timezone !== 'Asia/Shanghai') throw new ConflictException('Invalid GitHub schedule');
+          triggerSnapshot = { dispatchOrigin: 'SCHEDULE', scheduledAt: githubSchedule.scheduledAt, triggerId: githubSchedule.triggerId };
+        }
         if (onceTaskId && (assembled.definition.triggers.some(trigger => trigger.triggerType !== 'manual') || assembled.definition.approvalPolicy?.type !== 'always')) throw new ConflictException('One-time proposal must retain manual trigger and per-run approval');
         if (assembled.computedHash !== assembled.version.definitionHash) throw new ConflictException('PLAN_DEFINITION_INTEGRITY_ERROR');
         const requiresHandoff = requiresServerOwnedTerminalHandoff(assembled.definition.actions);
@@ -298,7 +309,7 @@ export class ExecutionDispatchService {
       }
       throw error;
     }
-    await this.events.append(id, 'execution_created', { triggerType: 'manual', planVersionId: pinnedVersionId });
+    await this.events.append(id, 'execution_created', { triggerType: githubSchedule ? 'schedule' : 'manual', planVersionId: pinnedVersionId });
     try {
       await this.enqueue(id);
     } catch (error) {

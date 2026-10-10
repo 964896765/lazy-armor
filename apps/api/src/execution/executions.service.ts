@@ -100,6 +100,7 @@ export class ExecutionsService {
       }));
     return {
       ...rows[0],
+      triggerOrigin: rows[0].requestId.startsWith('github-schedule:') ? 'SCHEDULE' : null,
       errorMessage: this.consumerErrorDetail(rows[0].errorCode, rows[0].errorMessage),
       steps,
       outputs,

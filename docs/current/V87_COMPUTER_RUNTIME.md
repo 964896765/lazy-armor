@@ -1,5 +1,7 @@
 # V87 Computer Runtime · 受控页面观察边界
 
+2026-10-10 最新真机验收：[V87-COMPUTER-04](V87_REAL_OBSERVE.md)完成真实计算器 Observe → 候选 → 本人核实 → Truth → 原会话回显。实际结果 `= 36,000,000,000`，精确来源证据已核验；原任务历史终态保留。权限返回刷新修复已构建并保留数据安装。V87 受控 Act/read-back 继续待验，整体 IN_PROGRESS；下方为此前各检查点。
+
 任务编号：V87-COMPUTER-01。
 
 目标：在接入真正 Android 页面观察器之前，沿既有 APP_STRUCTURED_READ 路径确保每个读取只包含本次要求的字段，且失效、切换或过期的原读取会话不能产生新 Truth。

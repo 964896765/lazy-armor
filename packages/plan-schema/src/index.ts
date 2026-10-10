@@ -134,6 +134,7 @@ export {
   type CreationDraftState,
 } from './creation-draft';
 
+export * from './github-digest';
 export const SOURCE_TYPES = ['manual', 'email', 'calendar', 'notification', 'file', 'webhook', 'internal', 'commerce', 'device', 'vehicle', 'billing', 'content_platform'] as const;
 export const TRIGGER_TYPES = ['manual', 'schedule', 'event', 'webhook', 'threshold', 'date_before', 'date_after', 'data_changed'] as const;
 export const CONDITION_OPERATORS = ['EQ', 'NE', 'GT', 'GTE', 'LT', 'LTE', 'IN', 'NOT_IN', 'CONTAINS', 'CHANGED', 'PERCENT_CHANGE_GT', 'TIME_RANGE', 'EXISTS', 'NOT_EXISTS'] as const;
@@ -188,7 +189,7 @@ const sourceConfigSchemas: Record<SourceType, z.ZodTypeAny> = {
   email: z.object({ folder: shortText.optional(), query: z.string().max(500).optional() }).strict(),
   calendar: z.object({ calendarId: shortText.optional() }).strict(),
   notification: z.object({ category: shortText.optional() }).strict(),
-  file: z.object({ pathPrefix: z.string().max(500).optional(), metadataOnly: z.boolean().optional() }).strict(),
+  file: z.union([z.object({ pathPrefix: z.string().max(500).optional(), metadataOnly: z.boolean().optional() }).strict(), z.object({ mode: z.literal('github_trending_daily') }).strict()]),
   webhook: z.object({ eventType: shortText }).strict(),
   internal: z.object({
     resource: shortText,
@@ -678,5 +679,8 @@ export * from './goal-page-read';
 export * from './user-event-sync';
 export * from './runtime-authority-source';
 export * from './agent-loop';
+export * from './agent-loop-coverage';
 export * from './skill-capability';
 export * from './browser';
+export * from './agent-report';
+export * from './report-financial';

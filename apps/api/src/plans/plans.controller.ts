@@ -35,5 +35,5 @@ export class PlansController {
   @Post(':id/versions') createVersion(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() input: PlanDefinitionDto) { return this.plans.createVersion(user.id, id, input); }
   @Post(':id/versions/:version/apply') apply(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Param('version', ParseIntPipe) version: number) { return this.plans.applyVersion(user.id, id, version); }
   @Post(':id/connections/resolve') resolveConnections(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) { return this.plans.resolveAvailableConnections(user.id, id); }
-  @Post(':id/status') status(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() input: ChangePlanStatusDto) { return this.plans.changeStatus(user.id, id, input.status); }
+  @Post(':id/status') status(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() input: ChangePlanStatusDto) { return this.plans.changeStatus(user.id, id, input.status, input.expectedVersionId); }
 }

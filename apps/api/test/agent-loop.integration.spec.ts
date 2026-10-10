@@ -59,8 +59,10 @@ describe.sequential('Agent Loop uses existing owned Plan/Runtime', { timeout: 90
     const first=(await request(app.getHttpServer()).get(path).set(auth(owner.token)).expect(200)).body;
     expect(first.items).toHaveLength(1); expect(first.nextCursor).toBeTruthy();
     expect(first.items[0]).toMatchObject({kind:'RUN',planVersionId:(await get()).body.planVersionId,state:'failed'});
+    expect(first.items[0].reflection).toMatchObject({ recordedStatus: 'failed', outcome: 'UNKNOWN' });
     const next=(await request(app.getHttpServer()).get(path+'&cursor='+encodeURIComponent(first.nextCursor)).set(auth(owner.token)).expect(200)).body;
     expect(next.items[0].id).toBe(runId); expect(next.items[0]).not.toHaveProperty('inputSnapshotJson'); expect(next.nextCursor).toBeNull();
+    expect(next.items[0].reflection).toMatchObject({ executionId: runId, recordedStatus: 'succeeded', outcome: 'UNVERIFIED' });
   });
   it('includes committed WAIT checkpoints and hides unrelated versions and audit content', async () => {
     const versionId=(await get()).body.planVersionId, audit=app.get(AuditService);
@@ -70,6 +72,23 @@ describe.sequential('Agent Loop uses existing owned Plan/Runtime', { timeout: 90
       source:'scheduler',result:'pending',after:{planVersionId:randomUUID(),state:'UNRELATED_VERSION'},changeSummary:'Isolated other version fixture'});
     const history=(await request(app.getHttpServer()).get(`/api/plans/${planId}/agent-loop/history?limit=20`).set(auth(owner.token)).expect(200)).body;
     expect(history.items).toHaveLength(3); expect(history.items.some((item:any)=>item.state==='WAITING_FACT_CHANGE')).toBe(true);
+    expect(history.items.find((item:any)=>item.kind==='CHECKPOINT').reflection).toBeNull();
     expect(JSON.stringify(history)).not.toMatch(/UNRELATED_VERSION|privateContent|never return/);
+  });
+  it('reads complete seven-date coverage independently of pagination without changing personal evidence', async () => {
+    const path = `/api/plans/${planId}/agent-loop/coverage`;
+    await request(app.getHttpServer()).get(path).set(auth(other.token)).expect(404);
+    const counts = async () => (await pool.query<RowDataPacket[]>('SELECT (SELECT COUNT(*) FROM executions WHERE user_id=UUID_TO_BIN(?)) runs, (SELECT COUNT(*) FROM truth_records WHERE user_id=UUID_TO_BIN(?)) facts, (SELECT COUNT(*) FROM audit_logs WHERE user_id=UUID_TO_BIN(?)) audits', [owner.userId,owner.userId,owner.userId]))[0][0];
+    const before = await counts(), result = (await request(app.getHttpServer()).get(path).set(auth(owner.token)).expect(200)).body;
+    expect(result).toMatchObject({ schemaVersion: 'agent-loop-coverage.v1', planId, planVersionId: (await get()).body.planVersionId,
+      timezone: 'Asia/Shanghai', recordsComplete: true, recordedDayCount: 1, verifiedDayCount: 0, continuityVerified: false, executionAuthorized: false });
+    expect(result.days).toHaveLength(7);
+    expect(result.days.reduce((n: number, day: any) => n + day.runCount, 0)).toBe(2);
+    expect(result.days.reduce((n: number, day: any) => n + day.checkpointCount, 0)).toBe(1);
+    expect(result.days.reduce((n: number, day: any) => n + day.needsAttentionRunCount, 0)).toBe(1);
+    expect(JSON.stringify(result)).not.toMatch(/UNRELATED_VERSION|privateContent|never return|inputSnapshot/);
+    await request(app.getHttpServer()).get(path).set(auth(owner.token)).expect(200);
+    expect(await counts()).toEqual(before);
+    await request(app.getHttpServer()).post(path).set(auth(owner.token)).send({ continuityVerified: true }).expect(404);
   });
 });

@@ -248,6 +248,8 @@ describe.sequential('native calendar write isolated signed collector contract, N
   const loopPath='/api/plans/'+unknownRun[0].planId+'/agent-loop';
   const beforeLoop=await request(app.getHttpServer()).get(loopPath).set(auth(owner.token)).expect(200);
   expect(beforeLoop.body).toMatchObject({state:'RECONCILING',reflection:{executionId:runId,recordedStatus:'failed',outcome:'UNKNOWN'}});
+  const beforeLoopHistory=(await request(app.getHttpServer()).get(loopPath+'/history').set(auth(owner.token)).expect(200)).body;
+  expect(beforeLoopHistory.items.find((item:any)=>item.executionId===runId&&item.kind==='RUN')).toMatchObject({state:'failed',reflection:{outcome:'UNKNOWN'}});
   const [beforeHistory]=await pool.query<RowDataPacket[]>('SELECT status,error_code errorCode FROM executions WHERE id=UUID_TO_BIN(?)',[runId]);
   const [cases]=await pool.query<RowDataPacket[]>('SELECT BIN_TO_UUID(id) id FROM reconciliation_cases WHERE operation_id=UUID_TO_BIN(?)',[task.payload.operationId]);
   const reconciler=app.get(ReconciliationService);const check=(await reconciler.claim(100)).find(row=>row.id===cases[0].id)!;await reconciler.process(check);
@@ -258,6 +260,9 @@ describe.sequential('native calendar write isolated signed collector contract, N
   const afterLoop=await request(app.getHttpServer()).get(loopPath).set(auth(owner.token)).expect(200);
   expect(afterLoop.body).toMatchObject({state:'WAITING',planVersionId:beforeLoop.body.planVersionId,
    reflection:{executionId:runId,recordedStatus:'failed',outcome:'VERIFIED',verifiedResultCount:1}});
+  const afterLoopHistory=(await request(app.getHttpServer()).get(loopPath+'/history').set(auth(owner.token)).expect(200)).body;
+  expect(afterLoopHistory.items.find((item:any)=>item.executionId===runId&&item.kind==='RUN')).toMatchObject({state:'failed',reflection:{outcome:'VERIFIED',verifiedResultCount:1}});
+  expect(JSON.stringify(afterLoopHistory)).not.toMatch(/evidenceRefs|actionIntentId|operationId|evidenceJson|initial-unknown/);
   const [afterHistory]=await pool.query<RowDataPacket[]>('SELECT status,error_code errorCode FROM executions WHERE id=UUID_TO_BIN(?)',[runId]);
   expect(afterHistory).toEqual(beforeHistory);
   const afterLedger=await request(app.getHttpServer()).get('/api/runtime-results').set(auth(owner.token)).expect(200);
@@ -288,6 +293,11 @@ describe.sequential('native calendar write isolated signed collector contract, N
   const graph=await request(app.getHttpServer()).get('/api/task-graphs/'+graphs[0].id).set(auth(owner.token)).expect(200);
   expect(graph.body).toMatchObject({status:'UNKNOWN',recordedStatus:'UNKNOWN'});
   expect(graph.body.tasks.every((item:any)=>item.status==='UNKNOWN'&&item.recordedStatus==='UNKNOWN')).toBe(true);
+  const [run]=await pool.query<RowDataPacket[]>('SELECT BIN_TO_UUID(plan_id) planId FROM executions WHERE id=UUID_TO_BIN(?)',[runId]);
+  const loopPath='/api/plans/'+run[0].planId+'/agent-loop';
+  expect((await request(app.getHttpServer()).get(loopPath).set(auth(owner.token)).expect(200)).body.reflection.outcome).toBe('UNKNOWN');
+  const history=(await request(app.getHttpServer()).get(loopPath+'/history').set(auth(owner.token)).expect(200)).body;
+  expect(history.items.find((item:any)=>item.kind==='RUN'&&item.executionId===runId).reflection.outcome).toBe('UNKNOWN');
  });
  it('fences tampered bindings and revoked grants at dispatch renewal',async()=>{
   const {task}=await prepare('fences');

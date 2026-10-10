@@ -29,6 +29,8 @@ import { TemplatesService } from '../templates/templates.service';
 import type { ConversationAttachmentDto, CreateConversationDto, ConversationMessageDto, ExternalServiceDto, ServiceRequestDto, RequestTransitionDto } from './dto';
 import { decodeTextAttachment } from './attachment-policy';
 import { consumerPlanStatus, dateWindow, safeServiceUrl, requestTransitionAllowed, temporaryConversationOutcome } from './projection-policy';
+import { requestsReport } from '@lazy-armor/plan-schema';
+import { ReportGenerationService } from '../agent/reports/report-generation.service';
 @Injectable()
 export class ConsumerService {
  constructor(@Inject(DATABASE) private readonly db: InjectedDatabase, private readonly planner: AgentPlannerService, private readonly plans: PlansService, private readonly connections: ConnectionsService, private readonly devices: TrustedDevicesService, private readonly connectors: ConnectorsService, private readonly templates: TemplatesService, private readonly drafts: CreationDraftsService, private readonly artifacts: ArtifactService, private readonly audit: AuditService,private readonly reality:RealityPipelineService, private readonly userEvents: UserEventsService, private readonly syncRequests: UserEventSyncRequestsService, private readonly modules:ModuleRef, private readonly memoryCandidates:MemoryCandidatesService, private readonly memory:MemoryService, private readonly methods:SkillRepositoriesService) {}
@@ -45,17 +47,17 @@ export class ConsumerService {
   for (const connection of connections.filter(item => !['manual','internal','file_provider','logistics_provider','content_provider'].includes(item.connectorId) && connectors.some(c=>c.key===item.connectorId&&c.providerType!=='internal'))) {
    const view = await this.modules.get(CapabilityUsabilityService,{strict:false}).resolveConnection(userId,connection.id);
    const available = view.capabilities.filter(item=>item.usable);
-   const kind = (connection.connectorId==='public_http_json'||connectors.find(c=>c.key===connection.connectorId)?.providerType==='webhook') ? 'INTERFACE' : 'CLOUD';
-   result.push({resourceId:`connection:${connection.id}`,kind,name:connection.connectorId==='public_http_json'?connection.externalAccountName:connection.connectorName,
-    summary:connection.connectorId==='public_http_json'?connection.connectorName:connection.externalAccountName,
+   const kind = (['public_http_json','public_web_research'].includes(connection.connectorId)||connectors.find(c=>c.key===connection.connectorId)?.providerType==='webhook') ? 'INTERFACE' : 'CLOUD';
+   result.push({resourceId:`connection:${connection.id}`,kind,name:['public_http_json','public_web_research'].includes(connection.connectorId)?connection.externalAccountName:connection.connectorName,
+    summary:['public_http_json','public_web_research'].includes(connection.connectorId)?connection.connectorName:connection.externalAccountName,
     status:resourceConnectionStatus(connection.status,view.capabilities.map(c=>c.health)),
     health:view.capabilities.length&&view.capabilities.every(c=>c.health==='HEALTHY')?'VERIFIED':'UNKNOWN',
     capabilities:available.map(c=>c.key),reasons:[...new Set(view.capabilities.flatMap(c=>c.reasons))],
     capabilitySummary:{total:view.capabilities.length,available:available.length,items:view.capabilities.map(({key,name,operation,usable})=>({key,name,operation,usable}))},
     lastVerifiedAt:connection.lastCheckedAt instanceof Date?connection.lastCheckedAt.toISOString():connection.lastCheckedAt??null,
-    sourceRef:{type:'Connection',id:connection.id},primaryAction:{label:'查看能力',path:connection.connectorId==='public_http_json'?`/interface-detail?id=${connection.id}`:`/resource-detail?id=${connection.id}`}});
+    sourceRef:{type:'Connection',id:connection.id},primaryAction:{label:'查看能力',path:connection.connectorId==='public_web_research'?'/public-web-resource?id='+connection.id:['public_http_json','public_web_research'].includes(connection.connectorId)?`/interface-detail?id=${connection.id}`:`/resource-detail?id=${connection.id}`}});
   }
-  for (const connector of connectors.filter(item => !['manual','internal','file_provider','logistics_provider','content_provider'].includes(item.key)&&item.providerType!=='internal' && !connections.some(connection => connection.connectorId === item.key))) result.push({ resourceId: `provider:${connector.key}`, kind: (connector.key==='public_http_json'||connector.providerType==='webhook') ? 'INTERFACE' : 'CLOUD', name: connector.name, summary: connector.description, status: connector.key==='public_http_json'?'需要配置':connector.providerType==='webhook'?'待接入':connector.productionStatus==='DISABLED' && ['gmail','google_calendar','github','notion','feishu','dingtalk','wecom'].includes(connector.key) ? '需要配置' : connector.connectable && !connector.draftOnly ? '需要授权' : '待接入', health: 'UNKNOWN', capabilities: [], reasons: [], lastVerifiedAt: null, sourceRef: { type: 'Connector', id: connector.key }, primaryAction: { label: (connector.key==='public_http_json'||connector.providerType==='webhook') ? '添加' : '连接', path: connector.key === 'public_http_json' ? '/add-interface' : connector.providerType==='webhook'?'/add-interface?protocol=Webhook': `/resource-provider?key=${encodeURIComponent(connector.key)}` } });
+  for (const connector of connectors.filter(item => !['manual','internal','file_provider','logistics_provider','content_provider'].includes(item.key)&&item.providerType!=='internal' && !connections.some(connection => connection.connectorId === item.key))) result.push({ resourceId: `provider:${connector.key}`, kind: (['public_http_json','public_web_research'].includes(connector.key)||connector.providerType==='webhook') ? 'INTERFACE' : 'CLOUD', name: connector.name, summary: connector.description, status: ['public_http_json','public_web_research'].includes(connector.key)?'需要配置':connector.providerType==='webhook'?'待接入':connector.productionStatus==='DISABLED' && ['gmail','google_calendar','github','notion','feishu','dingtalk','wecom'].includes(connector.key) ? '需要配置' : connector.connectable && !connector.draftOnly ? '需要授权' : '待接入', health: 'UNKNOWN', capabilities: [], reasons: [], lastVerifiedAt: null, sourceRef: { type: 'Connector', id: connector.key }, primaryAction: { label: (['public_http_json','public_web_research'].includes(connector.key)||connector.providerType==='webhook') ? '添加' : '连接', path: connector.key === 'public_web_research' ? '/public-web-resource' : connector.key === 'public_http_json' ? '/add-interface' : connector.providerType==='webhook'?'/add-interface?protocol=Webhook': `/resource-provider?key=${encodeURIComponent(connector.key)}` } });
   for (const device of devices.filter(d=>d.id!==currentDeviceId&&(!currentInstallationId||d.deviceId!==currentInstallationId))) result.push({ resourceId: `device:${device.id}`, kind: 'DEVICE', name: `已认证设备 · ${device.deviceId.slice(-6)}`, summary: '设备任务、应用与授权读取', status: device.status === 'revoked' ? '需要授权' : device.online ? '已连接' : '设备离线', health: device.online ? 'VERIFIED' : 'UNKNOWN', capabilities: [], reasons: device.online ? [] : ['DEVICE_NOT_ONLINE'], lastVerifiedAt: device.lastHeartbeatAt, sourceRef: { type: 'TrustedDevice', id: device.id }, primaryAction: { label: '查看设备', path: `/devices/${device.id}` } });
   return result;
  }
@@ -178,6 +180,20 @@ export class ConsumerService {
   const historicalIds = conversation.messages.slice(-12).reverse().flatMap(message => message.contextRefs.filter(ref => ref.type === 'ConversationAttachment').map(ref => ref.id));
   const contextIds = [...new Set([...requestedIds, ...historicalIds])].slice(0, 3);
   const contextAttachments = contextIds.length ? await this.db.select().from(consumerAttachments).where(and(eq(consumerAttachments.conversationId, id), inArray(consumerAttachments.id, contextIds))) : [];
+  if (conversation.mode === 'TEMPORARY' && requestsReport(input.content)) {
+   const reports = this.modules.get(ReportGenerationService, { strict: false });
+   const messageId = newId();
+   const report = reports.initial(input.content, input.version + 1, contextAttachments);
+   await this.db.transaction(async tx => {
+    const current = (await tx.select().from(consumerConversations).where(eq(consumerConversations.id, id)).for('update'))[0];
+    if (!current || current.deletedAt || current.version !== input.version + 1 || current.status !== 'PROCESSING') throw new ConflictException('报告目标已更新');
+    await tx.insert(consumerMessages).values({ id: messageId, conversationId: id, requestId: input.requestId, role: 'assistant', content: '已开始自主生成报告，将自动整理提示词、资料、正文并检查结果。', structuredPayload: { result: 'ANSWER', report }, contextRefs: [{ type: 'Conversation', id }], createdAt: new Date() });
+    await tx.update(consumerConversations).set({ status: 'ACTIVE', title: conversation.version === 0 ? input.content.slice(0, 100) : conversation.title, updatedAt: new Date() }).where(eq(consumerConversations.id, id));
+   });
+   // The persisted message is the job identity; periodic recovery repairs a lost enqueue.
+   await reports.enqueue(messageId).catch(() => undefined);
+   return this.conversation(userId, id);
+  }
   let payload: Record<string, unknown>; let content: string; let sourcePlanVersionId: string | null = null; let memoryProposal: import('../ai-adapter/agent-planner.service').PlannerResult['memoryCandidateProposal'];
   try { const history = conversation.messages.slice(-12).map(message => ({ messageId: message.id, role: message.role, content: message.content.slice(0, 1500), truncated: message.content.length > 1500 }));
  const template = conversation.templateKey ? await this.templates.get(conversation.templateKey) : null;

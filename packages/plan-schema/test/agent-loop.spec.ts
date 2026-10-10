@@ -20,4 +20,9 @@ describe('Persistent loop visibility does not grant authority', () => {
     expect(agentLoopState({ ...active, planStatus: 'blocked', resourceAvailable: false })).toBe('WAITING_RESOURCE');
     expect(agentLoopState({ ...active, planStatus: 'degraded' })).toBe('NEEDS_ATTENTION');
   });
+  it('requires attention for a known partial result without keeping it in reconciliation', () => {
+    expect(agentLoopState({ ...active, runStatus: 'failed', outcome: 'PARTIAL' })).toBe('NEEDS_ATTENTION');
+    expect(agentLoopState({ ...active, runStatus: 'failed', outcome: 'FAILED' })).toBe('NEEDS_ATTENTION');
+    expect(agentLoopState({ ...active, runStatus: 'failed', outcome: 'PARTIAL', reconciliationPending: true })).toBe('RECONCILING');
+  });
 });

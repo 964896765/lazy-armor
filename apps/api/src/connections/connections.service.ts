@@ -13,6 +13,7 @@ import { UsageService } from '../usage/usage.service';
 import { ConnectorRateLimitCoordinator } from '../infrastructure/connector-rate-limit-coordinator.service';
 import { ProviderCircuitBreakerService } from '../infrastructure/provider-circuit-breaker.service';
 import { publicJsonUrl } from '../connectors/public-json.connector';
+import { publicWebConfig, WEB_READ } from '../connectors/public-web.connector';
 import { ConsumerReadSourceService, type ConsumerReadSource } from './consumer-read-source.service';
 import type {
   CompleteOAuthConnectionDto,
@@ -38,6 +39,9 @@ export class ConnectionsService {
   ) {}
 
   async create(userId: string, input: CreateConnectionDto) {
+    if (input.connectorId === 'public_web_research') {
+      try { publicWebConfig(input.credentials); } catch { throw new BadRequestException('请填写一至三个无登录凭据的 HTTPS 网站入口'); }
+    }
     if (input.connectorId === 'public_http_json') {
       if (!input.credentials || Object.keys(input.credentials).some(key => key !== 'endpoint')) throw new BadRequestException('公开 JSON 接口只接受 endpoint，不接受密钥');
       try { publicJsonUrl(input.credentials.endpoint); } catch { throw new BadRequestException('请填写无密钥、无查询参数的公开 HTTPS JSON 地址'); }
@@ -74,6 +78,12 @@ export class ConnectionsService {
     const rows = await this.baseSelect().where(and(eq(connections.id, id), eq(connections.userId, userId))).limit(1);
     if (!rows[0]) throw new NotFoundException('Connection not found');
     return this.toResponse(rows[0]);
+  }
+  async publicWebScope(userId: string, id: string) {
+    const current = await this.getWithSecretRef(userId, id);
+    if (current.connectorKey !== 'public_web_research') throw new NotFoundException('Public web scope not found');
+    const request = await this.connectorRequestFor(userId, current);
+    return publicWebConfig(request.credentials?.data);
   }
 
   async listPlansUsingConnection(userId: string, id: string) {
@@ -408,8 +418,22 @@ export class ConnectionsService {
     if (grant.operation !== 'read') {
       throw new ForbiddenException('External write capabilities must run through the Execution Engine');
     }
-    const source = input.capability === 'READ_PUBLIC_HTTP_JSON' ? await this.readSources.capture(userId, id, input.capability) : undefined;
+    const source = ['READ_PUBLIC_HTTP_JSON', WEB_READ].includes(input.capability) ? await this.readSources.capture(userId, id, input.capability) : undefined;
     return this.invoke(userId, id, input, source);
+  }
+
+  captureConsumerReadAuthority(userId: string, id: string, capability: string) { return this.readSources.capture(userId, id, capability); }
+  assertConsumerReadAuthority(source: ConsumerReadSource) { return this.readSources.assertCurrent(source); }
+
+  /** Renew the original short-lived website check for an already authorized read. */
+  async preparePublicWebRead(userId: string, id: string) {
+    const grant = await this.permissions.assertGranted(userId, id, WEB_READ);
+    if (grant.operation !== 'read' || grant.connection.connectorKey !== 'public_web_research') throw new ForbiddenException('Public website read scope required');
+    const health = (await this.db.select().from(providerCapabilityHealth).where(and(eq(providerCapabilityHealth.connectionId, id), eq(providerCapabilityHealth.capabilityKey, WEB_READ))))[0];
+    if (!health || health.status !== 'HEALTHY' || !health.validUntil || health.validUntil <= new Date()) {
+      await this.validate(userId, id);
+      await this.permissions.assertGranted(userId, id, WEB_READ);
+    }
   }
 
   private baseSelect() {

@@ -8,6 +8,7 @@ import { dingtalkManifest } from '../providers/dingtalk/dingtalk-manifest';
 import { feishuManifest } from '../providers/feishu/feishu-manifest';
 import { wecomManifest } from '../providers/wecom/wecom-manifest';
 import { publicJsonManifest } from '../connectors/public-json.manifest';
+import { publicWebManifest } from '../connectors/public-web.manifest';
 
 @Injectable()
 export class ProviderCapabilityRegistryService implements OnModuleInit {
@@ -17,6 +18,7 @@ export class ProviderCapabilityRegistryService implements OnModuleInit {
 
   async onModuleInit() {
     this.installRevision(publicJsonManifest);
+    this.installRevision(publicWebManifest);
     this.installRevision(feishuManifest);
     this.installRevision(dingtalkManifest);
     this.installRevision(wecomManifest);

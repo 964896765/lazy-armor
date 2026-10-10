@@ -17,6 +17,7 @@ import { ConnectorCatalogSyncService } from './connector-catalog-sync.service';
 import { ConnectorsController } from './connectors.controller';
 import { ConnectorsService } from './connectors.service';
 import { PublicJsonConnector } from './public-json.connector';
+import { PublicWebConnector } from './public-web.connector';
 import { resolveGmailOAuthConfig, resolveGoogleCalendarOAuthConfig, resolveGitHubOAuthConfig, resolveNotionOAuthConfig, resolveFeishuAppConfig, resolveDingTalkAppConfig, resolveWeComAppConfig } from '@lazy-armor/config';
 import { DisabledGitHubConnector } from '../providers/github/disabled-github.connector';
 import { DisabledGmailConnector } from '../providers/gmail/disabled-gmail.connector';
@@ -36,6 +37,7 @@ export function createConnectorRegistry(env: NodeJS.ProcessEnv = process.env) {
   const registry = new ConnectorRegistry();
   registry.register(new ManualConnector());
   registry.register(new PublicJsonConnector());
+  registry.register(new PublicWebConnector());
   registry.register(new InternalConnector());
   registry.register(new WebhookConnector());
   const gmail = resolveGmailOAuthConfig({ GMAIL_OAUTH_CLIENT_ID: env.GMAIL_OAUTH_CLIENT_ID,

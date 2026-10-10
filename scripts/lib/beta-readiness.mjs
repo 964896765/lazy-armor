@@ -4,6 +4,15 @@ export const BETA_ROLE_PROBES = [
   { role: 'outbox-worker', url: 'http://127.0.0.1:3012/ready' },
 ];
 
+export function pageObserverSystemEnabled(enabled, services) {
+  if (enabled.trim() !== '1') return false;
+  return services.trim().split(':').some(component => {
+    const [packageName, className, extra] = component.trim().split('/');
+    return extra === undefined && packageName === 'com.lazyarmor.app' &&
+      ['.ReadOnlyPageObserver', 'com.lazyarmor.app.ReadOnlyPageObserver'].includes(className);
+  });
+}
+
 /** A 200 or liveness response alone is insufficient; this is not Beta acceptance. */
 export function validRoleReadiness(role, status, body) {
   if (status !== 200 || !body || body.mysql !== 'ready' || body.redis !== 'PONG' || body.bullmq !== 'ready') return false;

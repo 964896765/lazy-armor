@@ -78,7 +78,7 @@ export class GoalResourceMatchService {
             state: capability.usable && implemented ? 'READY' : 'UNAVAILABLE',
             reasons: implemented ? capability.reasons : [...new Set([...capability.reasons, 'PROVIDER_RUNTIME_UNAVAILABLE'])],
             operation: capability.operation, riskLevel: capability.riskLevel,
-            action: { label: '查看能力与授权', path: (view.providerKey === 'public_http_json' ? '/interface-detail' : '/resource-detail') + '?id=' + view.connectionId } });
+            action: { label: '查看能力与授权', path: (view.providerKey === 'public_web_research' ? '/public-web-resource' : view.providerKey === 'public_http_json' ? '/interface-detail' : '/resource-detail') + '?id=' + view.connectionId } });
         }
         for (const row of native.filter(r => (canonicalCapabilityId(r.capabilityState!.key) ?? r.capabilityState!.canonicalKey ?? r.capabilityState!.key) === key)) {
           const device = devices.find(d => row.resourceId.startsWith('local:' + d.device.id + ':'));

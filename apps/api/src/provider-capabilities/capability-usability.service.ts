@@ -66,7 +66,7 @@ export class CapabilityUsabilityService {
       const official = declared?.officialAvailability ?? 'TO_VERIFY_OFFICIAL';
       const implementation = old ? implementationFromLegacy(old.providerAvailability) : declared?.implementationStatus ?? 'NOT_IMPLEMENTED';
       const state = capabilityAvailability({ providerKey: connection.providerKey, connection, scopes: declared?.oauthScopes ?? [], grant, health, now,
-        credentialRequired: connection.authenticationType !== 'none' || connection.providerKey === 'public_http_json',
+        credentialRequired: connection.authenticationType !== 'none' || ['public_http_json', 'public_web_research'].includes(connection.providerKey),
         credential: connection.credentialStatus ? {status:connection.credentialStatus, expiresAt:connection.credentialExpiresAt} : null });
       const usability = resolveCapabilityUsability({ providerKey: connection.providerKey, capabilityKey: key, providerAvailability: official,
         implementation, grant: state.grantStatus, health: state.healthStatus,

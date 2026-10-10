@@ -71,6 +71,12 @@ export class TerminalHandoffService implements OnModuleInit, OnApplicationShutdo
     try {
       if(this.modules){const {PersistentNotificationPlanService}=await import('../consumer/persistent-notification-plan.service');const notifications=this.modules.get(PersistentNotificationPlanService,{strict:false});await notifications.recover(userId);await notifications.continueLocalResults(userId);}
       const minute=new Date().toISOString().slice(0,16);
+      if (this.modules) {
+        const { GithubDigestScheduleService } = await import('../execution/github-digest-schedule.service');
+        const github = this.modules.get(GithubDigestScheduleService, { strict: false });
+        if (this.scheduleMinute !== minute) await github.wake(userId);
+        await github.complete(userId);
+      }
       if(this.scheduleMinute!==minute){await this.wakeScheduledPlans(userId);this.scheduleMinute=minute;}
       await this.resumeScheduledAcquisitions(userId);
       await this.resumeCompletedPlans(userId);

@@ -5,7 +5,7 @@ export interface AgentLoopReflection {
   executionId: string;
   planVersionId: string;
   recordedStatus: string;
-  outcome: 'VERIFIED' | 'UNVERIFIED' | 'UNKNOWN' | 'FAILED' | 'CANCELLED';
+  outcome: 'VERIFIED' | 'PARTIAL' | 'UNVERIFIED' | 'UNKNOWN' | 'FAILED' | 'CANCELLED';
   verifiedResultCount: number;
   evaluatedAt: string;
 }
@@ -29,6 +29,7 @@ export interface AgentLoopHistoryItem {
   state: string;
   nextRunAt: string | null;
   executionId: string | null;
+  reflection: AgentLoopReflection | null;
 }
 export function agentLoopState(input: {
   planStatus: string; resourceAvailable: boolean; approvalPending: boolean; reconciliationPending: boolean;
@@ -46,6 +47,6 @@ export function agentLoopState(input: {
   if (input.observationState === 'READ_PENDING') return 'OBSERVING';
   if (['created', 'queued', 'running', 'waiting_dispatch', 'retry_wait'].includes(input.runStatus ?? '')) return 'ACTING';
   if (input.outcome === 'UNVERIFIED') return 'VERIFYING';
-  if (input.outcome === 'FAILED' || input.observationState === 'READ_FAILED') return 'NEEDS_ATTENTION';
+  if (input.outcome === 'FAILED' || input.outcome === 'PARTIAL' || input.observationState === 'READ_FAILED') return 'NEEDS_ATTENTION';
   return 'WAITING';
 }

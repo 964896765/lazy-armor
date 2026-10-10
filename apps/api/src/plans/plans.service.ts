@@ -252,7 +252,7 @@ export class PlansService {
     return this.get(userId, planId);
   }
 
-  async changeStatus(userId: string, planId: string, target: PlanState) {
+  async changeStatus(userId: string, planId: string, target: PlanState, expectedVersionId?: string) {
     await this.db.transaction(async (tx) => {
       // All activations for one user serialize on the membership row before any
       // Plan row is locked. This keeps concurrent limit checks race- and deadlock-safe.
@@ -260,6 +260,7 @@ export class PlansService {
         await this.entitlements.assertPlanActivationAllowed(userId, planId, tx);
       }
       const plan = await this.getOwnedPlan(userId, planId, tx, true);
+      if (target === 'active' && expectedVersionId && plan.activeVersionId !== expectedVersionId) throw new ConflictException('Plan version changed after review');
       const current = plan.status as PlanState;
       this.stateMachine.assertTransition(current, target);
       if (target === current) return;
@@ -383,6 +384,7 @@ export class PlansService {
     const sources = [] as PlanDefinition['sources'];
     for (const source of definition.sources) {
       const reference = await this.resolveConnectorReference(executor, userId, source.connectorKey, source.connectionId);
+      if (source.sourceType === 'file' && source.config.mode === 'github_trending_daily' && (reference.connectorKey !== 'public_web_research' || !reference.connectionId)) throw new BadRequestException('GitHub daily source requires its public web connection');
       if (!options.allowMissingConnections && CONNECTION_REQUIRED_SOURCES.has(source.sourceType) && !reference.connectionId) {
         throw new BadRequestException(`${source.sourceType} sources require a connectionId`);
       }

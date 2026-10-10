@@ -27,6 +27,7 @@ export class ConnectionsController {
   @Post('oauth/:provider/callback') completeOAuth(@CurrentUser() user: AuthenticatedUser, @Param('provider') provider: string, @Body() input: CompleteOAuthConnectionDto) { return this.connections.completeOAuth(user.id, provider, input); }
   @Get(':id') get(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) { return this.connections.get(user.id, id); }
   @Get(':id/plans') plans(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) { return this.connections.listPlansUsingConnection(user.id, id); }
+  @Get(':id/public-web-scope') publicWebScope(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) { return this.connections.publicWebScope(user.id, id); }
   @Delete(':id') @HttpCode(204) revoke(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) { return this.connections.revoke(user.id, id); }
   @Post(':id/validate') validate(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) { return this.connections.validate(user.id, id); }
   @Post(':id/reconnect') reconnect(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() input: StartOAuthConnectionDto) { return this.connections.reconnect(user.id, id, input); }
