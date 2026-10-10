@@ -1,5 +1,11 @@
 # 当前任务书 — V84–V90
 
+2026-10-10 最新中断恢复收口：已检查 staged/unstaged 与 HEAD c2d12af 并保留原修改。[V84-TASK-02](V84_TASK_ORCHESTRATOR.md)、[V87-COMPUTER-05 Browser](V87_BROWSER_RUNTIME.md)、V88-LOOP-02 运行历史与 V89-SKILL-02 GitHub/URL 方法来源均完成本轮实现和自动验证。API 14 文件 137/137，Mobile 388/388、Plan-schema 250/250、Config 63/63、八包 typecheck、API/Web/Android Hermes 构建通过；详细证据见 [V90 联合记录](V90_BETA_ACCEPTANCE.md)。按用户授权提交并推送当前 codex 分支，保留独立的登录/设备 Runner 修改，此授权替代下方历史“不推送”限制。下一任务是 V90 真实五页闭环与 V87 本人 Observe/Act/Verify、V88 七天、V89 实际包/资源组合；生产迁移发布证据独立收取，阶段不提前 CLOSED。
+
+以下为先前任务检查点与当时的授权口径。
+
+2026-10-10 最新任务：用户再次要求全路线连续开发、不询问是否继续。已沿既有能力顺序实现 [V88-LOOP-01](V88_AGENT_LOOP.md)、[V89-SKILL-01](V89_SKILL_ECOSYSTEM.md)，并准备 [V90-BETA-01](V90_BETA_ACCEPTANCE.md)联合验收；这些为独立合同/产品工作，不证明 V87 已经完成或允许未验的 Act。原真实主线 V87-COMPUTER-04、本人系统许可/页面/核实、V88 七天、实际第三方方法和资源调用分别保持 REAL_PENDING。0090 只执行本轮新隔离库；历史迁移发布门未过，本轮不部署/安装/推送。Backend/Frontend/Database/Runtime/Test/完成状态/下一任务见上述任务文档。
+
 2026-10-10 当前执行：[V87-COMPUTER-04](V87_COMPUTER_RUNTIME.md)真实只读 Goal Golden Flow。已修复确认恢复时误重启原生活动会话的问题，Mobile 42/42；真实 DeepSeek + 隔离 Goal API 3/3，API/Mobile typecheck 通过。手机已连接，三角色 healthy/ready；首次协议/登录及独立页面系统许可由本人正常 UI 操作，不替本人同意，不重复催问此前暂时无法登录。真实模型 API 证明与实际手机 Observation/本人核实分开，后者仍 REAL_PENDING。无新迁移，继续同一 V87，不扩 Act/V88，不推送。
 
 2026-10-10 最新任务：[V87-COMPUTER-03](V87_COMPUTER_RUNTIME.md)原 Goal 页面需求、合法确认及原会话结果已实现并通过自动回归。服务端决定字段，原消息/版本/建议 hash 冻结进已有 consent event；同建议重复确认/启动保持同 session/Task，结果投影核对实际 Task、证据、候选、Truth/provenance 与现行来源。Backend/Frontend/Database/Runtime/Tests/Acceptance 见当前 V87 文档。接续 V87-COMPUTER-04 本人正常入口的真实 Observe/核实/原目标结果验收，独立待登录和系统授权，不用构建或 fixtures 代替。

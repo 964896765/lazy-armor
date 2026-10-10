@@ -1,7 +1,8 @@
 import { HeaderIconButton } from '../../src/header-icon-button';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
+import { SkillRepositoryList } from '../../src/skill-repository-list';
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -14,7 +15,8 @@ import { ConsumerPresentationMapper as p } from '../../src/consumer-presentation
 
 export default function Plans() {
   const token = useAuthStore(store => store.token);
-  const [mode, setMode] = useState('MINE');
+  const params = useLocalSearchParams<{ view?: string }>();
+  const [mode, setMode] = useState(params.view === 'skills' ? 'SKILLS' : 'MINE');
   const [filter, setFilter] = useState('ALL');
   const query = useQuery({ queryKey: ['plan-library', token], queryFn: () => api<{ plans: PlanLibraryItem[] }>('/plan-library', token), enabled: Boolean(token && mode === 'MINE'), refetchInterval: 20000 });
   const plans = (query.data?.plans ?? []).filter(item => filter === 'ALL' || item.status === filter);
@@ -22,9 +24,9 @@ export default function Plans() {
 
 
   return <SafeAreaView edges={['top']} style={{ flex: 1 }}><ScrollView contentContainerStyle={ui.content}>
-    <View style={ui.line}><Text style={[ui.pageTitle, { textAlign: 'left' }]}>计划</Text><HeaderIconButton label="新建计划" icon="add" onPress={create}/></View>
+    <View style={ui.line}><Text style={[ui.pageTitle, { textAlign: 'left' }]}>计划</Text><HeaderIconButton label={mode === 'SKILLS' ? '接入方法来源' : '新建计划'} icon="add" onPress={() => mode === 'SKILLS' ? router.push('/skill-import' as never) : create()}/></View>
     <SegmentedControl value={mode} onChange={setMode} options={[{ value: 'SKILLS', label: 'Skill仓库' }, { value: 'MINE', label: '我的计划' }]} />
-    {mode === 'SKILLS' ? <EmptyState title="Skill仓库待接入" detail="业务 Skill 的版本与使用流程尚未接入。你可以先描述需求，确认后创建计划。" action="描述计划需求" onPress={create} /> : <>
+    {mode === 'SKILLS' ? <SkillRepositoryList token={token} /> : <>
       <View style={{height:42,flexShrink:0}}><ChipTabs value={filter} onChange={setFilter} options={[{ value: 'ALL', label: '全部' }, { value: 'RUNNING', label: '运行中' }, { value: 'ATTENTION', label: '待处理' }, { value: 'PAUSED', label: '已暂停' }, { value: 'ENDED', label: '已结束' }]} /></View>
       {!token ? <Button label="登录后查看计划" onPress={() => router.push('/auth/login' as never)} /> : query.isLoading ? <LoadingState /> : query.isError ? <ErrorState onRetry={() => void query.refetch()} /> : plans.length ? <View style={styles.list}>{plans.map(plan => <Pressable key={plan.planId} accessibilityRole="button" onPress={() => router.push(plan.primaryAction.path as never)} style={styles.row}>
         <View style={styles.copy}><Text style={styles.title}>{p.text(plan.title, '我的计划')}</Text><Text style={styles.detail}>{p.text(plan.summary)}</Text><Text style={styles.detail}>{plan.nextRun ? '下次运行 ' + p.dateTime(plan.nextRun) : p.text(plan.nextStep)}</Text><StatusBadge label={p.reason(plan.status)} /></View><Ionicons name="chevron-forward" size={18} color="#667085" />

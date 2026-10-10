@@ -1,4 +1,5 @@
 import {ProfileAvatar} from '../../src/profile-avatar';
+import { AgentLoopCards } from '../../src/agent-loop-card';
 import {scheduleRows,type ScheduleMessage} from '../../src/schedule-projection';
 import type {TodoItem} from '../../src/todo-presenter';
 import { HeaderIconButton } from '../../src/header-icon-button';
@@ -31,5 +32,6 @@ export default function Schedule(){
  <View style={[ui.line,{justifyContent:'space-between'}]}><Text style={ui.title}>共 {items.length} 项</Text><Text style={ui.detail}>按事项状态分组</Text></View>
  {!token?<Button label="登录后查看日程" onPress={()=>router.push('/auth/login' as never)}/>:query.isLoading?<LoadingState/>:query.isError||attention.isError||messages.isError?<ErrorState onRetry={()=>{void query.refetch();void attention.refetch();void messages.refetch();}}/>:sections.map(section=><View key={section}>{items.some(item=>group==='COMPLETED'||item.section===section)?<Text style={[ui.title,{marginTop:16}]}>{section}</Text>:null}{items.filter(item=>group==='COMPLETED'||item.section===section).map(item=><Pressable key={item.id} onPress={()=>router.push(item.primaryAction.path as never)} style={({pressed})=>[ui.listRow,ui.line,pressed&&{backgroundColor:'rgba(225,236,249,0.38)'}]}><Text style={[ui.label,{width:48}]}>{item.allDay?'全天':p.time(item.scheduledAt??item.occurredAt)}</Text><View style={{width:1,height:32,backgroundColor:'#CADCF1'}}/><View style={{flex:1,minWidth:0,gap:5}}><Text numberOfLines={2} style={ui.title}>{p.text(item.title,'日程事项')}</Text><Text numberOfLines={2} style={ui.detail}>{p.text(item.subtitle,'查看本次事项')}</Text><StatusBadge label={p.text(item.status,'待处理')}/></View><Ionicons name="chevron-forward" size={20} color="#667085"/></Pressable>)}</View>)}
  {token&&!query.isLoading&&!query.isError&&!items.length?<EmptyState title={group==='COMPLETED'?'这一天还没有完成事项':'这一天没有待处理事项'} detail="计划运行、会话结果与服务请求会统一显示在这里。"/>:null}
+ {group==='INCOMPLETE'&&date===p.localDate()?<AgentLoopCards token={token}/>:null}
  </ScrollView><CalendarSheet visible={calendar} date={date} onSelect={changeDate} onClose={()=>setCalendar(false)}/></SafeAreaView>;
 }

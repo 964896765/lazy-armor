@@ -55,6 +55,7 @@ import { FeishuModule } from './providers/feishu/feishu.module';
 import { DingTalkModule } from './providers/dingtalk/dingtalk.module';
 import { WeComModule } from './providers/wecom/wecom.module';
 import { StructuredReadModule } from './structured-read/structured-read.module';
+import { BrowserModule } from './providers/browser/browser.module';
 import { TerminalHandoffController, TerminalHandoffService } from './strategy-runtime/terminal-handoff.service';
 import { PortableSkillsModule } from './portable-skills/portable-skills.module';
 import { McpModule } from './mcp/mcp.module';
@@ -81,6 +82,7 @@ import { ServicesCatalogModule } from './services-catalog/services-catalog.modul
     AuthModule,
     UsersModule,
     ConnectorsModule,
+    BrowserModule,
     ConnectionsModule,
     HealthModule,
     BillingModule,

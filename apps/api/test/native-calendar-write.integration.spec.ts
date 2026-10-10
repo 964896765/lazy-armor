@@ -238,19 +238,30 @@ describe.sequential('native calendar write isolated signed collector contract, N
   const [afterProjection]=await pool.query<RowDataPacket[]>('SELECT COUNT(*) n FROM side_effect_operations WHERE execution_id=UUID_TO_BIN(?)',[runId]);expect(afterProjection[0].n).toBe(1);
  });
  it('does not trust matched=true and queues read-only reconciliation for mismatched read-back',async()=>{
-  const {task}=await prepare('unknown');await signedPost('/device-tasks/'+task.id+'/complete',{claimToken:task.claimToken,result:receipt(task,false)});
+  const {task,runId}=await prepare('unknown');await signedPost('/device-tasks/'+task.id+'/complete',{claimToken:task.claimToken,result:receipt(task,false)});
   const [unverifiedFacts]=await pool.query<RowDataPacket[]>('SELECT COUNT(*) n FROM source_observations WHERE user_id=UUID_TO_BIN(?) AND external_event_key=?',[owner.userId,'calendar-write:'+task.payload.invocationId]);expect(unverifiedFacts[0].n).toBe(0);
   const ledger=await request(app.getHttpServer()).get('/api/runtime-results').set(auth(owner.token)).expect(200);expect(ledger.body.find((r:any)=>r.invocationId===task.payload.invocationId)).toMatchObject({executionState:'OUTCOME_UNKNOWN',verificationState:'OUTCOME_UNKNOWN'});
   const [unknownRun]=await pool.query<RowDataPacket[]>('SELECT BIN_TO_UUID(plan_id) planId FROM capability_invocations WHERE id=UUID_TO_BIN(?)',[task.payload.invocationId]);
   const unknownProjection=await request(app.getHttpServer()).get('/api/plans/'+unknownRun[0].planId+'/control-projection').set(auth(owner.token)).expect(200);
   expect(unknownProjection.body.manualRunAllowed).toBe(false);
   expect(unknownProjection.body.records[0].verificationState).toBe('OUTCOME_UNKNOWN');
+  const loopPath='/api/plans/'+unknownRun[0].planId+'/agent-loop';
+  const beforeLoop=await request(app.getHttpServer()).get(loopPath).set(auth(owner.token)).expect(200);
+  expect(beforeLoop.body).toMatchObject({state:'RECONCILING',reflection:{executionId:runId,recordedStatus:'failed',outcome:'UNKNOWN'}});
+  const [beforeHistory]=await pool.query<RowDataPacket[]>('SELECT status,error_code errorCode FROM executions WHERE id=UUID_TO_BIN(?)',[runId]);
   const [cases]=await pool.query<RowDataPacket[]>('SELECT BIN_TO_UUID(id) id FROM reconciliation_cases WHERE operation_id=UUID_TO_BIN(?)',[task.payload.operationId]);
   const reconciler=app.get(ReconciliationService);const check=(await reconciler.claim(100)).find(row=>row.id===cases[0].id)!;await reconciler.process(check);
   const lookup=await signedPost('/device-tasks/'+cases[0].id+'/claim',{});
   expect(JSON.parse(Buffer.from(lookup.body.dispatchAuthorization.payload,'base64').toString()).lookupOnly).toBe(true);
   await signedPost('/device-tasks/'+cases[0].id+'/complete',{claimToken:lookup.body.claimToken,result:receipt(lookup.body)});
   expect(await reconciler.get(owner.userId,cases[0].id)).toMatchObject({status:'RESOLVED',resultState:'SUCCEEDED'});
+  const afterLoop=await request(app.getHttpServer()).get(loopPath).set(auth(owner.token)).expect(200);
+  expect(afterLoop.body).toMatchObject({state:'WAITING',planVersionId:beforeLoop.body.planVersionId,
+   reflection:{executionId:runId,recordedStatus:'failed',outcome:'VERIFIED',verifiedResultCount:1}});
+  const [afterHistory]=await pool.query<RowDataPacket[]>('SELECT status,error_code errorCode FROM executions WHERE id=UUID_TO_BIN(?)',[runId]);
+  expect(afterHistory).toEqual(beforeHistory);
+  const afterLedger=await request(app.getHttpServer()).get('/api/runtime-results').set(auth(owner.token)).expect(200);
+  expect(afterLedger.body.find((r:any)=>r.invocationId===task.payload.invocationId)).toMatchObject({executionState:'OUTCOME_UNKNOWN',verificationState:'OUTCOME_UNKNOWN'});
  });
  it('recovers the committed receipt after process loss before ledger finalization without redispatch',async()=>{
   const {task,runId}=await prepare('commit-gap');
@@ -266,6 +277,17 @@ describe.sequential('native calendar write isolated signed collector contract, N
   expect(ledger.body.find((r:any)=>r.invocationId===task.payload.invocationId)).toMatchObject({executionState:'SUCCEEDED',verificationState:'VERIFIED'});
   const [ops]=await pool.query<RowDataPacket[]>('SELECT status,attempt_count FROM side_effect_operations WHERE execution_id=UUID_TO_BIN(?)',[runId]);
   expect(ops).toHaveLength(1);expect(ops[0]).toMatchObject({status:'succeeded',attempt_count:1});
+ });
+ it('does not mark an UNKNOWN Task successful from a resolved Case lacking matching Verification Evidence',async()=>{
+  const {task,runId}=await prepare('task-no-verification');
+  await signedPost('/device-tasks/'+task.id+'/complete',{claimToken:task.claimToken,result:receipt(task,false)});
+  const [graphs]=await pool.query<RowDataPacket[]>('SELECT BIN_TO_UUID(id) id FROM agent_task_graphs WHERE execution_id=UUID_TO_BIN(?)',[runId]);
+  expect(graphs).toHaveLength(1);
+  // Deliberately inconsistent metadata in this isolated fixture; no successful proof is appended.
+  await pool.query("UPDATE reconciliation_cases SET status='RESOLVED',result_state='SUCCEEDED' WHERE user_id=UUID_TO_BIN(?) AND execution_id=UUID_TO_BIN(?) AND status='OPEN'",[owner.userId,runId]);
+  const graph=await request(app.getHttpServer()).get('/api/task-graphs/'+graphs[0].id).set(auth(owner.token)).expect(200);
+  expect(graph.body).toMatchObject({status:'UNKNOWN',recordedStatus:'UNKNOWN'});
+  expect(graph.body.tasks.every((item:any)=>item.status==='UNKNOWN'&&item.recordedStatus==='UNKNOWN')).toBe(true);
  });
  it('fences tampered bindings and revoked grants at dispatch renewal',async()=>{
   const {task}=await prepare('fences');

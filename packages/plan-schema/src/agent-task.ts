@@ -22,6 +22,8 @@ export function taskStatusFromRuntime(input: { executionStatus: string; stepStat
   // A reconciled current result may differ from immutable failed Execution history.
   if (input.resultState === 'SUCCEEDED') return 'SUCCESS';
   if (input.resultState === 'FAILED') return input.executionStatus === 'cancelled' ? 'CANCELLED' : 'FAILED';
+  if (input.stepStatus === 'pending' && input.executionStatus === 'cancelled') return 'CANCELLED';
+  if (input.stepStatus === 'pending' && ['failed', 'partially_succeeded'].includes(input.executionStatus)) return 'FAILED';
   const status = input.stepStatus ?? input.executionStatus;
   if (status === 'cancelled') return 'CANCELLED';
   if (status === 'failed' || status === 'partially_succeeded') return 'FAILED';

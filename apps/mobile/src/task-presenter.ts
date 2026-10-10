@@ -6,6 +6,7 @@ export function taskStatusLabel(status: TaskStatus) { return labels[status] ?? '
 export function taskDetail(task: AgentTaskProjection) {
   if (task.skipped) return '本次未执行';
   if (task.status === 'UNKNOWN') return '正在核对实际结果';
+  if (task.runtimeStatus === 'pending' && ['CANCELLED', 'FAILED'].includes(task.status)) return task.status === 'CANCELLED' ? '已取消，本次未开始' : '本次未开始，运行已停止';
   const reasons = { APPROVAL: '等待你的审批', DEPENDENCY: '等待前一项完成', RUNTIME: '等待执行恢复', RETRY: '等待受控重试', PLAN_PAUSED: '计划已暂停' };
   return task.waitReason ? reasons[task.waitReason] : taskStatusLabel(task.status);
 }

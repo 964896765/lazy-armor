@@ -82,7 +82,8 @@ describe.sequential('P0-H4 execution worker true-process reliability', { timeout
     pool = createPool({ uri: process.env.DATABASE_URL, connectionLimit: 6, timezone: 'Z' });
     poolRef = pool;
     redis = new IORedis(process.env.REDIS_URL!, { maxRetriesPerRequest: null });
-    queue = new Queue('lazy-armor-executions', { connection: redis });
+    const prefix = process.env.REDIS_KEY_PREFIX;
+    queue = new Queue('lazy-armor-executions', { connection: redis, ...(prefix ? { prefix } : {}) });
     reconciler = app.get(ExecutionQueueReconciler);
 
     user = await register(app, `h4-worker-${unique}@example.com`, 'H4 Worker');

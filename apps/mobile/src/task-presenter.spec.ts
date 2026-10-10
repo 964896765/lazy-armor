@@ -13,6 +13,10 @@ describe('Task progress stays truthful', () => {
     expect(taskDetail({ ...base, waitReason: 'APPROVAL' })).toBe('等待你的审批');
     expect(taskDetail({ ...base, waitReason: 'RETRY' })).toBe('等待受控重试');
   });
+  it('does not leave unstarted steps waiting after their execution ends', () => {
+    expect(taskDetail({...base,status:'CANCELLED',waitReason:null})).toBe('已取消，本次未开始');
+    expect(taskDetail({...base,status:'FAILED',waitReason:null})).toBe('本次未开始，运行已停止');
+  });
   it('counts only actually completed steps and marks old versions', () => {
     const graph = { status: 'SUCCESS', historical: true, tasks: [{ ...base, status: 'SUCCESS', skipped: true }, { ...base, status: 'SUCCESS', skipped: false }] } as TaskGraphProjection;
     expect(taskGraphDetail(graph)).toBe('已完成 · 1/2 项完成 · 较早版本');

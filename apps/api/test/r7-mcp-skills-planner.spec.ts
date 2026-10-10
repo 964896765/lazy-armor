@@ -69,6 +69,16 @@ function planDraftOutput(overrides: Partial<AgentModelOutput> = {}): AgentModelO
   };
 }
 
+describe('Portable registry value isolation', () => {
+  it('keeps mutable caller arrays out of registered guidance and refuses changing an immutable version', () => {
+    const registry = new SkillRegistryService();
+    const skill = registry.require('PLAN_DRAFT');
+    skill.forbiddenActions.length = 0;
+    expect(registry.require('PLAN_DRAFT').forbiddenActions).toContain('EXECUTE');
+    expect(() => registry.register({ ...registry.require('PLAN_DRAFT'), contentHash: 'different' })).toThrow('immutable');
+  });
+});
+
 describe('R7 Agent Context Compiler prompt/tool injection isolation', () => {
   const compiler = new AgentContextCompiler();
 

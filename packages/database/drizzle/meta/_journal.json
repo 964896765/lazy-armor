@@ -631,6 +631,13 @@
       "when": 1791414000000,
       "tag": "0089_memory_relations",
       "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1791561600000,
+      "tag": "0090_skill_repositories",
+      "breakpoints": true
     }
   ]
 }

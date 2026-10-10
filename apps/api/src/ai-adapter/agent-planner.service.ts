@@ -29,6 +29,7 @@ import {
 import type { SkillDescriptor } from '../portable-skills/skill-descriptor';
 import { assertSkillReferencesAllowed } from '../portable-skills/skill-descriptor';
 import { SkillRegistryService } from '../portable-skills/skill-registry.service';
+import { SkillRepositoriesService } from '../portable-skills/skill-repositories.service';
 import { AuditService } from '../audit/audit.service';
 import { ReadinessEvidenceService } from '../runtime-catalog/readiness-evidence.service';
 import { RuntimeCatalogRegistryService } from '../runtime-catalog/runtime-catalog-registry.service';
@@ -60,6 +61,7 @@ export interface AgentPlanProposal {
 }
 
 export interface PlannerResult {
+  methodRefs?: import('@lazy-armor/plan-schema').SkillMethodRef[];
   pageRead?: import('@lazy-armor/plan-schema').GoalPageRead;
   /** Internal only: Consumer persists candidates separately, never in assistant JSON. */
   memoryCandidateProposal?: { settingsVersion: number; modelId: string; suggestions: import('@lazy-armor/plan-schema').MemorySuggestion[] };
@@ -82,6 +84,7 @@ export interface PlannerResult {
 }
 
 export interface PlannerRuntimeFacts {
+  methodContext?: Array<{ ref: import('@lazy-armor/plan-schema').SkillMethodRef; manifest: import('@lazy-armor/plan-schema').SkillCapability }>;
   memoryContext?: import('@lazy-armor/plan-schema').MemoryContextSnapshot;
   timeContext?: GoalTimeContext;
   acquisitionCoverage?:readonly AcquisitionCoverage[];
@@ -112,6 +115,7 @@ export class AgentPlannerService {
     @Optional() private readonly moduleRef?:ModuleRef,
     @Optional() private readonly understanding?: GoalUnderstandingService,
     @Optional() private readonly executionContext?: GoalExecutionContextService,
+    @Optional() private readonly repositories?: SkillRepositoriesService,
   ) {}
 
   async plan(userId: string, intent: string, options: { audit?: boolean; workContext?: 'TEMPORARY' | 'PLAN'; contextSources?: Array<{ label: string; content: string }> } = {}): Promise<PlannerResult> {
@@ -135,10 +139,18 @@ export class AgentPlannerService {
       capabilities: facts.capabilities,
       tools: facts.tools,
       evidence: [],
-      untrustedSources: options.contextSources ?? [],
+      untrustedSources: [...(options.contextSources ?? []), ...(facts.methodContext?.map(method => ({
+        label: `method:${method.ref.revisionId}`,
+        content: JSON.stringify({ provenance: 'USER_IMPORTED_METHOD_GUIDANCE', executionAuthorized: false, ...method }),
+      })) ?? [])],
     });
     const output = await this.model.complete({ userId: options.userId, workContext: options.workContext, intent, context, systemPolicy: '见 SYSTEM_POLICY section', allowedResults: [...AGENT_PLANNER_RESULTS] });
     const validation = this.validateOutput(output, facts, intent);
+    if (facts.methodContext?.length && (!options.userId || !this.repositories ||
+      !await this.repositories.contextCurrent(options.userId, facts.methodContext.map(method => method.ref)))) {
+      validation.valid = false;
+      validation.errors.push('SKILL_CONTEXT_CHANGED');
+    }
     const { groundedMemorySuggestions } = await import('@lazy-armor/plan-schema');
     const memorySuggestions = facts.memoryContext?.enabled ? groundedMemorySuggestions(intent, output.memorySuggestions) : [];
     if (facts.memoryContext && (facts.memoryContext.items.length || memorySuggestions.length) && (!options.userId || !this.executionContext ||
@@ -161,6 +173,7 @@ export class AgentPlannerService {
       result.clarification={missingRequirements:['请补充要安排的事项、日期时间及使用的日历，以确定计划场景。']};
     }
     if (validation.valid) {
+      if (facts.methodContext?.length) result.methodRefs = facts.methodContext.map(method => method.ref);
       if (memorySuggestions.length && facts.memoryContext) result.memoryCandidateProposal = { settingsVersion: facts.memoryContext.settingsVersion, modelId: this.model.modelId(), suggestions: memorySuggestions };
       if (facts.memoryContext?.items.length) result.memoryRefs = facts.memoryContext.items.map(item => ({ id: item.id, version: item.version, settingsVersion: facts.memoryContext!.settingsVersion }));
       if (facts.memoryContext?.relations?.length) result.memoryRelationRefs = facts.memoryContext.relations.map(({ id, version }) => ({ id, version }));
@@ -190,6 +203,7 @@ export class AgentPlannerService {
           changeSummary: `Agent planner ${intent.slice(0, 80)} -> ${result.result}`,
           after: {
             plannerRunId: proposalId,
+            methodRefs: result.methodRefs ?? [],
             memoryRefs: result.memoryRefs ?? [],
             memoryRelationRefs: result.memoryRelationRefs ?? [],
             goalUnderstanding: result.understanding ? {
@@ -260,7 +274,8 @@ export class AgentPlannerService {
     }
     const coverage=this.acquisitions?await this.acquisitions.coverage(userId):null;
     const acquisitionCoverage:AcquisitionCoverage[]|undefined=coverage?.sources.map(round=>({sourceId:round.sourceId,factKey:round.capability,state:round.state as AcquisitionCoverage['state'],observedAt:round.observedAt?.toISOString()??null,evidenceRefs:round.evidenceRefsJson,reason:round.reason}));
-    return { memoryContext, timeContext, domain, scenarios, truths, capabilities, tools, acquisitionCoverage:acquisitionCoverage?.length?acquisitionCoverage:undefined };
+    const methodContext = this.repositories ? await this.repositories.context(userId, intent, domain) : undefined;
+    return { methodContext, memoryContext, timeContext, domain, scenarios, truths, capabilities, tools, acquisitionCoverage:acquisitionCoverage?.length?acquisitionCoverage:undefined };
   }
 
   /** Pure fail-closed validation of model output against collected runtime facts. */

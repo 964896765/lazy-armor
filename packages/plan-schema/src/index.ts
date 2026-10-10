@@ -1,6 +1,7 @@
 import { ACTION_TYPES } from './action-types';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
+import { browserFormSchema } from './browser';
 import { calendarEventCreateSchema, calendarEventUpdateSchema, calendarEventDeleteSchema } from './calendar-write';
 import { PLAN_DOMAINS } from './domain-catalog';
 
@@ -307,6 +308,7 @@ const actionConfigSchemas: Record<ActionType, z.ZodTypeAny> = {
   }).strict(),
   publish: z.object({
     visibility: z.enum(['private', 'unlisted', 'public']),
+    browser: browserFormSchema.optional(),
     calendarEvent: calendarEventCreateSchema.optional(),
     calendarMutation: z.union([calendarEventUpdateSchema, calendarEventDeleteSchema]).optional(),
     handoffTarget: z.object({
@@ -406,6 +408,13 @@ export const planDefinitionInputSchema = z.object({
   conditions: z.array(conditionSchema).max(100).default([]),
   actions: z.array(actionSchema).min(1).max(100),
 }).strict().superRefine((definition, context) => {
+  for (const [index, action] of definition.actions.entries()) {
+    if (action.config.browser !== undefined || action.requiredCapability === 'BROWSER_SUBMIT_FORM') {
+      if (action.actionType !== 'publish' || action.requiredCapability !== 'BROWSER_SUBMIT_FORM' || !action.connectionId ||
+          action.config.visibility !== 'private' || action.config.browser === undefined || action.config.calendarEvent || action.config.calendarMutation || action.config.handoffTarget)
+        context.addIssue({ code: 'custom', path: ['actions', index], message: 'Browser forms require an owned connection, dedicated capability and exclusive private publish scope' });
+    }
+  }
   for (const [key, rows] of Object.entries({ sources: definition.sources, triggers: definition.triggers, conditions: definition.conditions, actions: definition.actions })) {
     const positions = rows.map((row) => 'stepOrder' in row ? row.stepOrder : row.sortOrder);
     if (new Set(positions).size !== positions.length) context.addIssue({ code: 'custom', path: [key], message: `${key} order values must be unique` });
@@ -668,3 +677,6 @@ export * from './goal-resource-match';
 export * from './goal-page-read';
 export * from './user-event-sync';
 export * from './runtime-authority-source';
+export * from './agent-loop';
+export * from './skill-capability';
+export * from './browser';

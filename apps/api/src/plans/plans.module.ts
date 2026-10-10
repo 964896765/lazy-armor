@@ -10,12 +10,14 @@ import { RuntimeCatalogModule } from '../runtime-catalog/runtime-catalog.module'
 import { PlanLifecycleProjectionService } from './plan-lifecycle-projection.service';
 import { FactDemandsModule } from '../fact-demands/fact-demands.module';
 import { PlanControlProjectionService } from './plan-control-projection.service';
+import { AgentLoopService } from '../agent/loop/agent-loop.service';
+import { AgentLoopController } from '../agent/loop/agent-loop.controller';
 
 export const PLAN_SERVICE = 'PLAN_SERVICE';
 
 @Module({
   imports: [AuditModule, MembershipModule, RuntimeCatalogModule, FactDemandsModule],
-  controllers: [PlansController],
+  controllers: [PlansController, AgentLoopController],
   providers: [
     PlanDefinitionAssembler,
     PlanStateService,
@@ -23,6 +25,7 @@ export const PLAN_SERVICE = 'PLAN_SERVICE';
     LifecycleReadService,
     PlanLifecycleProjectionService,
     PlanControlProjectionService,
+    AgentLoopService,
     { provide: PLAN_SERVICE, useExisting: PlansService },
   ],
   exports: [PlansService, LifecycleReadService, PlanLifecycleProjectionService, PLAN_SERVICE, PlanDefinitionAssembler, PlanStateService],

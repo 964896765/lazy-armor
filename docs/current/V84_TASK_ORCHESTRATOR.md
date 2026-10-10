@@ -31,3 +31,19 @@ Acceptance：构建、隔离回归、部署和真机分别记录。真实手机�
 运行底座补充回归：49/49 PASS（Task 8 + Execution 33 + Verification/Reconciliation 8），使用隔离 `_test` MySQL 与 Redis database 15。首次补跑共用开发 Redis 时，两项 job 存在断言受到正在运行的独立 worker 消费影响；保留失败日志，隔离队列重跑后全部通过，不停止正式 worker，不放宽断言。
 
 后续联合部署：0086 已执行本地开发库，三角色更新并 ready，含 Task 进度的 APK 与 Memory 联合构建/安装，见 [V85 部署记录](V85_MEMORY_SYSTEM.md)。任务页真机点按仍待正常登录。
+
+## V84-TASK-02 · 2026-10-10 中断恢复与终态一致性
+
+目标：保留工作区原修改，从中断检查点继续 Agent Core/Task；修复取消/失败后的未开始子任务和核对成功的证据边界。
+
+Backend：TaskGraphsService 的当前结果必须匹配本人、原 Case、原 Operation 和相同 resultState 的正式 VerificationEvidence，RESOLVED 标记本身不能把 UNKNOWN 改成显示成功。取消或失败的运行中，pending 子任务不再被依赖投影覆盖成 WAITING。完成和按原 Runtime 合法跳过的前置步骤都已离开执行边界，依赖状态继续沿原顺序判断。
+
+Frontend：任务进度明确显示“已取消，本次未开始”或“本次未开始，运行已停止”，不把没有执行的步骤显示为继续排队或真正执行失败。已有运行版本、暂停提示、重试次数与返回入口保留。
+
+Database：零新迁移。新取消/失败通过原 StateService 的 fencing 与同事务快照同步，既有 Task/Execution/UNKNOWN Ledger 终态不复活；核对当前状态仍为只读投影。
+
+Runtime：复用原 cancel API、Execution Worker、Scheduler/QueueService 和 Reconciliation。排队取消后迟到 Worker 不再产生步骤或副作用；未知结果仍禁止重发。原 Agent 理解/确认的 owner/version/latest-message 门未放宽。
+
+Test：增加原 cancel API→未开始 Task 同身份收口→迟到 Worker 无副作用；原步骤失败→后续 pending Task 停止；不一致 RESOLVED metadata/缺少匹配核实证据保持 UNKNOWN。移动端增加未开始状态断言，并复核 Agent 理解、上下文、会话确认、原 Native 签名链。最终结果与构建见 V90 联合记录，隔离 fixtures 不代替真机。
+
+完成状态：IMPLEMENTED / AUTOMATION_VERIFIED / BUILD_VERIFIED；Task 终态、证据与原权威回归结果见 V90 联合记录。V84 整体仍 IN_PROGRESS，实际手机任务进度独立待验。进入本轮前的 12 个登录和设备 Runner 文件经 SHA256 核对保持不变，不吸收到本轮提交。

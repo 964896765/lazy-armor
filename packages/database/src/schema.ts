@@ -19,6 +19,35 @@ export const users = mysqlTable('users', {
   ...timestamps,
 });
 
+export const skillRepositories = mysqlTable('skill_repositories', {
+  id: uuidBinary('id').primaryKey(),
+  userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  requestId: varchar('request_id', { length: 160 }).notNull(),
+  importHash: char('import_hash', { length: 64 }).notNull(),
+  name: varchar('name', { length: 120 }).notNull(),
+  sourceType: varchar('source_type', { length: 32 }).notNull(),
+  sourceUrl: varchar('source_url', { length: 1000 }),
+  enabled: boolean('enabled').notNull().default(false),
+  status: varchar('status', { length: 16 }).notNull(),
+  version: int('version').notNull(),
+  ...timestamps,
+}, table => [uniqueIndex('skill_repository_request_uq').on(table.userId, table.requestId), index('skill_repository_owner_idx').on(table.userId, table.createdAt, table.id)]);
+export const skillEntries = mysqlTable('skill_entries', {
+  id: uuidBinary('id').primaryKey(),
+  repositoryId: uuidBinary('repository_id').notNull().references(() => skillRepositories.id, { onDelete: 'restrict' }),
+  name: varchar('name', { length: 80 }).notNull(),
+  currentRevisionId: uuidBinary('current_revision_id'),
+  createdAt: datetime('created_at', { mode: 'date', fsp: 6 }).notNull(),
+}, table => [uniqueIndex('skill_entry_name_uq').on(table.repositoryId, table.name)]);
+export const skillEntryRevisions = mysqlTable('skill_entry_revisions', {
+  id: uuidBinary('id').primaryKey(),
+  entryId: uuidBinary('entry_id').notNull().references(() => skillEntries.id, { onDelete: 'restrict' }),
+  version: varchar('version', { length: 40 }).notNull(),
+  contentHash: char('content_hash', { length: 64 }).notNull(),
+  manifestJson: json('manifest_json').$type<Record<string, unknown>>().notNull(),
+  createdAt: datetime('created_at', { mode: 'date', fsp: 6 }).notNull(),
+}, table => [uniqueIndex('skill_entry_revision_uq').on(table.entryId, table.version)]);
+
 export const personalMemorySettings = mysqlTable('personal_memory_settings', {
   userId: uuidBinary('user_id').primaryKey().references(() => users.id, { onDelete: 'restrict' }),
   enabled: boolean('enabled').notNull().default(false),
@@ -1058,6 +1087,16 @@ export const planVersions = mysqlTable('plan_versions', {
   uniqueIndex('plan_versions_plan_number_uq').on(table.planId, table.versionNumber),
   index('plan_versions_created_by_idx').on(table.createdBy),
 ]);
+
+export const planSkillReferences = mysqlTable('plan_skill_references', {
+  id: uuidBinary('id').primaryKey(),
+  userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  planVersionId: uuidBinary('plan_version_id').notNull().references(() => planVersions.id, { onDelete: 'restrict' }),
+  revisionId: uuidBinary('revision_id').notNull().references(() => skillEntryRevisions.id, { onDelete: 'restrict' }),
+  contentHash: char('content_hash', { length: 64 }).notNull(),
+  repositoryVersion: int('repository_version').notNull(),
+  createdAt: datetime('created_at', { mode: 'date', fsp: 6 }).notNull(),
+}, table => [uniqueIndex('plan_skill_reference_uq').on(table.planVersionId, table.revisionId), index('plan_skill_reference_owner_idx').on(table.userId, table.planVersionId)]);
 
 export const planSources = mysqlTable('plan_sources', {
   id: uuidBinary('id').primaryKey(),

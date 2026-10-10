@@ -106,6 +106,24 @@ describe.sequential('Agent Task foundation on existing fenced Runtime', { timeou
     await expect(app.get(ExecutionStateService).transition(run.id, 'queued')).rejects.toThrow('Terminal Execution');
     expect(await graph(run.id)).toEqual(unknown);
   });
+  it('cancels queued work through the original API and closes unstarted Tasks without an effect',async()=>{
+    const run=await dispatch(),before=await graph(run.id);
+    await request(app.getHttpServer()).post('/api/executions/'+run.id+'/cancel').set(auth(owner.token)).send({}).expect(201);
+    const cancelled=await graph(run.id);
+    expect(cancelled).toMatchObject({status:'CANCELLED',recordedStatus:'CANCELLED',runtimeStatus:'cancelled'});
+    expect(cancelled.tasks.map(task=>task.id)).toEqual(before.tasks.map(task=>task.id));
+    expect(cancelled.tasks.every(task=>task.status==='CANCELLED'&&task.recordedStatus==='CANCELLED'&&task.waitReason===null)).toBe(true);
+    await worker.processExecution(run.id); expect(await graph(run.id)).toEqual(cancelled);
+    const [effects]=await pool.query<RowDataPacket[]>('SELECT COUNT(*) n FROM side_effect_operations WHERE execution_id=UUID_TO_BIN(?)',[run.id]);expect(effects[0].n).toBe(0);
+  });
+  it('marks dependent unstarted Tasks as stopped when an earlier step fails',async()=>{
+    const run=await dispatch(),before=await graph(run.id);
+    await app.get(ExecutionStepStateService).transition(before.tasks[1].executionStepId!,'failed',{errorCode:'INVALID_INPUT'});
+    await app.get(ExecutionStateService).transition(run.id,'failed',{errorCode:'INVALID_INPUT'});
+    const failed=await graph(run.id);
+    expect(failed).toMatchObject({status:'FAILED',recordedStatus:'FAILED'});
+    expect(failed.tasks[2]).toMatchObject({status:'FAILED',recordedStatus:'FAILED',runtimeStatus:'pending',waitReason:null,retryCount:0});
+  });
   it('task insertion failure rolls back the entire authorized dispatch', async () => {
     const requestId = randomUUID();
     await pool.query("CREATE TRIGGER agent_task_test_failure BEFORE INSERT ON agent_tasks FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='task insert fixture failure'");

@@ -1,4 +1,5 @@
 import { ConsumerPresentationMapper as presentation } from '../../src/consumer-presentation';
+import { PlanMethodReferences } from '../../src/plan-method-references';
 import {controlActionLabel,controlTitle,controlResultLabel,controlVerificationLabel,informationStatus,type PlanControlProjection} from '../../src/plan-control-presenter';
 import {todoRoute,type TodoItem} from '../../src/todo-presenter';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -278,6 +279,8 @@ export default function PlanDetailPage() {
                   {control.data?.information?.map(info=><Text key={info.factKey} style={local.text}>需要确认：{info.label}；来源：{info.sourceLabel}；数据要求：执行前按 {info.maximumAgeSeconds} 秒时效合同更新；{informationStatus(info)}</Text>)}
                   {planEvidenceLines(summary.data, version.data).map((line, index) => <Text style={local.text} key={index}>{line}</Text>)}
                   <Text style={local.text}>来源与验证状态请见「完整过程」。</Text>
+                  <PlanMethodReferences planId={String(id)} token={token}/>
+                  <ControlRow title="持续运行记录" detail="查看原计划的运行、等待和恢复" onPress={()=>router.push(`/plans/${id}/loop` as never)}/>
                 </View>
               </View>
             ) : null}

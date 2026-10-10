@@ -1,7 +1,7 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { agentTaskGraphs, agentTasks, executions, executionSteps, plans, reconciliationCases, sideEffectOperations } from '@lazy-armor/database';
+import { agentTaskGraphs, agentTasks, executions, executionSteps, plans, reconciliationCases, sideEffectOperations, verificationEvidence } from '@lazy-armor/database';
 import { taskStatusFromRuntime, type AgentTaskProjection, type TaskGraphProjection, type TaskStatus } from '@lazy-armor/plan-schema';
-import { and, asc, desc, eq, lt, or } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, lt, or } from 'drizzle-orm';
 import { DATABASE, type InjectedDatabase } from '../../common/database.module';
 import { decodeCursor, pageResult, type CursorPageDto } from '../../common/cursor-pagination';
 
@@ -29,20 +29,22 @@ export class TaskGraphsService {
       const plan = graph.planId ? (await tx.select().from(plans).where(and(eq(plans.id, graph.planId), eq(plans.userId, userId))))[0] : null;
       const steps = await tx.select().from(executionSteps).where(eq(executionSteps.executionId, execution.id));
       const rows = await tx.select().from(agentTasks).where(eq(agentTasks.graphId, graph.id)).orderBy(asc(agentTasks.taskOrder));
-      const operations = await tx.select().from(sideEffectOperations).where(eq(sideEffectOperations.executionId, execution.id));
-      const cases = await tx.select().from(reconciliationCases).where(eq(reconciliationCases.executionId, execution.id));
+      const operations = await tx.select().from(sideEffectOperations).where(and(eq(sideEffectOperations.executionId, execution.id), eq(sideEffectOperations.userId, userId)));
+      const cases = await tx.select().from(reconciliationCases).where(and(eq(reconciliationCases.executionId, execution.id), eq(reconciliationCases.userId, userId)));
+      const evidence = cases.length ? await tx.select().from(verificationEvidence).where(and(eq(verificationEvidence.userId, userId), inArray(verificationEvidence.caseId, cases.map(item => item.id)))) : [];
       const tasks: AgentTaskProjection[] = rows.filter(row => row.executionStepId).map(row => {
         const step = steps.find(item => item.id === row.executionStepId)!;
         const operation = operations.find(item => item.executionStepId === step.id);
-        const resolved = operation && cases.find(item => item.operationId === operation.id && item.status === 'RESOLVED');
+        const resolved = operation && cases.find(item => item.operationId === operation.id && item.status === 'RESOLVED' &&
+          evidence.some(proof => proof.caseId === item.id && proof.operationId === operation.id && proof.resultState === item.resultState));
         const resultState = resolved ? resolved.resultState : operation?.status === 'outcome_unknown' ? 'OUTCOME_UNKNOWN' : null;
         let status = taskStatusFromRuntime({ executionStatus: execution.status, stepStatus: step.status,
           errorCode: resolved ? null : step.errorCode, resultState });
         let waitReason: AgentTaskProjection['waitReason'] = null;
-        if (step.status === 'pending') {
+        if (step.status === 'pending' && !['succeeded', 'partially_succeeded', 'failed', 'cancelled'].includes(execution.status)) {
           const dependenciesDone = row.dependsOnJson.every(id => {
             const dependency = rows.find(item => item.id === id);
-            return steps.find(item => item.id === dependency?.executionStepId)?.status === 'succeeded';
+            return ['succeeded', 'skipped'].includes(steps.find(item => item.id === dependency?.executionStepId)?.status ?? '');
           });
           if (!dependenciesDone) { status = 'WAITING'; waitReason = 'DEPENDENCY'; }
           else if (execution.status === 'waiting_approval') { status = 'WAITING'; waitReason = 'APPROVAL'; }

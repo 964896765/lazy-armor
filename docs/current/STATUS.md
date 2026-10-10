@@ -1,5 +1,11 @@
 # 当前状态 — 2026-10-10
 
+2026-10-10 最新中断恢复收口：已按用户要求检查完整 git diff 和工作区，保留原修改，无回滚。[V84-TASK-02](V84_TASK_ORCHESTRATOR.md)完成取消/失败后未开始任务收口与正式 VerificationEvidence 校验；续接 [受控 Browser](V87_BROWSER_RUNTIME.md)、Loop 运行历史与 GitHub/URL 方法来源。隔离 API 14 文件 137/137、Mobile 全套 388/388、Plan-schema 全套 250/250、Config 63/63、八包 typecheck、API/Web 构建和 Android Hermes export 均通过。进入本轮前的 12 个登录/设备 Runner 文件经 SHA256 复核不变，不纳入本轮 63 文件提交。用户已授权检查完成后推送 codex/v83-persistent-runtime；历史“不推送”记录由此替代。0090 仅迁移隔离测试库，历史 0083 发布证据门仍失败；V84～V90 现实验收继续 IN_PROGRESS，完整证据见 [联合记录](V90_BETA_ACCEPTANCE.md)。
+
+以下为先前检查点与当时的验证/部署口径，后续结果以最新记录为准。
+
+2026-10-10 最新连续开发：按用户再次提供的 V84→V90 任务书，在保留 V87 真机待验的同时完成 [V88 Loop/Reflection 入口](V88_AGENT_LOOP.md)、[V89 版本化方法仓库](V89_SKILL_ECOSYSTEM.md)与 [V90 五页联合验收准备](V90_BETA_ACCEPTANCE.md)。原 Worker/Task/Approval/Truth 权威保留，无新增自主执行器；方法只以本人启用的非可信参考接入 Planner，原确认同事务冻结版本。受影响 API 59/59、Mobile 全套 387/387、Shared 248/248、八包 typecheck、API/Web 构建与 Android Hermes bundle 通过；Worker 真进程 6/6，容器重启注入 2 项跳过。更广 API 初次运行已中止、共享 Redis 已恢复，三角色探针均 200，全套不宣称通过；夹具队列隔离修正与最终证据见联合记录。0090 仅迁移新隔离 `_test` 库，历史 0083 release evidence 门仍失败，不部署、不覆盖 APK、不推送。当前真实主线仍 V87 Observe/核实；V88 七天与 V89 实际第三方/资源闭环未验，V84～V90 不提前 CLOSED。保留进入本轮前已有的登录/设备 Runner 修改。
+
 2026-10-10 最新进展：[V87-COMPUTER-04](V87_COMPUTER_RUNTIME.md)准备检查发现入队响应丢失后的原生 scope 重启会拒绝已有会话；已修复为同冻结范围复用，保留原队列/有效期及 Goal 确认，变更范围或失效权限拒绝恢复。Mobile 42/42、API/Mobile typecheck 通过；真实 DeepSeek + 隔离 Goal API 3/3，明确页面读取/普通数学/缺少来源分支均无执行或 Truth 创建。Web/bundle/APK 已构建通过并覆盖安装，APK hash 612d5bdc476a26a0638793b901adef9550447d16ecb7a2f6f54eab23463f39cf；源码/内嵌 bundle/安装包字节一致。原生启动失败清理已限制为本次创建且仍匹配的范围。手机当前首次协议页、系统页面权限未开启，本人正常入口/真实页面/核实仍 REAL_PENDING，V87 IN_PROGRESS。本轮仅本地，不推送。
 
 2026-10-10 最新主线：[V87-COMPUTER-03](V87_COMPUTER_RUNTIME.md)已实现原会话页面需求→资源建议→设备签名确认→冻结原目标版本→原 Task 按次读取→候选核实→原会话结果卡片。复用原权威，无迁移；API 主回归 59/59、证据归属/模型补验 20/20、最终原目标归属专项 7/7、Mobile 47/47 通过。Shared/API/Mobile 类型检查、Web/Android/API 构建通过，已本地三角色部署及 APK 覆盖安装并核对字节。本人登录/独立系统授权/真实页面 Golden Flow 仍 REAL_PENDING，V87 IN_PROGRESS。不推送 GitHub。

@@ -1,5 +1,7 @@
 # V84–V90 持续开发总方案 · V1.1
 
+2026-10-10 最新中断恢复：已检查并保留当前 git diff，完成 [V84-TASK-02 终态与核实证据一致性](V84_TASK_ORCHESTRATOR.md)，续接 [V87 受控 Browser](V87_BROWSER_RUNTIME.md)、[V88 Loop/Reflection 与运行历史](V88_AGENT_LOOP.md)、[V89 版本化方法与 GitHub/URL 来源](V89_SKILL_ECOSYSTEM.md)及 [V90 五页集成准备](V90_BETA_ACCEPTANCE.md)。Browser 默认关闭，仅明确配置的公开网站可沿原权限/审批执行固定表单；没有开放新的 Android Input。设备许可、本人真实 Observe/Act、V88 七天与实际第三方组合仍待验，版本映射和真实关闭标准不变。用户已授权检查收口后推送当前 codex 分支，此授权替代下方历史“不推送”记录。
+
 2026-10-10：V87-COMPUTER-04 已推进真实模型入口与原确认恢复准备。DeepSeek + 隔离 Goal API 3/3，移动端原生活动范围恢复 42/42；同范围不重启、不延长许可、变更范围拒绝。真实手机登录/独立系统许可/页面 Observation/本人核实仍待验，当前 V87 IN_PROGRESS，不将隔离来源身份和模型检查记为手机闭环。详见 [V87](V87_COMPUTER_RUNTIME.md)，仅本地，不推送。
 
 2026-10-10：V87-COMPUTER-02 已本地 e8a6582 部署/安装；V87-COMPUTER-03 已将独立页面读取连接到原 Conversation/Goal 的受控确认与结果入口，自动回归通过。本人合法系统授权和真实读取仍待验，V87 保持 IN_PROGRESS；接续真实 Observe→候选核实→原目标结果，不提前跳 V88 或开放未审批点击。当前任务细节见 [V87](V87_COMPUTER_RUNTIME.md)。本轮仅本地，不推送。

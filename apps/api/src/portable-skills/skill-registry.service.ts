@@ -24,14 +24,15 @@ export class SkillRegistryService {
     const prior = this.skills.get(descriptor.name);
     if (prior) {
       if (prior.version !== descriptor.version) throw new Error(`Skill ${descriptor.name} is immutable per version; bump version to change`);
+      if (prior.contentHash !== descriptor.contentHash) throw new Error(`Skill ${descriptor.name}@${descriptor.version} content is immutable`);
       return;
     }
-    this.skills.set(descriptor.name, descriptor);
+    this.skills.set(descriptor.name, structuredClone(descriptor));
   }
 
   get(name: string): SkillDescriptor | undefined {
     const descriptor = this.skills.get(name);
-    return descriptor ? { ...descriptor } : undefined;
+    return descriptor ? structuredClone(descriptor) : undefined;
   }
 
   require(name: string): SkillDescriptor {
@@ -43,12 +44,12 @@ export class SkillRegistryService {
   list(audience?: 'DEVELOPER' | 'RUNTIME_AGENT') {
     return [...this.skills.values()]
       .filter((skill) => !audience || skill.skillAudience === audience)
-      .map(({ bodyMarkdown: _body, ...summary }) => summary);
+      .map(({ bodyMarkdown: _body, ...summary }) => structuredClone(summary));
   }
 
   /** Runtime agent skills only; developer-facing skills stay out of agent context. */
   listRuntimeAgentSkills(): SkillDescriptor[] {
-    return [...this.skills.values()].filter((skill) => skill.skillAudience === 'RUNTIME_AGENT').map((skill) => ({ ...skill }));
+    return [...this.skills.values()].filter((skill) => skill.skillAudience === 'RUNTIME_AGENT').map((skill) => structuredClone(skill));
   }
 
   /** Version metadata for persistence/audit without a dedicated engine table. */
