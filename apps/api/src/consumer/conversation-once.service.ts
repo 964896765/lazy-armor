@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { conversationOnceRequests, consumerConversations, consumerMessages, executions, plans, planVersions, planActions, users } from '@lazy-armor/database';
-import { compileActionProposal, canonicalStringify, projectConsumerOutcome } from '@lazy-armor/plan-schema';
+import { compileActionProposal, canonicalStringify, projectConsumerOutcome, skillMethodRefsSchema } from '@lazy-armor/plan-schema';
 import { and, desc, eq, isNull } from 'drizzle-orm';
 import { createHash } from 'node:crypto';
 import { newId } from '@lazy-armor/shared';
@@ -12,11 +12,12 @@ import { CapabilityResolverService } from '../capability-resolver/capability-res
 import type { RunConversationOnceDto } from './dto';
 import { PlansService } from '../plans/plans.service';
 import { AuditService } from '../audit/audit.service';
+import { SkillRepositoriesService } from '../portable-skills/skill-repositories.service';
 
 /** Only request identity and immutable references live here. Runtime state belongs to Execution. */
 @Injectable()
 export class ConversationOnceService {
- constructor(@Inject(DATABASE) private readonly db: InjectedDatabase, private readonly dispatch: ExecutionDispatchService, private readonly executionReader: ExecutionsService, private readonly verification: ReconciliationService, private readonly resolver: CapabilityResolverService, private readonly planAuthority: PlansService, private readonly audit: AuditService) {}
+ constructor(@Inject(DATABASE) private readonly db: InjectedDatabase, private readonly dispatch: ExecutionDispatchService, private readonly executionReader: ExecutionsService, private readonly verification: ReconciliationService, private readonly resolver: CapabilityResolverService, private readonly planAuthority: PlansService, private readonly audit: AuditService, private readonly methods: SkillRepositoriesService) {}
  async confirmProposal(userId: string, conversationId: string, input: { messageId: string; version: number; confirmed: boolean }) {
   if (!input.confirmed) throw new BadRequestException('请先确认一次性操作草案');
   const task = await this.db.transaction(async tx => {
@@ -29,7 +30,10 @@ export class ConversationOnceService {
    const latest = (await tx.select().from(consumerMessages).where(and(eq(consumerMessages.conversationId, conversationId), eq(consumerMessages.role, 'assistant'))).orderBy(desc(consumerMessages.createdAt)).limit(1))[0];
    if (latest?.id !== input.messageId || latest.structuredPayload?.result !== 'ACTION_PROPOSAL') throw new ConflictException('仅可确认当前操作草案');
    const { proposal, definition } = compileActionProposal(latest.structuredPayload.actionProposal);
+   const methods = skillMethodRefsSchema.safeParse(latest.structuredPayload.methodRefs ?? []);
+   if (!methods.success) throw new BadRequestException('草案方法引用无效');
    const created = await this.planAuthority.createInTransaction(userId, definition, tx, 'ONCE');
+   await this.methods.freeze(tx, userId, created.planVersionId, methods.data);
    const triggerPayload = !proposal.connectionId ? { humanSummary: proposal.input.title ?? proposal.name, resultSummary: proposal.input.message } : proposal.input;
    const row = { id: newId(), userId, conversationId, proposalMessageId: latest.id, planId: created.planId, planVersionId: created.planVersionId, requestId: `action:${latest.id}`, inputHash: createHash('sha256').update(canonicalStringify(proposal)).digest('hex'), triggerPayload, createdAt: new Date() };
    await tx.insert(conversationOnceRequests).values(row);

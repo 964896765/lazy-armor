@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
-import { canonicalStringify, skillCapabilitySchema, skillRepositoryImportSchema, type SkillCapability, type SkillMethodRef, type SkillRepositoryProjection } from '@lazy-armor/plan-schema';
+import { canonicalStringify, skillCapabilitySchema, skillMethodRefsSchema, skillRepositoryImportSchema, type ConversationMethodProjection, type SkillMethodRef, type SkillRepositoryProjection } from '@lazy-armor/plan-schema';
 import { plans, planVersions, skillRepositories, skillEntries, skillEntryRevisions, planSkillReferences, users } from '@lazy-armor/database';
 import { and, desc, eq, lt, or } from 'drizzle-orm';
 import { newId } from '@lazy-armor/shared';
@@ -142,6 +142,42 @@ export class SkillRepositoriesService {
 
   async contextCurrent(userId: string, refs: SkillMethodRef[]) {
     return this.db.transaction(tx => this.refsCurrent(tx, userId, refs));
+  }
+
+  /** Explicit choices keep their exact identity; never silently substitute a new revision. */
+  async selectedContext(userId: string, raw: unknown) {
+    const parsed = skillMethodRefsSchema.safeParse(raw);
+    if (!parsed.success) throw new BadRequestException('Invalid method selection');
+    return this.db.transaction(async tx => {
+      if (!await this.refsCurrent(tx, userId, parsed.data)) throw new ConflictException('SKILL_CONTEXT_CHANGED');
+      const methods = [];
+      for (const ref of parsed.data) {
+        const revision = (await tx.select().from(skillEntryRevisions).where(eq(skillEntryRevisions.id, ref.revisionId)))[0];
+        methods.push({ ref, manifest: skillCapabilitySchema.parse(revision.manifestJson) });
+      }
+      return methods;
+    });
+  }
+
+  async projectSelections(userId: string, refs: SkillMethodRef[]): Promise<ConversationMethodProjection[]> {
+    const items: ConversationMethodProjection[] = [];
+    for (const ref of skillMethodRefsSchema.parse(refs)) {
+      const row = (await this.db.select({ repo: skillRepositories, entry: skillEntries, revision: skillEntryRevisions }).from(skillRepositories)
+        .innerJoin(skillEntries, eq(skillEntries.repositoryId, skillRepositories.id))
+        .innerJoin(skillEntryRevisions, eq(skillEntryRevisions.entryId, skillEntries.id))
+        .where(and(eq(skillRepositories.userId, userId), eq(skillRepositories.id, ref.repositoryId),
+          eq(skillEntries.id, ref.entryId), eq(skillEntryRevisions.id, ref.revisionId))).limit(1))[0];
+      if (!row || row.revision.contentHash !== ref.contentHash || digest(row.revision.manifestJson) !== ref.contentHash) {
+        items.push({ ref, name: '原方法', version: '', repositoryName: '', state: 'UNAVAILABLE', executionAuthorized: false });
+        continue;
+      }
+      const manifest = skillCapabilitySchema.parse(row.revision.manifestJson);
+      items.push({ ref, name: manifest.name, version: manifest.version, repositoryName: row.repo.name,
+        state: row.repo.status !== 'ACTIVE' || !row.repo.enabled ? 'UNAVAILABLE'
+          : row.repo.version !== ref.repositoryVersion || row.entry.currentRevisionId !== ref.revisionId ? 'CHANGED' : 'CURRENT',
+        executionAuthorized: false });
+    }
+    return items;
   }
 
   async forPlan(userId: string, planId: string) {

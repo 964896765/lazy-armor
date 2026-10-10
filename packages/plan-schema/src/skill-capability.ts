@@ -31,12 +31,18 @@ export const skillRepositoryImportSchema = z.object({
 });
 export type SkillCapability = z.infer<typeof skillCapabilitySchema>;
 export type SkillRepositoryImport = z.infer<typeof skillRepositoryImportSchema>;
-export interface SkillMethodRef {
-  repositoryId: string;
-  repositoryVersion: number;
-  entryId: string;
-  revisionId: string;
-  contentHash: string;
+export const skillMethodRefSchema = z.object({
+  repositoryId: z.string().uuid(), repositoryVersion: z.number().int().min(1),
+  entryId: z.string().uuid(), revisionId: z.string().uuid(), contentHash: z.string().regex(/^[a-f0-9]{64}$/),
+}).strict();
+export const skillMethodRefsSchema = z.array(skillMethodRefSchema).max(3).superRefine((refs, ctx) => {
+  if (new Set(refs.map(ref => ref.entryId)).size !== refs.length)
+    ctx.addIssue({ code: 'custom', message: 'Select each method at most once' });
+});
+export type SkillMethodRef = z.infer<typeof skillMethodRefSchema>;
+export interface ConversationMethodProjection {
+  ref: SkillMethodRef; name: string; version: string; repositoryName: string;
+  state: 'CURRENT' | 'CHANGED' | 'UNAVAILABLE'; executionAuthorized: false;
 }
 export interface SkillRepositoryProjection {
   id: string;

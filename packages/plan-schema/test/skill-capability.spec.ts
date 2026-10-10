@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { skillRepositoryImportSchema } from '../src/skill-capability';
+import { skillMethodRefsSchema, skillRepositoryImportSchema } from '../src/skill-capability';
 const entry = { name: 'BillAnalyzeSkill', version: '1.0.0', description: '整理账单', domain: 'finance', input: { type: 'object' }, output: { type: 'object' },
   requiredCapabilities: ['bill.read'], permission: ['READ'], risk: 'R0', verification: ['STRUCTURED_EVIDENCE'], instruction: '先读取已核实账单，再分析。' };
 const bundle = { schemaVersion: 'skill-repository.v1', requestId: 'import-1', name: '财务方法', sourceType: 'USER', entries: [entry] };
@@ -19,5 +19,15 @@ describe('Declarative skill capability contract', () => {
     for (const sourceUrl of ['https://user:secret@example.test/repo', 'http://example.test/repo', 'javascript:alert(1)']) {
       expect(skillRepositoryImportSchema.safeParse({ ...bundle, sourceUrl }).success).toBe(false);
     }
+  });
+  it('accepts zero to three exact references and rejects authority fields or malformed identities', () => {
+    const ref = { repositoryId: '00000000-0000-4000-8000-000000000001', repositoryVersion: 1,
+      entryId: '00000000-0000-4000-8000-000000000002', revisionId: '00000000-0000-4000-8000-000000000003', contentHash: 'a'.repeat(64) };
+    expect(skillMethodRefsSchema.safeParse([]).success).toBe(true);
+    expect(skillMethodRefsSchema.safeParse([ref]).success).toBe(true);
+    for (const changed of [{ ...ref, repositoryVersion: 0 }, { ...ref, revisionId: 'latest' }, { ...ref, executionAuthorized: true }])
+      expect(skillMethodRefsSchema.safeParse([changed]).success).toBe(false);
+    expect(skillMethodRefsSchema.safeParse([ref, ref]).success).toBe(false);
+    expect(skillMethodRefsSchema.safeParse([ref, ref, ref, ref]).success).toBe(false);
   });
 });

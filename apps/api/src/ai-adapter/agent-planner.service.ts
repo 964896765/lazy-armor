@@ -118,8 +118,11 @@ export class AgentPlannerService {
     @Optional() private readonly repositories?: SkillRepositoriesService,
   ) {}
 
-  async plan(userId: string, intent: string, options: { audit?: boolean; workContext?: 'TEMPORARY' | 'PLAN'; contextSources?: Array<{ label: string; content: string }> } = {}): Promise<PlannerResult> {
+  async plan(userId: string, intent: string, options: { audit?: boolean; workContext?: 'TEMPORARY' | 'PLAN'; contextSources?: Array<{ label: string; content: string }>; methodRefs?: import('@lazy-armor/plan-schema').SkillMethodRef[] } = {}): Promise<PlannerResult> {
+    const selected = options.methodRefs === undefined ? undefined : await this.repositories?.selectedContext(userId, options.methodRefs);
+    if (options.methodRefs !== undefined && !selected) throw new Error('SKILL_CONTEXT_CHANGED');
     const facts = await this.collectFacts(userId, intent);
+    if (selected) facts.methodContext = selected;
     return this.planWithFacts(intent, facts, { ...options, userId });
   }
 
