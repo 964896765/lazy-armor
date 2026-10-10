@@ -8,6 +8,7 @@ import { useAuthStore } from '../src/auth-store';
 import { Button, Card, EditorPage, ui } from '../src/editor-ui';
 import { LoadingState } from '../src/consumer-ui';
 import { ConsumerPresentationMapper as presentation } from '../src/consumer-presentation';
+import { ResourceRequirements } from '../src/resource-requirements';
 
 export default function GoalResourcesPage() {
   const { conversationId, messageId, version } = useLocalSearchParams<{ conversationId: string; messageId: string; version: string }>();
@@ -24,15 +25,7 @@ export default function GoalResourcesPage() {
     </> : query.data ? <>
       <Card title={presentation.text(query.data.summary, '当前目标')}><Text style={ui.detail}>核对当前资源是否就绪。补充资源后回到这里重新核对，再回原会话确认方案。</Text>
         <Text style={ui.detail}>最近核对：{presentation.dateTime(query.data.evaluatedAt)}</Text></Card>
-      {query.data.requirements.map((need, index) => <Card key={index} title={presentation.capability(need.key)}>
-        {need.reasons.map((reason, i) => <Text key={i} style={ui.detail}>{presentation.reason(reason)}</Text>)}
-        {need.resources.map(resource => <Card key={resource.resourceId} title={presentation.text(resource.name, '所需资源')}>
-          <Text style={ui.detail}>{({ READY: '资源已就绪', UNAVAILABLE: '需要补充或恢复', NEEDS_SELECTION: '需要选择来源' })[resource.state]}</Text>
-          {resource.reasons.map((reason, i) => <Text key={i} style={ui.detail}>{presentation.reason(reason)}</Text>)}
-          <Button secondary label={resource.action.label} onPress={() => router.push(resource.action.path as never)} />
-        </Card>)}
-        {!need.resources.length ? <Button secondary label="查看资源" onPress={() => router.push({ pathname: '/resources', params: { returnConversationId: conversationId } } as never)} /> : null}
-      </Card>)}
+      <ResourceRequirements requirements={query.data.requirements} conversationId={conversationId} />
       <Button secondary label="重新核对" onPress={() => void query.refetch()} />
     </> : null}
     {valid ? <Button secondary label="返回原会话" onPress={backToGoal} /> : null}

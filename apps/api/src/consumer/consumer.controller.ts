@@ -51,6 +51,7 @@ export class ConsumerController {
  @Post('conversations/:id/history') updateHistory(@CurrentUser() user: AuthenticatedUser, @Param('id', ParseUUIDPipe) id: string, @Body() input: UpdateConversationHistoryDto) { return this.consumer.updateConversationHistory(user.id, id, input); }
  @Get('conversations/archived') archivedConversations(@CurrentUser() user: AuthenticatedUser) { return this.consumer.archivedConversations(user.id); }
  @Get('conversations/:id/messages/:messageId/resources') goalResources(@CurrentUser() user:AuthenticatedUser,@Param('id',ParseUUIDPipe) id:string,@Param('messageId',ParseUUIDPipe) messageId:string,@Query() input:GoalResourceMatchQueryDto){return this.resourceMatch.match(user.id,id,messageId,input.version);}
+ @Get('conversations/:id/method-resources') methodResources(@CurrentUser() user:AuthenticatedUser,@Param('id',ParseUUIDPipe) id:string,@Query() input:GoalResourceMatchQueryDto){return this.resourceMatch.forMethods(user.id,id,input.version);}
  @Post('conversations/:id/messages/:messageId/page-read/confirm') async confirmPageRead(@CurrentUser() user:AuthenticatedUser,@Param('id',ParseUUIDPipe) id:string,@Param('messageId',ParseUUIDPipe) messageId:string,@Body() input:ConfirmGoalPageReadDto,@Headers() headers:IncomingHttpHeaders){
   const signed=await this.trustedDevices.assertSignedRequest(user.id,this.deviceProof(headers),'POST',`/conversations/${id}/messages/${messageId}/page-read/confirm`,input);
   return this.pageRead.confirm(user.id,id,messageId,input,signed.trustedDeviceId);

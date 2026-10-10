@@ -61,4 +61,5 @@ export { UI_READ_CONSENT_VERSION, type UiReadConsent } from './app-read-session'
 export * from './goal-page-read';
 export * from './agent-loop';
 export * from './skill-capability';
+export * from './goal-resource-match';
 export * from './browser';

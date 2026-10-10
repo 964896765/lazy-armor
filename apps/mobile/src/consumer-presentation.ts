@@ -1,5 +1,7 @@
 /** Presentation only: never establishes health, authorization or execution success. */
 const reasons: Record<string, string> = {
+ SKILL_CONTEXT_CHANGED: '选择的方法已更新或关闭，请回到原会话核对方法并重新选择', PAGE_SOURCE_SCOPE_REQUIRED: '请先明确读取的应用与字段范围',
+ PROVIDER_RUNTIME_UNAVAILABLE: '当前服务尚未接入此操作，请检查资源服务是否开放',
  PAGE_READ_AUTHORIZATION_REQUIRED: '需要开启系统页面读取权限与应用内独立许可', SESSION_CONSENT_REQUIRED: '每次读取前需要确认应用与字段范围',
  SCENARIO_NOT_RESOLVED: '还需要明确计划类型', SUBJECT_NOT_SELECTED: '请选择这个计划使用的资源',
  SCENARIO_REVISION_CHANGED: '计划类型已更新，请重新确认', SCENARIO_CONTRACT_CHANGED: '计划配置已更新，请重新确认',
@@ -28,7 +30,7 @@ const reasons: Record<string, string> = {
 const internalCode = /\b[A-Z][A-Z0-9]+(?:_[A-Z0-9]+)+\b/;
 const technical = /OAuth|\bScenario\s+[a-z]|Execution\s*ID|\b(?:outbox|schema|worker|capabilityKey|connectionId|planVersionId|structuredPayload)\b|\b(?:truths|capabilities|tools)\s*(?:为空|=|\/)|\bmanual\/internal\b|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f-]{23}/i;
 export const ConsumerPresentationMapper = {
- capability(value: string) { return ({ 'notification.send': '发送提醒', 'notification.read': '读取消息', 'app.notification.read': '读取已授权的应用通知', 'calendar.event.read': '读取日历事项', 'calendar.event.create': '创建外部日历事项', 'calendar.event.update': '修改外部日历事项', 'calendar.event.delete': '删除外部日历事项', 'calendar.read': '读取日历', 'calendar.write': '创建日程', 'email.read': '读取邮件', 'email.send': '发送邮件', 'file.read': '读取文件', 'http.json.read': '读取接口数据', 'READ_PUBLIC_HTTP_JSON': '读取公开接口数据' } as Record<string,string>)[value] ?? (/^[a-z][a-z0-9_.:-]+$/i.test(value) ? '所需数据与操作权限' : this.text(value, '所需数据与操作权限')); },
+ capability(value: string) { return ({ 'notification.send': '发送提醒', 'notification.read': '读取消息', 'app.notification.read': '读取已授权的应用通知', 'calendar.event.read': '读取日历事项', 'calendar.event.create': '创建外部日历事项', 'calendar.event.update': '修改外部日历事项', 'calendar.event.delete': '删除外部日历事项', 'calendar.read': '读取日历', 'calendar.write': '创建日程', 'email.read': '读取邮件', 'email.send': '发送邮件', 'file.read': '读取文件', 'http.json.read': '读取接口数据', 'READ_PUBLIC_HTTP_JSON': '读取公开接口数据', 'BROWSER_OBSERVE': '读取指定网页字段', 'BROWSER_SUBMIT_FORM': '提交确认的网页表单', 'network.status': '读取网络状态', 'structured_read.field': '读取确认的应用字段', 'app.structured_read': '读取确认的应用字段', 'accessibility.read': '限时读取应用页面', 'app.ui.observe': '观察确认的应用页面' } as Record<string,string>)[value] ?? (/^[a-z][a-z0-9_.:-]+$/i.test(value) ? '所需数据与操作权限' : this.text(value, '所需数据与操作权限')); },
  reason(value: string) { return reasons[value] ?? (value.startsWith('MISSING_FACT:') ? '还需要补充计划信息' : value.startsWith('MISSING_CAPABILITY:') ? '还需要补充可用资源' : technical.test(value) || internalCode.test(value) ? '需要补充信息或检查资源授权' : this.text(value, '需要补充信息或检查资源授权')); },
  text(value: string | null | undefined, fallback = '') {
   if (!value) return fallback;
@@ -39,6 +41,7 @@ export const ConsumerPresentationMapper = {
  },
  error(value: unknown) {
   const message = value instanceof Error ? value.message : String(value ?? '');
+  if (message.includes('SKILL_CONTEXT_CHANGED')) return reasons.SKILL_CONTEXT_CHANGED;
   if (/OAuth|configuration.*missing/i.test(message)) return '当前服务暂未开放，请稍后再试';
   if (/401|登录|token/i.test(message)) return '登录已过期，请重新登录';
   if (/余额|BALANCE_INSUFFICIENT/i.test(message)) return 'AI 服务余额不足，请充值后重试';

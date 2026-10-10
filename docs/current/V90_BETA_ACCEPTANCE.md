@@ -1,5 +1,11 @@
 # V90 Personal Life OS Beta · 联合验收记录
 
+2026-10-10 最新后续检查点：[V89-SKILL-04 方法资源能力核对](V89_METHOD_RESOURCES.md)完成原会话所选方法按序分组、确切引用复核、当前资源状态与缺口入口。Backend 复用原 GoalResourceMatch/CapabilityUsability/FactDemand/Native 投影；Frontend 方法二级页与原 Goal 资源页共用展示，资源中心返回原会话。授权、Credential/Health 时效、当前 Adapter/handler 和设备证据继续决定就绪，缺少通知 App 或页面范围返回 NEEDS_SELECTION。方法声明风险与实际 operation/risk 分开，R0 方法不能降低 Browser R3。核对没有源 I/O、Target 刷新或 Plan/Execution/Invocation/Truth/审计创建，`executionAuthorized: false` 保持。
+
+本检查点最终验证：API 7 文件 71/71，其中新方法资源专项 14/14；Mobile 63 文件 388/388、Plan-schema 46 文件 251/251、八包 typecheck、API/Web 构建和 Android Hermes export 通过。专项包含在关联回归内，不重复累计。证据：artifacts/v89-method-resources-regression-final.log、v89-method-resources-mobile-tests-final.log、v89-method-resources-schema-tests-final.log、v89-method-resources-typecheck-final-r2.log、v89-method-resources-api-build.log、v89-method-resources-web-build.log、v89-method-resources-android-build.log。最初撤权断言与可选 SDK 类型失败保留并修正，最终通过；生产授权语义未放宽。
+
+零新 SQL，隔离测试库/Redis DB 15 与新 prefix 的证明不替代真实验收。12 个独立登录/设备 Runner 文件哈希不变，按已有授权提交并推送当前 codex 分支。历史 0083 release evidence 门保留，当前部署、生产迁移与 APK 安装未执行。实际第三方方法/模型/资源组合、本人 UI/真机/网站及七天运行仍 REAL_PENDING，V89/V90 IN_PROGRESS；下一独立代码任务为方法版本更新管理入口，实际五页闭环继续按下方证据表收取。
+
 2026-10-10 最新后续检查点：[V89-SKILL-03 方法→目标会话](V89_METHOD_CONVERSATIONS.md)已实现本人显式方法选择、固定原版本、状态提示、临时→Plan 与一次性确认时冻结引用。零新 SQL，复用原会话 JSON、PlanSkillReference 与 Runtime。最终 API 8 文件 73/73，其中新方法会话专项 11/11；首组三文件 19/19 覆盖原方法仓库和 ACTION_PROPOSAL 审批，重叠专项不累计。Mobile 63 文件 388/388、Plan-schema 46 文件 251/251、八包 typecheck、API/Web 构建及 Android Hermes export 通过。实际第三方、本人 UI、真机与七天验收仍待验，V89/V90 IN_PROGRESS。
 
 本检查点证据：artifacts/v89-method-conversations-regression-final.log、v89-method-conversations-tests-r1.log、v89-method-conversations-mobile-tests-r1.log、v89-method-conversations-schema-tests-r1.log、v89-method-conversations-typecheck-r1.log、v89-method-conversations-api-build.log、v89-method-conversations-web-build.log、v89-method-conversations-android-build.log。隔离模型与数据库证明不替代真实用户验收。12 个独立登录/设备 Runner 文件哈希不变，按原授权推送当前 codex 分支；历史 0083 release evidence 门保留，当前部署与 APK 安装没有在本检查点执行。

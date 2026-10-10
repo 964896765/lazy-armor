@@ -1,5 +1,7 @@
 # 当前状态 — 2026-10-10
 
+2026-10-10 最新后续开发收口：[V89-SKILL-04 方法资源能力核对](V89_METHOD_RESOURCES.md)完成原会话按所选方法分组的实际资源状态、缺口与恢复入口，复用原 Resolver/授权/Health/原生证据；缺少 App 范围或当前 Adapter 时拒绝就绪，方法声明风险不降低实际操作风险。API 7 文件 71/71（含新专项 14/14）、Mobile 388/388、Plan-schema 251/251、八包 typecheck 与 API/Web/Android Hermes 构建通过。零 SQL 迁移，12 个独立文件哈希不变，按已有授权推送当前 codex 分支。V89/V90 真实验收继续 IN_PROGRESS；下一独立开发任务为方法版本更新管理入口，见 V90 最新联合记录。
+
 2026-10-10 最新后续开发收口：[V89-SKILL-03 方法会话入口](V89_METHOD_CONVERSATIONS.md)完成明确选择方法、固定引用、原会话中的版本/可用状态，以及 Plan/一次性确认时的方法冻结。最终 API 8 文件 73/73、首组方法仓库/原一次性审批 19/19（重叠专项不累计）、Mobile 388/388、Plan-schema 251/251、八包 typecheck 与 API/Web/Android Hermes 构建通过。零 SQL 迁移，12 个独立改动文件哈希不变；按已有授权推送当前 codex 分支。V89/V90 真实验收继续 IN_PROGRESS；下一任务是所选方法的实际资源能力核对与缺口入口，见 V90 最新联合记录。
 
 2026-10-10 最新中断恢复收口：已按用户要求检查完整 git diff 和工作区，保留原修改，无回滚。[V84-TASK-02](V84_TASK_ORCHESTRATOR.md)完成取消/失败后未开始任务收口与正式 VerificationEvidence 校验；续接 [受控 Browser](V87_BROWSER_RUNTIME.md)、Loop 运行历史与 GitHub/URL 方法来源。隔离 API 14 文件 137/137、Mobile 全套 388/388、Plan-schema 全套 250/250、Config 63/63、八包 typecheck、API/Web 构建和 Android Hermes export 均通过。进入本轮前的 12 个登录/设备 Runner 文件经 SHA256 复核不变，不纳入本轮 63 文件提交。用户已授权检查完成后推送 codex/v83-persistent-runtime；历史“不推送”记录由此替代。0090 仅迁移隔离测试库，历史 0083 发布证据门仍失败；V84～V90 现实验收继续 IN_PROGRESS，完整证据见 [联合记录](V90_BETA_ACCEPTANCE.md)。

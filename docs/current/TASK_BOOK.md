@@ -1,5 +1,7 @@
 # 当前任务书 — V84–V90
 
+2026-10-10 最新后续开发：[V89-SKILL-04 所选方法的资源能力核对](V89_METHOD_RESOURCES.md)已沿原资源权威实现版本绑定的只读核对、实际操作风险和补充资源后返回原会话。最终 API 71/71、Mobile 388/388、Plan-schema 251/251、八包 typecheck 与 API/Web/Android Hermes 构建通过；无新 SQL 或执行引擎。保留 12 个独立登录/设备 Runner 文件，检查完成后按已有授权提交并推送当前 codex 分支。下一独立开发任务是方法 Revision 更新管理入口；真实第三方、真机、七天持续运行与迁移发布证据仍分别待验，V89/V90 不提前 CLOSED。
+
 2026-10-10 最新后续开发：按用户继续开发指令推进 [V89-SKILL-03 方法→目标会话](V89_METHOD_CONVERSATIONS.md)。仓库方法入口接回原会话，所选版本沿原 Planner/合法确认冻结；更新、关闭或归档后保留历史并拒绝继续使用旧选择。临时/长期 Goal 与一次性审批仍沿原权威。进入本轮前的 12 个独立登录/设备 Runner 文件保持不变，检查完成后按已有授权推送当前 codex 分支。实际第三方、真机、七天持续运行与迁移发布证据仍独立待验。
 
 2026-10-10 最新中断恢复收口：已检查 staged/unstaged 与 HEAD c2d12af 并保留原修改。[V84-TASK-02](V84_TASK_ORCHESTRATOR.md)、[V87-COMPUTER-05 Browser](V87_BROWSER_RUNTIME.md)、V88-LOOP-02 运行历史与 V89-SKILL-02 GitHub/URL 方法来源均完成本轮实现和自动验证。API 14 文件 137/137，Mobile 388/388、Plan-schema 250/250、Config 63/63、八包 typecheck、API/Web/Android Hermes 构建通过；详细证据见 [V90 联合记录](V90_BETA_ACCEPTANCE.md)。按用户授权提交并推送当前 codex 分支，保留独立的登录/设备 Runner 修改，此授权替代下方历史“不推送”限制。下一任务是 V90 真实五页闭环与 V87 本人 Observe/Act/Verify、V88 七天、V89 实际包/资源组合；生产迁移发布证据独立收取，阶段不提前 CLOSED。
