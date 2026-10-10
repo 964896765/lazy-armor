@@ -1,5 +1,7 @@
 # 当前任务书 — V84–V90
 
+2026-10-10 最新后续开发：[V90-BETA-02 五页联合验收](V90_BETA_JOURNEY.md)完成五页 backing API/受控 Memory/固定方法/资源核对联合专项，真实开发 DeepSeek 与实际公开 HTTPS 来源 inspection 取得限定证据；Loop 列表/历史分页补齐整数与 1～20 边界。真实模式 6/6（包含同一组 fixture 5 项）、API 50/50、Mobile 412/412、readiness 单测 5/5、八包 typecheck/API 构建通过，无新 SQL 或产品入口。12 个独立修改哈希不变，按已有授权提交推送。当前本地三角色不可达、手机 observer 未开启、0083 发布证据门未过；V90 仍 IN_PROGRESS。下一任务继续本任务的正常环境与发布证据、本人五页/Memory/真机核实、第三方方法/实际资源/Goal Runtime 和七天运行，不用来源返回或隔离 fixture 替代关闭条件。
+
 2026-10-10 最新后续开发：[V89-SKILL-06 多方法组合选择入口](V89_METHOD_SELECTION.md)已沿原最多三个 methodRefs 合同完成本人选择/排序/移除、确切版本保留、提交前复核与原会话入口。无新后端执行路径或 SQL；任一方法失效整份拒绝，原 Plan 冻结引用与一次性审批继续适用。API 47/47、Mobile 412/412、Plan-schema 251/251、八包 typecheck 与 API/Web/Android Hermes 构建通过，原有 12 个独立修改完整保留，检查后按已有授权推送。下一任务 V90-BETA-02 五页联合验收及实际资源闭环；本人真机/网站、实际第三方/模型/资源组合、七天运行及迁移发布门仍独立待验。
 
 2026-10-10 最新后续开发：[V89-SKILL-05 方法版本管理](V89_METHOD_REVISIONS.md)已接入原不可变 Revision/CAS 更新合同，提供同名文件预览、变化说明、分页历史和冲突恢复。最终 API 46/46、Mobile 399/399、Plan-schema 251/251、八包 typecheck 与 API/Web/Android Hermes 构建通过；分页 limit=0 首轮失败与修正证据保留。无新 SQL，12 个独立登录/设备 Runner 文件保持不变，检查后按已有授权提交并推送当前 codex 分支。下一任务 V89-SKILL-06 多方法组合选择入口；真实第三方/真机/七天和迁移发布门仍独立待验。

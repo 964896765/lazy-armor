@@ -1,5 +1,11 @@
 # V90 Personal Life OS Beta · 联合验收记录
 
+2026-10-10 最新后续检查点：[V90-BETA-02 五页联合验收与实际来源读取](V90_BETA_JOURNEY.md)完成原五页 backing API、Memory/两方法引用/资源状态联合专项和可复现的只读 readiness。Loop 列表/历史分页显式补齐整数及 1～20 边界；无新 SQL、前端产品源码或执行权威。
+
+最终验证：隔离 fixture 5 通过/真实分支 1 跳过，显式真实模式 6/6（同一组 fixture 5 项和新增真实分支 1 项，不重复累计），关联 API 6 文件 50/50、Mobile 65 文件 412/412、readiness 单测 5/5、八包 typecheck 与 API 构建通过。真实 DeepSeek 调用一次，消费虚构隔离 Memory 和固定 USER 方法；原 Connection inspection 实际读取 npm TypeScript 元数据，返回 7.0.2 / SOURCE_RESPONSE_ONLY，观测于 2026-10-10T06:36:28.030Z。没有创建 Plan/Execution/Invocation/DeviceTask/Truth；真实模型与来源响应不证明本人 UI、实际第三方方法或 Goal Runtime/Truth 核实闭环。
+
+本机证据：artifacts/v90-beta-journey-fixture-r1.log、v90-beta-journey-real-r1.log/json、v90-beta-api-regression-r1.log、v90-beta-mobile-tests.log、v90-beta-readiness-unit-r1.log、v90-beta-typecheck-r1.log、v90-beta-api-build-r1.log、v90-local-readiness-r1.log/json。当前 readiness exit 2：三角色端口不可达、已安装手机 observer 系统权限未开启，正常登录/App consent 未检查；历史 0083 发布证据门仍未通过。无生产迁移、部署或 APK 安装；12 个独立修改哈希不变，按已有授权提交推送。V90-BETA-02 / V90 仍 IN_PROGRESS / REAL_PENDING，下一任务继续本人五页与真实授权/真机/第三方方法/实际资源/Goal Runtime/七天证据和发布门，不将本检查点标为整体关闭。
+
 2026-10-10 最新后续检查点：[V89-SKILL-06 多方法组合选择入口](V89_METHOD_SELECTION.md)完成本人最多三个同仓库/跨仓库方法的选择、排序/移除和版本固定，创建前刷新原 owner-only 仓库详情，再沿原会话事务复核整组引用。任意方法变化拒绝整份创建，不替换版本或自动启用；组合只提供非可信规划参考，原资源核对、合法 Plan/一次性确认、审批与 Runtime 保留。
 
 本检查点最终验证：API 4 文件 47/47，其中新 Mobile→隔离 HTTP 联合专项 8/8；Mobile 65 文件 412/412，其中新选择/提交专项 13/13；Plan-schema 46 文件 251/251、八包 typecheck、API/Web 构建和 Android Hermes export 通过。新专项包含在各自回归内，不重复累计。证据：artifacts/v89-method-selection-api-regression-r1.log、v89-method-selection-mobile-tests-r1.log、v89-method-selection-schema-tests.log、v89-method-selection-typecheck-r1.log、v89-method-selection-api-build.log、v89-method-selection-web-build.log、v89-method-selection-android-build.log。新专项验证了创建前的两处失效拒绝、原资源分组、三条确切 Plan 引用与撤回后确认回滚；不证明本人 UI 或真实第三方/资源验收。
@@ -55,7 +61,7 @@ Test：最终受影响 API 14 文件 137/137，覆盖 Task、Agent 理解/Contex
 | V84/V85/V86 | 本人正常入口、记忆授权/删除/消费、真实目标调用能力并核实 |
 | V87 | 独立系统许可、真实 App Observe→核实→原目标结果，以及受控 Act/read-back；Browser 已有受控实现，实际网站仍未验 |
 | V88 | 原合法计划持续真实运行七天，观察/审批/结果/等待/恢复可追溯 |
-| V89 | 实际第三方包由本人接入，真实模型与实际资源组合验证；当前只有隔离合同证明 |
+| V89 | 实际第三方包由本人接入并完成实际资源组合；最新检查点已有真实开发模型/公开来源响应，Memory/USER 方法仍属虚构隔离测试 |
 | V90 | 上述真实闭环、迁移发布门及实际五页使用证据齐全后再关闭 |
 
 本轮连续开发依用户最新指令推进独立代码；前序待验与阶段顺序没有被改写为 CLOSED，不要求用户回答“是否继续”。

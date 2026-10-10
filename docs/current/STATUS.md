@@ -1,5 +1,7 @@
 # 当前状态 — 2026-10-10
 
+2026-10-10 最新后续检查点：[V90-BETA-02 五页联合验收与实际来源读取](V90_BETA_JOURNEY.md)已完成可复现的隔离联合专项、本地只读条件探测和 Loop 列表/历史分页完整校验。真实 DeepSeek 一次调用与实际公开 HTTPS 来源响应已有证据，返回 SOURCE_RESPONSE_ONLY；虚构 Memory/USER 方法不代替本人或第三方验收，也没有 Goal Runtime/Truth 创建。专项真实模式 6/6（含重复的 5 项 fixture），关联 API 50/50、Mobile 412/412、readiness 单测 5/5、八包 typecheck 与 API 构建通过。当前三角色不可达、手机 observer 系统权限未开启，历史 0083 发布证据门仍未过；本轮无生产迁移/部署/APK 安装。12 个独立文件哈希不变，按已有授权推送 codex 分支。V90-BETA-02/V90 仍 IN_PROGRESS / REAL_PENDING，下一任务继续本人五页、实际第三方/资源/Goal Runtime、真机核实和七天证据收取。
+
 2026-10-10 最新后续开发收口：[V89-SKILL-06 多方法组合选择](V89_METHOD_SELECTION.md)完成最多三个本人方法的同仓库/跨仓库选择、排序移除、固定引用与创建前重核对，接回原临时会话。任一变化需重新选择，原创建事务继续兜底；无新增后端 API、SQL 或执行引擎。API 4 文件 47/47（新专项 8/8）、Mobile 412/412（新专项 13/13）、Plan-schema 251/251、八包 typecheck 与 API/Web/Android Hermes 构建通过。12 个独立文件哈希不变，按已有授权推送当前 codex 分支。V89/V90 现实验收继续 IN_PROGRESS；下一任务是 V90-BETA-02 五页联合验收与实际资源闭环证据收口。
 
 2026-10-10 最新后续开发收口：[V89-SKILL-05 方法版本更新与历史](V89_METHOD_REVISIONS.md)完成本人文件预览、变化核对、原 API 追加和 owner-only 分页历史；旧版本、原 Plan 引用与规划开关保留。首轮发现原分页 DTO 接受 limit=0，修正完整边界校验后 API 4 文件 46/46（新专项 14/14），Mobile 399/399（新专项 11/11）、Plan-schema 251/251、八包 typecheck 和 API/Web/Android Hermes 构建通过。零新 SQL，12 个独立文件哈希不变；按已有授权推送当前 codex 分支。V89/V90 现实验收继续 IN_PROGRESS；下一独立任务为最多三个方法的组合选择入口。

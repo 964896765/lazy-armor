@@ -1,10 +1,11 @@
 import { Controller, Get, Param, ParseUUIDPipe, Query } from '@nestjs/common';
-import { Max } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsInt, IsOptional, Max, Min } from 'class-validator';
 import { CurrentUser, type AuthenticatedUser } from '../../common/auth-context';
 import { CursorPageDto } from '../../common/cursor-pagination';
 import { AgentLoopService } from './agent-loop.service';
 
-class LoopPageDto extends CursorPageDto { @Max(20) override limit = 10; }
+class LoopPageDto extends CursorPageDto { @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(20) override limit = 10; }
 @Controller()
 export class AgentLoopController {
   constructor(private readonly loops: AgentLoopService) {}

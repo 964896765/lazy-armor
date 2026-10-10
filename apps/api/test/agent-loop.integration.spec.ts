@@ -22,7 +22,9 @@ describe.sequential('Agent Loop uses existing owned Plan/Runtime', { timeout: 90
   const get = () => request(app.getHttpServer()).get(`/api/plans/${planId}/agent-loop`).set(auth(owner.token)).expect(200);
   it('enforces owner, bounded pagination and read-only access', async () => {
     await request(app.getHttpServer()).get(`/api/plans/${planId}/agent-loop`).set(auth(other.token)).expect(404);
-    await request(app.getHttpServer()).get('/api/agent/loops?limit=21').set(auth(owner.token)).expect(400);
+    for (const limit of ['0', '-1', '1.5', '21']) for (const path of ['/api/agent/loops', `/api/plans/${planId}/agent-loop/history`])
+      expect((await request(app.getHttpServer()).get(path + '?limit=' + limit).set(auth(owner.token))).status, path + ' limit=' + limit).toBe(400);
+    await request(app.getHttpServer()).get('/api/agent/loops?limit=20').set(auth(owner.token)).expect(200);
     await request(app.getHttpServer()).get('/api/agent/loops?cursor=bad').set(auth(owner.token)).expect(400);
     const list = (await request(app.getHttpServer()).get('/api/agent/loops').set(auth(owner.token)).expect(200)).body;
     expect(list.items).toHaveLength(1); expect(list.items[0]).toMatchObject({ planId, state: 'WAITING', executionAuthorized: false });
