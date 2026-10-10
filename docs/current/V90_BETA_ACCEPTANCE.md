@@ -1,5 +1,11 @@
 # V90 Personal Life OS Beta · 联合验收记录
 
+2026-10-10 最新后续检查点：[V89-SKILL-06 多方法组合选择入口](V89_METHOD_SELECTION.md)完成本人最多三个同仓库/跨仓库方法的选择、排序/移除和版本固定，创建前刷新原 owner-only 仓库详情，再沿原会话事务复核整组引用。任意方法变化拒绝整份创建，不替换版本或自动启用；组合只提供非可信规划参考，原资源核对、合法 Plan/一次性确认、审批与 Runtime 保留。
+
+本检查点最终验证：API 4 文件 47/47，其中新 Mobile→隔离 HTTP 联合专项 8/8；Mobile 65 文件 412/412，其中新选择/提交专项 13/13；Plan-schema 46 文件 251/251、八包 typecheck、API/Web 构建和 Android Hermes export 通过。新专项包含在各自回归内，不重复累计。证据：artifacts/v89-method-selection-api-regression-r1.log、v89-method-selection-mobile-tests-r1.log、v89-method-selection-schema-tests.log、v89-method-selection-typecheck-r1.log、v89-method-selection-api-build.log、v89-method-selection-web-build.log、v89-method-selection-android-build.log。新专项验证了创建前的两处失效拒绝、原资源分组、三条确切 Plan 引用与撤回后确认回滚；不证明本人 UI 或真实第三方/资源验收。
+
+零新增后端 API、SQL 或执行引擎。12 个原有登录/设备 Runner 文件哈希不变，按已有授权推送当前 codex 分支；无生产迁移、当前服务部署或 APK 安装，历史 0083 发布证据门保留。V89/V90 IN_PROGRESS，下一任务 V90-BETA-02 五页联合验收与实际资源闭环证据收口；真实模型/第三方/真机/网站、七天运行及发布门分别待验。
+
 2026-10-10 最新后续检查点：[V89-SKILL-05 方法版本更新与历史](V89_METHOD_REVISIONS.md)完成本人同名文件预览/变化核对/原更新 API 追加、owner-only 分页历史、归档历史与冲突恢复。旧版本和 Plan 冻结依据保留，规划开关不自动改变；旧会话需要重新选择，方法继续是非可信参考。Database 无新 SQL，Runtime 无新执行或授权路径；历史读取无 Plan/Execution/Invocation/Target/Truth/审计创建。
 
 本检查点最终验证：API 4 文件 46/46，其中新版本管理专项 14/14；Mobile 64 文件 399/399，其中新本地预览边界专项 11/11；Plan-schema 46 文件 251/251、八包 typecheck、API/Web 构建及 Android Hermes export 通过。新专项包含在各自回归内，不重复累计。证据：artifacts/v89-skill-revisions-api-regression-final.log、v89-skill-revisions-mobile-tests-r1.log、v89-skill-revisions-schema-tests.log、v89-skill-revisions-typecheck-final.log、v89-skill-revisions-api-build-final.log、v89-skill-revisions-web-build.log、v89-skill-revisions-android-build.log。首轮 API 45/46 暴露原分页 DTO 接受 limit=0；补齐整数/下限/上限声明与边界断言后通过，原失败日志保留。

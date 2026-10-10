@@ -1,5 +1,7 @@
 # 当前状态 — 2026-10-10
 
+2026-10-10 最新后续开发收口：[V89-SKILL-06 多方法组合选择](V89_METHOD_SELECTION.md)完成最多三个本人方法的同仓库/跨仓库选择、排序移除、固定引用与创建前重核对，接回原临时会话。任一变化需重新选择，原创建事务继续兜底；无新增后端 API、SQL 或执行引擎。API 4 文件 47/47（新专项 8/8）、Mobile 412/412（新专项 13/13）、Plan-schema 251/251、八包 typecheck 与 API/Web/Android Hermes 构建通过。12 个独立文件哈希不变，按已有授权推送当前 codex 分支。V89/V90 现实验收继续 IN_PROGRESS；下一任务是 V90-BETA-02 五页联合验收与实际资源闭环证据收口。
+
 2026-10-10 最新后续开发收口：[V89-SKILL-05 方法版本更新与历史](V89_METHOD_REVISIONS.md)完成本人文件预览、变化核对、原 API 追加和 owner-only 分页历史；旧版本、原 Plan 引用与规划开关保留。首轮发现原分页 DTO 接受 limit=0，修正完整边界校验后 API 4 文件 46/46（新专项 14/14），Mobile 399/399（新专项 11/11）、Plan-schema 251/251、八包 typecheck 和 API/Web/Android Hermes 构建通过。零新 SQL，12 个独立文件哈希不变；按已有授权推送当前 codex 分支。V89/V90 现实验收继续 IN_PROGRESS；下一独立任务为最多三个方法的组合选择入口。
 
 2026-10-10 最新后续开发收口：[V89-SKILL-04 方法资源能力核对](V89_METHOD_RESOURCES.md)完成原会话按所选方法分组的实际资源状态、缺口与恢复入口，复用原 Resolver/授权/Health/原生证据；缺少 App 范围或当前 Adapter 时拒绝就绪，方法声明风险不降低实际操作风险。API 7 文件 71/71（含新专项 14/14）、Mobile 388/388、Plan-schema 251/251、八包 typecheck 与 API/Web/Android Hermes 构建通过。零 SQL 迁移，12 个独立文件哈希不变，按已有授权推送当前 codex 分支。V89/V90 真实验收继续 IN_PROGRESS；下一独立开发任务为方法版本更新管理入口，见 V90 最新联合记录。

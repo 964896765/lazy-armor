@@ -16,6 +16,7 @@ export function SkillRepositoryList({ token }: { token: string | undefined }) {
   if (query.isError) return <ErrorState onRetry={() => void query.refetch()} />;
   const items = query.data?.pages.flatMap(page => page.items) ?? [];
   return <View style={{ gap: 8 }}><Text style={ui.detail}>方法用于理解和规划。具体资源、权限与执行仍由计划核对。</Text>
+    <Button secondary label="组合方法开始会话" onPress={() => router.push('/method-selection' as never)} />
     {items.map(repo => <Pressable key={repo.id} onPress={() => router.push(`/skill-repositories/${repo.id}` as never)} style={ui.listRow} accessibilityRole="button">
       <Text style={ui.title}>{p.text(repo.name, '方法仓库')}</Text><Text style={ui.detail}>{repo.entries.length} 个方法 · {repo.enabled ? '已启用规划参考' : '规划参考已关闭'}</Text>
       <Text style={ui.detail}>{repo.sourceType === 'GITHUB' ? 'GitHub 来源' : repo.sourceType === 'COMMUNITY' ? '社区来源' : '我的方法'} · 用户导入</Text>

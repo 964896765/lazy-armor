@@ -30,6 +30,7 @@ export default function Repository() {
     <Card title={p.text(repo.name)} detail={`${repo.entries.length} 个方法 · 用户导入`}>
       {repo.sourceUrl ? <Button secondary label="查看声明来源" onPress={() => { const url = new URL(repo.sourceUrl!); if (url.protocol === 'https:') void Linking.openURL(repo.sourceUrl!); }} /> : null}
       <Text style={ui.detail}>来源由导入者提供。启用后将方法内容提供给 AI 作为规划参考；具体执行还需资源与权限核对。关闭后影响后续建议，已确认计划保留原版本依据。</Text>
+      <Button secondary label="选择多个方法" disabled={change.isPending || start.isPending} onPress={() => router.push('/method-selection' as never)} />
       {repo.status === 'ACTIVE' ? <Button label={repo.enabled ? '关闭规划参考' : '启用规划参考'} disabled={change.isPending || start.isPending} onPress={() => change.mutate(false)} /> : null}
     </Card>{repo.entries.map(entry => <Card key={entry.id} title={p.text(entry.manifest.name)} detail={`版本 ${entry.manifest.version}`}>
       <Text style={ui.detail}>{p.text(entry.manifest.description)}</Text><Text style={ui.detail}>声明风险：{riskLevelLabel(entry.manifest.risk)}</Text>

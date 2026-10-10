@@ -1,5 +1,7 @@
 # V89 Skill Ecosystem
 
+2026-10-10 最新后续开发：[V89-SKILL-06 多方法组合选择](V89_METHOD_SELECTION.md)补齐原三方法固定引用合同的本人产品入口：同仓库/跨仓库选择、明确顺序与移除、当前版本核对、严格引用提交和变化拒绝。只建立原会话规划上下文，不提供执行流程或资源权限；旧 Plan/Revision 继续固定。API 47/47、Mobile 412/412、Plan-schema 251/251、八包 typecheck 与 API/Web/Android Hermes 构建通过，零新 SQL/API。实际第三方与资源组合仍 REAL_PENDING，V89 整体 IN_PROGRESS；下一任务 V90-BETA-02 五页联合验收与实际闭环证据收口。
+
 2026-10-10 最新后续开发：[V89-SKILL-05 方法版本更新与历史](V89_METHOD_REVISIONS.md)补齐原追加 Revision 合同的本人 UI、变化预览与只读分页历史，保留同版本不可改写、重放身份、原启用开关及旧计划冻结引用；旧会话显示变化且需重新选择。新增历史接口校验 owner/hash/版本/方法名与严格分页，单 Manifest 120 KB 上限保持有界。API 46/46、Mobile 399/399、Plan-schema 251/251、八包 typecheck 与 API/Web/Android Hermes 构建通过。零 SQL 迁移；实际第三方/资源组合仍 REAL_PENDING，V89 整体 IN_PROGRESS。下一独立任务为 V89-SKILL-06 多方法组合选择入口。
 
 2026-10-10 最新后续开发：[V89-SKILL-04 所选方法资源核对](V89_METHOD_RESOURCES.md)已把方法声明的所需能力接回原资源可用状态与恢复入口，保留三方法顺序/不可变引用、实际操作风险与当前授权/Health/Adapter/设备证据门。只读核对不提供执行权或创建运行；缺少 App/字段范围仍待选择。API 71/71（新专项 14/14）、Mobile 388/388、Plan-schema 251/251、八包 typecheck 与 API/Web/Android Hermes 构建通过。零 SQL 迁移；V89 整体 IN_PROGRESS，实际第三方与资源组合仍 REAL_PENDING。下一独立开发任务为已有追加 Revision 合同的版本更新管理入口。
