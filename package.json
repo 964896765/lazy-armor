@@ -14,6 +14,8 @@
     "audit:dependencies": "pnpm audit --registry=https://registry.npmjs.org/ --prod --audit-level=high",
     "terminology:check": "node scripts/check-terminology.mjs",
     "beta:readiness": "node scripts/verify-v90-beta-readiness.mjs",
+    "beta:local-schema": "node scripts/verify-v90-local-schema.mjs",
+    "beta:android-bundle": "node scripts/verify-v90-android-bundle.mjs",
     "beta:journey": "node scripts/verify-v90-isolated-journey.mjs",
     "db:migrate": "pnpm --filter @lazy-armor/database migrate",
     "db:backup-restore-gate": "pnpm --filter @lazy-armor/database backup-restore-gate",

@@ -1,5 +1,7 @@
 # 当前任务书 — V84–V90
 
+2026-10-10 最新真机续接：[V90-BETA-02 环境恢复与手机准备](V90_DEVICE_RESUME.md)完成开发库备份/唯一 additive 0090/旧 ledger 保留、原 API/Worker ready、开发转发和最终 APK 安装字节核对。只读 schema 前检与实际 JS 配置 guard 工具专项 9/9，前者拒绝非指定本地 development 目标、后者在手机空环境核对原 resolver；原迁移记录和生产 API 配置门保留。第一包白屏失败保留，修正后 2532b28a 真机正常显示协议页。12 个独立源码不变，构建按当前字节使用，不纳入本次提交；检查后按已有授权推送。本人已解锁、暂无账密，下一步经正常注册/登录继续五页、Memory/方法/资源及原 Goal 核实。观察许可、实际第三方/Goal Runtime/七天与 0083 发布证据仍 REAL_PENDING，不提前关闭。
+
 2026-10-10 最新后续开发：[V90-BETA-02 五页联合验收](V90_BETA_JOURNEY.md)完成五页 backing API/受控 Memory/固定方法/资源核对联合专项，真实开发 DeepSeek 与实际公开 HTTPS 来源 inspection 取得限定证据；Loop 列表/历史分页补齐整数与 1～20 边界。真实模式 6/6（包含同一组 fixture 5 项）、API 50/50、Mobile 412/412、readiness 单测 5/5、八包 typecheck/API 构建通过，无新 SQL 或产品入口。12 个独立修改哈希不变，按已有授权提交推送。当前本地三角色不可达、手机 observer 未开启、0083 发布证据门未过；V90 仍 IN_PROGRESS。下一任务继续本任务的正常环境与发布证据、本人五页/Memory/真机核实、第三方方法/实际资源/Goal Runtime 和七天运行，不用来源返回或隔离 fixture 替代关闭条件。
 
 2026-10-10 最新后续开发：[V89-SKILL-06 多方法组合选择入口](V89_METHOD_SELECTION.md)已沿原最多三个 methodRefs 合同完成本人选择/排序/移除、确切版本保留、提交前复核与原会话入口。无新后端执行路径或 SQL；任一方法失效整份拒绝，原 Plan 冻结引用与一次性审批继续适用。API 47/47、Mobile 412/412、Plan-schema 251/251、八包 typecheck 与 API/Web/Android Hermes 构建通过，原有 12 个独立修改完整保留，检查后按已有授权推送。下一任务 V90-BETA-02 五页联合验收及实际资源闭环；本人真机/网站、实际第三方/模型/资源组合、七天运行及迁移发布门仍独立待验。

@@ -1,5 +1,9 @@
 # V90 Personal Life OS Beta · 联合验收记录
 
+2026-10-10 最新真机续接：[V90-BETA-02 环境恢复](V90_DEVICE_RESUME.md)确认用户连接的 2c696fe，发现开发库尚无 0090 方法表；备份后仅应用该 additive tail，原 90 条 migration ledger 不变，四表齐备。新增拒绝非指定本地 development 目标的只读 preflight 和实际 JS 配置 guard，最终工具专项 9/9（6+3）；0050/0051 的字节差异确认为同一 SQL 的 LF/CRLF，原记录保留，未放宽发布门。API/Execution/Outbox 均 actual ready，手机 reverse 已恢复。
+
+第一包 e819814a 先因锁屏未验 UI，解锁后发现缺少 EXPO_PUBLIC 环境内嵌而白屏；失败包/日志/截图保留。清 Metro cache、核对实际 JS resolver 后重新构建 Hermes/debug APK 并保留数据覆盖安装，最终 APK/已安装 hash 一致为 2532b28adc16607d7098cd09756de49bf91e9fd260605275f46ed1c607694880；内嵌 bundle 与本次输入一致、Runtime verifier 与既有服务器一致，手机正常显示协议页，当前 App 进程无 JS/Runtime error。原 12 个独立源码哈希不变，按当前字节构建、不纳入提交。用户已解锁但没有账密，已说明正常邮箱注册入口；本人注册/登录/五页/真实页面/核实仍 REAL_PENDING，observer 系统许可与 0083 release evidence 门仍未过。没有生产迁移或 Beta 发布，V90 IN_PROGRESS，下一任务继续同一正常入口与原 Goal 联合验收。本机证据、构建与备份不上传，详见续接文档。
+
 2026-10-10 最新后续检查点：[V90-BETA-02 五页联合验收与实际来源读取](V90_BETA_JOURNEY.md)完成原五页 backing API、Memory/两方法引用/资源状态联合专项和可复现的只读 readiness。Loop 列表/历史分页显式补齐整数及 1～20 边界；无新 SQL、前端产品源码或执行权威。
 
 最终验证：隔离 fixture 5 通过/真实分支 1 跳过，显式真实模式 6/6（同一组 fixture 5 项和新增真实分支 1 项，不重复累计），关联 API 6 文件 50/50、Mobile 65 文件 412/412、readiness 单测 5/5、八包 typecheck 与 API 构建通过。真实 DeepSeek 调用一次，消费虚构隔离 Memory 和固定 USER 方法；原 Connection inspection 实际读取 npm TypeScript 元数据，返回 7.0.2 / SOURCE_RESPONSE_ONLY，观测于 2026-10-10T06:36:28.030Z。没有创建 Plan/Execution/Invocation/DeviceTask/Truth；真实模型与来源响应不证明本人 UI、实际第三方方法或 Goal Runtime/Truth 核实闭环。

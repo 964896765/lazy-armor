@@ -1,5 +1,7 @@
 # 当前状态 — 2026-10-10
 
+2026-10-10 最新真机续接：[V90-BETA-02 本地环境恢复](V90_DEVICE_RESUME.md)确认 2c696fe 已连接；备份现有开发库后仅应用 additive 0090，四张方法表齐全、原 90 条 ledger 不变。新增只读 schema 前检及实际 JS bundle 配置 guard，最终工具 9/9；0050/0051 仅 LF/CRLF 差异，无内容漂移或旧记录修改。原三角色 ready、开发 API reverse 已恢复；第一包缺环境内嵌导致白屏，保留失败证据，清 cache 并核对实际 resolver 后最终 Hermes/APK 构建覆盖安装。安装/构建 SHA256 一致（2532b28a）、原 Runtime verifier 保留，真机正常显示协议页。12 个独立源码哈希不变且不纳入提交，构建按现有字节使用。本人已解锁打开、暂无账号密码；正常注册/登录与五页/Observe/核实仍待验，observer 未开启、0083 发布证据门未过，V90 IN_PROGRESS。下一任务继续正常注册入口与同一联合验收。
+
 2026-10-10 最新后续检查点：[V90-BETA-02 五页联合验收与实际来源读取](V90_BETA_JOURNEY.md)已完成可复现的隔离联合专项、本地只读条件探测和 Loop 列表/历史分页完整校验。真实 DeepSeek 一次调用与实际公开 HTTPS 来源响应已有证据，返回 SOURCE_RESPONSE_ONLY；虚构 Memory/USER 方法不代替本人或第三方验收，也没有 Goal Runtime/Truth 创建。专项真实模式 6/6（含重复的 5 项 fixture），关联 API 50/50、Mobile 412/412、readiness 单测 5/5、八包 typecheck 与 API 构建通过。当前三角色不可达、手机 observer 系统权限未开启，历史 0083 发布证据门仍未过；本轮无生产迁移/部署/APK 安装。12 个独立文件哈希不变，按已有授权推送 codex 分支。V90-BETA-02/V90 仍 IN_PROGRESS / REAL_PENDING，下一任务继续本人五页、实际第三方/资源/Goal Runtime、真机核实和七天证据收取。
 
 2026-10-10 最新后续开发收口：[V89-SKILL-06 多方法组合选择](V89_METHOD_SELECTION.md)完成最多三个本人方法的同仓库/跨仓库选择、排序移除、固定引用与创建前重核对，接回原临时会话。任一变化需重新选择，原创建事务继续兜底；无新增后端 API、SQL 或执行引擎。API 4 文件 47/47（新专项 8/8）、Mobile 412/412（新专项 13/13）、Plan-schema 251/251、八包 typecheck 与 API/Web/Android Hermes 构建通过。12 个独立文件哈希不变，按已有授权推送当前 codex 分支。V89/V90 现实验收继续 IN_PROGRESS；下一任务是 V90-BETA-02 五页联合验收与实际资源闭环证据收口。
