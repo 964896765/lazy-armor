@@ -35,4 +35,8 @@
 - 后续只读 `v88-github-phone-prepush-status-r3.json` 已确认本人补齐 `READ_PUBLIC_WEB_RESEARCH` 授权；计划仍为 draft、无执行。推送收尾时本机 Redis 退出，已恢复原 Docker Desktop 和原 Redis 容器（PONG），在零 lease/active report 后重启原三角色。该主机恢复不创建个人运行或改写授权。
 - 为隔离原有十二个修改，直接从待提交 index 提取 953 个源码/配置，使用其原登录与 Runner 版本单独核验：API/Mobile typecheck 均通过，见 `v88-github-index-api-typecheck-r1.log`、`v88-github-index-mobile-typecheck-r1.log`。提交检查无 whitespace 错误。
 
-当前完成：开发、隔离验证、本地三角色更新、真机安装、可审阅草稿及本人新 GitHub 范围授权；当前待验：原 App 启动、首次真实运行和七个真实日期。V88/V90 保持 IN_PROGRESS。V87 外部 Act/read-back、V89 实际第三方与 0083 发布门仍独立待验。用户随后明确要求推送 GitHub，已进入当前 codex 分支提交/推送收尾；独立登录和设备 Runner 改动保留在本地，验收截图、运行快照、APK 和密钥不进入仓库。无生产发布。
+当前完成：开发、隔离验证、本地三角色更新、真机安装、可审阅草稿及本人新 GitHub 范围授权；当前待验：原 App 启动、首次真实运行和七个真实日期。V88/V90 保持 IN_PROGRESS。V87 外部 Act/read-back、V89 实际第三方与 0083 发布门仍独立待验。
+
+按用户明确指令，85 个开发文件已提交并推送 `origin/codex/v83-persistent-runtime`，功能提交 `3fdc3930715fe12b2151220599c008d3e6265627`；远程 head 与本地核对一致。独立十二个登录/Runner 改动原样保留在本地，验收截图、运行快照、APK 和密钥未进入仓库。恢复 Redis 后原三角色最终 ready 200/200/200，见 `v88-github-digest-ready-final-r5.json`。
+
+推送后继续原 App 验收时 `adb devices` 列表为空，原手机已断开；已请求重新连接并打开 App，复用已审阅草稿和已授予的网站权限，不重复索取审批。计划仍为 draft，未冒充启动或首日成功。无生产发布。
