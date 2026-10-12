@@ -60,6 +60,10 @@ export class AuthService {
     return this.config.get<string>('NODE_ENV') !== 'production';
   }
 
+  loginMethods() {
+    return { passwordLogin: true, passwordRegistration: this.registrationAllowed() };
+  }
+
   async register(input: RegisterDto) {
     if (!this.registrationAllowed()) throw new ForbiddenException('Public registration is disabled');
     const email = input.email.trim().toLowerCase();

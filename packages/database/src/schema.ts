@@ -62,7 +62,9 @@ export const personalMemories = mysqlTable('personal_memories', {
   title: varchar('title', { length: 120 }),
   content: text('content'),
   sourceKind: varchar('source_kind', { length: 32 }).notNull(),
-  sourceRefJson: json('source_ref_json').$type<{ conversationId: string; messageId: string; candidateId: string; modelId: string }>(),
+  sourceRefJson: json('source_ref_json').$type<{ conversationId: string; messageId: string; candidateId: string; modelId: string }
+    | { kind: 'VERIFIED_OUTCOME'; candidateId: string; evidenceId: string }
+    | { kind: 'REPORT_DECISION'; conversationId: string; messageId: string; reportRevision: number; reportHash: string; goalId: string | null; goalVersion: number | null }>(),
   status: varchar('status', { length: 16 }).notNull(),
   version: int('version').notNull(),
   confirmedAt: datetime('confirmed_at', { mode: 'date', fsp: 6 }).notNull(),
@@ -1201,6 +1203,8 @@ export const creationDrafts = mysqlTable('creation_drafts', {
   scenarioRevision: int('scenario_revision').notNull(),
   stage: int('stage').notNull(),
   goalJson: json('goal_json').$type<Record<string, unknown>>().notNull(),
+  // Versioned requirement metadata; legacy ScenarioGoalSpec/definition hashes stay intact.
+  goalBriefJson: json('goal_brief_json').$type<Record<string, unknown> | null>(),
   subjectJson: json('subject_json').$type<Record<string, unknown> | null>(),
   sourceChoicesJson: json('source_choices_json').$type<Record<string, unknown>[]>().notNull(),
   selectedOfferKey: varchar('selected_offer_key', { length: 160 }),
@@ -1212,6 +1216,16 @@ export const creationDrafts = mysqlTable('creation_drafts', {
   uniqueIndex('creation_drafts_user_scope_uq').on(table.userId, table.scopeKey),
   index('creation_drafts_user_state_idx').on(table.userId, table.state, table.expiresAt),
 ]);
+
+/** Immutable goal metadata attached to an existing PlanVersion, without runtime authority. */
+export const planGoalBriefs = mysqlTable('plan_goal_briefs', {
+  id: uuidBinary('id').primaryKey(), userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  planId: uuidBinary('plan_id').notNull().references(() => plans.id, { onDelete: 'restrict' }),
+  planVersionId: uuidBinary('plan_version_id').notNull().references(() => planVersions.id, { onDelete: 'restrict' }),
+  draftId: uuidBinary('draft_id').notNull().references(() => creationDrafts.draftId, { onDelete: 'restrict' }),
+  briefHash: char('brief_hash', { length: 64 }).notNull(), goalBriefJson: json('goal_brief_json').$type<Record<string, unknown>>().notNull(),
+  confirmedAt: datetime('confirmed_at', { mode: 'date', fsp: 6 }).notNull(),
+}, t => [uniqueIndex('plan_goal_brief_version_uq').on(t.planVersionId), index('plan_goal_brief_owner_idx').on(t.userId, t.planId)]);
 
 export const capabilityResolutionDecisions = mysqlTable('capability_resolution_decisions', {
   id: uuidBinary('id').primaryKey(),
@@ -1780,6 +1794,23 @@ export const consumerAttachments = mysqlTable('consumer_attachments', {
 export const consumerMessages = mysqlTable('consumer_messages', {
  id: uuidBinary('id').primaryKey(), conversationId: uuidBinary('conversation_id').notNull().references(() => consumerConversations.id, { onDelete: 'restrict' }), requestId: varchar('request_id', { length: 100 }).notNull(), role: varchar('role', { length: 16 }).notNull(), content: text('content').notNull(), structuredPayload: json('structured_payload').$type<Record<string, unknown>>(), contextRefs: json('context_refs').$type<Array<{ type: string; id: string }>>().notNull(), modelId: varchar('model_id', { length: 100 }), createdAt: datetime('created_at', { mode: 'date', fsp: 6 }).notNull(),
 }, table => [uniqueIndex('consumer_messages_request_uq').on(table.conversationId, table.requestId, table.role), index('consumer_messages_conversation_idx').on(table.conversationId, table.createdAt)]);
+
+/** Durable proposal calculation only. Execution, approval and Truth retain their authorities. */
+export const authoringJobs = mysqlTable('authoring_jobs', {
+  id: uuidBinary('id').primaryKey(), userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  conversationId: uuidBinary('conversation_id').notNull().references(() => consumerConversations.id, { onDelete: 'restrict' }),
+  requestId: varchar('request_id', { length: 100 }).notNull(),
+  inputMessageId: uuidBinary('input_message_id').notNull().references(() => consumerMessages.id, { onDelete: 'restrict' }),
+  inputHash: char('input_hash', { length: 64 }).notNull(), sourceConversationVersion: int('source_conversation_version').notNull(),
+  payloadJson: json('payload_json').$type<Record<string, unknown>>().notNull(),
+  status: varchar('status', { length: 24 }).notNull(), stage: varchar('stage', { length: 24 }).notNull(), revision: int('revision').notNull(),
+  attemptCount: int('attempt_count').notNull(), maxAttempts: int('max_attempts').notNull(),
+  leaseToken: varchar('lease_token', { length: 64 }), leaseExpiresAt: datetime('lease_expires_at', { mode: 'date', fsp: 6 }),
+  deadlineAt: datetime('deadline_at', { mode: 'date', fsp: 6 }).notNull(), cancelRequestedAt: datetime('cancel_requested_at', { mode: 'date', fsp: 6 }),
+  resultMessageId: uuidBinary('result_message_id').references(() => consumerMessages.id, { onDelete: 'restrict' }),
+  errorCode: varchar('error_code', { length: 100 }), finishedAt: datetime('finished_at', { mode: 'date', fsp: 6 }), ...timestamps,
+}, t => [uniqueIndex('authoring_job_request_uq').on(t.userId, t.conversationId, t.requestId),
+  index('authoring_job_recovery_idx').on(t.status, t.leaseExpiresAt, t.deadlineAt), index('authoring_job_owner_idx').on(t.userId, t.conversationId, t.createdAt)]);
 export const externalServiceReferences = mysqlTable('external_service_references', {
  domain: varchar('domain', { length: 24 }),
  kind: varchar('kind', { length: 24 }).notNull().default('SERVICE'), rawText: text('raw_text'), parserVersion: varchar('parser_version', { length: 80 }), ruleId: varchar('rule_id', { length: 80 }), shareCode: varchar('share_code', { length: 100 }), evidenceArtifactId: uuidBinary('evidence_artifact_id').references(() => artifacts.id),
@@ -1809,6 +1840,20 @@ export const memoryCandidates = mysqlTable('memory_candidates', {
   memoryId: uuidBinary('memory_id').references(() => personalMemories.id), confirmedMemoryVersion: int('confirmed_memory_version'),
   ...timestamps,
 }, t => [uniqueIndex('memory_candidate_proposal_order_uq').on(t.proposalMessageId, t.proposalOrder), index('memory_candidate_owner_conversation_idx').on(t.userId, t.conversationId, t.createdAt)]);
+
+/** Review metadata only. Confirmed learning uses personalMemories, never a second memory authority. */
+export const learningCandidates = mysqlTable('learning_candidates', {
+  id: uuidBinary('id').primaryKey(), userId: uuidBinary('user_id').notNull().references(() => users.id),
+  evidenceId: uuidBinary('evidence_id').notNull().references(() => verificationEvidence.id),
+  settingsVersion: int('settings_version').notNull(), sourceJson: json('source_json').$type<Record<string, unknown>>().notNull(),
+  sourceHash: char('source_hash', { length: 64 }).notNull(), proposalHash: char('proposal_hash', { length: 64 }).notNull(),
+  title: varchar('title', { length: 120 }), content: text('content'),
+  status: varchar('status', { length: 16 }).notNull(), version: int('version').notNull(),
+  confirmationHash: char('confirmation_hash', { length: 64 }),
+  memoryId: uuidBinary('memory_id').references(() => personalMemories.id), confirmedMemoryVersion: int('confirmed_memory_version'),
+  expiresAt: datetime('expires_at', { mode: 'date', fsp: 6 }).notNull(), ...timestamps,
+}, t => [uniqueIndex('learning_candidate_owner_evidence_uq').on(t.userId, t.evidenceId),
+  index('learning_candidate_owner_created_idx').on(t.userId, t.createdAt, t.id)]);
 
 export const memoryRelations = mysqlTable('memory_relations', {
   id: uuidBinary('id').primaryKey(), userId: uuidBinary('user_id').notNull().references(() => users.id),
@@ -1889,6 +1934,8 @@ export const schema = {
   planConditions,
   planActions,
   creationDrafts,
+  planGoalBriefs,
+  authoringJobs,
   executions,
   actionIntents,
   actionAdapterBindings,
@@ -1898,6 +1945,7 @@ export const schema = {
   personalMemorySettings,
   personalMemories,
   memoryCandidates,
+  learningCandidates,
   memoryRelations,
   executionEvents,
   approvalPolicies,

@@ -57,10 +57,24 @@ describe.sequential('report web research under original resource authority', { t
   });
   it('does not search without permission', async () => {
     const flow = await start(false), read = vi.mocked(app.get(ConnectorRegistry).get('public_web_research').read!); const calls = read.mock.calls.length;
+    await pool.query('UPDATE provider_capability_health SET valid_until=DATE_SUB(UTC_TIMESTAMP(6), INTERVAL 1 SECOND) WHERE connection_id=UUID_TO_BIN(?)', [flow.connection.id]);
+    const validate = vi.mocked(app.get(ConnectorRegistry).get('public_web_research').validateConnection!), probes = validate.mock.calls.length;
     const report = await finish(flow);
     expect(read.mock.calls.length).toBe(calls); expect(report.sources).toEqual([]);
+    expect(validate.mock.calls.length).toBe(probes);
     expect(report.stage).toBe('FAILED'); expect(report.errorCode).toBe('REPORT_WEB_SOURCE_REQUIRED');
     expect(model.write).not.toHaveBeenCalledWith(owner.userId, expect.anything(), expect.anything(), [], expect.anything());
+  });
+  it('renews an expired website health check before capturing authority, keeping the existing grant unchanged', async () => {
+    const flow = await start(true);
+    const [before] = await pool.query('SELECT HEX(id) id,granted,granted_at,expires_at,revoked_at,updated_at FROM connection_permissions WHERE connection_id=UUID_TO_BIN(?)', [flow.connection.id]);
+    await pool.query('UPDATE provider_capability_health SET valid_until=DATE_SUB(UTC_TIMESTAMP(6), INTERVAL 1 SECOND) WHERE connection_id=UUID_TO_BIN(?)', [flow.connection.id]);
+    const validate = vi.mocked(app.get(ConnectorRegistry).get('public_web_research').validateConnection!), probes = validate.mock.calls.length;
+    const report = await finish(flow);
+    expect(report.stage).toBe('COMPLETED'); expect(report.sources[0]).toMatchObject({ url, capabilityKey: WEB_READ });
+    expect(validate.mock.calls.length).toBe(probes + 1);
+    const [after] = await pool.query('SELECT HEX(id) id,granted,granted_at,expires_at,revoked_at,updated_at FROM connection_permissions WHERE connection_id=UUID_TO_BIN(?)', [flow.connection.id]);
+    expect(after).toEqual(before);
   });
   it('does not publish an assumed report when required web research yields no selected original', async () => {
     const flow = await start(true);

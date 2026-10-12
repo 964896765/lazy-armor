@@ -6,6 +6,7 @@ import {
   type ScenarioResourceSubject,
 } from './scenario-contract-v2';
 import type { SourceSelection } from './source-selection';
+import type { GoalBrief } from './goal-brief';
 
 /**
  * 创建流程草稿（CreationDraft）合同。
@@ -67,6 +68,7 @@ export interface CreationDraft {
   scenarioRevision: number;
   stage: CreationDraftStage;
   goal: ScenarioGoalSpec;
+  goalBrief?: GoalBrief | null;
   subject: ScenarioResourceSubject | null;
   sourceChoices: readonly CreationDraftSourceChoice[];
   selectedOfferKey: string | null;

@@ -2,7 +2,7 @@ import {z} from 'zod';
 import {compileScheduledCalendarAuthoring,compileNotificationWatchAuthoring,type NotificationWatchAuthoring,type ScheduledCalendarAuthoring} from '@lazy-armor/plan-schema';
 import {ModuleRef} from '@nestjs/core';
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { consumerConversations, creationDrafts, planOfferSnapshots, planCreationContracts } from '@lazy-armor/database';
+import { consumerConversations, consumerMessages, creationDrafts, planOfferSnapshots, planCreationContracts, planGoalBriefs, plans, planVersions, personalMemories, personalMemorySettings, truthRecords, truthRecordVersions } from '@lazy-armor/database';
 import {
   buildPersistentPlanOffer, catalogHash, definitionHash, persistentPlanOfferRequestSchema,compileScenarioPlan,
   coreProductTemplateByKey,
@@ -10,6 +10,7 @@ import {
   assessPlanAvailability,
   buildSourceSelection,
   creationDraftInputSchema,creationDraftSourceChoiceSchema,
+  goalBriefSchema, goalBriefRefSchema,
   scenarioContractV2ByKey,
   scenarioByKey,
   type CreationDraft,
@@ -23,9 +24,10 @@ import {
   type ScenarioGoalSpec,
   type ScenarioResourceSubject,
   type SourceSelection,
+  type GoalBrief, type GoalBriefRef,
 } from '@lazy-armor/plan-schema';
 import { newId } from '@lazy-armor/shared';
-import { and, desc, eq, lte } from 'drizzle-orm';
+import { and, desc, eq, isNull, lte } from 'drizzle-orm';
 import { DATABASE, type InjectedDatabase } from '../common/database.module';
 import { FactDemandResolverService } from '../fact-demands/fact-demand-resolver.service';
 import type { PlanExecutor } from '../plans/plans.service';
@@ -67,6 +69,7 @@ export class CreationDraftsService {
         scenarioRevision: input.scenarioRevision,
         stage: input.stage,
         goalJson: input.goal as unknown as Record<string, unknown>,
+        goalBriefJson: null,
         subjectJson: (input.subject ?? null) as Record<string, unknown> | null,
         sourceChoicesJson: sourceChoices as unknown as Record<string, unknown>[],
         selectedOfferKey: input.selectedOfferKey ?? null,
@@ -127,7 +130,17 @@ export class CreationDraftsService {
   async recordConversationGoal(userId: string, draftId: string, description: string, tx: PlanExecutor) {
     const row = (await tx.select().from(creationDrafts).where(and(eq(creationDrafts.draftId, draftId), eq(creationDrafts.userId, userId))).for('update'))[0];
     if (!row || !['ACTIVE', 'COMPLETED'].includes(row.state) || row.expiresAt <= new Date()) throw new ConflictException('CreationDraft expired or is not active');
-    await tx.update(creationDrafts).set({ state: 'ACTIVE', expiresAt: new Date(Date.now() + CREATION_DRAFT_TTL_MS), goalJson: { ...row.goalJson, description: description.slice(0, 500), constraints: { ...(row.goalJson.constraints as Record<string, unknown> ?? {}), userInput: description } }, proposalMessageId: null, stage: 1, version: row.version + 1, updatedAt: new Date() }).where(eq(creationDrafts.draftId, draftId));
+    await tx.update(creationDrafts).set({ state: 'ACTIVE', expiresAt: new Date(Date.now() + CREATION_DRAFT_TTL_MS), goalJson: { ...row.goalJson, description: description.slice(0, 500), constraints: { ...(row.goalJson.constraints as Record<string, unknown> ?? {}), userInput: description } }, goalBriefJson: null, proposalMessageId: null, stage: 1, version: row.version + 1, updatedAt: new Date() }).where(eq(creationDrafts.draftId, draftId));
+  }
+
+  /** Additional versioned requirement metadata; the legacy goal/hash contract is untouched. */
+  async recordConversationBrief(userId: string, draftId: string, raw: GoalBrief, tx: PlanExecutor) {
+    const brief = goalBriefSchema.parse(raw);
+    const row = (await tx.select().from(creationDrafts).where(and(eq(creationDrafts.draftId, draftId), eq(creationDrafts.userId, userId))).for('update'))[0];
+    if (!row || row.state !== 'ACTIVE' || row.expiresAt <= new Date() || row.conversationId !== brief.goalId) throw new ConflictException('GOAL_BRIEF_DRAFT_CHANGED');
+    await this.assertBriefSources(userId, brief, tx);
+    await tx.update(creationDrafts).set({ goalBriefJson: brief as unknown as Record<string, unknown>, version: row.version + 1, updatedAt: new Date() }).where(eq(creationDrafts.draftId, draftId));
+    return { goalId: brief.goalId, version: brief.version, contentHash: catalogHash(brief) };
   }
 
   async recordConversationProposal(userId: string, draftId: string, messageId: string, proposal: { scenarioKey?: string | null; scenarioRevision?: number | null; intentSummary?: string;scheduledCalendar?:ScheduledCalendarAuthoring;notificationWatch?:NotificationWatchAuthoring }, tx: PlanExecutor) {
@@ -155,10 +168,66 @@ export class CreationDraftsService {
     await tx.update(creationDrafts).set({ scenarioKey: scenario.key, scenarioRevision: scenario.revision, goalJson: { ...row.goalJson, description: proposal.intentSummary?.slice(0, 500) || row.goalJson.description }, proposalMessageId: messageId, stage: 5, version: row.version + 1, updatedAt: new Date() }).where(eq(creationDrafts.draftId, draftId));
   }
 
-  async completeConversation(userId: string, draftId: string, messageId: string, tx: PlanExecutor) {
+  async completeConversation(userId: string, draftId: string, messageId: string, tx: PlanExecutor, briefRef?: GoalBriefRef) {
     const row = (await tx.select().from(creationDrafts).where(and(eq(creationDrafts.draftId, draftId), eq(creationDrafts.userId, userId))).for('update'))[0];
     if (!row || row.state !== 'ACTIVE' || row.expiresAt <= new Date() || row.proposalMessageId !== messageId) throw new ConflictException('CreationDraft changed or expired; regenerate the proposal');
+    if (row.goalBriefJson || briefRef) {
+      const brief = this.confirmedBrief(row.goalBriefJson, briefRef);
+      if (brief.readiness.state !== 'READY_FOR_PROPOSAL') throw new ConflictException('GOAL_BRIEF_NEEDS_CLARIFICATION');
+      await this.assertBriefSources(userId, brief, tx);
+    }
     await tx.update(creationDrafts).set({ state: 'COMPLETED', version: row.version + 1, updatedAt: new Date() }).where(eq(creationDrafts.draftId, draftId));
+  }
+
+  /** Pin one reviewed brief to the existing immutable PlanVersion in the confirmation transaction. */
+  async freezeConversationBrief(userId: string, draftId: string, created: { planId: string; planVersionId: string }, tx: PlanExecutor, briefRef?: GoalBriefRef) {
+    const row = (await tx.select().from(creationDrafts).where(and(eq(creationDrafts.draftId, draftId), eq(creationDrafts.userId, userId))).for('update'))[0];
+    if (!row || row.state !== 'COMPLETED') throw new ConflictException('GOAL_BRIEF_DRAFT_NOT_CONFIRMED');
+    if (!row.goalBriefJson && !briefRef) return null; // Legacy plans retain their original contract.
+    const brief = this.confirmedBrief(row.goalBriefJson, briefRef);
+    if (brief.readiness.state !== 'READY_FOR_PROPOSAL') throw new ConflictException('GOAL_BRIEF_NEEDS_CLARIFICATION');
+    await this.assertBriefSources(userId, brief, tx);
+    const owned = (await tx.select({ id: planVersions.id }).from(planVersions)
+      .innerJoin(plans, and(eq(plans.id, planVersions.planId), eq(plans.userId, userId)))
+      .where(and(eq(planVersions.id, created.planVersionId), eq(plans.id, created.planId))).limit(1))[0];
+    if (!owned) throw new ConflictException('GOAL_BRIEF_PLAN_VERSION_NOT_OWNED');
+    const briefHash = catalogHash(brief);
+    const prior = (await tx.select().from(planGoalBriefs).where(eq(planGoalBriefs.planVersionId, created.planVersionId)).for('update'))[0];
+    if (prior) {
+      if (prior.userId !== userId || prior.draftId !== draftId || prior.planId !== created.planId || prior.briefHash !== briefHash || catalogHash(prior.goalBriefJson) !== briefHash) throw new ConflictException('GOAL_BRIEF_CONFIRMATION_CHANGED');
+      return { id: prior.id, goalBriefRef: briefRef! };
+    }
+    const id = newId();
+    await tx.insert(planGoalBriefs).values({ id, userId, draftId, planId: created.planId, planVersionId: created.planVersionId,
+      briefHash, goalBriefJson: brief as unknown as Record<string, unknown>, confirmedAt: new Date() });
+    return { id, goalBriefRef: briefRef! };
+  }
+
+  private confirmedBrief(raw: unknown, rawRef: GoalBriefRef | undefined): GoalBrief {
+    const parsed = goalBriefSchema.safeParse(raw), reference = goalBriefRefSchema.safeParse(rawRef);
+    if (!parsed.success || !reference.success || parsed.data.goalId !== reference.data.goalId || parsed.data.version !== reference.data.version || catalogHash(parsed.data) !== reference.data.contentHash)
+      throw new ConflictException('GOAL_BRIEF_CONFIRMATION_CHANGED');
+    return parsed.data;
+  }
+
+  private async assertBriefSources(userId: string, brief: GoalBrief, tx: PlanExecutor) {
+    const conversation = (await tx.select().from(consumerConversations).where(and(eq(consumerConversations.id, brief.goalId), eq(consumerConversations.userId, userId), isNull(consumerConversations.deletedAt))).for('update'))[0];
+    if (!conversation || conversation.version !== brief.version) throw new ConflictException('GOAL_BRIEF_CONVERSATION_CHANGED');
+    for (const source of new Map([...brief.fields.flatMap(field => field.sourceRefs), ...(brief.reportSubject?.sourceRefs ?? [])].map(source => [catalogHash(source), source])).values()) {
+      if (source.kind === 'USER_MESSAGE') {
+        const message = (await tx.select().from(consumerMessages).where(and(eq(consumerMessages.id, source.id), eq(consumerMessages.conversationId, brief.goalId), eq(consumerMessages.role, 'user'))).limit(1))[0];
+        if (!message || !message.content.includes(source.quote)) throw new ConflictException('GOAL_BRIEF_USER_SOURCE_CHANGED');
+      } else if (source.kind === 'CONFIRMED_MEMORY') {
+        const setting = (await tx.select().from(personalMemorySettings).where(eq(personalMemorySettings.userId, userId)).for('update'))[0];
+        const memory = (await tx.select().from(personalMemories).where(and(eq(personalMemories.id, source.id), eq(personalMemories.userId, userId))).for('update'))[0];
+        if (!setting?.enabled || !memory || memory.status !== 'ACTIVE' || memory.version !== source.version || memory.expiresAt && memory.expiresAt <= new Date() || !memory.content?.includes(source.quote)) throw new ConflictException('GOAL_BRIEF_MEMORY_SOURCE_CHANGED');
+      } else {
+        const truth = (await tx.select({ record: truthRecords, version: truthRecordVersions }).from(truthRecords)
+          .innerJoin(truthRecordVersions, eq(truthRecordVersions.id, truthRecords.currentVersionId))
+          .where(and(eq(truthRecords.id, source.id), eq(truthRecords.userId, userId))).for('update'))[0];
+        if (!truth || truth.record.status !== 'verified' || truth.record.revokedAt || truth.version.id !== source.version || !JSON.stringify(truth.version.valueJson).includes(source.quote)) throw new ConflictException('GOAL_BRIEF_TRUTH_SOURCE_CHANGED');
+      }
+    }
   }
 
   /** Freeze the confirmed draft sources against this exact immutable PlanVersion. */
@@ -401,6 +470,7 @@ export class CreationDraftsService {
       scenarioRevision: row.scenarioRevision,
       stage: row.stage as CreationDraftStage,
       goal: row.goalJson as unknown as ScenarioGoalSpec,
+      goalBrief: row.goalBriefJson ? goalBriefSchema.parse(row.goalBriefJson) : null,
       subject: (row.subjectJson ?? null) as ScenarioResourceSubject | null,
       sourceChoices: row.sourceChoicesJson as unknown as readonly CreationDraftSourceChoice[],
       selectedOfferKey: row.selectedOfferKey,

@@ -44,7 +44,7 @@ export function useDeviceTaskRunnerLifecycle() {
     if (!hydrated) return;
     const current = token ?? null;
     if(!current)void NativeModules.LazyArmorDeviceBridge?.clearLocalCapabilityAccount?.();
-    void lifecycle.sync(current);
+    void lifecycle.sync(current, AppState.currentState === 'active');
     if(current&&AppState.currentState==='active')void syncRuntimeResults().catch(()=>{});
     const subscription = AppState.addEventListener('change', (state) => {
       lifecycle.onAppState(state === 'active');

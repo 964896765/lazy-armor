@@ -3,7 +3,7 @@ import { LifecycleReadService } from '../plans/lifecycle-read.service';
 import {DraftGapProjectionService} from '../creation-drafts/draft-gap-projection.service';
 import {Inject,Injectable} from '@nestjs/common';
 import {conversationOnceRequests,approvalRequests,executions,reconciliationCases,consumerServiceRequests,consumerMessages,consumerConversations,creationDrafts,importantItemCandidates} from '@lazy-armor/database';
-import {authorityNextBestAction,workItemNextAction,NEXT_ACTION_LABELS,type WorkItemProjection,type WorkItemKind,type NextBestAction} from '@lazy-armor/plan-schema';
+import {authorityNextBestAction,workItemNextAction,NEXT_ACTION_LABELS,conversationGenerationOutcome,type WorkItemProjection,type WorkItemKind,type NextBestAction} from '@lazy-armor/plan-schema';
 import {and,desc,eq,isNull} from 'drizzle-orm';
 import {DATABASE,type InjectedDatabase} from '../common/database.module';
 import {ConsumerService} from './consumer.service';
@@ -44,7 +44,15 @@ export class WorkItemProjectionService {
   for(const row of drafts){try{const gap=await this.gaps.project(userId,row.draftId);if(gap.reasons.length)add('ResourceGap',row.draftId,'继续完善计划',gap.state,row.updatedAt,'/chat?mode=plan&draftId='+row.draftId,'sourceAssessment' in gap ? gap.sourceAssessment?.nextBestAction : undefined);}catch{projectionFailures.push({sourceRef:{type:'CreationDraft',id:row.draftId},state:'UNAVAILABLE'});}}
 
   for(const row of reminders)if(row.requiresAction===1)add('Reminder',row.id,row.title,'PENDING',row.createdAt,'/schedule');
-  for(const {message,conversation} of messages){const result=message.structuredPayload?.result; if(result==='ACTION_PROPOSAL'&&!confirmedIds.has(message.id))add('ActionProposal',message.id,message.content.slice(0,100),'PROPOSED',message.createdAt,'/chat?conversationId='+conversation.id);else if(result==='ANSWER')add('ConversationResult',message.id,conversation.title,'ANSWER_AVAILABLE',message.createdAt,'/chat?conversationId='+conversation.id);}
+   for(const {message,conversation} of messages){
+    const payload=message.structuredPayload;const result=payload?.result;
+    if(result==='ACTION_PROPOSAL'&&!confirmedIds.has(message.id))add('ActionProposal',message.id,message.content.slice(0,100),'PROPOSED',message.createdAt,'/chat?conversationId='+conversation.id);
+    else if(result==='ANSWER'||result==='AUTHORING_PENDING'||payload?.report||payload?.authoringJob){
+     const outcome=conversationGenerationOutcome(typeof result==='string'?result:undefined,payload?.report,payload?.authoringJob);
+     const path=payload?.report?`/report?conversationId=${conversation.id}&messageId=${message.id}`:'/chat?conversationId='+conversation.id;
+     add('ConversationResult',message.id,conversation.title,outcome.code,message.createdAt,path,outcome.statusGroup==='COMPLETED'?'COMPLETE':'WAIT');
+    }
+   }
   return {contractVersion:1,authority:'WorkItemProjection',evaluatedAt,planAssessments:assessments,projectionFailures,items:items.sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt)),truncated:approvals.length===100||runs.length===100||cases.length===100||requests.length===100||drafts.length===100||reminders.length===100||messages.length===100};
  }
 }

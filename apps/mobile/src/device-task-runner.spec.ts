@@ -100,6 +100,47 @@ describe('mobile DeviceTask runner', () => {
     expect(execute).not.toHaveBeenCalled();
   });
 
+  it('does not poll after a device heartbeat returns to an already stopped runner', async () => {
+    let release!: () => void;
+    mocks.heartbeatDevice.mockReturnValue(new Promise<void>(resolve => { release = resolve; }));
+    mocks.listDeviceTasks.mockResolvedValue([makeTask()]);
+    const execute = vi.fn(async () => ({ nodes: [] }));
+    const runner = new DeviceTaskRunner({ token, executeStructuredRead: execute });
+    const pending = runner.tick(); await flush(); runner.stop(true); release(); await pending;
+    expect(mocks.listDeviceTasks).not.toHaveBeenCalled();
+    expect(mocks.claimDeviceTask).not.toHaveBeenCalled();
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it('does not claim from a poll result delivered after backgrounding or an account change', async () => {
+    for (const change of ['background', 'account'] as const) {
+      vi.resetAllMocks();
+      let release!: (tasks: DeviceTask[]) => void, currentToken = 'token-a';
+      mocks.listDeviceTasks.mockReturnValue(new Promise<DeviceTask[]>(resolve => { release = resolve; }));
+      mocks.claimDeviceTask.mockResolvedValue(claimedTask());
+      const execute = vi.fn(async () => ({ nodes: [] }));
+      const runner = new DeviceTaskRunner({ token: () => currentToken, executeStructuredRead: execute });
+      const pending = runner.tick(); await flush();
+      if (change === 'background') runner.stop(true); else currentToken = 'token-b';
+      release([makeTask()]); await pending;
+      expect(mocks.claimDeviceTask).not.toHaveBeenCalled();
+      expect(execute).not.toHaveBeenCalled();
+    }
+  });
+
+  it('does not dispatch a claim that arrives after its foreground lifecycle has stopped', async () => {
+    let release!: (task: DeviceTask) => void;
+    mocks.listDeviceTasks.mockResolvedValue([makeTask()]);
+    mocks.claimDeviceTask.mockReturnValue(new Promise<DeviceTask>(resolve => { release = resolve; }));
+    const execute = vi.fn(async () => ({ nodes: [] })), stateStore = store(null);
+    const runner = new DeviceTaskRunner({ token, state: stateStore, executeStructuredRead: execute });
+    const pending = runner.tick(); await flush(); runner.stop(true); release(claimedTask()); await pending;
+    expect(execute).not.toHaveBeenCalled();
+    expect(stateStore.save).not.toHaveBeenCalled();
+    expect(mocks.completeDeviceTask).not.toHaveBeenCalled();
+    expect(mocks.failDeviceTask).not.toHaveBeenCalled();
+  });
+
   it.each(['NATIVE_CALENDAR_CREATE','NATIVE_CALENDAR_WRITE'])('renews a persisted %s claim after restart and uploads the retained receipt without executing again', async taskType => {
     const task=claimedTask({taskType,dispatchAuthorization:{payload:'old-ticket',signature:'old-signature'}});
     const stateStore=store({taskId:task.id,claimToken:task.claimToken!,leaseExpiresAt:task.leaseExpiresAt!,claimedTask:task});

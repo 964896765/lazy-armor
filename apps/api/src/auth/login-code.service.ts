@@ -19,14 +19,20 @@ export class LoginCodeService implements OnApplicationShutdown {
  }
  private digest(value:string) {return createHmac('sha256',this.config.getOrThrow<string>('JWT_SECRET')).update(value).digest('hex');}
  private key(kind:string,value:string) {return `${this.config.get<string>('REDIS_KEY_PREFIX')??'lazyarmor'}:login-code:${this.digest(kind+':'+value)}`;}
+ availability(kind: 'phone' | 'email'): 'LOCAL_DEVELOPMENT' | 'CONFIGURED' | 'UNAVAILABLE' {
+  const endpoint=this.config.get<string>(kind==='phone'?'SMS_LOGIN_DELIVERY_ENDPOINT':'EMAIL_LOGIN_DELIVERY_ENDPOINT');
+  if(this.localDelivery.available(endpoint)) return 'LOCAL_DEVELOPMENT';
+  try { if(endpoint && new URL(endpoint).protocol==='https:' && this.config.get<string>('LOGIN_CODE_DELIVERY_TOKEN')) return 'CONFIGURED'; } catch {}
+  return 'UNAVAILABLE';
+ }
  async request(input:RequestLoginCodeDto,ip:string) {
   const identifier=this.normalize(input);const key=this.key(input.kind,identifier);
   for(const [budget,limit,window] of [[key,1,60],['otp-ip:'+ip,10,600]] as const) if(!(await this.limiter.consume(budget,limit,window)).allowed) throw new HttpException('请稍后再获取验证码',429);
   const endpoint=this.config.get<string>(input.kind==='phone'?'SMS_LOGIN_DELIVERY_ENDPOINT':'EMAIL_LOGIN_DELIVERY_ENDPOINT');
   const token=this.config.get<string>('LOGIN_CODE_DELIVERY_TOKEN');
-  let secure=false;try{secure=Boolean(endpoint&&new URL(endpoint).protocol==='https:');}catch{}
-  const local=this.localDelivery.available(endpoint);
-  if(!local&&(!secure||!endpoint||!token)) throw new HttpException('验证码发送服务暂未开放，请稍后再试',503);
+  const availability=this.availability(input.kind);
+  const local=availability==='LOCAL_DEVELOPMENT';
+  if(availability==='UNAVAILABLE') throw new HttpException('验证码发送服务暂未开放，请稍后再试',503);
   const code=String(randomInt(0,1000000)).padStart(6,'0');
   await this.redis.set(key,this.digest(key+':'+code),'EX',300);
   if(local){this.localDelivery.deliver(input.kind,identifier,code,new Date(Date.now()+300000));return {sent:true,delivery:'LOCAL_DEVELOPMENT',retryAfterSeconds:60,expiresIn:300};}

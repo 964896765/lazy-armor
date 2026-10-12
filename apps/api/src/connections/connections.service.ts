@@ -14,7 +14,7 @@ import { ConnectorRateLimitCoordinator } from '../infrastructure/connector-rate-
 import { ProviderCircuitBreakerService } from '../infrastructure/provider-circuit-breaker.service';
 import { publicJsonUrl } from '../connectors/public-json.connector';
 import { publicWebConfig, WEB_READ } from '../connectors/public-web.connector';
-import { ConsumerReadSourceService, type ConsumerReadSource } from './consumer-read-source.service';
+import { ConsumerReadSourceService, type ConsumerReadSource, type ConsumerReadTransaction } from './consumer-read-source.service';
 import type {
   CompleteOAuthConnectionDto,
   CreateConnectionDto,
@@ -413,17 +413,19 @@ export class ConnectionsService {
     });
   }
 
-  async invokeConsumerRead(userId: string, id: string, input: InvokeConnectorDto) {
+  async invokeConsumerRead(userId: string, id: string, input: InvokeConnectorDto, expectedSource?: ConsumerReadSource) {
     const grant = await this.permissions.assertGranted(userId, id, input.capability);
     if (grant.operation !== 'read') {
       throw new ForbiddenException('External write capabilities must run through the Execution Engine');
     }
-    const source = ['READ_PUBLIC_HTTP_JSON', WEB_READ].includes(input.capability) ? await this.readSources.capture(userId, id, input.capability) : undefined;
+    if (expectedSource && (expectedSource.userId !== userId || expectedSource.connectionId !== id || expectedSource.capabilityKey !== input.capability))
+      throw new ForbiddenException('Consumer read binding does not match this request');
+    const source = expectedSource ?? (['READ_PUBLIC_HTTP_JSON', WEB_READ].includes(input.capability) ? await this.readSources.capture(userId, id, input.capability) : undefined);
     return this.invoke(userId, id, input, source);
   }
 
   captureConsumerReadAuthority(userId: string, id: string, capability: string) { return this.readSources.capture(userId, id, capability); }
-  assertConsumerReadAuthority(source: ConsumerReadSource) { return this.readSources.assertCurrent(source); }
+  assertConsumerReadAuthority(source: ConsumerReadSource, transaction?: ConsumerReadTransaction) { return this.readSources.assertCurrent(source, transaction); }
 
   /** Renew the original short-lived website check for an already authorized read. */
   async preparePublicWebRead(userId: string, id: string) {

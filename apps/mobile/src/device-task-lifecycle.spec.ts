@@ -11,6 +11,11 @@ function makeRunner() {
 }
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>(done => { resolve = done; });
+  return { promise, resolve };
+}
 
 describe('DeviceTask runner lifecycle', () => {
   beforeEach(() => vi.resetAllMocks());
@@ -76,5 +81,40 @@ describe('DeviceTask runner lifecycle', () => {
     lifecycle.onAppState(true);
     await flush();
     expect(runner.start).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not start from a readiness check that finishes after the App leaves foreground', async () => {
+    const runner = makeRunner(), pending = deferred<boolean>();
+    const assertReady = vi.fn().mockReturnValueOnce(pending.promise).mockResolvedValue(true);
+    const lifecycle = new DeviceTaskRunnerLifecycle({ runner, assertReady });
+    const checking = lifecycle.sync('token-a');
+    await flush(); lifecycle.onAppState(false); pending.resolve(true); await checking;
+    expect(runner.start).not.toHaveBeenCalled();
+    expect(runner.stop).toHaveBeenCalledWith(true);
+    lifecycle.onAppState(true); await flush();
+    expect(runner.start).toHaveBeenCalledTimes(1);
+    expect(assertReady).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not revive a signed-out or torn-down lifecycle with a late ready response', async () => {
+    for (const teardown of ['logout', 'stop'] as const) {
+      const runner = makeRunner(), pending = deferred<boolean>();
+      const lifecycle = new DeviceTaskRunnerLifecycle({ runner, assertReady: () => pending.promise });
+      const checking = lifecycle.sync('token-a'); await flush();
+      if (teardown === 'logout') await lifecycle.sync(null); else lifecycle.stop();
+      pending.resolve(true); await checking;
+      expect(runner.start).not.toHaveBeenCalled();
+    }
+  });
+
+  it('does not let an older failed check stop the newly ready account', async () => {
+    const runner = makeRunner(), old = deferred<boolean>();
+    const lifecycle = new DeviceTaskRunnerLifecycle({ runner, assertReady: token => token === 'token-a' ? old.promise : Promise.resolve(true) });
+    const checking = lifecycle.sync('token-a'); await flush();
+    await lifecycle.sync('token-b');
+    const shutdowns = vi.mocked(runner.shutdown).mock.calls.length;
+    old.resolve(false); await checking;
+    expect(runner.start).toHaveBeenCalledTimes(1);
+    expect(runner.shutdown).toHaveBeenCalledTimes(shutdowns);
   });
 });

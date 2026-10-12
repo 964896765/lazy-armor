@@ -107,6 +107,7 @@ export class DeviceTaskRunner {
   private claimEpoch = 0;
   private activeClaim: RunnerState | null = null;
   private keepaliveTask: DeviceTask | null = null;
+  private pollEpoch = 0;
 
   constructor(private readonly options: DeviceTaskRunnerOptions) {}
 
@@ -118,6 +119,7 @@ export class DeviceTaskRunner {
   }
 
   stop(preservePageReadHandoff = false) {
+    ++this.pollEpoch;
     this.running = false;
     if (this.timer) {
       clearInterval(this.timer);
@@ -141,28 +143,37 @@ export class DeviceTaskRunner {
         this.stopKeepalive();
         return;
       }
+      const epoch = this.pollEpoch;
+      const mayStart = () => epoch === this.pollEpoch && this.options.token() === token;
       // Device presence is independent of a task lease, including idle polling.
       // Only a successful signed request establishes current device presence.
       await heartbeatDevice(token);
-      if (!this.activeClaim) this.activeClaim = await this.options.state?.load() ?? null;
+      if (!mayStart()) return;
+      if (!this.activeClaim) {
+        const stored = await this.options.state?.load() ?? null;
+        if (!mayStart()) return;
+        this.activeClaim = stored;
+      }
       if (this.activeClaim) {
-        await this.recoverInterruptedClaim(token);
+        await this.recoverInterruptedClaim(token, mayStart);
+        if (!mayStart()) return;
         if (this.activeClaim) return; // A retained result must settle before another claim.
       }
       const tasks = await listDeviceTasks(token);
+      if (!mayStart()) return;
       const pending = tasks.filter((task) => task.status === 'PENDING' && RUNNER_EXECUTABLE_TASK_TYPES.has(task.taskType));
       if (!pending.length) return;
       // A fenced historical task can remain visible. It must not starve current
       // work; each candidate still passes the server's own claim authority.
       for (const task of pending) {
-        if (await this.claimAndRun(token, task)) break;
+        if (!mayStart() || await this.claimAndRun(token, task, mayStart)) break;
       }
     } finally {
       this.inFlight = false;
     }
   }
 
-  private async recoverInterruptedClaim(token: string) {
+  private async recoverInterruptedClaim(token: string, mayStart: () => boolean) {
     const state = this.activeClaim;
     if (!state) return;
     this.stopKeepalive();
@@ -174,7 +185,7 @@ export class DeviceTaskRunner {
     const leaseActive = Date.parse(state.leaseExpiresAt) > Date.now();
     if(state.claimedTask&&['NATIVE_CALENDAR_CREATE','NATIVE_CALENDAR_WRITE'].includes(state.claimedTask.taskType)&&leaseActive){
       const renewed=await this.renewLease(token,state.claimedTask);
-      await this.runClaimedTask(token,renewed);
+      await this.runClaimedTask(token,renewed,mayStart);
       return;
     }
     if (!leaseActive) {
@@ -185,7 +196,7 @@ export class DeviceTaskRunner {
     await this.failTask(token, runnerStateAsTask(state), 'DEVICE_RUNNER_INTERRUPTED');
   }
 
-  private async claimAndRun(token: string, task: DeviceTask) {
+  private async claimAndRun(token: string, task: DeviceTask, mayStart: () => boolean) {
     let claimed: DeviceTask;
     try {
       claimed = await claimDeviceTask(token, task);
@@ -194,13 +205,19 @@ export class DeviceTaskRunner {
       // Transport/authentication failures stop this poll instead of fanning out.
       return !(error instanceof ApiError && [403,409].includes(error.status));
     }
+    // A server claim may have committed before the App stopped. No local
+    // execution occurred: leave that lease to existing server recovery.
+    if (!mayStart()) return true;
     await this.persist({ taskId: claimed.id, claimToken: claimed.claimToken!, leaseExpiresAt: claimed.leaseExpiresAt!,...(['NATIVE_CALENDAR_CREATE','NATIVE_CALENDAR_WRITE'].includes(claimed.taskType)?{claimedTask:claimed}:{}) });
-    await this.runClaimedTask(token,claimed);
+    await this.runClaimedTask(token,claimed,mayStart);
     return true;
   }
-  private async runClaimedTask(token:string,claimed:DeviceTask){
+  private async runClaimedTask(token:string,claimed:DeviceTask,mayStart:()=>boolean){
+    if (!mayStart()) return;
     if(['NATIVE_CALENDAR_CREATE','NATIVE_CALENDAR_WRITE'].includes(claimed.taskType))claimed=await this.renewLease(token,claimed);
+    if (!mayStart()) return;
     claimed = await this.heartbeatIfNeeded(token, claimed);
+    if (!mayStart()) return;
     this.startKeepalive(claimed);
 
     let result: StructuredReadResult;

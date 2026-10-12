@@ -2,6 +2,11 @@
 export * from './goal-understanding';
 export * from './agent-task';
 export * from './personal-memory';
+export * from './learning-candidate';
+export * from './report-decision';
+export * from './skill-resource-graph';
+export * from './composition-authoring';
+export * from './composition-resources';
 // Keep this module free of Node built-ins because Metro resolves the full module graph.
 export {
   CANONICAL_DOMAIN_CATALOG,
@@ -65,5 +70,10 @@ export * from './skill-capability';
 export * from './goal-resource-match';
 export * from './browser';
 export * from './agent-report';
+export * from './report-method';
 export * from './report-financial';
 export * from './github-digest';
+export * from './goal-brief';
+export * from './delivery-spec';
+export * from './goal-experience';
+export * from './authoring-job';

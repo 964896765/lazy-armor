@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { consumerConversations, consumerMessages, memoryCandidates, memoryRelations, personalMemories, personalMemorySettings } from '@lazy-armor/database';
+import { consumerConversations, consumerMessages, learningCandidates, memoryCandidates, memoryRelations, personalMemories, personalMemorySettings } from '@lazy-armor/database';
 import { catalogHash, rankPersonalMemories, type MemoryContextSnapshot, type MemorySettings, type PersonalMemory, type MemoryReference } from '@lazy-armor/plan-schema';
 import { newId } from '@lazy-armor/shared';
 import { and, desc, eq, inArray, lt, or, gt, isNull, sql } from 'drizzle-orm';
@@ -7,6 +7,8 @@ import { DATABASE, type InjectedDatabase } from '../common/database.module';
 import { decodeCursor, pageResult, type CursorPageDto } from '../common/cursor-pagination';
 import { AuditService } from '../audit/audit.service';
 import type { CreateMemoryDto, EditMemoryDto, MemorySettingsDto } from './dto';
+import { learningMemorySourceCurrent } from './learning-source';
+import { reportDecisionSourceCurrent } from './report-decision-source';
 
 type Transaction = Pick<InjectedDatabase, 'select' | 'insert' | 'update'>;
 
@@ -33,6 +35,8 @@ export class MemoryService {
       await tx.update(personalMemorySettings).set({ enabled: input.enabled, version, updatedAt: new Date() }).where(eq(personalMemorySettings.userId, userId));
       if (!input.enabled) await tx.update(memoryCandidates).set({ status: 'UNAVAILABLE', title: null, quote: null, version: 2, updatedAt: new Date() })
         .where(and(eq(memoryCandidates.userId, userId), eq(memoryCandidates.status, 'PENDING')));
+      if (!input.enabled) await tx.update(learningCandidates).set({ status: 'UNAVAILABLE', title: null, content: null, sourceJson: {}, version: 2, updatedAt: new Date() })
+        .where(and(eq(learningCandidates.userId, userId), eq(learningCandidates.status, 'PENDING')));
       await this.auditChange(tx, userId, userId, 'MEMORY_USAGE_CHANGED', { enabled: input.enabled, version });
       return { enabled: input.enabled, version };
     });
@@ -55,7 +59,9 @@ export class MemoryService {
   }
   /** Internal server-owned entry for reviewed candidates, using the same Memory store. */
   async saveConfirmed(tx: Transaction, userId: string, input: CreateMemoryDto, sourceRef: PersonalMemory['sourceRef'] = null) {
-    if (input.requestId.startsWith('memory-candidate:') && (!sourceRef || input.requestId !== `memory-candidate:${sourceRef.candidateId}`)) throw new BadRequestException('MEMORY_SERVER_REQUEST_ID_REQUIRED');
+    if (input.requestId.startsWith('memory-candidate:') && (!sourceRef || 'kind' in sourceRef || input.requestId !== `memory-candidate:${sourceRef.candidateId}`)) throw new BadRequestException('MEMORY_SERVER_REQUEST_ID_REQUIRED');
+    if (input.requestId.startsWith('learning-candidate:') && (!sourceRef || !('kind' in sourceRef) || sourceRef.kind !== 'VERIFIED_OUTCOME' || input.requestId !== `learning-candidate:${sourceRef.candidateId}`)) throw new BadRequestException('MEMORY_SERVER_REQUEST_ID_REQUIRED');
+    if (input.requestId.startsWith('report-decision:') && (!sourceRef || !('kind' in sourceRef) || sourceRef.kind !== 'REPORT_DECISION')) throw new BadRequestException('MEMORY_SERVER_REQUEST_ID_REQUIRED');
     const content = normalizeContent(input);
       const settings = await this.lockSettings(tx, userId);
       const prior = (await tx.select().from(personalMemories).where(and(eq(personalMemories.userId, userId), eq(personalMemories.requestId, input.requestId))))[0];
@@ -65,7 +71,7 @@ export class MemoryService {
       }
       if (!settings.enabled) throw new ConflictException('MEMORY_USAGE_DISABLED');
       const now = new Date(), id = newId();
-      const value = { id, userId, requestId: input.requestId, type: input.type, ...content, sourceKind: sourceRef ? 'CONVERSATION_CONFIRMED' : 'USER_INPUT',
+      const value = { id, userId, requestId: input.requestId, type: input.type, ...content, sourceKind: sourceRef ? ('kind' in sourceRef ? sourceRef.kind === 'REPORT_DECISION' ? 'REPORT_DECISION_CONFIRMED' : 'LEARNING_CONFIRMED' : 'CONVERSATION_CONFIRMED') : 'USER_INPUT',
         sourceRefJson: sourceRef, status: 'ACTIVE', version: 1, confirmedAt: now, createdAt: now, updatedAt: now };
       await tx.insert(personalMemories).values(value);
       await this.auditChange(tx, userId, id, 'MEMORY_SAVED', { type: input.type, version: 1, sourceKind: value.sourceKind, sourceRef });
@@ -76,14 +82,31 @@ export class MemoryService {
       const row = (await tx.select().from(personalMemories).where(and(eq(personalMemories.id, id), eq(personalMemories.userId, userId))))[0];
       if (!row) throw new NotFoundException('Memory not found');
       const settings = (await tx.select().from(personalMemorySettings).where(eq(personalMemorySettings.userId, userId)))[0];
-      const state: MemoryReference['state'] = row.status === 'DELETED' ? 'DELETED' : row.version !== requestedVersion ? 'CHANGED'
+      let state: MemoryReference['state'] = row.status === 'DELETED' ? 'DELETED' : row.version !== requestedVersion ? 'CHANGED'
         : row.expiresAt && row.expiresAt.getTime() <= Date.now() ? 'EXPIRED' : !settings?.enabled ? 'DISABLED' : 'CURRENT';
       const source: MemoryReference['source'] = { kind: row.sourceKind as MemoryReference['source']['kind'], available: row.sourceKind === 'USER_INPUT' && row.status === 'ACTIVE' };
-      if (row.sourceRefJson && row.status === 'ACTIVE') {
+      if (row.sourceRefJson && !('kind' in row.sourceRefJson) && row.status === 'ACTIVE') {
         const conversation = (await tx.select().from(consumerConversations).where(and(eq(consumerConversations.id, row.sourceRefJson.conversationId), eq(consumerConversations.userId, userId), isNull(consumerConversations.deletedAt))))[0];
         const message = conversation && (await tx.select().from(consumerMessages).where(and(eq(consumerMessages.id, row.sourceRefJson.messageId), eq(consumerMessages.conversationId, conversation.id), eq(consumerMessages.role, 'user'))))[0];
         const proof = message && (await tx.select().from(memoryCandidates).where(and(eq(memoryCandidates.id, row.sourceRefJson.candidateId), eq(memoryCandidates.userId, userId), eq(memoryCandidates.memoryId, id), eq(memoryCandidates.status, 'CONFIRMED'))))[0];
         if (message && proof && catalogHash(message.content) === proof.sourceContentHash) Object.assign(source, { available: true, conversationId: conversation!.id, messageId: message.id, content: message.content.slice(0, 1000) });
+      }
+      if (row.sourceKind === 'LEARNING_CONFIRMED' && row.status === 'ACTIVE') {
+        source.available = await learningMemorySourceCurrent(tx, userId, row.sourceRefJson, row.id);
+        if (!source.available && state === 'CURRENT') state = 'SOURCE_UNAVAILABLE';
+        if (source.available && row.sourceRefJson && 'kind' in row.sourceRefJson && row.sourceRefJson.kind === 'VERIFIED_OUTCOME') {
+          const candidate = (await tx.select().from(learningCandidates).where(eq(learningCandidates.id, row.sourceRefJson.candidateId)))[0]!;
+          Object.assign(source, { candidateId: candidate.id, evidenceId: candidate.evidenceId,
+            executionId: candidate.sourceJson.executionId, content: '来自原始操作的验证证据；仅证明一次历史结果，个人反馈未经结果验证。' });
+        }
+      }
+      if (row.sourceKind === 'REPORT_DECISION_CONFIRMED' && row.status === 'ACTIVE') {
+        source.available = await reportDecisionSourceCurrent(tx, userId, row.sourceRefJson);
+        if (!source.available && state === 'CURRENT') state = 'SOURCE_UNAVAILABLE';
+        if (source.available && row.sourceRefJson && 'kind' in row.sourceRefJson && row.sourceRefJson.kind === 'REPORT_DECISION') {
+          Object.assign(source, { conversationId: row.sourceRefJson.conversationId, messageId: row.sourceRefJson.messageId,
+            reportRevision: row.sourceRefJson.reportRevision, content: '本人针对该版本报告明确保存的决定、理由和预期。个人判断不是市场事实或经营结果验证。' });
+        }
       }
       return { id, requestedVersion, state, memory: row.status === 'ACTIVE' ? toMemory(row) : null, source };
     });
@@ -96,7 +119,9 @@ export class MemoryService {
       if (row.version !== input.version) throw new ConflictException('MEMORY_VERSION_CHANGED');
       const expiresAt = input.expiresAt === undefined ? row.expiresAt?.toISOString() ?? null : input.expiresAt;
       const content = normalizeContent({ ...input, expiresAt }, Boolean(row.expiresAt && expiresAt && row.expiresAt.getTime() === Date.parse(expiresAt)));
-      const patch = { ...content, type: input.type, version: row.version + 1, confirmedAt: new Date(), updatedAt: new Date() };
+      // A personal rewrite is user input, never an amended verified outcome.
+      const patch = { ...content, type: input.type, version: row.version + 1, confirmedAt: new Date(), updatedAt: new Date(),
+        ...(['LEARNING_CONFIRMED', 'REPORT_DECISION_CONFIRMED'].includes(row.sourceKind) ? { sourceKind: 'USER_INPUT', sourceRefJson: null } : {}) };
       await tx.update(personalMemories).set(patch).where(eq(personalMemories.id, id));
       await this.invalidateRelations(tx, userId, id);
       await this.auditChange(tx, userId, id, 'MEMORY_EDITED', { type: input.type, version: patch.version });
@@ -112,6 +137,8 @@ export class MemoryService {
       if (row.status !== 'ACTIVE' || row.version !== version) throw new ConflictException('MEMORY_VERSION_CHANGED');
       // Delete personal content, retain only an idempotency/ownership tombstone. Audit never stores text.
       await tx.update(personalMemories).set({ title: null, content: null, expiresAt: null, status: 'DELETED', version: version + 1, updatedAt: new Date() }).where(eq(personalMemories.id, id));
+      await tx.update(learningCandidates).set({ sourceJson: {}, title: null, content: null, updatedAt: new Date() })
+        .where(and(eq(learningCandidates.userId, userId), eq(learningCandidates.memoryId, id)));
       await this.invalidateRelations(tx, userId, id);
       await this.auditChange(tx, userId, id, 'MEMORY_DELETED', { version: version + 1 });
       return { deleted: true };
@@ -123,15 +150,27 @@ export class MemoryService {
       if (!settings?.enabled) return { enabled: false, settingsVersion: settings?.version ?? 0, items: [] };
       const rows = await tx.select().from(personalMemories).where(and(eq(personalMemories.userId, userId), eq(personalMemories.status, 'ACTIVE'),
         or(isNull(personalMemories.expiresAt), gt(personalMemories.expiresAt, new Date())))).orderBy(desc(personalMemories.confirmedAt), desc(personalMemories.id)).limit(100);
-      const owned = rows.map(toMemory);
-      const items = rankPersonalMemories(intent, owned, Date.now(), 6);
+      const owned = rows.map(toMemory), checked = new Map<string, boolean>();
+      const usable = async (id: string) => {
+        if (!checked.has(id)) {
+          const row = rows.find(value => value.id === id);
+          checked.set(id, Boolean(row && await this.sourceCurrent(tx, userId, row)));
+        }
+        return checked.get(id)!;
+      };
+      const items: PersonalMemory[] = [];
+      // Validate only relevant seeds and actually included neighbours; unrelated histories cause no authority I/O.
+      for (const memory of rankPersonalMemories(intent, owned, Date.now(), 100)) {
+        if (await usable(memory.id)) items.push(memory);
+        if (items.length === 6) break;
+      }
       const seedIds = items.map(item => item.id);
       const edges = seedIds.length ? await tx.select().from(memoryRelations).where(and(eq(memoryRelations.userId, userId), eq(memoryRelations.status, 'ACTIVE'),
         or(inArray(memoryRelations.fromId, seedIds), inArray(memoryRelations.toId, seedIds)))).orderBy(desc(memoryRelations.createdAt), desc(memoryRelations.id)).limit(40) : [];
       const validEdges = edges.filter(edge => owned.some(item => item.id === edge.fromId && item.version === edge.fromVersion) && owned.some(item => item.id === edge.toId && item.version === edge.toVersion));
       for (const edge of validEdges) {
         for (const id of [edge.fromId, edge.toId]) {
-          if (items.length < 8 && !items.some(item => item.id === id)) items.push(owned.find(item => item.id === id)!);
+          if (items.length < 8 && !items.some(item => item.id === id) && await usable(id)) items.push(owned.find(item => item.id === id)!);
         }
       }
       const relations = validEdges.filter(edge => items.some(item => item.id === edge.fromId) && items.some(item => item.id === edge.toId)).map(edge => ({
@@ -150,6 +189,7 @@ export class MemoryService {
       if (!snapshot.items.length) return !(snapshot.relations?.length);
       const rows = await tx.select().from(personalMemories).where(and(eq(personalMemories.userId, userId), eq(personalMemories.status, 'ACTIVE'), inArray(personalMemories.id, snapshot.items.map(item => item.id))));
       if (!snapshot.items.every(ref => rows.some(row => row.id === ref.id && row.version === ref.version && (!row.expiresAt || row.expiresAt.getTime() > Date.now())))) return false;
+      for (const row of rows) if (!await this.sourceCurrent(tx, userId, row)) return false;
       return this.relationsCurrent(tx, userId, snapshot.relations ?? []);
     });
   }
@@ -160,7 +200,13 @@ export class MemoryService {
     if (!settings.enabled || refs.some(ref => ref.settingsVersion !== settings.version)) return false;
     const rows = await tx.select().from(personalMemories).where(and(eq(personalMemories.userId, userId), inArray(personalMemories.id, refs.map(ref => ref.id)))).for('update');
     if (!refs.every(ref => rows.some(row => row.id === ref.id && row.status === 'ACTIVE' && row.version === ref.version && (!row.expiresAt || row.expiresAt.getTime() > Date.now())))) return false;
+    for (const row of rows) if (!await this.sourceCurrent(tx, userId, row, true)) return false;
     return this.relationsCurrent(tx, userId, relationRefs, true);
+  }
+  async sourceCurrent(tx: Transaction, userId: string, row: typeof personalMemories.$inferSelect, lock = false) {
+    if (row.sourceKind === 'LEARNING_CONFIRMED') return learningMemorySourceCurrent(tx, userId, row.sourceRefJson, row.id, lock);
+    if (row.sourceKind === 'REPORT_DECISION_CONFIRMED') return reportDecisionSourceCurrent(tx, userId, row.sourceRefJson, lock);
+    return true;
   }
   private async relationsCurrent(tx: Transaction, userId: string, refs: Array<{ id: string; version: number }>, lock = false) {
     if (!refs.length) return true;

@@ -18,6 +18,26 @@ export class CreateMemoryDto extends MemoryContentDto { @IsString() @MinLength(1
 export class EditMemoryDto extends MemoryContentDto { @IsInt() @Min(1) version!: number }
 export class DeleteMemoryDto { @IsInt() @Min(1) version!: number }
 export class ConfirmMemoryCandidateDto extends EditMemoryDto {}
+export class ConfirmLearningCandidateDto {
+  @IsInt() @Min(1) version!: number;
+  @IsBoolean() confirmed!: boolean;
+  @IsOptional() @IsString() @MaxLength(500) feedback?: string;
+}
+export class ReportDecisionDto {
+  @IsString() @MinLength(1) @MaxLength(120) requestId!: string;
+  @IsUUID() conversationId!: string;
+  @IsUUID() messageId!: string;
+  @IsInt() @Min(0) reportRevision!: number;
+  @IsString() @MaxLength(64) reportHash!: string;
+  @IsString() @MinLength(1) @MaxLength(500) decision!: string;
+  @IsString() @MaxLength(300) rationale!: string;
+  @IsString() @MaxLength(100) expectedOutcome!: string;
+  @IsBoolean() confirmed!: boolean;
+}
+export class ReportDecisionQueryDto extends CursorPageDto {
+  @IsUUID() conversationId!: string;
+  @IsUUID() messageId!: string;
+}
 export class ListMemoryCandidatesDto extends CursorPageDto { @IsUUID() conversationId!: string }
 export class MemoryReferenceDto { @Type(() => Number) @IsInt() @Min(1) version!: number }
 export class CreateMemoryRelationDto {

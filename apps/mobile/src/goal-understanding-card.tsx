@@ -2,14 +2,15 @@ import { StyleSheet, Text, View } from 'react-native';
 import { presentGoalUnderstanding } from './goal-understanding-presenter';
 import { consumerTokens } from './consumer-ui';
 import { Button } from './editor-ui';
+import { presentGoalBrief } from './goal-experience-presenter';
 
 /** Interpretation only. Confirmation buttons remain bound to the server's saved proposal. */
-export function GoalUnderstandingCard({ understanding, result, onResources }: { understanding: unknown; result?: string; onResources?: () => void }) {
+export function GoalUnderstandingCard({ understanding, result, onResources, goalBrief }: { understanding: unknown; result?: string; onResources?: () => void; goalBrief?: unknown }) {
+  const brief = presentGoalBrief(goalBrief);
   const view = presentGoalUnderstanding(understanding, result);
   if (!view) return null;
   return <View accessibilityLabel="AI理解的目标" style={styles.container}>
-    <Text style={styles.label}>我理解的目标</Text>
-    <Text selectable style={styles.title}>{view.title}</Text>
+    {!brief ? <><Text style={styles.label}>我理解的目标</Text><Text selectable style={styles.title}>{view.title}</Text></> : null}
     <Text style={styles.detail}>{view.lifecycle} · AI 建议</Text>
     {view.timezone ? <Text style={styles.note}>理解时间所用时区：{view.timezone}</Text> : null}
     {view.capabilities.length ? <View style={styles.rows}>

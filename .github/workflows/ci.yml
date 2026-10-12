@@ -83,6 +83,33 @@ jobs:
         run: pnpm --filter @lazy-armor/api... build
       - name: Focused mobile regression
         run: pnpm --filter @lazy-armor/mobile test
+      - name: V91 shared goal and delivery contract regression
+        run: >-
+          pnpm --filter @lazy-armor/plan-schema test --
+          test/goal-brief.spec.ts test/goal-experience.spec.ts test/agent-report.spec.ts
+          test/report-financial.spec.ts test/consumer-outcome.spec.ts test/consumer-projection.spec.ts
+      - name: V91 durable goal authoring regression
+        run: >-
+          pnpm --filter @lazy-armor/api test --
+          test/v91-requirements.spec.ts test/v91-goal-brief-confirmation.spec.ts
+          test/authoring-jobs.integration.spec.ts test/v91-goal-promotion.integration.spec.ts
+          test/v91-goal-authoring.integration.spec.ts test/goal-experience.spec.ts
+          test/v91-authoring-process.integration.spec.ts
+          test/v91-report-requirement-context.spec.ts test/report-model.spec.ts test/report-financial-audit.spec.ts test/work-item-generation.spec.ts
+      - name: V92 learning and original Memory regression
+        run: pnpm --filter @lazy-armor/api test -- test/v92-learning.integration.spec.ts test/v92-report-decisions.integration.spec.ts test/personal-memory.integration.spec.ts test/memory-candidates.integration.spec.ts test/memory-graph.integration.spec.ts test/runtime-verification-reconciliation.integration.spec.ts
+      - name: V92 shared learning contract regression
+        run: pnpm --filter @lazy-armor/plan-schema test -- test/learning-candidate.spec.ts test/report-decision.spec.ts
+      - name: V93 composition preview and original method regression
+        run: pnpm --filter @lazy-armor/api test -- test/v93-composition-preview.integration.spec.ts test/skill-repositories.integration.spec.ts
+      - name: V93 bounded composition contract regression
+        run: pnpm --filter @lazy-armor/plan-schema test -- test/skill-resource-graph.spec.ts test/composition-authoring.spec.ts test/composition-resources.spec.ts
+      - name: V93 report method chain and persistent budget regression
+        run: >-
+          pnpm --filter @lazy-armor/api test --
+          test/report-method-state.spec.ts test/report-method-model.spec.ts
+          test/v93-composition-authoring.integration.spec.ts test/v93-composition-bindings.integration.spec.ts
+          test/public-web-report.integration.spec.ts test/report-budget.spec.ts test/report-final-review-budget.spec.ts
       - name: Focused API security, device trust and truth regression
         run: pnpm --filter @lazy-armor/api test -- test/rc1-safe-logging.spec.ts test/password-reset-delivery.spec.ts test/app-role.spec.ts test/prepare-app-role.spec.ts test/p5-migration-breakpoints.spec.ts test/p5-trusted-devices.spec.ts test/p5-device-app-catalog.spec.ts test/p5-mobile-notification-receipts.spec.ts test/p5-truth-store.spec.ts test/p5-truth-store-source-resolver.spec.ts
       - name: Focused P4/P5 regression
@@ -98,7 +125,7 @@ jobs:
   full-rc-gate:
     name: RC Full Gate
     needs: fast-gate
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'codex/v83'))
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'codex/'))
     runs-on: ubuntu-latest
     services:
       mysql:
@@ -163,7 +190,7 @@ jobs:
   android-verification:
     name: Android Verification Artifact
     needs: fast-gate
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'codex/v83'))
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'codex/'))
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262

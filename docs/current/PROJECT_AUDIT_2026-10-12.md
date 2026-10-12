@@ -1,0 +1,122 @@
+# Lazy Armor 项目全面检查分析 · 2026-10-12
+
+检查始于 2026-10-12，报告整理与源码同步续接于 2026-10-13。
+
+本次检查覆盖当前工作区的 API、移动端、Admin、共享合同、数据库迁移、执行与生成恢复、CI、依赖、产品状态和本地验收记录。结论基于源码、重新执行的检查及历史证据复核；没有把历史部署状态当作当前运行状态。
+
+**总体判断：核心架构已成形，部分产品旅程有真实证据，当前工作区仍是开发检查点，不具备正式发布条件。** 优先工作应转向构建收口、身份一致性、恢复安全和完整用户旅程。继续增加模块名称不会解决这些问题。
+
+**实际架构与价值**
+
+项目使用 pnpm/Turbo monorepo、NestJS 模块化单体、MySQL/Drizzle、Redis/BullMQ、Expo/React Native 与 Next.js Admin。源码约有 132 个数据库表定义、75 个 Controller，API、执行 Worker、Outbox Worker 具有独立进程入口。业务范围较广，复杂度已超过普通聊天应用。
+
+```mermaid
+flowchart TD
+  U[手机和消费者 PC 工作台] --> G[版本化目标需求]
+  G --> A[持久化 Authoring 与现有 Planner]
+  A --> R[方法版本与资源解析]
+  R --> D[报告与数字交付]
+  R --> P[个人事项或冻结 Plan]
+  P --> S[原风险 审批 Invocation Runtime]
+  S --> V[核验 对账 事实权威]
+  D --> X[统一目标与下一步投影]
+  V --> X
+  X --> U
+  D --> M[本人确认的决策与经验候选]
+  V --> M
+  M --> A
+```
+
+值得保留的设计包括：外部副作用统一走原审批与执行链；未知结果保持独立历史并通过只读核对恢复；Authoring 有持久租约、期限、尝试限制与最终事务栅栏；方法冻结具体版本和内容 hash；主要 Consumer/Memory 接口实施 owner 隔离；报告交付、模型判断与现实 Truth 分开表达；学习由本人确认且来源可撤回。没有发现需要把这些职责拆成多个微服务的依据。
+
+**功能完成度**
+
+| 范围 | 当前可以认可的成果 | 仍欠缺的能力或验收 |
+| --- | --- | --- |
+| 五页主体验 | 日程、计划、会话、资源、服务及目标/WorkItem 投影已接入 | 完整联合 Beta、持续运行、后台系统送达和正式发布 |
+| V91 目标与持久化生成 | GoalBrief、生成队列、取消、版本变化和恢复；荆门报告的预算修订、离开/重启找回、本人查看已有真机记录 | 跨领域需求、配额、公平队列、性能；报告不证明当地市场事实 |
+| V92 决策与学习 | 本人决定保存→后续理解→来源找回有真机子闭环；核验结果到经验候选已有受控实现 | 真实经验接受、更广结果适配、多样本评估、长期效果 |
+| V93 方法组合 | 结构预览、规划交接、固定公开来源、持久预算、逐节点输入输出与前缀恢复 | 通用 Runtime Recipe、实际多资源执行/补偿、真实资源故障恢复、本人完整多方法旅程、人民币预算 |
+| V94 消费者 PC 工作台 | 三栏目标空间、报告历史、下一步；复用 Consumer API，与 Admin 分开 | 稳定 PC 会话、Web 确认组件、专业排版/比较、认证后的视觉和跨端旅程 |
+| 早期执行线 | 日历等链路保留详细历史验收，源码有签名、epoch、PREPARED 日志及只读恢复设计 | 本轮没有重跑手机副作用、实际第三方、七天运行或生产迁移 |
+
+V93 的真实 DeepSeek 隔离案例以及真实 SQL/Redis 子进程恢复记录已复核。它们分别证明文本加工和 fixture 模型下的持久恢复，不证明真实外部工具、多资源语义正确性或本人手机组合旅程。新增 `composition-runtime-compiler.ts` 尚无调用方，且存在类型错误，不能算已交付的通用组合执行能力。
+
+**优先问题与证据**
+
+下列 P1 表示应优先修复或作为发布阻断处理；P2 表示影响正确性、体验或恢复可靠性。源码确定、mock 复现与尚未实测的并发风险分别说明。
+
+| 优先级 | 问题 | 证据与判断 |
+| --- | --- | --- |
+| P1 | 当前 API 无法通过类型检查 | `composition-runtime-compiler.ts:2` 导入未导出的 `compositionRuntimeCompilationSchema`；第 74 行的 `runtimeCompilation` 不属于 `PlannerResult`；第 73/91 行还有隐式 any。重新执行全仓 typecheck，API 报 4 错，7/8 包成功。 |
+| P1 | 备份演练的隔离保护可能误删主库 | `packages/database/src/backup-restore-gate.ts:122` 只匹配 `backup|restore|test` 子串，`lazy_armor_latest` 也通过；第 87/156 行随后直接重建指定库，未要求主库/备份库/恢复库互异。纯 mock 已捕获 `DROP DATABASE IF EXISTS lazy_armor_latest`，未连接真实 DB。 |
+| P1（部署条件） | Admin 缺少页面访问者鉴权 | `apps/admin/app/page.tsx:58` 无条件加载运维数据；`operations-data.ts:28/45` 用服务端 ADMIN_ACCESS_TOKEN 代理 7 个接口。当配置有效令牌且页面对其他人可达时，访客可读运维数据。未证明当前已公网暴露。 |
+| P1 发布阻断 | 生产依赖审计未过 | 本轮联网审计：2 critical、5 high、1 moderate；CI 的 high 门会失败。API 的 proxy-addr/sharp 与 Expo/RN 工具链告警需分开评估，不能把所有 advisory 当作已证明的线上利用。 |
+| P1 发布阻断 | 0083 迁移发布证据缺失 | `scripts/check-migration-safety.mjs:123` 要求正式 release evidence；现有 CI 调用 migration:safety 未提供该证据。实际检查失败。0091/0092 的增量验证不能关闭历史 0083 门。 |
+| P2 | 密码重置令牌可并发消费两次 | `apps/api/src/auth/auth.service.ts:260` 在事务外检查 usedAt；事务内仅按 ID 更新，没有原子领取或锁内复查。当前源码配合串行事务内存夹具，两个并发请求都成功并各写一次密码。 |
+| P2 | 同邮箱验证码与密码注册可能分裂为两个账号 | `auth.service.ts:70` 密码注册只查 authIdentities，验证码首次注册在第 116–130 行只写 loginIdentifiers。先验证码注册再同邮箱密码注册会产生两个 user，随后两种登录进入不同数据空间。源码路径确定，未做本轮 SQL 实测。 |
+| P2 | 正常 token 更新清空会话工作 | `apps/mobile/app/(tabs)/chat.tsx:39` 将 token 变化当作路由重置，清除输入/附件并恢复初始会话 ID。前台刷新在默认 15 分钟令牌到期前 2 分钟发生；同账号使用约 13 分钟即可触发。 |
+| P2 | PC 决策/经验确认及部分删除按钮无效 | `personal-memory/report-decision.tsx:34`、`learning-review.tsx:34`、`edit.tsx:32` 只在 Alert 回调内提交；当前 react-native-web 的 Alert 是空实现。已核对依赖源码及 V94 导出产物。 |
+| P2 | 长报告的健康时效与固定权威冲突 | `public-web.connector.ts:62` 健康有效期 5 分钟，`consumer-read-source.service.ts:20/37` 要求健康有效且完整健康行进入 authorityHash；报告允许 20 分钟并持续复查旧 hash。过期或正常健康续检会阻止较慢任务继续，未做真实慢模型复现。 |
+| P2 并发风险 | 报告与 Consumer 锁顺序相反 | `report-generation.service.ts:70/73` 先消息后会话，`consumer.service.ts:301` 等路径先会话后消息；存在交错死锁环。本轮没有 SQL 死锁实测，不能表述为已复现故障。 |
+| P2 验收缺口 | 恢复门未覆盖新持久状态 | backup-restore fixture/比较清单缺少 plan_goal_briefs、authoring_jobs、learning_candidates 的非空数据及 V93 预算/方法结果。MySQL 验收脚本也没有核对当前 93 条 journal/hash。现有 ok:true 不足以证明新增状态恢复完整。 |
+| P2 工程回归 | Connector 合同测试仍固定旧数量 | `apps/api/test/p5-connector-contract.spec.ts:9` 期望 9 个适配器，实际为 10；本轮纯 API 套件唯一失败。应对预期目录和每个适配器合同进行明确校验，不只修改数量掩盖范围差异。 |
+
+建议修复方式：构建错误补齐共享导出和 Planner 合同；重置令牌在事务内原子领取并检查受影响行数；邮箱登录身份统一唯一性和绑定；页面状态以稳定账号身份区分账号切换；Web 使用显式确认组件；将稳定授权身份与可续期健康证据分开；统一数据库锁顺序；备份门采用严格随机临时库名、三库互异及明确主机校验。
+
+**依赖细节**
+
+| 包 | 等级 | 已知更新方向与调用边界 |
+| --- | --- | --- |
+| proxy-addr 2.0.7 | critical | Express 实际依赖；修复版本 ≥2.0.8。API 可配置 trusted proxy，需审阅具体代理配置及 IP 安全逻辑。 |
+| shell-quote 1.10.0 | critical | React Native devtools 路径；修复版本 ≥1.11.0。不能据此直接认定手机线上业务存在命令执行入口。 |
+| sharp 0.35.4 | high | API 直接依赖；修复版本 ≥0.35.5，应结合图片/SVG 处理输入检查。 |
+| node-forge、braces、compression、source-map-js | high | 分别核对运行时与工具链可达性、输入控制及上游兼容性；source-map-js ≥1.2.2、compression ≥1.8.2。 |
+| sprintf-js | moderate | 核对是否处理不可信格式与精度。 |
+
+审计只统计本次 `--prod` 扫描结果；没有进行漏洞利用或升级依赖。
+
+**本次实际检查结果**
+
+| 检查 | 结果 |
+| --- | --- |
+| 全仓类型检查 | 7/8 包成功，API 4 项错误；4 包使用 Turbo 缓存，其他实际执行。 |
+| Mobile | 72 文件，434/434。 |
+| Plan-schema | 56 文件，312/312。 |
+| Config / Shared / Admin | 63/63、7/7、3/3。Database test 目录无测试，不能视为数据库回归通过。 |
+| API 纯本地检查 | 按源码保守排除依赖 SQL/Redis/Nest 启动的文件：78 文件，503 通过、1 失败；不是全 API 集成套件。 |
+| 发布/readiness 脚本单测 | 16/16。 |
+| Migration segmentation | 93 个文件通过。 |
+| repository:hygiene / data:truth / diff 空白 | 通过。卫生检查原脚本仅覆盖 Git 跟踪文件，推送前另检查本次新增文本。 |
+| terminology:check | 检查初期因旧文档暂时缺失失败；后续工作区文档恢复，重新检查通过，共 974 个当前跟踪文件。 |
+| migration:safety | 失败：0083 缺少正式 release evidence。 |
+| 生产依赖 audit | 失败：2 critical、5 high、1 moderate。 |
+| SQL/Redis 集成测试 | 未完成：Docker Desktop Linux 引擎不可访问，隔离集成 runner 在创建库前停止；没有生产迁移。 |
+| 当前本地服务 | API 3001、execution 3011、outbox 3012 的只读端点均不可达；历史 ready 记录不能覆盖当前状态。 |
+| 手机、浏览器画面、第三方与持续七天 | 本轮未新增实际验收；仅复核已有记录及源码。 |
+
+上述可执行本地套件共 1339 项：1338 通过、1 失败，按本轮独立运行计数；不与历史回归数量累计，也不包含中止的基础设施依赖套件。首次按文件命名排除 integration 后，发现部分 `.spec.ts` 本身会启动数据库/Redis，因环境不可达已中止，随后改为保守选择纯本地文件。
+
+关键本地日志保留在 `artifacts/project-audit-2026-10-12-*.log`；备份隔离的无数据库 mock 脚本为 `artifacts/project-audit-2026-10-12-backup-isolation-mock.cjs`。私有验收截图、凭据、原始报告及 SQL 备份不因这份分析而新增上传。
+
+**工程与产品判断**
+
+项目的主要优势是执行安全和来源追溯基础较扎实，并且已有少数正常用户入口的真实闭环。主要弱点是范围扩张快于发布收口：身份、PC、长任务健康和数据恢复仍有实质缺口，文档中的多个阶段都保持 IN_PROGRESS。当前不能给出有依据的整体完成百分比。
+
+建议继续保留模块化单体，优先消除同一职责中的多套身份和状态判断。共享 Zod 合同是有效基础，但未接入文件也会被 TypeScript 编译；应将完整新功能以可构建的小检查点提交。已有 93 次迁移，需要把非空数据恢复、版本/租约/预算保留和原权威 hash 核对纳入发布验收。
+
+建议下一轮按以下顺序推进：
+
+1. 先恢复可构建、可回归的开发基线，并修复备份误删保护与 Admin 页面鉴权。
+2. 收口邮箱身份和密码重置并发，再解决 token 轮换及 Web 确认组件。
+3. 修复授权/健康时效和锁顺序，完成长报告、撤权、进程故障的隔离数据库验收。
+4. 补 V91–V93 非空状态备份恢复，完成依赖处置和 0083 正式发布证据。
+5. 再收取本人 PC/手机完整多方法旅程、真实资源执行与持续运行证据，决定 Beta 是否发布。
+
+本次 GitHub 同步是用户授权的源码开发检查点，保留已发现的未完成实现与失败检查，不代表合并主分支或生产发布。
+
+**旧文件清理范围与环境阻断**
+
+`artifacts` 约 12.50 GiB，其中 40 个 APK 约占 8.69 GiB，截图约 2.58 GiB。经用户授权，已审阅 36 个未跟踪旧 APK 的路径、大小与 SHA256，计划释放 8,602,118,529 字节（约 8.01 GiB）。计划保留最新方法链、固定来源绑定、报告交付三个已安装版本作为回退点，以及计算器来源 APK；所有跟踪文件、验收截图/JSON、文档、SQL 备份与分析日志保留。
+
+自动审批先后拒绝了按审阅清单删除以及明确列出 36 条绝对路径的 PowerShell 删除命令，两次均仅返回 `blocked by policy`。没有执行删除，也没有释放上述空间；清理目前未完成。完整候选清单保存在本机 `artifacts/project-cleanup-2026-10-12.json`，状态为 `BLOCKED_BY_POLICY_NO_FILES_DELETED`。该限制没有被其他工具或 shell 绕过。

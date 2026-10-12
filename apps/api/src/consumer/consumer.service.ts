@@ -8,7 +8,7 @@ import { ResourceGapContinuationService } from './resource-gap-continuation.serv
 import { UserEventsService, projectUserEvent } from '../profiles/user-events.service';
 import {resourceConnectionStatus} from './resource-projection-policy';
 import {RealityPipelineService} from '../reality-pipeline/reality-pipeline.service';
-import { skillMethodRefsSchema, type SkillMethodRef, parseShareText } from '@lazy-armor/plan-schema';
+import { catalogHash, skillMethodRefsSchema, type SkillMethodRef, parseShareText } from '@lazy-armor/plan-schema';
 import type { ExternalReferenceDto } from './dto';
 import { AuditService } from '../audit/audit.service';
 import { ArtifactService } from '../artifacts/artifact.service';
@@ -31,6 +31,13 @@ import { decodeTextAttachment } from './attachment-policy';
 import { consumerPlanStatus, dateWindow, safeServiceUrl, requestTransitionAllowed, temporaryConversationOutcome } from './projection-policy';
 import { requestsReport } from '@lazy-armor/plan-schema';
 import { ReportGenerationService } from '../agent/reports/report-generation.service';
+import { createHash } from 'node:crypto';
+import { goalBriefSchema } from '@lazy-armor/plan-schema';
+import { OrchestratorService } from '../orchestrator/orchestrator.service';
+import { AuthoringJobsService, type AuthoringJobClaim } from '../orchestrator/authoring-jobs.service';
+import { RequirementsService } from '../requirements/requirements.service';
+import { compositionAuthoringSnapshotSchema, type CompositionAuthoringSnapshot } from '@lazy-armor/plan-schema';
+import { CompositionAuthoringService } from './composition-authoring.service';
 @Injectable()
 export class ConsumerService {
  constructor(@Inject(DATABASE) private readonly db: InjectedDatabase, private readonly planner: AgentPlannerService, private readonly plans: PlansService, private readonly connections: ConnectionsService, private readonly devices: TrustedDevicesService, private readonly connectors: ConnectorsService, private readonly templates: TemplatesService, private readonly drafts: CreationDraftsService, private readonly artifacts: ArtifactService, private readonly audit: AuditService,private readonly reality:RealityPipelineService, private readonly userEvents: UserEventsService, private readonly syncRequests: UserEventSyncRequestsService, private readonly modules:ModuleRef, private readonly memoryCandidates:MemoryCandidatesService, private readonly memory:MemoryService, private readonly methods:SkillRepositoriesService) {}
@@ -139,7 +146,7 @@ export class ConsumerService {
   }
   return sources;
  }
- async conversation(userId: string, id: string) { const row = (await this.db.select().from(consumerConversations).where(and(eq(consumerConversations.id, id), eq(consumerConversations.userId, userId), isNull(consumerConversations.deletedAt))).limit(1))[0]; if (!row) throw new NotFoundException('会话不存在'); const messages = await this.db.select().from(consumerMessages).where(eq(consumerMessages.conversationId, id)).orderBy(consumerMessages.createdAt); const attachments = await this.db.select({ id: consumerAttachments.id, artifactId: consumerAttachments.artifactId, fileName: consumerAttachments.fileName, mimeType: consumerAttachments.mimeType, sizeBytes: consumerAttachments.sizeBytes, contentSha256: consumerAttachments.contentSha256 }).from(consumerAttachments).where(eq(consumerAttachments.conversationId, id)); return { ...row, conversationId: id, messages, attachments, methods: await this.methods.projectSelections(userId, this.methodRefs(row.contextRefs)), pageReads: await this.modules.get(GoalPageReadService,{strict:false}).results(userId, id, messages.filter(m=>m.structuredPayload?.pageRead).map(m=>m.id)), creationDraft: row.draftId ? await this.drafts.get(userId, row.draftId) : null }; }
+ async conversation(userId: string, id: string) { const row = (await this.db.select().from(consumerConversations).where(and(eq(consumerConversations.id, id), eq(consumerConversations.userId, userId), isNull(consumerConversations.deletedAt))).limit(1))[0]; if (!row) throw new NotFoundException('会话不存在'); const messages = await this.db.select().from(consumerMessages).where(eq(consumerMessages.conversationId, id)).orderBy(consumerMessages.createdAt, consumerMessages.id); const attachments = await this.db.select({ id: consumerAttachments.id, artifactId: consumerAttachments.artifactId, fileName: consumerAttachments.fileName, mimeType: consumerAttachments.mimeType, sizeBytes: consumerAttachments.sizeBytes, contentSha256: consumerAttachments.contentSha256 }).from(consumerAttachments).where(eq(consumerAttachments.conversationId, id)); return { ...row, conversationId: id, messages, attachments, authoringJobs: await this.modules.get(AuthoringJobsService,{strict:false}).listForConversation(userId,id), methods: await this.methods.projectSelections(userId, this.methodRefs(row.contextRefs)), pageReads: await this.modules.get(GoalPageReadService,{strict:false}).results(userId, id, messages.filter(m=>m.structuredPayload?.pageRead).map(m=>m.id)), creationDraft: row.draftId ? await this.drafts.get(userId, row.draftId) : null }; }
  async attach(userId: string, id: string, input: ConversationAttachmentDto) {
   const decoded = decodeTextAttachment(input.fileName, input.mimeType, input.contentBase64);
   return this.db.transaction(async tx => {
@@ -170,39 +177,157 @@ export class ConsumerService {
    await tx.insert(consumerAttachments).values(row); return { id: row.id, artifactId: row.artifactId, fileName: row.fileName, sizeBytes: row.sizeBytes };
   });
  }
- async message(userId: string, id: string, input: ConversationMessageDto) {
+ async message(userId: string, id: string, input: ConversationMessageDto, composition?: CompositionAuthoringSnapshot) {
+  if (composition) composition = compositionAuthoringSnapshotSchema.parse(composition);
   if (!input.content.trim()) throw new BadRequestException('请输入会话需求');
-  const conversation = await this.conversation(userId, id); const existing = conversation.messages.find(message => message.requestId === input.requestId && message.role === 'assistant'); if (existing) { const original = conversation.messages.find(message => message.requestId === input.requestId && message.role === 'user'); const originalIds = original?.contextRefs.filter(ref => ref.type === 'ConversationAttachment').map(ref => ref.id).sort() ?? []; if (original?.content !== input.content || JSON.stringify(originalIds) !== JSON.stringify([...(input.attachmentIds ?? [])].sort())) throw new ConflictException('同一请求标识不能用于不同消息内容'); return this.conversation(userId, id); }
+  const conversation = await this.conversation(userId, id);
+  const existing = conversation.messages.find(message => message.requestId === input.requestId && message.role === 'assistant');
+  if (existing) {
+   const original = conversation.messages.find(message => message.requestId === input.requestId && message.role === 'user');
+   const originalIds = original?.contextRefs.filter(ref => ref.type === 'ConversationAttachment').map(ref => ref.id).sort() ?? [];
+   if (original?.content !== input.content || JSON.stringify(originalIds) !== JSON.stringify([...(input.attachmentIds ?? [])].sort())) throw new ConflictException('同一请求标识不能用于不同消息内容');
+   if (original?.structuredPayload?.composition || composition) {
+    const saved = compositionAuthoringSnapshotSchema.safeParse(original?.structuredPayload?.composition);
+    if (!saved.success || saved.data.selectionHash !== composition?.selectionHash) throw new ConflictException('COMPOSITION_REPLAY_MISMATCH');
+   }
+   const job = conversation.authoringJobs.find(item => item.requestId === input.requestId);
+   if (job && input.authoringMode !== 'DURABLE') await this.modules.get(AuthoringJobsService, { strict: false }).waitForTerminal(userId, job.jobId);
+   return this.conversation(userId, id);
+  }
   const requestedIds = input.attachmentIds ?? [];
   const attachments = requestedIds.length ? await this.db.select().from(consumerAttachments).where(and(eq(consumerAttachments.conversationId, id), inArray(consumerAttachments.id, requestedIds))) : [];
   if (attachments.length !== requestedIds.length) throw new NotFoundException('附件不属于当前会话');
-  await this.db.transaction(async tx => { const locked = (await tx.select().from(consumerConversations).where(and(eq(consumerConversations.id, id), eq(consumerConversations.userId, userId), isNull(consumerConversations.deletedAt))).for('update'))[0]; if (!locked || locked.version !== input.version || locked.status === 'PROCESSING') throw new ConflictException('会话已更新，请刷新后重试'); if (conversation.messages.some(message => message.requestId === input.requestId)) throw new ConflictException('该请求正在处理'); await tx.insert(consumerMessages).values({ id: newId(), conversationId: id, requestId: input.requestId, role: 'user', content: input.content, structuredPayload: { workContext: conversation.mode }, contextRefs: [{ type: 'Conversation', id }, ...(conversation.contextRefs ?? []), ...attachments.map(file => ({ type: 'ConversationAttachment', id: file.id })), ...(conversation.templateKey ? [{ type: 'Template', id: conversation.templateKey }] : []), ...(conversation.planId ? [{ type: 'Plan', id: conversation.planId }] : [])], createdAt: new Date() }); if (conversation.draftId) await this.drafts.recordConversationGoal(userId, conversation.draftId, input.content, tx); await tx.update(consumerConversations).set({ status: 'PROCESSING', version: locked.version + 1, updatedAt: new Date() }).where(eq(consumerConversations.id, id)); });
-  const historicalIds = conversation.messages.slice(-12).reverse().flatMap(message => message.contextRefs.filter(ref => ref.type === 'ConversationAttachment').map(ref => ref.id));
+  const jobs = this.modules.get(AuthoringJobsService, { strict: false });
+  const requirements = this.modules.get(RequirementsService, { strict: false });
+  const inputMessageId = newId(), resultMessageId = newId();
+  const previousValue = conversation.messages.filter(message => message.role === 'assistant').at(-1)?.structuredPayload?.goalBrief;
+  const previous = goalBriefSchema.safeParse(previousValue);
+  const brief = requirements.compile({ goalId: id, version: input.version + 1, intent: input.content,
+    messageId: inputMessageId, ...(previous.success ? { previous: previous.data } : {}) });
+  const inputHash = createHash('sha256').update(JSON.stringify({ content: input.content, attachmentIds: [...requestedIds].sort(), ...(composition ? { compositionSelectionHash: composition.selectionHash, ...(composition.reportReadBindings ? { compositionReadBindingHash: catalogHash(composition.reportReadBindings) } : {}) } : {}) })).digest('hex');
+  const admission = await this.db.transaction(async tx => {
+    const locked = (await tx.select().from(consumerConversations).where(and(eq(consumerConversations.id, id), eq(consumerConversations.userId, userId), isNull(consumerConversations.deletedAt))).for('update'))[0];
+    if (!locked || locked.archivedAt || locked.version !== input.version || locked.status === 'PROCESSING') throw new ConflictException('会话已更新，请刷新后重试');
+    if (composition) await this.modules.get(CompositionAuthoringService, { strict: false }).assertCurrent(tx, userId, id, composition);
+    const replay = (await tx.select().from(consumerMessages).where(and(eq(consumerMessages.conversationId, id), eq(consumerMessages.requestId, input.requestId))).limit(1))[0];
+    if (replay) throw new ConflictException('该请求已受理，请刷新原目标');
+    const now = new Date();
+    await tx.insert(consumerMessages).values({ id: inputMessageId, conversationId: id, requestId: input.requestId, role: 'user', content: input.content,
+      structuredPayload: { workContext: conversation.mode, ...(composition ? { composition } : {}) }, contextRefs: [{ type: 'Conversation', id }, ...(conversation.contextRefs ?? []),
+        ...attachments.map(file => ({ type: 'ConversationAttachment', id: file.id })),
+        ...(conversation.templateKey ? [{ type: 'Template', id: conversation.templateKey }] : []),
+        ...(conversation.planId ? [{ type: 'Plan', id: conversation.planId }] : [])], createdAt: now });
+    await tx.insert(consumerMessages).values({ id: resultMessageId, conversationId: id, requestId: input.requestId, role: 'assistant',
+      content: '目标已保存，正在理解需求并准备方案。离开页面后可继续查看进度。',
+      structuredPayload: { result: 'AUTHORING_PENDING', goalBrief: brief }, contextRefs: [{ type: 'Conversation', id }], createdAt: new Date() });
+    if (locked.draftId) await this.drafts.recordConversationGoal(userId, locked.draftId, input.content, tx);
+    await tx.update(consumerConversations).set({ status: 'PROCESSING', version: locked.version + 1, updatedAt: now }).where(eq(consumerConversations.id, id));
+    const job = await jobs.admit(tx, { userId, conversationId: id, requestId: input.requestId, inputMessageId, resultMessageId,
+      inputHash, sourceConversationVersion: locked.version + 1, payloadJson: { attachmentIds: requestedIds, resultMessageId, ...(composition ? { composition } : {}) } });
+    await tx.update(consumerMessages).set({ structuredPayload: { result: 'AUTHORING_PENDING', goalBrief: brief, authoringJob: jobs.project(job) } }).where(eq(consumerMessages.id, resultMessageId));
+    return job;
+  });
+  if (input.authoringMode === 'DURABLE') await jobs.enqueue(admission.id).catch(() => undefined);
+  else await jobs.waitForTerminal(userId, admission.id);
+  return this.conversation(userId, id);
+ }
+
+ /** Invoked by the computation worker; all final writes share its current claim fence. */
+ async processAuthoringJob(claim: AuthoringJobClaim): Promise<void> {
+  const jobs = this.modules.get(AuthoringJobsService, { strict: false });
+  await jobs.checkpoint(claim);
+  const userId = claim.userId, id = claim.conversationId;
+  const conversation = await this.conversation(userId, id);
+  const original = conversation.messages.find(message => message.id === claim.inputMessageId && message.role === 'user');
+  const resultMessageId = claim.resultMessageId ?? claim.payloadJson.resultMessageId;
+  if (!original || typeof resultMessageId !== 'string') throw new ConflictException('AUTHORING_INPUT_MESSAGE_REQUIRED');
+  const requestedIds = Array.isArray(claim.payloadJson.attachmentIds) ? claim.payloadJson.attachmentIds.filter((value): value is string => typeof value === 'string') : [];
+  const input = { content: original.content, requestId: claim.requestId, version: claim.sourceConversationVersion - 1 };
+  const composition = claim.payloadJson.composition === undefined ? undefined : compositionAuthoringSnapshotSchema.parse(claim.payloadJson.composition);
+  const inputHash = createHash('sha256').update(JSON.stringify({ content: input.content, attachmentIds: [...requestedIds].sort(), ...(composition ? { compositionSelectionHash: composition.selectionHash, ...(composition.reportReadBindings ? { compositionReadBindingHash: catalogHash(composition.reportReadBindings) } : {}) } : {}) })).digest('hex');
+  if (inputHash !== claim.inputHash) throw new ConflictException('AUTHORING_REPLAY_MISMATCH');
+  const historyMessages = conversation.messages.filter(message => message.id !== original.id && message.id !== resultMessageId);
+  const requirements = this.modules.get(RequirementsService, { strict: false });
+  const previous = goalBriefSchema.safeParse(historyMessages.filter(message => message.role === 'assistant').at(-1)?.structuredPayload?.goalBrief);
+  const briefInput = { goalId: id, version: claim.sourceConversationVersion, intent: input.content, messageId: original.id,
+    ...(previous.success ? { previous: previous.data } : {}) };
+  let brief = requirements.compile(briefInput);
+  const historicalIds = historyMessages.slice(-12).reverse().flatMap(message => message.contextRefs.filter(ref => ref.type === 'ConversationAttachment').map(ref => ref.id));
   const contextIds = [...new Set([...requestedIds, ...historicalIds])].slice(0, 3);
   const contextAttachments = contextIds.length ? await this.db.select().from(consumerAttachments).where(and(eq(consumerAttachments.conversationId, id), inArray(consumerAttachments.id, contextIds))) : [];
-  if (conversation.mode === 'TEMPORARY' && requestsReport(input.content)) {
+  let reportComposition: import('@lazy-armor/plan-schema').ReportComposition | undefined;
+  let reportCompositionError: Error | undefined;
+  if (composition && requestsReport(input.content) && brief.readiness.state === 'READY_FOR_PROPOSAL') {
+    try { reportComposition = await this.modules.get(CompositionAuthoringService, { strict: false }).reportGuidance(userId, id, composition, claim.sourceConversationVersion); }
+    catch (error) {
+      if (error instanceof Error && /^(COMPOSITION_|SKILL_CONTEXT_CHANGED)/.test(error.message)) reportCompositionError = error;
+      else throw error;
+    }
+  }
+  if (!reportCompositionError && requestsReport(input.content) && brief.readiness.state === 'READY_FOR_PROPOSAL') {
    const reports = this.modules.get(ReportGenerationService, { strict: false });
-   const messageId = newId();
-   const report = reports.initial(input.content, input.version + 1, contextAttachments);
+   const report = reports.initial(input.content, input.version + 1, contextAttachments, { goalBrief: brief,
+    ...(reportComposition ? { composition: reportComposition } : {}),
+    userMessages: [...historyMessages.filter(message => message.role === 'user'), original].slice(-8)
+     .map(message => ({ messageId: message.id, quote: message.content.slice(0, 1000), truncated: message.content.length > 1000 })) });
    await this.db.transaction(async tx => {
+    await jobs.assertClaimCurrent(tx, claim);
     const current = (await tx.select().from(consumerConversations).where(eq(consumerConversations.id, id)).for('update'))[0];
     if (!current || current.deletedAt || current.version !== input.version + 1 || current.status !== 'PROCESSING') throw new ConflictException('报告目标已更新');
-    await tx.insert(consumerMessages).values({ id: messageId, conversationId: id, requestId: input.requestId, role: 'assistant', content: '已开始自主生成报告，将自动整理提示词、资料、正文并检查结果。', structuredPayload: { result: 'ANSWER', report }, contextRefs: [{ type: 'Conversation', id }], createdAt: new Date() });
-    await tx.update(consumerConversations).set({ status: 'ACTIVE', title: conversation.version === 0 ? input.content.slice(0, 100) : conversation.title, updatedAt: new Date() }).where(eq(consumerConversations.id, id));
+    if (composition) await this.modules.get(CompositionAuthoringService, { strict: false }).assertCurrent(tx, userId, id, composition);
+    await tx.update(consumerMessages).set({ content: '已开始自主生成报告，将自动整理提示词、资料、正文并检查结果。',
+      structuredPayload: { result: 'ANSWER', report, goalBrief: brief, deliverySpec: requirements.reportDelivery(brief), ...(composition ? { composition } : {}) }, contextRefs: [{ type: 'Conversation', id }] }).where(eq(consumerMessages.id, resultMessageId));
+    if (conversation.draftId) await this.drafts.recordConversationBrief(userId, conversation.draftId, brief, tx);
+    await jobs.complete(tx, claim, resultMessageId);
+    await tx.update(consumerConversations).set({ status: 'ACTIVE', title: input.version === 0 ? input.content.slice(0, 100) : conversation.title, updatedAt: new Date() }).where(eq(consumerConversations.id, id));
    });
    // The persisted message is the job identity; periodic recovery repairs a lost enqueue.
-   await reports.enqueue(messageId).catch(() => undefined);
-   return this.conversation(userId, id);
+   await reports.enqueue(resultMessageId).catch(() => undefined);
+   return;
   }
   let payload: Record<string, unknown>; let content: string; let sourcePlanVersionId: string | null = null; let memoryProposal: import('../ai-adapter/agent-planner.service').PlannerResult['memoryCandidateProposal'];
-  try { const history = conversation.messages.slice(-12).map(message => ({ messageId: message.id, role: message.role, content: message.content.slice(0, 1500), truncated: message.content.length > 1500 }));
+  try {
+  if (reportCompositionError) throw reportCompositionError;
+  if (composition) await this.modules.get(CompositionAuthoringService, { strict: false }).recheck(userId, id, composition, claim.sourceConversationVersion);
+  const history = historyMessages.slice(-12).map(message => ({ messageId: message.id, role: message.role, content: message.content.slice(0, 1500), truncated: message.content.length > 1500 }));
  const template = conversation.templateKey ? await this.templates.get(conversation.templateKey) : null;
  const linkedPlan = conversation.planId ? await this.plans.get(userId, conversation.planId) : null;
  sourcePlanVersionId = linkedPlan?.currentVersion?.id ?? null;
  const services = await this.serviceContextSources(userId, conversation.contextRefs ?? []);
- const result = await this.planner.plan(userId, input.content, { ...(this.methodRefs(conversation.contextRefs).length ? { methodRefs: this.methodRefs(conversation.contextRefs) } : {}), workContext: conversation.mode === 'PLAN' ? 'PLAN' : 'TEMPORARY', contextSources: [...services, ...contextAttachments.map(file => ({ label: `attachment:${file.id}`, content: JSON.stringify({ artifactRef: file.artifactId ? { type: 'Artifact', id: file.artifactId } : null, fileName: file.fileName, mimeType: file.mimeType, contentSha256: file.contentSha256, provenance: 'USER_UPLOADED_UNVERIFIED', content: file.content.slice(0, 16000), truncated: file.content.length > 16000, originalCharacterCount: file.content.length }) })), { label: 'conversation_history', content: JSON.stringify(history) }, { label: 'conversation_context', content: JSON.stringify({ creationDraft: conversation.creationDraft, conversationId: id, mode: conversation.mode, template, draftId: conversation.draftId, plan: linkedPlan ? { id: linkedPlan.id, name: linkedPlan.name, description: linkedPlan.description, status: linkedPlan.status } : null }) }] }); const { memoryCandidateProposal, ...publicResult } = result; memoryProposal = memoryCandidateProposal; payload = publicResult as unknown as Record<string, unknown>; content = result.answer?.explanation ?? result.proposal?.explanation ?? result.clarification?.missingRequirements.join('\n') ?? '草案未通过安全校验，请补充需求'; }
-  catch (error) { if (error instanceof Error && error.message === 'SKILL_CONTEXT_CHANGED') { payload = { result: 'PLANNER_OUTPUT_INVALID', validationErrors: ['SKILL_CONTEXT_CHANGED'], warnings: [] }; content = '选择的方法已更新或关闭，需求已保存。请回到方法仓库重新选择后开始会话。'; } else if (error instanceof NotFoundException) { payload = { result: 'CONTEXT_UNAVAILABLE', retryable: false }; content = '引用的服务或计划已不可用，需求已保存。请重新选择有效记录后继续。'; } else if (error instanceof Error && error.message === 'AI_PROVIDER_BALANCE_INSUFFICIENT') { payload = { result: 'MODEL_UNAVAILABLE', reasonCode: 'AI_PROVIDER_BALANCE_INSUFFICIENT', retryable: true }; content = 'DeepSeek 账户余额不足，需求已保存。补充模型账户余额后可以继续。'; } else { payload = { result: 'MODEL_UNAVAILABLE', retryable: true }; content = '真实 AI 模型暂不可用，消息已保存。配置模型或恢复连接后可继续。'; } }
-  await this.db.transaction(async tx => { if (Array.isArray(payload.methodRefs) && !(await this.methods.refsCurrent(tx,userId,payload.methodRefs as import('@lazy-armor/plan-schema').SkillMethodRef[]))) { payload={result:'PLANNER_OUTPUT_INVALID',validationErrors:['SKILL_CONTEXT_CHANGED'],warnings:[]}; content='参考的方法已变化，请重新生成建议。'; memoryProposal=undefined; } if (Array.isArray(payload.memoryRefs) && !(await this.memory.refsCurrent(tx,userId,payload.memoryRefs as Array<{id:string;version:number;settingsVersion:number}>, (payload.memoryRelationRefs ?? []) as Array<{id:string;version:number}>))) { payload = { result:'PLANNER_OUTPUT_INVALID', validationErrors:['MEMORY_CONTEXT_CHANGED'], warnings:[] }; content='你保存的个人信息已变化，本次结果需要重新核对。'; memoryProposal=undefined; } const messageId = newId(); await tx.insert(consumerMessages).values({ id: messageId, conversationId: id, requestId: input.requestId, role: 'assistant', content, structuredPayload: payload, contextRefs: sourcePlanVersionId ? [{ type: 'PlanVersion', id: sourcePlanVersionId }] : [], createdAt: new Date() }); if (memoryProposal) await this.memoryCandidates.register(tx,userId,id,messageId,input.requestId,memoryProposal); if (conversation.draftId && payload.result === 'PLAN_DRAFT' && payload.proposal) await this.drafts.recordConversationProposal(userId, conversation.draftId, messageId, payload.proposal as { scenarioKey: string; scenarioRevision: number; intentSummary: string }, tx); await tx.update(consumerConversations).set({ status: 'ACTIVE', title: conversation.version === 0 ? input.content.slice(0, 100) : conversation.title, updatedAt: new Date() }).where(eq(consumerConversations.id, id)); }); if(payload.factQuery){const saved=(await this.db.select().from(consumerMessages).where(and(eq(consumerMessages.conversationId,id),eq(consumerMessages.requestId,input.requestId),eq(consumerMessages.role,'assistant'))))[0];await this.modules.get(ResourceGapContinuationService,{strict:false}).register(userId,saved.id);} return this.conversation(userId, id);
+ const orchestration = await this.modules.get(OrchestratorService, { strict: false }).propose(userId, briefInput, { ...(composition ? { composition } : {}), ...(this.methodRefs(conversation.contextRefs).length ? { methodRefs: this.methodRefs(conversation.contextRefs) } : {}), workContext: conversation.mode === 'PLAN' ? 'PLAN' : 'TEMPORARY', contextSources: [...services, ...contextAttachments.map(file => ({ label: `attachment:${file.id}`, content: JSON.stringify({ artifactRef: file.artifactId ? { type: 'Artifact', id: file.artifactId } : null, fileName: file.fileName, mimeType: file.mimeType, contentSha256: file.contentSha256, provenance: 'USER_UPLOADED_UNVERIFIED', content: file.content.slice(0, 16000), truncated: file.content.length > 16000, originalCharacterCount: file.content.length }) })), { label: 'conversation_history', content: JSON.stringify(history) }, { label: 'conversation_context', content: JSON.stringify({ creationDraft: conversation.creationDraft, conversationId: id, mode: conversation.mode, template, draftId: conversation.draftId, plan: linkedPlan ? { id: linkedPlan.id, name: linkedPlan.name, description: linkedPlan.description, status: linkedPlan.status } : null }) }] });
+ const result = orchestration.result; brief = orchestration.brief;
+ const { memoryCandidateProposal, ...publicResult } = result; memoryProposal = memoryCandidateProposal; payload = publicResult as unknown as Record<string, unknown>; content = result.answer?.explanation ?? result.proposal?.explanation ?? result.clarification?.missingRequirements.join('\n') ?? '草案未通过安全校验，请补充需求'; }
+  catch (error) { if (error instanceof Error && error.message.startsWith('COMPOSITION_')) { payload = { result: 'PLANNER_OUTPUT_INVALID', validationErrors: [error.message], warnings: [] }; content = '已核对的能力组合或资源已变化，请重新核对后准备方案。'; } else if (error instanceof Error && error.message === 'SKILL_CONTEXT_CHANGED') { payload = { result: 'PLANNER_OUTPUT_INVALID', validationErrors: ['SKILL_CONTEXT_CHANGED'], warnings: [] }; content = '选择的方法已更新或关闭，需求已保存。请回到方法仓库重新选择后开始会话。'; } else if (error instanceof NotFoundException) { payload = { result: 'CONTEXT_UNAVAILABLE', retryable: false }; content = '引用的服务或计划已不可用，需求已保存。请重新选择有效记录后继续。'; } else if (error instanceof Error && error.message === 'AI_PROVIDER_BALANCE_INSUFFICIENT') { payload = { result: 'MODEL_UNAVAILABLE', reasonCode: 'AI_PROVIDER_BALANCE_INSUFFICIENT', retryable: true }; content = 'DeepSeek 账户余额不足，需求已保存。补充模型账户余额后可以继续。'; } else { payload = { result: 'MODEL_UNAVAILABLE', retryable: true }; content = '真实 AI 模型暂不可用，消息已保存。配置模型或恢复连接后可继续。'; } }
+  await this.db.transaction(async tx => {
+    await jobs.assertClaimCurrent(tx, claim);
+    if (composition) {
+      try { await this.modules.get(CompositionAuthoringService, { strict: false }).assertCurrent(tx, userId, id, composition); }
+      catch (error) {
+        if (!(error instanceof ConflictException)) throw error;
+        payload = { result: 'PLANNER_OUTPUT_INVALID', validationErrors: [error.message], warnings: [] };
+        content = '组合引用的目标或方法已变化，本次方案不能使用。请重新核对组合。'; memoryProposal = undefined;
+      }
+    }
+    if (Array.isArray(payload.methodRefs) && !(await this.methods.refsCurrent(tx, userId, payload.methodRefs as import('@lazy-armor/plan-schema').SkillMethodRef[]))) {
+      payload = { result: 'PLANNER_OUTPUT_INVALID', validationErrors: ['SKILL_CONTEXT_CHANGED'], warnings: [] };
+      content = '参考的方法已变化，请重新生成建议。'; memoryProposal = undefined;
+    }
+    if (Array.isArray(payload.memoryRefs) && !(await this.memory.refsCurrent(tx, userId, payload.memoryRefs as Array<{ id: string; version: number; settingsVersion: number }>, (payload.memoryRelationRefs ?? []) as Array<{ id: string; version: number }>))) {
+      payload = { result: 'PLANNER_OUTPUT_INVALID', validationErrors: ['MEMORY_CONTEXT_CHANGED'], warnings: [] };
+      content = '你保存的个人信息已变化，本次结果需要重新核对。'; memoryProposal = undefined;
+    }
+    payload = { ...payload, goalBrief: brief, ...(composition ? { composition } : {}) };
+    await tx.update(consumerMessages).set({ content, structuredPayload: payload,
+      contextRefs: sourcePlanVersionId ? [{ type: 'PlanVersion', id: sourcePlanVersionId }] : [{ type: 'Conversation', id }] }).where(eq(consumerMessages.id, resultMessageId));
+    if (payload.factQuery) await this.modules.get(ResourceGapContinuationService, { strict: false }).registerInTransaction(userId, resultMessageId, tx);
+    if (memoryProposal) await this.memoryCandidates.register(tx, userId, id, resultMessageId, input.requestId, memoryProposal);
+    if (conversation.draftId) {
+      await this.drafts.recordConversationBrief(userId, conversation.draftId, brief, tx);
+      if (payload.result === 'PLAN_DRAFT' && payload.proposal) await this.drafts.recordConversationProposal(userId, conversation.draftId, resultMessageId, payload.proposal as { scenarioKey: string; scenarioRevision: number; intentSummary: string }, tx);
+    }
+    await jobs.complete(tx, claim, resultMessageId);
+    await tx.update(consumerConversations).set({ status: 'ACTIVE', title: input.version === 0 ? input.content.slice(0, 100) : conversation.title, updatedAt: new Date() }).where(eq(consumerConversations.id, id));
+  });
  }
  async confirmUserEvent(userId: string, id: string, input: { version: number; messageId: string; confirmed: boolean }) {
   if (!input.confirmed) throw new BadRequestException('请确认内部提醒草稿');
@@ -219,6 +344,7 @@ export class ConsumerService {
    if (row.planId || row.status !== 'ACTIVE' || row.version !== input.version) throw new ConflictException('会话已更新，请重新查看事项草稿');
    const latest = (await tx.select().from(consumerMessages).where(and(eq(consumerMessages.conversationId, id), eq(consumerMessages.role, 'assistant'))).orderBy(desc(consumerMessages.createdAt)).limit(1))[0];
    if (latest?.id !== message.id || (message.structuredPayload.validationErrors as unknown[])?.length) throw new ConflictException('请确认最新事项草稿');
+   if (message.structuredPayload.composition) await this.modules.get(CompositionAuthoringService, { strict: false }).assertCurrent(tx, userId, id, message.structuredPayload.composition, 'CONFIRMATION');
    const created = await this.userEvents.createConfirmed(tx, userId, message.id, id, message.structuredPayload.userEvent);
    const source = message.structuredPayload.externalSync ? await this.syncRequests.createConfirmed(tx,userId,id,message.id,created.id,created.version) : null;
    if (row.draftId) await tx.update(creationDrafts).set({state:'DISCARDED',version:sql`${creationDrafts.version} + 1`,updatedAt:new Date()}).where(and(eq(creationDrafts.draftId,row.draftId),eq(creationDrafts.userId,userId),eq(creationDrafts.state,'ACTIVE')));
@@ -236,9 +362,13 @@ export class ConsumerService {
    const latest = (await tx.select().from(consumerMessages).where(and(eq(consumerMessages.conversationId, id), eq(consumerMessages.role, 'assistant'))).orderBy(desc(consumerMessages.createdAt)).limit(1))[0];
    const result = latest?.structuredPayload as { methodRefs?: import('@lazy-armor/plan-schema').SkillMethodRef[]; result?: string; validationErrors?: string[]; proposal?: { draftDefinition?: Record<string, unknown> | null; missingRequirements?: string[] } } | undefined;
    if (result?.result !== 'PLAN_DRAFT' || result.validationErrors?.length || !result.proposal?.draftDefinition) throw new BadRequestException('当前草案尚未通过校验，请补充需求');
+   if (latest.structuredPayload?.composition) await this.modules.get(CompositionAuthoringService, { strict: false }).assertCurrent(tx, userId, id, latest.structuredPayload.composition, 'CONFIRMATION');
    // Missing resources are retained as draft gaps; only the existing Plan authority may activate a version.
    if (!conversation.draftId) throw new ConflictException('请恢复计划会话草案后再确认');
-   await this.drafts.completeConversation(userId, conversation.draftId, latest.id, tx);
+   const parsedBrief = goalBriefSchema.safeParse(latest.structuredPayload?.goalBrief);
+   const briefRef = parsedBrief.success ? this.modules.get(RequirementsService, { strict: false }).reference(parsedBrief.data) : undefined;
+   if (latest.structuredPayload?.goalBrief && !parsedBrief.success) throw new ConflictException('GOAL_BRIEF_VERSION_UNSUPPORTED');
+   await this.drafts.completeConversation(userId, conversation.draftId, latest.id, tx, briefRef);
    // Persist a draft through the existing Plan authority. Activation and execution retain their own gates.
    const definition = result.proposal.draftDefinition as import('@lazy-armor/plan-schema').PlanDefinitionInput;
    const sourceVersion = (latest.contextRefs as Array<{ type: string; id: string }> | null)?.find(ref => ref.type === 'PlanVersion');
@@ -248,6 +378,7 @@ export class ConsumerService {
     : await this.plans.createInTransaction(userId, definition, tx);
    await this.methods.freeze(tx,userId,created.planVersionId,result.methodRefs ?? []);
    const frozen = await this.drafts.freezeConversationSources(userId, conversation.draftId, created, tx);
+   await this.drafts.freezeConversationBrief(userId, conversation.draftId, created, tx, briefRef);
    if (frozen) await this.audit.append({actorType:"user",actorUserId:userId,userId,action:"PLAN_SOURCES_FROZEN",resourceType:"plan_version",resourceId:created.planVersionId,correlationId:conversation.draftId,source:"api",result:"success",after:{contractId:frozen.contractId,sourceSelections:frozen.sourceSelections},changeSummary:"Confirmed CreationDraft source bindings frozen for this PlanVersion"},tx);
    await tx.update(consumerConversations).set({ planId: created.planId, status: 'PLAN_CONFIRMED', version: conversation.version + 1, updatedAt: new Date() }).where(eq(consumerConversations.id, id));
    return { planId: created.planId };
@@ -257,14 +388,27 @@ export class ConsumerService {
   await this.db.transaction(async tx => {
    const row = (await tx.select().from(consumerConversations).where(and(eq(consumerConversations.id, id), eq(consumerConversations.userId, userId), isNull(consumerConversations.deletedAt))).for('update'))[0];
    if (!row) throw new NotFoundException('会话不存在');
+   if (row.archivedAt) throw new ConflictException('会话已归档，请先恢复后再转成计划');
    if (row.mode === 'PLAN') return;
    if (row.version !== input.version || row.status !== 'ACTIVE') throw new ConflictException('会话已更新，请刷新');
    const draft = await this.drafts.bindConversation(userId, id, tx);
    const requirement = (await tx.select().from(consumerMessages).where(and(eq(consumerMessages.conversationId, id), eq(consumerMessages.role, 'user'))).orderBy(desc(consumerMessages.createdAt)).limit(1))[0];
    if (requirement) await this.drafts.recordConversationGoal(userId, draft.draftId, requirement.content, tx);
    const latest = (await tx.select().from(consumerMessages).where(and(eq(consumerMessages.conversationId, id), eq(consumerMessages.role, 'assistant'))).orderBy(desc(consumerMessages.createdAt)).limit(1))[0];
-   if (latest?.structuredPayload?.result === 'PLAN_DRAFT' && latest.structuredPayload.proposal) await this.drafts.recordConversationProposal(userId, draft.draftId, latest.id, latest.structuredPayload.proposal as { scenarioKey: string; scenarioRevision: number; intentSummary: string }, tx);
    await tx.update(consumerConversations).set({ mode: 'PLAN', draftId: draft.draftId, version: row.version + 1, updatedAt: new Date() }).where(eq(consumerConversations.id, id));
+   if (latest?.structuredPayload?.result === 'PLAN_DRAFT' && latest.structuredPayload.proposal) {
+    const rawBrief = latest.structuredPayload.goalBrief;
+    if (rawBrief !== undefined && rawBrief !== null) {
+     const parsed = goalBriefSchema.safeParse(rawBrief);
+     if (!parsed.success || parsed.data.goalId !== id || parsed.data.version !== row.version) throw new ConflictException('GOAL_BRIEF_CONVERSATION_CHANGED');
+     // Promotion is an owner-reviewed context change. Preserve requirement provenance and
+     // bind its metadata to this new conversation version before the existing confirmation.
+     const promotedBrief = goalBriefSchema.parse({ ...parsed.data, version: row.version + 1 });
+     await tx.update(consumerMessages).set({ structuredPayload: { ...latest.structuredPayload, goalBrief: promotedBrief } }).where(eq(consumerMessages.id, latest.id));
+     await this.drafts.recordConversationBrief(userId, draft.draftId, promotedBrief, tx);
+    }
+    await this.drafts.recordConversationProposal(userId, draft.draftId, latest.id, latest.structuredPayload.proposal as { scenarioKey: string; scenarioRevision: number; intentSummary: string }, tx);
+   }
   });
   return this.conversation(userId, id);
  }
@@ -343,7 +487,7 @@ export class ConsumerService {
   if (workContext !== 'TEMPORARY') continue;
   const reply = replyByRequest.get(`${conversation.id}:${message.requestId}`);
   if (reply?.structuredPayload?.result === 'ACTION_PROPOSAL' && confirmedProposalIds.has(reply.id)) continue;
-  const outcome = temporaryConversationOutcome(reply?.structuredPayload?.result as string | undefined);
+  const outcome = temporaryConversationOutcome(reply?.structuredPayload?.result as string | undefined, reply?.structuredPayload?.report, reply?.structuredPayload?.authoringJob);
   items.push({ id: `temporary-task:${message.id}`, kind: 'TEMPORARY_TASK', title: message.content.slice(0, 100), subtitle: reply?.content.slice(0, 300) ?? '会话需求已保存，正在分析', scheduledAt: null, occurredAt: message.createdAt.toISOString(), ...outcome, sourceRef: { type: 'ConversationMessage', id: message.id }, primaryAction: { label: '查看会话结果', path: `/chat?conversationId=${conversation.id}` } });
  }
  return items.sort((a, b) => (a.scheduledAt ?? a.occurredAt).localeCompare(b.scheduledAt ?? b.occurredAt)); }

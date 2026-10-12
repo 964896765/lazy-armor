@@ -33,6 +33,7 @@ export default function RootLayout() {
           <Stack.Screen name="onboarding" options={{ headerShown: false }} />
           <Stack.Screen name="membership" options={{ headerShown: false }} />
           <Stack.Screen name="add-phone-app" options={{ headerShown: false }} />
+          <Stack.Screen name="phone-apps" options={{ headerShown: false }} />
           <Stack.Screen name="archived-conversations" options={{ headerShown: false }} />
           <Stack.Screen name="connections/add" options={{ headerShown: false }} />
           <Stack.Screen name="connections/[id]" options={{ headerShown: false }} />

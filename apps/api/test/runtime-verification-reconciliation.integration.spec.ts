@@ -16,6 +16,8 @@ import type { OutboxWorker } from '../src/execution/side-effect/outbox-worker.se
 import { CONNECTOR_RESPONSE_POLICY, verificationPolicyHash } from '@lazy-armor/plan-schema';
 import { ProviderCapabilityRegistryService } from '../src/provider-capabilities/provider-capability-registry.service';
 import { ResolutionEvidenceService } from '../src/capability-resolver/resolution-evidence.service';
+import { MemoryService } from '../src/memory/memory.service';
+import { LearningCandidatesService } from '../src/memory/learning-candidates.service';
 
 describe.sequential('Batch 8 verification and reconciliation', () => {
   let app: INestApplication; let pool: Pool; let worker: ExecutionWorker; let owner: Session; let stranger: Session;
@@ -155,6 +157,23 @@ describe.sequential('Batch 8 verification and reconciliation', () => {
     expect(history[0].status).toBe('outcome_unknown');
     const [audits] = await pool.query<RowDataPacket[]>("SELECT id FROM audit_logs WHERE resource_id=? AND action='RECONCILIATION_RESOLVED'", [input.caseId]);
     expect(audits).toHaveLength(1);
+  });
+
+  it('V92 derives one reviewable history from the original network-loss reconciliation without repeating its effect', async () => {
+    const input = await unknown('v92-network-learning');
+    const memory = app.get(MemoryService), learning = app.get(LearningCandidatesService);
+    await memory.changeSettings(owner.userId, { version: 0, enabled: true });
+    await learning.refresh(owner.userId);
+    expect((await learning.list(owner.userId, { limit: 100 })).items.some(item => item.source?.executionId === input.executionId)).toBe(false);
+    const claim = (await service.claim(100)).find(row => row.id === input.caseId)!;
+    await service.process(claim); await learning.refresh(owner.userId);
+    const candidate = (await learning.list(owner.userId, { limit: 100 })).items.find(item => item.source?.executionId === input.executionId)!;
+    expect(candidate).toMatchObject({ status: 'PENDING', sampleCount: 1, source: { outcome: 'SUCCEEDED', method: 'OPERATION_LOOKUP' } });
+    const saved = await learning.confirm(owner.userId, candidate.id, { version: 1, confirmed: true, feedback: '隔离网络夹具，不能视为真实服务验收。' });
+    expect(await memory.get(owner.userId, saved.memoryId)).toMatchObject({ sourceKind: 'LEARNING_CONFIRMED', type: 'HISTORY' });
+    const result = await request(app.getHttpServer()).get('/api/executions/' + input.executionId + '/verification').set(auth(owner.token)).expect(200);
+    expect(result.body).toMatchObject({ resultState: 'SUCCEEDED', historicalExecutionStatus: 'failed' });
+    expect(effects.get(input.key)).toBe(1); expect(lookups.get(input.key)).toBe(1);
   });
 
   it('fences expired leases, permits read-only takeover and records partial results', async () => {

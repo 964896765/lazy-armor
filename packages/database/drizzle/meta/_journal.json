@@ -638,6 +638,20 @@
       "when": 1791561600000,
       "tag": "0090_skill_repositories",
       "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "7",
+      "when": 1791676800000,
+      "tag": "0091_durable_authoring",
+      "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1791763200000,
+      "tag": "0092_learning_candidates",
+      "breakpoints": true
     }
   ]
 }

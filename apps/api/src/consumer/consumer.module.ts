@@ -33,5 +33,13 @@ import { ConnectorsModule } from '../connectors/connectors.module';
 import { TemplatesModule } from '../templates/templates.module';
 import { ConsumerController } from './consumer.controller';
 import { ConsumerService } from './consumer.service';
-@Module({ imports: [AiProviderConfigModule, AppReadSessionsModule, ProviderCapabilitiesModule, PortableSkillsModule, MemoryModule, ProfilesModule, RealityPipelineModule,FactDemandsModule,AcquisitionModule, ArtifactModule, AuditModule, CreationDraftsModule, ExecutionModule, CapabilityResolverModule, AiAdapterModule, PlansModule, ConnectionsModule, TrustedDevicesModule, ConnectorsModule, TemplatesModule], controllers: [ConsumerController], providers: [ReportModelService, ReportGenerationService, GoalPageReadService, GoalResourceMatchService, PersistentNotificationPlanService, ResourceGapContinuationService, CalendarProjectionService, PlanStateAssessmentService, LocalCapabilitiesService, WorkItemProjectionService, ConsumerService, ConversationOnceService] })
+import { OrchestratorModule } from '../orchestrator/orchestrator.module';
+import { RequirementsModule } from '../requirements/requirements.module';
+import { GoalExperienceService } from './goal-experience.service';
+import { GoalExperienceController } from './goal-experience.controller';
+import { CompositionPreviewService } from './composition-preview.service';
+import { CompositionPreviewController } from './composition-preview.controller';
+import { CompositionAuthoringService } from './composition-authoring.service';
+import { CompositionReportResourcesService } from './composition-report-resources.service';
+@Module({ imports: [RequirementsModule, OrchestratorModule, AiProviderConfigModule, AppReadSessionsModule, ProviderCapabilitiesModule, PortableSkillsModule, MemoryModule, ProfilesModule, RealityPipelineModule,FactDemandsModule,AcquisitionModule, ArtifactModule, AuditModule, CreationDraftsModule, ExecutionModule, CapabilityResolverModule, AiAdapterModule, PlansModule, ConnectionsModule, TrustedDevicesModule, ConnectorsModule, TemplatesModule], controllers: [ConsumerController, GoalExperienceController, CompositionPreviewController], providers: [ReportModelService, ReportGenerationService, GoalPageReadService, GoalResourceMatchService, CompositionPreviewService, CompositionAuthoringService, CompositionReportResourcesService, PersistentNotificationPlanService, ResourceGapContinuationService, CalendarProjectionService, PlanStateAssessmentService, LocalCapabilitiesService, WorkItemProjectionService, GoalExperienceService, ConsumerService, { provide: 'CONSUMER_AUTHORING_PROCESSOR', useExisting: ConsumerService }, ConversationOnceService] })
 export class ConsumerModule {}

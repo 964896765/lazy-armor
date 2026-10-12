@@ -77,8 +77,8 @@ function DomainHero({ domain }: { domain: string }) {
 function Overview({ domain, plans, activePlans, latest, connections }: { domain: string; plans: PlanSummary[]; activePlans: number; latest: PlanSummary['latestExecution']; connections: ConnectionSummary[] }) {
   return (
     <>
-      <SectionHeading title="连接的来源" action="添加连接" onPress={() => router.push('/connections/add' as never)} />
-      <View style={styles.listCard}>{connections.length > 0 ? connections.slice(0, 3).map((item, index) => <SourceRow key={item.id} item={item} last={index === Math.min(connections.length, 3) - 1} />) : <Pressable onPress={() => router.push('/connections/add' as never)} style={styles.emptySource}><Ionicons name="add-circle-outline" size={21} color={colors.primary} /><Text style={styles.emptySourceText}>添加来源</Text></Pressable>}</View>
+      <SectionHeading title="连接的来源" action="管理资源" onPress={() => router.push('/resources' as never)} />
+      <View style={styles.listCard}>{connections.length > 0 ? connections.slice(0, 3).map((item, index) => <SourceRow key={item.id} item={item} last={index === Math.min(connections.length, 3) - 1} />) : <Pressable onPress={() => router.push('/resources' as never)} style={styles.emptySource}><Ionicons name="options-outline" size={21} color={colors.primary} /><Text style={styles.emptySourceText}>管理资源</Text></Pressable>}</View>
 
       <SectionHeading title="进行中的计划" count={activePlans} action="查看全部" onPress={() => router.push('/plan-center' as never)} />
       <View style={styles.listCard}>{plans.length > 0 ? plans.slice(0, 3).map((plan, index) => <PlanRow key={plan.id} icon={planVisualIcon(plan.name ?? '', undefined)} name={plan.name ?? plan.currentVersion?.name ?? '我的计划'} description={plan.description ?? '按你的设置持续运行'} detail={planNextRunLabel(plan.status, plan.nextExpectedRunAt)} status={planStatusLabel(plan.status)} statusTone={planStatusTone(plan.status)} onPress={() => router.push(`/plans/${plan.id}` as never)} last={index === Math.min(plans.length, 3) - 1} />) : <Text style={styles.cardEmpty}>还没有运行中的计划。</Text>}</View>
@@ -115,7 +115,7 @@ function PlansSection({ plans, label }: { plans: PlanSummary[]; label: string })
 
 function ResourcesSection({ domain }: { domain: string }) {
   const resourceRoute = domain === 'vehicle' ? '/vehicles' : domain === 'device' ? '/devices' : null;
-  return <View style={styles.sectionBody}><Text style={styles.activityTitle}>我的资料</Text><Text style={styles.activityDetail}>{resourceRoute ? '这里会显示已记录的真实资源；它们目前仍以手工资料或已授权连接为准。' : '该领域的资源连接仍在逐步接入。没有已授权来源时，不会伪装成实时数据。'}</Text>{resourceRoute ? <View style={styles.action}><Pressable accessibilityRole="button" onPress={() => router.push(resourceRoute as never)}><Text style={styles.actionText}>查看我的资料</Text></Pressable></View> : <View style={styles.action}><Pressable accessibilityRole="button" onPress={() => router.push('/connections/add' as never)}><Text style={styles.actionText}>添加连接</Text></Pressable></View>}</View>;
+  return <View style={styles.sectionBody}><Text style={styles.activityTitle}>我的资料</Text><Text style={styles.activityDetail}>{resourceRoute ? '这里会显示已记录的真实资源；它们目前仍以手工资料或已授权连接为准。' : '该领域的资源连接仍在逐步接入。没有已授权来源时，不会伪装成实时数据。'}</Text>{resourceRoute ? <View style={styles.action}><Pressable accessibilityRole="button" onPress={() => router.push(resourceRoute as never)}><Text style={styles.actionText}>查看我的资料</Text></Pressable></View> : <View style={styles.action}><Pressable accessibilityRole="button" onPress={() => router.push('/resources' as never)}><Text style={styles.actionText}>管理资源</Text></Pressable></View>}</View>;
 }
 
 function ActivitySection({ plans }: { plans: PlanSummary[] }) {

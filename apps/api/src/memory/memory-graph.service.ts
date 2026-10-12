@@ -26,8 +26,10 @@ export class MemoryGraphService {
       const page = pageResult(rows, input.limit);
       const ids = [...new Set(page.items.flatMap(row => [row.fromId, row.toId]))];
       const memories = ids.length ? await tx.select().from(personalMemories).where(and(eq(personalMemories.userId, userId), eq(personalMemories.status, 'ACTIVE'), inArray(personalMemories.id, ids), or(isNull(personalMemories.expiresAt), gt(personalMemories.expiresAt, new Date())))) : [];
+      const usable: typeof memories = [];
+      for (const memory of memories) if (await this.memories.sourceCurrent(tx, userId, memory)) usable.push(memory);
       return { items: page.items.flatMap(row => {
-        const from = memories.find(m => m.id === row.fromId && m.version === row.fromVersion), to = memories.find(m => m.id === row.toId && m.version === row.toVersion);
+        const from = usable.find(m => m.id === row.fromId && m.version === row.fromVersion), to = usable.find(m => m.id === row.toId && m.version === row.toVersion);
         return from && to ? [projectRelation(row, from.title!, to.title!)] : [];
       }), nextCursor: page.nextCursor };
     });
@@ -46,6 +48,7 @@ export class MemoryGraphService {
       const endpoints = await tx.select().from(personalMemories).where(and(eq(personalMemories.userId, userId), eq(personalMemories.status, 'ACTIVE'), inArray(personalMemories.id, [fromId, input.toId]))).for('update');
       if (endpoints.length !== 2) throw new NotFoundException('Memory endpoint not found');
       if (endpoints.some(row => row.version !== (row.id === fromId ? input.fromVersion : input.toVersion) || (row.expiresAt && row.expiresAt.getTime() <= Date.now()))) throw new ConflictException('MEMORY_VERSION_CHANGED');
+      for (const endpoint of endpoints) if (!await this.memories.sourceCurrent(tx, userId, endpoint, true)) throw new ConflictException('MEMORY_SOURCE_UNAVAILABLE');
       const activeIdentity = catalogHash({ userId, fromId, fromVersion: input.fromVersion, toId: input.toId, toVersion: input.toVersion, relation: input.relation });
       const duplicate = (await tx.select().from(memoryRelations).where(eq(memoryRelations.activeIdentity, activeIdentity)))[0];
       if (duplicate) throw new ConflictException('MEMORY_RELATION_ALREADY_RECORDED');

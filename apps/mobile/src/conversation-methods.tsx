@@ -13,5 +13,6 @@ export function ConversationMethods({ methods, conversationId, version }: { meth
         : '方法已关闭或移出，原引用保留。请回到仓库核对并重新选择。'}</Text>
     <Button secondary label="查看方法仓库" onPress={() => router.push(`/skill-repositories/${method.ref.repositoryId}` as never)} />
   </Card>)}{conversationId && version !== undefined ? <Button secondary label="核对方法所需资源" disabled={methods.some(method => method.state !== 'CURRENT')}
-    onPress={() => router.push({ pathname: '/method-resources', params: { conversationId, version: String(version) } } as never)} /> : null}</Card>;
+    onPress={() => router.push({ pathname: '/method-resources', params: { conversationId, version: String(version) } } as never)} /> : null}
+    {conversationId ? <Button secondary label="核对能力组合" disabled={methods.some(method => method.state !== 'CURRENT')} onPress={() => router.push({ pathname: '/method-composition', params: { conversationId } } as never)} /> : null}</Card>;
 }

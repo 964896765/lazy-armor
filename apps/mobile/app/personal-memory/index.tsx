@@ -21,6 +21,7 @@ export default function PersonalMemoryPage() {
       {toggle.isError ? <Text style={ui.error}>设置未保存，已重新读取当前状态。</Text> : null}
     </Card>
     <Button label="添加个人信息" disabled={!settings.data?.enabled} onPress={() => router.push('/personal-memory/edit' as never)} />
+    <Button secondary label="经验与反馈" onPress={() => router.push('/personal-memory/learning' as never)} />
     {query.isLoading ? <LoadingState /> : query.isError ? <ErrorState onRetry={() => void query.refetch()} /> : query.data?.items.length ? query.data.items.map(memory =>
       <Pressable accessibilityRole="button" key={memory.id} onPress={() => router.push({ pathname: '/personal-memory/edit', params: { id: memory.id } } as never)} style={ui.card}>
         <Text style={ui.title}>{memory.title}</Text><Text style={ui.detail}>{memoryTypeLabels[memory.type]}</Text><Text style={ui.detail} numberOfLines={3}>{memory.content}</Text><Text style={ui.detail}>{memorySourceLabel(memory)} ›</Text>

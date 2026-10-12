@@ -1,0 +1,50 @@
+ALTER TABLE creation_drafts ADD COLUMN goal_brief_json json NULL;
+--> statement-breakpoint
+CREATE TABLE plan_goal_briefs (
+  id binary(16) NOT NULL PRIMARY KEY,
+  user_id binary(16) NOT NULL,
+  plan_id binary(16) NOT NULL,
+  plan_version_id binary(16) NOT NULL,
+  draft_id binary(16) NOT NULL,
+  brief_hash char(64) NOT NULL,
+  goal_brief_json json NOT NULL,
+  confirmed_at datetime(6) NOT NULL,
+  UNIQUE KEY plan_goal_brief_version_uq (plan_version_id),
+  KEY plan_goal_brief_owner_idx (user_id, plan_id),
+  CONSTRAINT plan_goal_brief_user_fk FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT,
+  CONSTRAINT plan_goal_brief_plan_fk FOREIGN KEY (plan_id) REFERENCES plans(id) ON DELETE RESTRICT,
+  CONSTRAINT plan_goal_brief_version_fk FOREIGN KEY (plan_version_id) REFERENCES plan_versions(id) ON DELETE RESTRICT,
+  CONSTRAINT plan_goal_brief_draft_fk FOREIGN KEY (draft_id) REFERENCES creation_drafts(draft_id) ON DELETE RESTRICT
+);
+--> statement-breakpoint
+CREATE TABLE authoring_jobs (
+  id binary(16) NOT NULL PRIMARY KEY,
+  user_id binary(16) NOT NULL,
+  conversation_id binary(16) NOT NULL,
+  request_id varchar(100) NOT NULL,
+  input_message_id binary(16) NOT NULL,
+  input_hash char(64) NOT NULL,
+  source_conversation_version int NOT NULL,
+  payload_json json NOT NULL,
+  status varchar(24) NOT NULL,
+  stage varchar(24) NOT NULL,
+  revision int NOT NULL,
+  attempt_count int NOT NULL,
+  max_attempts int NOT NULL,
+  lease_token varchar(64) NULL,
+  lease_expires_at datetime(6) NULL,
+  deadline_at datetime(6) NOT NULL,
+  cancel_requested_at datetime(6) NULL,
+  result_message_id binary(16) NULL,
+  error_code varchar(100) NULL,
+  finished_at datetime(6) NULL,
+  created_at datetime(6) NOT NULL,
+  updated_at datetime(6) NOT NULL,
+  UNIQUE KEY authoring_job_request_uq (user_id, conversation_id, request_id),
+  KEY authoring_job_recovery_idx (status, lease_expires_at, deadline_at),
+  KEY authoring_job_owner_idx (user_id, conversation_id, created_at),
+  CONSTRAINT authoring_job_user_fk FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT,
+  CONSTRAINT authoring_job_conversation_fk FOREIGN KEY (conversation_id) REFERENCES consumer_conversations(id) ON DELETE RESTRICT,
+  CONSTRAINT authoring_job_input_fk FOREIGN KEY (input_message_id) REFERENCES consumer_messages(id) ON DELETE RESTRICT,
+  CONSTRAINT authoring_job_result_fk FOREIGN KEY (result_message_id) REFERENCES consumer_messages(id) ON DELETE RESTRICT
+);

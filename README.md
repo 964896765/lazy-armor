@@ -9,10 +9,12 @@ Goal → Context / Planner → Temporary / USER_EVENT / Persistent Plan
   → Skill / Resource Resolve → Shared Runtime → Verify / Truth → Result / Replan
 ```
 
-移动端永久固定五个一级入口：日程、计划、会话、资源、服务。个人中心由头像进入。当前开发 V84 Agent Core；V84–V90 按能力、用户入口与真实证据同步推进。
+移动端永久固定五个一级入口：日程、计划、会话、资源、服务。个人中心由头像进入。当前代码已推进到 V91–V94 的目标生成、受控学习、组合报告与消费者 PC 工作台；完整 Beta 与发布验收仍未关闭。
 
 ## 当前文档
 
+- [Personal Life OS 总方案 V2](./docs/current/PERSONAL_LIFE_OS_MASTER_PLAN_V2.md)
+- [2026-10-12 全面检查分析](./docs/current/PROJECT_AUDIT_2026-10-12.md)
 - [V84–V90 持续开发总方案](./docs/current/V84_V90_ROADMAP.md)
 - [V84 当前任务与验收](./docs/current/V84_AGENT_CORE.md)
 - [产品定义](./docs/current/PRODUCT.md)

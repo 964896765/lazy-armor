@@ -29,7 +29,11 @@ export class ResourceGapContinuationService {
   constructor(@Inject(DATABASE) private readonly db:InjectedDatabase, @Inject(forwardRef(()=>FactDemandResolverService)) private readonly resolver:FactDemandResolverService, private readonly modules:ModuleRef, private readonly audit:AuditService) {}
 
   async register(userId:string,messageId:string) {
-    await this.db.transaction(async tx=>{
+    await this.db.transaction(tx=>this.registerInTransaction(userId,messageId,tx));
+  }
+
+  /** Registration and the durable authoring result commit together, before handoff recovery. */
+  async registerInTransaction(userId:string,messageId:string,tx:RealityExecutor) {
       const candidate=(await tx.select().from(consumerMessages).where(eq(consumerMessages.id,messageId)))[0];
       if (!candidate?.structuredPayload?.factQuery || candidate.role!=='assistant') return;
       const conversation=(await tx.select().from(consumerConversations).where(and(eq(consumerConversations.id,candidate.conversationId),eq(consumerConversations.userId,userId),isNull(consumerConversations.deletedAt))).for('update'))[0];
@@ -43,7 +47,6 @@ export class ResourceGapContinuationService {
       const gap:Gap={schema:'resource-gap-continuation.v1',ownerId:userId,conversationVersion:conversation.version,userMessageId:original.id,goalHash:sha(original.content),query,status:'WAITING_RESOURCE',reasons:[],nextAction:{label:'开启通知读取与来源',path:'/connections/notification-sources?returnTo='+encodeURIComponent('/chat?conversationId='+conversation.id)}};
       await tx.update(consumerMessages).set({structuredPayload:{...message.structuredPayload,resourceGap:gap},content:'需要可用的通知读取权限和你选择的应用来源。开启后会自动继续这条查询。'}).where(eq(consumerMessages.id,message.id));
       await this.audit.append({actorType:'system',userId,action:'RESOURCE_GAP_REGISTERED',resourceType:'consumer_message',resourceId:message.id,source:'api',result:'unknown',after:{goalRef:original.id,goalHash:gap.goalHash,query}},tx);
-    });
   }
 
   async get(userId:string,messageId:string) {

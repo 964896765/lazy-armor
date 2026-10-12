@@ -8,8 +8,10 @@ export interface PersonalMemory {
   type: MemoryType;
   title: string;
   content: string;
-  sourceKind: 'USER_INPUT' | 'CONVERSATION_CONFIRMED';
-  sourceRef?: { conversationId: string; messageId: string; candidateId: string; modelId: string } | null;
+  sourceKind: 'USER_INPUT' | 'CONVERSATION_CONFIRMED' | 'LEARNING_CONFIRMED' | 'REPORT_DECISION_CONFIRMED';
+  sourceRef?: { conversationId: string; messageId: string; candidateId: string; modelId: string }
+    | { kind: 'VERIFIED_OUTCOME'; candidateId: string; evidenceId: string }
+    | { kind: 'REPORT_DECISION'; conversationId: string; messageId: string; reportRevision: number; reportHash: string; goalId: string | null; goalVersion: number | null } | null;
   version: number;
   confirmedAt: string;
   createdAt: string;
@@ -40,9 +42,10 @@ export interface MemoryCandidate {
 }
 export interface MemoryReference {
   id: string; requestedVersion: number;
-  state: 'CURRENT' | 'CHANGED' | 'DELETED' | 'EXPIRED' | 'DISABLED';
+  state: 'CURRENT' | 'CHANGED' | 'DELETED' | 'EXPIRED' | 'DISABLED' | 'SOURCE_UNAVAILABLE';
   memory: PersonalMemory | null;
-  source: { kind: 'USER_INPUT' | 'CONVERSATION_CONFIRMED'; available: boolean; conversationId?: string; messageId?: string; content?: string };
+  source: { kind: PersonalMemory['sourceKind']; available: boolean; conversationId?: string; messageId?: string; content?: string;
+    executionId?: string; evidenceId?: string; candidateId?: string; reportRevision?: number };
 }
 
 export function groundedMemorySuggestions(intent: string, raw: unknown): MemorySuggestion[] {

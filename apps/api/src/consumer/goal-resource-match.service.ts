@@ -15,10 +15,10 @@ export class GoalResourceMatchService {
   constructor(@Inject(DATABASE) private readonly db: InjectedDatabase, private readonly usability: CapabilityUsabilityService,
     private readonly native: LocalCapabilitiesService, private readonly facts: FactDemandResolverService,
     private readonly methods: SkillRepositoriesService, private readonly connectors: ConnectorRegistry) {}
-  private async ownedConversation(userId: string, conversationId: string, version: number) {
+  private async ownedConversation(userId: string, conversationId: string, version: number, authoring = false) {
     const conversation = (await this.db.select().from(consumerConversations).where(and(eq(consumerConversations.id, conversationId), eq(consumerConversations.userId, userId), isNull(consumerConversations.deletedAt))).limit(1))[0];
     if (!conversation) throw new NotFoundException('会话不存在');
-    if (conversation.version !== version || conversation.status === 'PROCESSING' || conversation.archivedAt) throw new ConflictException('目标已更新，请回到原会话查看最新信息');
+    if (conversation.version !== version || (authoring ? conversation.status !== 'PROCESSING' : conversation.status === 'PROCESSING') || conversation.archivedAt) throw new ConflictException('目标已更新，请回到原会话查看最新信息');
     return conversation;
   }
   private async saved(userId: string, conversationId: string, messageId: string, version: number) {
@@ -103,7 +103,14 @@ export class GoalResourceMatchService {
       summary: saved.understanding.summary, evaluatedAt: new Date().toISOString(), executionAuthorized: false, requirements };
   }
   async forMethods(userId: string, conversationId: string, version: number): Promise<MethodResourceMatch> {
-    const conversation = await this.ownedConversation(userId, conversationId, version);
+    return this.methodsAt(userId, conversationId, version, false);
+  }
+  /** Internal computation observation only; never exposes resource or execution authority. */
+  async forAuthoring(userId: string, conversationId: string, version: number): Promise<MethodResourceMatch> {
+    return this.methodsAt(userId, conversationId, version, true);
+  }
+  private async methodsAt(userId: string, conversationId: string, version: number, authoring: boolean): Promise<MethodResourceMatch> {
+    const conversation = await this.ownedConversation(userId, conversationId, version, authoring);
     const parsed = skillMethodRefsSchema.safeParse((conversation.contextRefs ?? []).flatMap(ref => ref.type === 'SkillMethod' ? [ref.methodRef] : []));
     if (!parsed.success) throw new ConflictException('SKILL_CONTEXT_CHANGED');
     if (!parsed.data.length) throw new BadRequestException('此会话尚未选择方法');
@@ -116,7 +123,7 @@ export class GoalResourceMatchService {
         declaredRisk: choice.manifest.risk, requirements: await this.projectRequirements(userId, keys.map(key => ({ key })),
           { conversationId, version, mode: conversation.mode }, snapshot) });
     }
-    const current = await this.ownedConversation(userId, conversationId, version);
+    const current = await this.ownedConversation(userId, conversationId, version, authoring);
     if (catalogHash(current.contextRefs) !== catalogHash(conversation.contextRefs)) throw new ConflictException('SKILL_CONTEXT_CHANGED');
     await this.methods.selectedContext(userId, parsed.data);
     return { schemaVersion: 'method-resource-match.v1', conversationId, conversationVersion: version, methods,

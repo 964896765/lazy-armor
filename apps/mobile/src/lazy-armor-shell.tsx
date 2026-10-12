@@ -126,7 +126,7 @@ export function ConnectionRail({ state, navigation }: BottomTabBarProps) {
           />
         ))}
         {rail.overflowCount > 0 ? <RailItem label={`更多 ${rail.overflowCount}`} icon="ellipsis-horizontal" showLabel={false} onPress={() => selectTab('connections')} /> : null}
-        <RailItem label="添加来源" icon="add" tone="action" showLabel={false} onPress={() => router.push('/connections/add' as never)} />
+        <RailItem label="管理资源" icon="options-outline" tone="action" showLabel={false} onPress={() => router.push('/resources' as never)} />
       </ScrollView>
 
       <View style={styles.divider} />

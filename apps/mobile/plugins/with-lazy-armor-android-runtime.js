@@ -51,6 +51,15 @@ function withRuntimeManifest(config) {
     const queries = manifest.queries ?? [{}];
     const queryRoot = queries[0] ?? {};
     const queryIntents = queryRoot.intent ?? [];
+    // Android 11+ filters PackageManager discovery unless this exact query is declared.
+    if (!queries.some((root) => root.intent?.some((intent) =>
+      intent?.action?.some((action) => action?.$?.['android:name'] === 'android.intent.action.MAIN') &&
+      intent?.category?.some((category) => category?.$?.['android:name'] === 'android.intent.category.LAUNCHER')))) {
+      queryIntents.push({
+        action: [{ $: { 'android:name': 'android.intent.action.MAIN' } }],
+        category: [{ $: { 'android:name': 'android.intent.category.LAUNCHER' } }],
+      });
+    }
     if (!queryIntents.some((intent) => intent?.action?.some((action) => action?.$?.['android:name'] === 'android.speech.action.RECOGNIZE_SPEECH'))) {
       queryIntents.push({ action: [{ $: { 'android:name': 'android.speech.action.RECOGNIZE_SPEECH' } }] });
     }

@@ -2,6 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { consumerPlanStatus, dateWindow, requestTransitionAllowed, safeServiceUrl, temporaryConversationOutcome } from '../src/consumer/projection-policy';
 
 describe('consumer projection policies', () => {
+ it('never marks a queued, failed or malformed autonomous report as a completed answer', () => {
+  const report = { version: 'agent-report.v1', revision: 0, stage: 'QUEUED', goal: '报告', conversationVersion: 1, sources: [], warnings: [], updatedAt: '2026-10-11T00:00:00.000Z' };
+  for (const stage of ['QUEUED', 'PLANNING', 'WRITING', 'REVIEWING', 'FAILED', 'SUPERSEDED']) expect(temporaryConversationOutcome('ANSWER', { ...report, stage }).statusGroup).toBe('INCOMPLETE');
+  expect(temporaryConversationOutcome('ANSWER', { stage: 'COMPLETED' }).statusGroup).toBe('INCOMPLETE');
+  expect(temporaryConversationOutcome('ANSWER', { ...report, stage: 'COMPLETED', markdown: '已生成正文，参数仍需核实' })).toEqual({ status: '报告已生成', statusGroup: 'COMPLETED' });
+ });
  it('distinguishes generated analysis from actions or failed model responses', () => {
   expect(temporaryConversationOutcome('ANSWER')).toEqual({ status: '已生成答复', statusGroup: 'COMPLETED' });
   for (const result of ['PLAN_DRAFT', 'MODEL_UNAVAILABLE', 'PLANNER_OUTPUT_INVALID', 'CLARIFICATION_REQUIRED', undefined]) expect(temporaryConversationOutcome(result).statusGroup).toBe('INCOMPLETE');

@@ -42,7 +42,7 @@ export default function TrustedDevicesPage() {
     {!token ? <Surface><EmptyState icon="log-in-outline" title="请先登录" description="登录后才能管理与你账号绑定的可信设备。" action={{ label: '去登录', onPress: () => router.push('/auth/login' as never) }} /></Surface> : null}
     {token && devices.isLoading ? <ActivityIndicator color={colors.primary} /> : null}
     {token && devices.isError ? <Surface><EmptyState icon="alert-circle-outline" title="暂时无法读取设备" description="没有修改任何设备或连接。请稍后再试。" action={{ label: '返回连接', onPress: () => router.replace('/connections') }} /></Surface> : null}
-    {token && !devices.isLoading && !devices.isError && (devices.data?.length ?? 0) === 0 ? <Surface><EmptyState icon="phone-portrait-outline" title="尚未证明设备" description="在这台 Android 设备上确认添加一个真实应用时，会创建安全密钥证明。" action={{ label: '添加连接', onPress: () => router.push('/connections/add' as never) }} /></Surface> : null}
+    {token && !devices.isLoading && !devices.isError && (devices.data?.length ?? 0) === 0 ? <Surface><EmptyState icon="phone-portrait-outline" title="尚未证明设备" description="在这台 Android 设备上确认添加一个真实应用时，会创建安全密钥证明。" action={{ label: '查看手机应用', onPress: () => router.push('/phone-apps' as never) }} /></Surface> : null}
     <View style={styles.list}>{devices.data?.map((device) => <Surface key={device.id}>
       <View style={styles.row}><View style={styles.copy}><Text style={styles.name}>设备密钥</Text><Text style={[styles.status, device.status === 'active' ? styles.active : styles.revoked]}>{device.status === 'active' ? '已验证' : '已撤销'}</Text></View></View>
       <Text style={styles.detail}>最近证明：{formatTime(device.lastProvedAt)}</Text>
