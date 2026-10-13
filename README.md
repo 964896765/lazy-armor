@@ -14,6 +14,7 @@ Goal → Context / Planner → Temporary / USER_EVENT / Persistent Plan
 ## 当前文档
 
 - [Personal Life OS 总方案 V2](./docs/current/PERSONAL_LIFE_OS_MASTER_PLAN_V2.md)
+- [全面优化执行方案 V1.1](./docs/current/PROJECT_OPTIMIZATION_PLAN_V1_1.md)
 - [2026-10-12 全面检查分析](./docs/current/PROJECT_AUDIT_2026-10-12.md)
 - [V84–V90 持续开发总方案](./docs/current/V84_V90_ROADMAP.md)
 - [V84 当前任务与验收](./docs/current/V84_AGENT_CORE.md)

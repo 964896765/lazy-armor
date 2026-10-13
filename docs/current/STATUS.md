@@ -1,5 +1,7 @@
 # 当前状态 — 2026-10-13
 
+2026-10-13 [S0首批整改](OPTIMIZATION_S0_BATCH_01.md)：FIX-03/FIX-17/FIX-01按冻结范围CLOSED。全仓typecheck/build各8/8，最终Database31/31、Connector7/7、共享312/312；Test MySQL3311新库实际dump/restore通过，原母库标记hash/表数保持，危险CLI在连接前拒绝。Fast Gate接入安全单测。零新迁移/执行入口/个人库变更/生产部署，新增状态非空恢复、0083正式发布及其他安全问题仍待完成。下文4项类型错误和Connector失败为已修复历史时点。
+
 2026-10-13 [全面检查分析](PROJECT_AUDIT_2026-10-12.md)：当前 API 有4项类型错误，纯本地API回归503通过/1失败，其他产品与合同套件819项和脚本16项通过。生产依赖审计2 critical/5 high/1 moderate，0083正式发布证据门未过；备份隔离、Admin访客鉴权、邮箱身份、token刷新与Web确认等问题详见报告。当前本地三角色端点与Docker引擎不可达，本轮SQL/Redis集成验收未完成。旧APK清理范围已审阅，但两次删除命令均被自动审批以blocked by policy拒绝，未删除文件。源码按现有codex分支作用户授权的GitHub开发检查点同步，未生产发布。下文历史ready/类型通过均为各自检查时点，不覆盖本次工作区状态。
 
 2026-10-12 V93报告方法链续验：[方法链记录](V93_REPORT_METHOD_CHAIN.md)补齐独立进程强制结束/重启3/3：第二节点复用首项、正文复用两项、篡改保存结果明确失败且零新增模型调用。真实SQL/Redis/原Worker，fixture模型；不改时钟、租约或队列锁，任务deadline/预算保留，六个子进程已退出，owner隔离及零Plan/Execution/Truth。新增显式隔离验收脚本与CI方法链/绑定/预算回归，类型及脚本/CI语法通过；该结果与真实DeepSeek r4 1/1独立，不计本人手机多方法或外部资源故障验收。新包及本地三角色保持上一检查点，未提交/推送/发布；V93仍待原Runtime编译、真实资源执行/补偿与本人组合旅程。
