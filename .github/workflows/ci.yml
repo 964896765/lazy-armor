@@ -67,6 +67,8 @@ jobs:
         run: pnpm terminology:check
       - name: Production data truth gate
         run: pnpm data:truth
+      - name: Backup and restore target safety regression
+        run: pnpm --filter @lazy-armor/database test
       - name: Production dependency audit
         run: pnpm audit:dependencies
       - name: Prepare CI database

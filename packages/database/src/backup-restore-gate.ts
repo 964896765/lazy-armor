@@ -3,14 +3,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import mysql, { type Pool, type RowDataPacket } from 'mysql2/promise';
-
-type MysqlTarget = {
-  host: string;
-  port: number;
-  user: string;
-  password: string;
-  database: string;
-};
+import { assertBackupContainerEndpoint, assertIsolatedBackupDatabase, parseMysqlTarget as parseMysqlUrl,
+  resolveBackupRestoreTargets, type MysqlTarget } from './backup-restore-safety';
 
 type CanonicalIds = {
   userId: string;
@@ -59,15 +53,11 @@ type CanonicalIds = {
   costBudgetId: string;
 };
 
-const DEFAULT_DATABASE_URL = 'mysql://lazy_armor:lazy_armor_dev@127.0.0.1:3307/lazy_armor';
-const DEFAULT_ADMIN_URL = 'mysql://root:local_root_only@127.0.0.1:3307/mysql';
-const BACKUP_DB = process.env.BACKUP_TEST_DB ?? 'lazy_armor_backup_test';
-const RESTORE_DB = process.env.RESTORE_TEST_DB ?? 'lazy_armor_restore_test';
 const MYSQL_CONTAINER = process.env.MYSQL_DOCKER_CONTAINER ?? 'lazy-armor-p0-mysql-1';
 
-async function main() {
-  ensureIsolatedDatabaseName(BACKUP_DB);
-  ensureIsolatedDatabaseName(RESTORE_DB);
+export async function runBackupRestoreGate() {
+  const { databaseUrl: baseDatabaseUrl, backupDatabase: BACKUP_DB, restoreDatabase: RESTORE_DB,
+    appTarget, adminTarget } = resolveBackupRestoreTargets(process.env);
 
   const repoRoot = path.resolve(__dirname, '../../..');
   const artifactDir = process.env.BACKUP_RESTORE_ARTIFACT_DIR ? path.resolve(repoRoot,process.env.BACKUP_RESTORE_ARTIFACT_DIR) : path.join(repoRoot, 'artifacts', 'backup-restore');
@@ -76,24 +66,10 @@ async function main() {
 
   fs.mkdirSync(artifactDir, { recursive: true });
 
-  const baseDatabaseUrl = process.env.DATABASE_URL ?? DEFAULT_DATABASE_URL;
-  const adminDatabaseUrl = process.env.MYSQL_ADMIN_URL ?? DEFAULT_ADMIN_URL;
   const backupDatabaseUrl = replaceDatabaseName(baseDatabaseUrl, BACKUP_DB);
   const restoreDatabaseUrl = replaceDatabaseName(baseDatabaseUrl, RESTORE_DB);
-
-  const appTarget = parseMysqlUrl(baseDatabaseUrl);
-  let adminTarget = parseMysqlUrl(adminDatabaseUrl);
-  try {
-    await recreateDatabase(adminTarget, appTarget, BACKUP_DB);
-    await recreateDatabase(adminTarget, appTarget, RESTORE_DB);
-  } catch (error) {
-    if (process.env.MYSQL_ADMIN_URL) {
-      throw error;
-    }
-    adminTarget = parseMysqlUrl(replaceDatabaseName(baseDatabaseUrl, 'information_schema'));
-    await recreateDatabase(adminTarget, appTarget, BACKUP_DB);
-    await recreateDatabase(adminTarget, appTarget, RESTORE_DB);
-  }
+  await recreateDatabase(adminTarget, appTarget, BACKUP_DB);
+  await recreateDatabase(adminTarget, appTarget, RESTORE_DB);
 
   runCommand('pnpm', ['--filter', '@lazy-armor/database', 'migrate'], repoRoot, {
     ...process.env,
@@ -119,23 +95,6 @@ async function main() {
   console.log(JSON.stringify({ ok: true, reportPath, dumpPath, verification }, null, 2));
 }
 
-function ensureIsolatedDatabaseName(name: string) {
-  if (!/(backup|restore|test)/i.test(name)) {
-    throw new Error(`Database "${name}" is not an isolated test database name`);
-  }
-}
-
-function parseMysqlUrl(databaseUrl: string): MysqlTarget {
-  const url = new URL(databaseUrl);
-  return {
-    host: url.hostname || '127.0.0.1',
-    port: Number(url.port || '3306'),
-    user: decodeURIComponent(url.username || 'root'),
-    password: decodeURIComponent(url.password || ''),
-    database: url.pathname.replace(/^\//, '') || 'mysql',
-  };
-}
-
 function replaceDatabaseName(databaseUrl: string, databaseName: string) {
   const url = new URL(databaseUrl);
   url.pathname = `/${databaseName}`;
@@ -143,6 +102,7 @@ function replaceDatabaseName(databaseUrl: string, databaseName: string) {
 }
 
 async function recreateDatabase(adminTarget: MysqlTarget, appTarget: MysqlTarget, databaseName: string) {
+  assertIsolatedBackupDatabase(databaseName);
   const pool = mysql.createPool({
     host: adminTarget.host,
     port: adminTarget.port,
@@ -155,7 +115,7 @@ async function recreateDatabase(adminTarget: MysqlTarget, appTarget: MysqlTarget
   try {
     await pool.query(`DROP DATABASE IF EXISTS \`${databaseName}\``);
     await pool.query(`CREATE DATABASE \`${databaseName}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci`);
-    if(adminTarget.user!==appTarget.user)await pool.query(`GRANT ALL PRIVILEGES ON \`${databaseName}\`.* TO '${appTarget.user}'@'%'`);
+    if(adminTarget.user!==appTarget.user)await pool.query(`GRANT ALL PRIVILEGES ON \`${databaseName}\`.* TO ${mysql.escape(appTarget.user)}@'%'`);
   } finally {
     await pool.end();
   }
@@ -665,7 +625,9 @@ async function seedCanonicalDataset(databaseUrl: string) {
 }
 
 function dumpDatabase(adminTarget: MysqlTarget, databaseName: string, dumpPath: string) {
+  assertIsolatedBackupDatabase(databaseName);
   const local = spawnSync('mysqldump', [
+    '--protocol=TCP',
     '--single-transaction',
     '--no-tablespaces',
     '--routines',
@@ -686,10 +648,12 @@ function dumpDatabase(adminTarget: MysqlTarget, databaseName: string, dumpPath: 
     fs.writeFileSync(dumpPath, local.stdout, 'utf8');
     return;
   }
+  verifyBackupContainer(adminTarget);
   const docker = spawnSync('docker', [
     'exec',
     MYSQL_CONTAINER,
     'mysqldump',
+    '--protocol=TCP', '--host=127.0.0.1', '--port=3306',
     '--single-transaction',
     '--no-tablespaces',
     '--routines',
@@ -697,8 +661,8 @@ function dumpDatabase(adminTarget: MysqlTarget, databaseName: string, dumpPath: 
     '--skip-comments',
     '--hex-blob',
     '--default-character-set=utf8mb4',
-    '-uroot',
-    '-plocal_root_only',
+    `--user=${adminTarget.user}`,
+    `--password=${adminTarget.password}`,
     databaseName,
   ], { encoding: 'utf8' });
   if (docker.status !== 0) {
@@ -708,8 +672,10 @@ function dumpDatabase(adminTarget: MysqlTarget, databaseName: string, dumpPath: 
 }
 
 function restoreDatabase(adminTarget: MysqlTarget, databaseName: string, dumpPath: string) {
+  assertIsolatedBackupDatabase(databaseName);
   const sql = fs.readFileSync(dumpPath, 'utf8');
   const local = spawnSync('mysql', [
+    '--protocol=TCP',
     '--default-character-set=utf8mb4',
     '--host',
     adminTarget.host,
@@ -721,19 +687,29 @@ function restoreDatabase(adminTarget: MysqlTarget, databaseName: string, dumpPat
     databaseName,
   ], { input: sql, encoding: 'utf8' });
   if (local.status === 0) return;
+  verifyBackupContainer(adminTarget);
   const docker = spawnSync('docker', [
     'exec',
     '-i',
     MYSQL_CONTAINER,
     'mysql',
+    '--protocol=TCP', '--host=127.0.0.1', '--port=3306',
     '--default-character-set=utf8mb4',
-    '-uroot',
-    '-plocal_root_only',
+    `--user=${adminTarget.user}`,
+    `--password=${adminTarget.password}`,
     databaseName,
   ], { input: sql, encoding: 'utf8' });
   if (docker.status !== 0) {
     throw new Error(`mysql restore failed.\nlocal: ${local.stderr}\ndocker: ${docker.stderr}`);
   }
+}
+
+export function verifyBackupContainer(target: MysqlTarget) {
+  const inspected = spawnSync('docker', ['inspect', '--format', '{{json .NetworkSettings.Ports}}', MYSQL_CONTAINER], { encoding: 'utf8' });
+  if (inspected.status !== 0) throw new Error('BACKUP_RESTORE_CONTAINER_TARGET_UNVERIFIED');
+  let ports: unknown;
+  try { ports = JSON.parse(inspected.stdout); } catch { throw new Error('BACKUP_RESTORE_CONTAINER_TARGET_UNVERIFIED'); }
+  assertBackupContainerEndpoint(target, ports);
 }
 
 async function verifyRestoredData(sourceUrl: string, restoredUrl: string) {
@@ -992,7 +968,9 @@ function sha256(input: string) {
   return createHash('sha256').update(input).digest('hex');
 }
 
-void main().catch((error) => {
-  console.error(error instanceof Error ? error.stack ?? error.message : String(error));
-  process.exitCode = 1;
-});
+if (typeof require !== 'undefined' && typeof module !== 'undefined' && require.main === module) {
+  void runBackupRestoreGate().catch((error) => {
+    console.error(error instanceof Error ? error.stack ?? error.message : String(error));
+    process.exitCode = 1;
+  });
+}
