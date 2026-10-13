@@ -3,6 +3,7 @@ import { api } from './api';
 export interface LoginMethods {
   passwordLogin: boolean;
   passwordRegistration: boolean;
+  passwordIdentifiers?: Array<'email'|'phone'>;
   codeLogin: Record<'phone' | 'email', 'LOCAL_DEVELOPMENT' | 'CONFIGURED' | 'UNAVAILABLE'>;
 }
 export const fetchLoginMethods = () => api<LoginMethods>('/auth/methods');
@@ -13,4 +14,5 @@ export interface SecurityMethods {
   canSetPassword: boolean;
   canVerifyEmail: boolean;
   passkeysAvailable: boolean;
+  passwordLoginKinds?: Array<'email'|'phone'>;
 }

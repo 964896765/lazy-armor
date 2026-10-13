@@ -1,5 +1,7 @@
 # 当前状态 — 2026-10-13
 
+2026-10-13 [Auth V2 M2-01](AUTH_V2_M2_PASSWORD_CREDENTIALS.md)：0093新增用户级密码表，LEGACY默认兼容、SHADOW核对/事务双写、UNIFIED已验证标识共享密码；版本/归属签发重查与成功审计原子化。CLI隔离回填首次2/重跑0，20个用户密码凭据及9表非空restore摘要一致；真实Chrome手机号密码进入原User ID。联合73、Mobile441、Config64、Database31、守卫2共611项；八包类型/构建8/8、Android JS导出通过。个人库仅只读审计，0093/回填/模式切换未执行；完整M2、任意新邮箱绑定/短信/Passkey、生产与原发布门仍待。
+
 2026-10-13 [第四批 Auth V2 Beta](OPTIMIZATION_BATCH_04_AUTH.md)：统一邮箱两条建号路径、本人旧邮箱验证与可选首个密码，原 User ID/业务数据保持；重置/改密与全会话撤销/审计原子化，阻止旧证明和邮件发送竞态。登录页默认邮箱 OTP，密码为辅；安全中心读真实验证状态，恢复深链与表单补齐。刷新保留草稿和可信设备，存储/账号作用域隔离。实现细节、最终验收及未过发布门见本批记录；手机号正式服务、任意新邮箱绑定、凭据解耦、Passkey/真实供应商/本人真机仍待，不关闭整体 Auth V2 或发布。
 
 2026-10-13 [S0第三批依赖处置](OPTIMIZATION_S0_BATCH_03_DEPENDENCIES.md)：FIX-04可补丁5项已清除（proxy-addr/sharp/shell-quote/compression/source-map-js），审计从2 critical/5 high/1 moderate降为0 critical/2 high/1 moderate。剩余node-forge/braces/sprintf-js无已发布安全版本，原high门exit1，FIX-04整体IN_PROGRESS，S0-A/发布不关闭。冻结复装及锁hash保持、全仓typecheck/build各8/8无缓存、521项回归、真实隔离API和Android JS导出通过；仅新Test MySQL3311库/Redis6391前缀，无个人或生产变更。下一独立切片FIX-06密码重置原子性；未补APK/真机/生产Linux或远端CI Green。

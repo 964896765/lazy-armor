@@ -1,4 +1,4 @@
-import { ForbiddenException, HttpException, Inject, Injectable, UnauthorizedException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, HttpException, Inject, Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { loginIdentifiers, authIdentities, authSessions, passwordResetTokens, users } from '@lazy-armor/database';
@@ -6,6 +6,7 @@ import { newId } from '@lazy-armor/shared';
 import { compare, hash } from 'bcryptjs';
 import { createHash, randomBytes } from 'node:crypto';
 import { and, eq, gt, isNull, sql } from 'drizzle-orm';
+import { PasswordCredentialService, type PasswordProof } from './password-credential.service';
 import { IdentityResolverService } from './identity-resolver.service';
 import { authTransaction } from './auth-transaction';
 import { normalizeIdentifier, maskIdentifier } from './login-identifier';
@@ -53,6 +54,7 @@ export class AuthService {
     private readonly rateLimiter: RateLimiterService,
     private readonly resetDelivery: PasswordResetDeliveryService,
     private readonly identities: IdentityResolverService,
+    private readonly passwords: PasswordCredentialService,
   ) {
     this.accessTtlSeconds = this.config.get<number>('ACCESS_TOKEN_TTL_SECONDS') ?? 900;
     this.refreshTtlSeconds = this.config.get<number>('REFRESH_TOKEN_TTL_SECONDS') ?? 2_592_000;
@@ -66,14 +68,14 @@ export class AuthService {
   }
 
   loginMethods() {
-    return { passwordLogin: true, passwordRegistration: this.registrationAllowed() };
+    return { passwordLogin: true, passwordRegistration: this.registrationAllowed(), passwordIdentifiers: this.passwords.unified() ? ['email','phone'] : ['email'] };
   }
 
   async register(input: RegisterDto) {
     if (!this.registrationAllowed()) throw new ForbiddenException('Public registration is disabled');
     const passwordHash = await hash(input.password, 12);
     const created = await this.identities.registerPassword(input, passwordHash);
-    return this.issueTokens(created.userId, { authMethod: 'PASSWORD', authenticatedAt: new Date().toISOString() }, { id: created.identityId, email: created.email, passwordHash });
+    return this.issueTokens(created.userId, { authMethod: 'PASSWORD', authenticatedAt: new Date().toISOString() }, { kind:'email', identifier:created.email, snapshot:created.proof });
   }
 
   async loginVerified(kind: 'phone' | 'email', identifier: string, context: RequestContext) {
@@ -85,7 +87,12 @@ export class AuthService {
   }
 
   async login(input: LoginDto, context: RequestContext): Promise<TokenPair> {
-    const email = normalizeIdentifier('email', input.email);
+    if (input.email!==undefined&&input.identifier!==undefined) throw new HttpException('请选择一种登录标识',400);
+    const kind=input.kind??'email';
+    const value=input.identifier??(kind==='email'?input.email:undefined);
+    if(typeof value!=='string') throw new HttpException('请输入登录标识',400);
+    const identifier=normalizeIdentifier(kind,value);
+    const email=kind==='email'?identifier:'phone:'+identifier;
     const ip = context.ip ?? 'unknown';
     const accountLimit = await this.rateLimiter.consume(`login:acct:${email}`, 10, 300);
     const ipLimit = await this.rateLimiter.consume(`login:ip:${ip}`, 20, 300);
@@ -94,9 +101,13 @@ export class AuthService {
       throw new HttpException('Too many login attempts, please try again later', 429);
     }
 
-    const identity = await this.identities.passwordIdentity(email);
-    const user = identity ? (await this.db.select().from(users).where(eq(users.id, identity.userId)).limit(1))[0] : undefined;
-    const row = identity && user ? { ...identity, status: user.status } : undefined;
+    const owner=kind==='email'||this.passwords.unified()?await this.identities.passwordOwner(kind,identifier):undefined;
+    let proof:PasswordProof|undefined;
+    if(owner&&(this.passwords.unified()||owner.legacy)) {
+      try{proof=await this.passwords.observe(owner.userId);}catch(error){if(!(error instanceof ConflictException))throw error;}
+    }
+    const user=proof?(await this.db.select().from(users).where(eq(users.id,proof.userId)).limit(1))[0]:undefined;
+    const row=proof&&user?{...proof,status:user.status}:undefined;
     // 账号枚举防护：不存在账号也执行一次同代价的 bcrypt 比较。
     const passwordOk = row ? await compare(input.password, row.passwordHash) : await compare(input.password, await dummyPasswordHash());
     if (!row || row.status !== 'active' || !passwordOk) {
@@ -108,8 +119,7 @@ export class AuthService {
       throw new UnauthorizedException(LOGIN_UNIFORM_ERROR);
     }
     await this.rateLimiter.resetFailures(`login:fail:acct:${email}`);
-    await this.audit.append({ actorType: 'user', actorUserId: row.userId, action: 'LOGIN_SUCCESS', resourceType: 'auth', resourceId: email, userId: row.userId, source: 'api', result: 'success', changeSummary: 'User logged in' });
-    return this.issueTokens(row.userId, { ip, userAgent: context.userAgent ?? null, authMethod: 'PASSWORD', authenticatedAt: new Date().toISOString() }, { id: row.id, passwordHash: row.passwordHash, email });
+    return this.issueTokens(row.userId, { ip, userAgent: context.userAgent ?? null, authMethod: 'PASSWORD', authenticatedAt: new Date().toISOString() }, { kind, identifier, snapshot:row });
   }
 
   async verifyToken(token: string): Promise<AuthenticatedUser> {
@@ -158,16 +168,14 @@ export class AuthService {
   }
 
   async changePassword(userId: string, input: ChangePasswordDto) {
-    const observed = (await this.db.select().from(authIdentities).where(eq(authIdentities.userId, userId)).limit(1))[0];
+    const observed = await this.passwords.observe(userId);
     if (!observed || !(await compare(input.oldPassword, observed.passwordHash))) throw new UnauthorizedException('Current password is incorrect');
     const passwordHash = await hash(input.newPassword, 12);
     await authTransaction(this.db, async tx => {
       const user = (await tx.select().from(users).where(eq(users.id, userId)).limit(1).for('update'))[0];
       if (user?.status !== 'active') throw new UnauthorizedException('账号暂不可用');
-      const current = (await tx.select().from(authIdentities).where(eq(authIdentities.id, observed.id)).limit(1).for('update'))[0];
-      if (current?.passwordHash !== observed.passwordHash) throw new UnauthorizedException('Current password is incorrect');
       const now = new Date();
-      await tx.update(authIdentities).set({ passwordHash, updatedAt: now }).where(eq(authIdentities.userId, userId));
+      await this.passwords.change(tx,observed,passwordHash,now);
       await tx.update(authSessions).set({ revokedAt: now, revokeReason: 'password_changed' }).where(and(eq(authSessions.userId, userId), isNull(authSessions.revokedAt)));
       await tx.update(passwordResetTokens).set({ usedAt: now }).where(and(eq(passwordResetTokens.userId, userId), isNull(passwordResetTokens.usedAt)));
       await this.audit.append({ actorType: 'user', actorUserId: userId, action: 'PASSWORD_CHANGED', resourceType: 'auth', resourceId: userId, userId, source: 'api', result: 'success', changeSummary: 'Password changed; all sessions revoked' }, tx);
@@ -178,22 +186,25 @@ export class AuthService {
   async securityMethods(userId: string) {
     const verified = await this.db.select().from(loginIdentifiers).where(eq(loginIdentifiers.userId, userId));
     const legacy = await this.db.select().from(authIdentities).where(eq(authIdentities.userId, userId));
+    const password = await this.passwords.observe(userId);
     const identifiers = verified.filter(item => item.kind === 'phone' || item.kind === 'email').map(item => ({
       kind: item.kind, masked: maskIdentifier(item.kind as 'phone' | 'email', item.identifier), verified: true,
     }));
     for (const item of legacy) if (!verified.some(v => v.kind === 'email' && v.identifier === item.email)) {
       identifiers.push({ kind: 'email', masked: maskIdentifier('email', item.email), verified: Boolean(item.emailVerifiedAt) });
     }
-    return { identifiers, passwordConfigured: legacy.length > 0,
-      canSetPassword: legacy.length === 0 && verified.some(item => item.kind === 'email'),
-      canVerifyEmail: legacy.some(item => !item.emailVerifiedAt), passkeysAvailable: false };
+    return { identifiers, passwordConfigured: Boolean(password),
+      canSetPassword: !password && verified.some(item => item.kind === 'email'),
+      canVerifyEmail: legacy.some(item => !item.emailVerifiedAt), passkeysAvailable: false,
+      passwordLoginKinds: password ? [...(legacy.length||verified.some(item=>item.kind==='email')?['email']:[]),...(this.passwords.unified()&&verified.some(item=>item.kind==='phone')?['phone']:[])] : [] };
   }
 
   async assertEmailVerification(userId: string, email: string, password: string) {
     if (!(await this.rateLimiter.consume(`email-proof:${userId}`, 10, 300)).allowed) throw new HttpException('尝试次数过多，请稍后再试', 429);
     const canonical = normalizeIdentifier('email', email);
     const identity = await this.identities.passwordIdentity(canonical);
-    const allowed = identity?.userId === userId && await compare(password, identity.passwordHash);
+    const proof=identity?.userId===userId?await this.passwords.observe(userId):undefined;
+    const allowed=proof&&await compare(password,proof.passwordHash);
     if (!allowed) throw new UnauthorizedException('当前账号验证失败');
     return identity!;
   }
@@ -205,7 +216,7 @@ export class AuthService {
   async assertInitialPassword(userId: string, email: string) {
     const canonical = normalizeIdentifier('email', email);
     const mapping = (await this.db.select().from(loginIdentifiers).where(and(eq(loginIdentifiers.userId, userId), eq(loginIdentifiers.kind, 'email'), eq(loginIdentifiers.identifier, canonical))).limit(1))[0];
-    const existing = (await this.db.select().from(authIdentities).where(eq(authIdentities.userId, userId)).limit(1))[0];
+    const existing=await this.passwords.observe(userId);
     if (!mapping || existing) throw new ForbiddenException('请验证当前账号的邮箱，已有密码请使用修改密码入口。');
   }
 
@@ -231,6 +242,8 @@ export class AuthService {
     const identity = await this.identities.passwordIdentity(normalized);
     // An unverified legacy email is not a trusted recovery channel.
     if (!identity?.emailVerifiedAt) return { requested: true };
+    const proof=await this.passwords.observe(identity.userId);
+    if(!proof)return {requested:true};
 
     const raw = randomBytes(32).toString('hex');
     const now = new Date();
@@ -247,6 +260,7 @@ export class AuthService {
       const known = (await tx.select().from(loginIdentifiers).where(and(eq(loginIdentifiers.kind, 'email'), eq(loginIdentifiers.identifier, normalized))).limit(1).for('update'))[0];
       // A password change during delivery invalidates the pending recovery link.
       if (user?.status !== 'active' || !current?.emailVerifiedAt || current.passwordHash !== identity.passwordHash || (known && known.userId !== identity.userId)) return;
+      await this.passwords.assertCurrent(tx,proof,false);
       await tx.insert(passwordResetTokens).values({ id: newId(), userId: identity.userId, tokenHash: hashToken(raw), expiresAt, usedAt: null, createdAt: now });
       await this.audit.append({ actorType: 'system', actorUserId: null, action: 'PASSWORD_RESET_REQUESTED', resourceType: 'auth', resourceId: normalized, userId: identity.userId, source: 'api', result: 'success', changeSummary: 'Password reset token delivered through the configured secure channel' }, tx);
     });
@@ -269,8 +283,9 @@ export class AuthService {
       const [claim] = await tx.update(passwordResetTokens).set({ usedAt: now })
         .where(and(eq(passwordResetTokens.id, tokenRow.id), isNull(passwordResetTokens.usedAt), gt(passwordResetTokens.expiresAt, sql`UTC_TIMESTAMP(6)`)));
       if (claim.affectedRows !== 1) throw new UnauthorizedException('Invalid or expired reset token');
-      const [changed] = await tx.update(authIdentities).set({ passwordHash, updatedAt: now }).where(eq(authIdentities.userId, tokenRow.userId));
-      if (changed.affectedRows < 1) throw new UnauthorizedException('Invalid or expired reset token');
+      const proof=await this.passwords.observe(tokenRow.userId,tx,true);
+      if(!proof)throw new UnauthorizedException('Invalid or expired reset token');
+      await this.passwords.change(tx,proof,passwordHash,now);
       await tx.update(authSessions).set({ revokedAt: now, revokeReason: 'password_reset' }).where(and(eq(authSessions.userId, tokenRow.userId), isNull(authSessions.revokedAt)));
       await tx.update(passwordResetTokens).set({ usedAt: now }).where(and(eq(passwordResetTokens.userId, tokenRow.userId), isNull(passwordResetTokens.usedAt)));
       await this.audit.append({ actorType: 'user', actorUserId: tokenRow.userId, action: 'PASSWORD_RESET_COMPLETED', resourceType: 'auth', resourceId: tokenRow.userId, userId: tokenRow.userId, source: 'api', result: 'success', changeSummary: 'Password reset completed; all sessions revoked' }, tx);
@@ -278,7 +293,7 @@ export class AuthService {
     return { reset: true };
   }
 
-  private async issueTokens(userId: string, clientMeta: Record<string, unknown> | null, proof?: { id: string; passwordHash: string; email: string }): Promise<TokenPair> {
+  private async issueTokens(userId: string, clientMeta: Record<string, unknown> | null, proof?: { kind:'email'|'phone'; identifier:string; snapshot:PasswordProof }): Promise<TokenPair> {
     const refreshToken = randomBytes(32).toString('hex');
     const sessionId = newId();
     const now = new Date();
@@ -286,15 +301,17 @@ export class AuthService {
       const user = (await tx.select().from(users).where(eq(users.id, userId)).limit(1).for('update'))[0];
       if (user?.status !== 'active') throw new UnauthorizedException('账号暂不可用');
       if (proof) {
-        const identity = (await tx.select().from(authIdentities).where(eq(authIdentities.id, proof.id)).limit(1).for('update'))[0];
-        const known = (await tx.select().from(loginIdentifiers).where(and(eq(loginIdentifiers.kind, 'email'), eq(loginIdentifiers.identifier, proof.email))).limit(1).for('update'))[0];
-        if (identity?.userId !== userId || identity.passwordHash !== proof.passwordHash || (known && known.userId !== userId)) throw new UnauthorizedException(LOGIN_UNIFORM_ERROR);
+        if(proof.snapshot.userId!==userId)throw new UnauthorizedException(LOGIN_UNIFORM_ERROR);
+        const owner=await this.identities.passwordOwner(proof.kind,proof.identifier,tx,true);
+        if(owner?.userId!==userId)throw new UnauthorizedException(LOGIN_UNIFORM_ERROR);
+        await this.passwords.assertCurrent(tx,proof.snapshot);
       }
       await tx.insert(authSessions).values({
         id: sessionId, userId, refreshTokenHash: hashToken(refreshToken), familyId: newId(),
         clientMetadataJson: clientMeta ?? null, createdAt: now, expiresAt: new Date(now.getTime() + this.refreshTtlSeconds * 1000),
         lastUsedAt: null, revokedAt: null, revokeReason: null,
       });
+      if(clientMeta?.authMethod==='PASSWORD')await this.audit.append({actorType:'user',actorUserId:userId,userId,action:'LOGIN_SUCCESS',resourceType:'auth',resourceId:userId,source:'api',result:'success',changeSummary:'Authenticated password session created'},tx);
     });
     return this.issueAccessAndRefresh(sessionId, refreshToken, userId);
   }

@@ -38,7 +38,7 @@ export default function LoginPage() {
   {sentTo===mode+':'+identifier.trim()?<Text style={styles.notice}>{localDelivery?'开发验证码已生成，请查看本地后端控制台。':'验证码已发送，请在 5 分钟内输入。'}</Text>:null}
   {request.isError||login.isError?<Text style={styles.error}>{authError(request.error??login.error)}</Text>:null}
   <Pressable accessibilityRole="button" disabled={busy||!identifier.trim()||!/^\d{6}$/.test(code)} onPress={()=>login.mutate()} style={[styles.submit,(login.isPending||!/^\d{6}$/.test(code))&&styles.submitDisabled]}><Text style={styles.submitText}>{login.isPending?'验证中…':'验证并登录'}</Text></Pressable>
-  {methods.data?.passwordLogin?<Link href={'/auth/password-login' as never} style={styles.textLink}>使用邮箱密码登录</Link>:null}
+  {methods.data?.passwordLogin?<Link href={'/auth/password-login' as never} style={styles.textLink}>{methods.data.passwordIdentifiers?.includes('phone')?'使用密码登录':'使用邮箱密码登录'}</Link>:null}
   <Link href={'/auth/welcome' as never} style={styles.textLink}>查看用户协议与隐私说明</Link>
  </AuthPage>;
 }

@@ -19,6 +19,7 @@ Goal → Context / Planner → Temporary / USER_EVENT / Persistent Plan
 - [S0 第三批：依赖整改与剩余发布阻断](./docs/current/OPTIMIZATION_S0_BATCH_03_DEPENDENCIES.md)
 - [第四批：统一邮箱、密码安全与登录设计](./docs/current/OPTIMIZATION_BATCH_04_AUTH.md)
 - [Auth V2.0：中国大陆统一认证与迁移方案](./docs/current/AUTH_V2_IMPLEMENTATION_PLAN.md)
+- [Auth V2 M2-01：用户级密码兼容迁移与验收](./docs/current/AUTH_V2_M2_PASSWORD_CREDENTIALS.md)
 - [2026-10-12 全面检查分析](./docs/current/PROJECT_AUDIT_2026-10-12.md)
 - [V84–V90 持续开发总方案](./docs/current/V84_V90_ROADMAP.md)
 - [V84 当前任务与验收](./docs/current/V84_AGENT_CORE.md)

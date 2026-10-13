@@ -1,5 +1,7 @@
 # 当前任务书 — V84–V90
 
+2026-10-13最新认证切片：[M2-01用户级密码凭据](AUTH_V2_M2_PASSWORD_CREDENTIALS.md)实现Expand、默认旧接口兼容、影子核对/双写、幂等隔离回填、受控已验证标识读取及非空恢复；611项和八包类型/构建通过。下一认证切片M2-02新邮箱绑定的当前账号与新渠道双证明（用户/会话/用途/目标/版本绑定），当前尚未实现；保持原User ID、五页与Runtime审批权威。生产0093/回填、旧表停写、短信/换号、Passkey、正式发布仍分别待验，下文为历史检查点。
+
 2026-10-13 当前批次：[Auth V2 Beta 统一邮箱与登录设计](OPTIMIZATION_BATCH_04_AUTH.md)。FIX-06 原子重置、FIX-07 新写入/本人邮箱确认、FIX-08 刷新影响草稿切片已实施，历史/正式环境迁移与剩余发布门独立待验。具体接口、分阶段迁移、短信/换号、Passkey 和回滚条件见 [Auth V2 方案](AUTH_V2_IMPLEMENTATION_PLAN.md)；下一认证切片是用户级密码凭据兼容迁移和安全绑定协议。
 
 2026-10-13优化整改见[方案V1.1](PROJECT_OPTIMIZATION_PLAN_V1_1.md)、[首批验收](OPTIMIZATION_S0_BATCH_01.md)、[第二批Admin验收](OPTIMIZATION_S0_BATCH_02_ADMIN_AUTH.md)与[第三批依赖处置](OPTIMIZATION_S0_BATCH_03_DEPENDENCIES.md)：FIX-03/FIX-17/FIX-01/FIX-02按冻结范围CLOSED；FIX-04可补丁5项完成，521项回归通过，剩余2 high/1 moderate令整体IN_PROGRESS/high发布门失败。下一独立切片FIX-06密码重置原子性，FIX-04余项继续跟踪；保留原Runtime、五导航，S0-A/正式发布/非空恢复不提前关闭；下文V84–V90为原任务历史。

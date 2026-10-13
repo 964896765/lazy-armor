@@ -235,6 +235,19 @@ export const authIdentities = mysqlTable('auth_identities', {
   index('auth_identities_user_id_idx').on(table.userId),
 ]);
 
+// Expand-only user-level credential. Legacy identity hashes remain during dual write.
+export const passwordCredentials = mysqlTable('password_credentials', {
+  id: uuidBinary('id').primaryKey(),
+  userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  passwordHash: varchar('password_hash', { length: 255 }).notNull(),
+  algorithm: varchar('algorithm', { length: 24 }).notNull(),
+  parametersJson: json('parameters_json').$type<{ cost: number }>().notNull(),
+  version: int('version').notNull().default(1),
+  sourceLegacyIdentityId: uuidBinary('source_legacy_identity_id').references(() => authIdentities.id, { onDelete: 'restrict' }),
+  changedAt: datetime('changed_at', { mode: 'date', fsp: 6 }).notNull(),
+  ...timestamps,
+}, table => [uniqueIndex('password_credentials_user_uq').on(table.userId)]);
+
 export const authSessions = mysqlTable('auth_sessions', {
   id: uuidBinary('id').primaryKey(),
   userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
@@ -1886,6 +1899,7 @@ export const schema = {
   costBudgets,
   profiles,
   authIdentities,
+  passwordCredentials,
   authSessions,
   passwordResetTokens,
   connectors,

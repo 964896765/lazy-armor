@@ -1,4 +1,4 @@
-import { IsIn, Matches, IsEmail, IsString, Length, MaxLength, MinLength, ValidateBy } from 'class-validator';
+import { IsIn, Matches, IsEmail, IsString, Length, MaxLength, MinLength, ValidateBy, ValidateIf, IsOptional } from 'class-validator';
 import { Transform } from 'class-transformer';
 
 // bcrypt only covers the first 72 bytes. Retain legacy login compatibility,
@@ -25,10 +25,15 @@ export class RegisterDto {
 }
 
 export class LoginDto {
+  @ValidateIf(input=>input.identifier===undefined||input.email!==undefined)
   @Transform(({ value }) => typeof value === 'string' ? value.trim().toLowerCase() : value)
   @IsEmail()
   @MaxLength(320)
-  email!: string;
+  email?: string;
+
+  @IsOptional() @IsIn(['email','phone']) kind?: 'email'|'phone';
+  @ValidateIf(input=>input.identifier!==undefined)
+  @IsString() @Length(3,320) identifier?: string;
 
   @IsString()
   @MaxLength(128)

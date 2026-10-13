@@ -61,6 +61,7 @@ const envSchema = z.object({
   PASSWORD_RESET_DELIVERY_ENDPOINT: z.string().url().optional(),
   PASSWORD_RESET_DELIVERY_TOKEN: z.string().min(32).optional(),
   PUBLIC_REGISTRATION: z.enum(['true', 'false']).optional(),
+  AUTH_PASSWORD_CREDENTIAL_MODE: z.enum(['LEGACY', 'SHADOW', 'UNIFIED']).default('LEGACY'),
   // Production credential provider selection
   CREDENTIAL_PROVIDER: z.enum(['local', 'production']).optional(),
   // CORS allowed origins (comma separated)

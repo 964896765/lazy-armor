@@ -21,6 +21,12 @@ function deployedEnv(appEnv: 'staging' | 'production') {
 }
 
 describe('deployment environment isolation', () => {
+  it('keeps password migration opt-in and rejects unknown rollout modes',()=>{
+    expect(parseEnv(deployedEnv('staging')).AUTH_PASSWORD_CREDENTIAL_MODE).toBe('LEGACY');
+    expect(parseEnv({...deployedEnv('staging'),AUTH_PASSWORD_CREDENTIAL_MODE:'SHADOW'}).AUTH_PASSWORD_CREDENTIAL_MODE).toBe('SHADOW');
+    expect(parseEnv({...deployedEnv('staging'),AUTH_PASSWORD_CREDENTIAL_MODE:'UNIFIED'}).AUTH_PASSWORD_CREDENTIAL_MODE).toBe('UNIFIED');
+    expect(()=>parseEnv({...deployedEnv('staging'),AUTH_PASSWORD_CREDENTIAL_MODE:'off'})).toThrow();
+  });
   it.each(['staging', 'production'] as const)('accepts an isolated %s configuration', (appEnv) => {
     expect(() => assertProductionSafe(parseEnv(deployedEnv(appEnv)))).not.toThrow();
   });

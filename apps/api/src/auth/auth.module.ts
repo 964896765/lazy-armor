@@ -10,6 +10,7 @@ import { AuthGuard } from './auth.guard';
 import { AuthService } from './auth.service';
 import { PasswordResetDeliveryService } from './password-reset-delivery.service';
 import { IdentityResolverService } from './identity-resolver.service';
+import { PasswordCredentialService } from './password-credential.service';
 
 @Module({
   imports: [AuditModule, JwtModule.registerAsync({
@@ -17,7 +18,7 @@ import { IdentityResolverService } from './identity-resolver.service';
     useFactory: (config: ConfigService) => ({ secret: config.getOrThrow<string>('JWT_SECRET'), signOptions: { expiresIn: '1h' } }),
   })],
   controllers: [AuthController],
-  providers: [LocalLoginCodeDeliveryProvider, LoginCodeService, IdentityResolverService, AuthService, PasswordResetDeliveryService, { provide: APP_GUARD, useClass: AuthGuard }],
+  providers: [LocalLoginCodeDeliveryProvider, LoginCodeService, PasswordCredentialService, IdentityResolverService, AuthService, PasswordResetDeliveryService, { provide: APP_GUARD, useClass: AuthGuard }],
   exports: [AuthService],
 })
 export class AuthModule {}

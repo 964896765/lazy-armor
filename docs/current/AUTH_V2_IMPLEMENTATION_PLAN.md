@@ -1,6 +1,6 @@
 # 懒人装甲 Auth V2.0 · 统一认证与迁移执行方案
 
-基线：2026-10-13，codex/v83-persistent-runtime。目标市场：中国大陆为主。当前实施范围为 Beta 邮箱基础；手机号生产推广和 Passkey 尚未完成。
+基线：2026-10-13，codex/v83-persistent-runtime。目标市场：中国大陆为主。Beta邮箱基础已推进，M2-01用户级密码兼容迁移切片已实现；手机号生产推广和Passkey尚未完成。
 
 ## 产品与账号原则
 
@@ -14,11 +14,11 @@ Beta 默认邮箱验证码，密码是已登录用户主动添加的备用方式
 | --- | --- | --- | --- |
 | M0 只读审计 | 规范化邮箱/手机号，比较 auth_identities 与 login_identifiers；统计跨 User ID 冲突、非规范值、未验证旧邮箱 | 私有清单只包含聚合与加盐指纹，不导出密码/hash/token | 每个环境单独取快照；冲突需本人证明与人工核对 |
 | M1 Beta 基础（本批） | 复用原表及唯一索引；事务统一身份解析，密码注册不虚构邮箱验证；不新增迁移 | 合并 OTP 登录/注册、当前账号验证邮箱、可选初始密码、真实安全状态；重置/改密原子撤销会话 | SQL/Redis 并发、事务失败回滚、账号冲突与客户端刷新回归；Web 实际交互 |
-| M2 凭据解耦（待实施） | password_credentials 按 user_id 唯一；保留算法/参数/version/changed_at；迁移原 hash 不改 User ID；分离后再逐步支持手机号密码 | 密码认证先解析已验证标识，再查询用户凭据；改变密码只修改用户凭据 | Expand→影子比对→逐用户回填→切读写；旧表暂留，审计差异为零才停写 |
+| M2 凭据解耦（M2-01已实现，整体待续） | 0093新增password_credentials，user_id唯一；bcrypt参数/version/source保留；原hash复制，不改User ID | LEGACY默认兼容、SHADOW核对/事务双写、UNIFIED已验证手机号/邮箱共享密码；新邮箱绑定与旧表停写待续 | [M2-01记录](AUTH_V2_M2_PASSWORD_CREDENTIALS.md)；实际隔离回填/恢复通过，生产迁移与切换单独待验 |
 | M3 国内手机号（待实施） | 复用 login_identifiers 的 phone 唯一映射；增加绑定/换号挑战和安全变更记录，禁止自动合并 | 已登录账号证明当前身份 + 验证新手机号；冲突停止；换号前通知旧渠道，撤销/复核敏感会话 | 正式短信、真实运营商送达与费用限制、设备异常规则、绑定/换号/丢失号码恢复旅程 |
 | M4 Passkey（待实施） | passkey_credentials：user_id、credential_id 唯一、public_key、sign_count、transports、AAGUID、备份标志、created/last_used/revoked；不保存生物信息 | WebAuthn 注册与登录 options/verify；原 session 与审计；用户可管理多把凭据 | 固定可信 RP ID/Origin、HTTPS；Web→Android Credential Manager→iOS，分别验收 |
 
-新表名称与字段为迁移设计，当前 Schema 中没有创建它们。正式迁移必须有独立 SQL、幂等回填、备份/恢复、失败注入和逐环境证据；本批零新 SQL。
+M1当时零新SQL。后续M2-01在Schema中增加password_credentials和0093前向迁移，仅新隔离test库执行；Passkey等其他新表仍为设计。正式迁移、全量回填与切换仍必须有本环境的备份/恢复、失败注入及独立发布证据。
 
 ## M1 当前接口与证明
 
@@ -75,4 +75,4 @@ Web 先用成熟 WebAuthn 校验库；Android 配置网站与包/签名 Digital 
 
 验收分开记录：隔离自动回归、真实邮件/短信/设备、历史库修复、生产迁移、正式发布。现存 2 high/1 moderate 依赖和 0083 发布证据门继续开放。完整 Auth V2 不因 M1 完成而关闭。
 
-本批具体结果和失败记录见 [第四批验收](OPTIMIZATION_BATCH_04_AUTH.md)。
+M1具体结果见[第四批验收](OPTIMIZATION_BATCH_04_AUTH.md)，后续密码凭据切片及611项回归/非空恢复见[M2-01记录](AUTH_V2_M2_PASSWORD_CREDENTIALS.md)。下一认证切片为M2-02任意新邮箱的当前账号与新凭据双证明绑定，随后推进正式短信/换号；完整Auth V2仍未关闭。
