@@ -1,5 +1,7 @@
 # 当前状态 — 2026-10-13
 
+2026-10-13 [S0第三批依赖处置](OPTIMIZATION_S0_BATCH_03_DEPENDENCIES.md)：FIX-04可补丁5项已清除（proxy-addr/sharp/shell-quote/compression/source-map-js），审计从2 critical/5 high/1 moderate降为0 critical/2 high/1 moderate。剩余node-forge/braces/sprintf-js无已发布安全版本，原high门exit1，FIX-04整体IN_PROGRESS，S0-A/发布不关闭。冻结复装及锁hash保持、全仓typecheck/build各8/8无缓存、521项回归、真实隔离API和Android JS导出通过；仅新Test MySQL3311库/Redis6391前缀，无个人或生产变更。下一独立切片FIX-06密码重置原子性；未补APK/真机/生产Linux或远端CI Green。
+
 2026-10-13 [S0第二批Admin鉴权](OPTIMIZATION_S0_BATCH_02_ADMIN_AUTH.md)：FIX-02页面访客范围CLOSED。复用原JWT/SQL会话与两种管理员角色，先验身份后读7项，禁用/降权/撤销即时重查，停用共享ADMIN_ACCESS_TOKEN；登录/退出、HttpOnly/Strict和Origin检查通过。最终50项单元+18项真实API/Next/Chrome回归通过，API/Admin类型与构建通过，原7项审计保留。仅新Test MySQL3311库/独立Redis6391前缀，无个人数据或生产变更。下一切片FIX-04依赖；正式0083、非空恢复、其他身份/队列/交互问题及公开HTTPS部署验证仍待完成。
 
 2026-10-13 [S0首批整改](OPTIMIZATION_S0_BATCH_01.md)：FIX-03/FIX-17/FIX-01按冻结范围CLOSED。全仓typecheck/build各8/8，最终Database31/31、Connector7/7、共享312/312；Test MySQL3311新库实际dump/restore通过，原母库标记hash/表数保持，危险CLI在连接前拒绝。Fast Gate接入安全单测。零新迁移/执行入口/个人库变更/生产部署，新增状态非空恢复、0083正式发布及其他安全问题仍待完成。下文4项类型错误和Connector失败为已修复历史时点。
