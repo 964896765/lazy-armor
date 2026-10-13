@@ -6,7 +6,10 @@ describe('P5-E connector manifest contract harness', () => {
   it('validates every registered adapter through one fail-closed harness', () => {
     const registry = createConnectorRegistry({ NODE_ENV: 'test' });
     const manifests = registry.list().map((connector) => validateConnectorManifest(connector));
-    expect(manifests).toHaveLength(9);
+    expect(manifests.map((manifest) => manifest.metadata.key).sort()).toEqual([
+      'content_provider', 'file_provider', 'gmail', 'google_calendar', 'internal',
+      'logistics_provider', 'manual', 'public_http_json', 'public_web_research', 'webhook',
+    ]);
     for (const manifest of manifests) {
       expect(manifest).toMatchObject({
         schemaVersion: '1',
