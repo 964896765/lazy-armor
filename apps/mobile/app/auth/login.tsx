@@ -1,12 +1,12 @@
 import { SegmentedControl } from '../../src/consumer-ui';
-import { authError } from '../../src/auth-error';
+import { authError, authRetryLabel } from '../../src/auth-error';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { Link, router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { api } from '../../src/api';
+import { api, ApiError } from '../../src/api';
 import { useAuthStore } from '../../src/auth-store';
 import { fetchLoginMethods } from '../../src/auth-methods';
 import type { SessionTokens } from '../../src/secure-token-store';
@@ -17,25 +17,26 @@ export default function LoginPage() {
  const setSession=useAuthStore(s=>s.setSession);
  const [mode,setMode]=useState<LoginMode>('email');const [identifier,setIdentifier]=useState('');const [code,setCode]=useState('');
  const [localDelivery,setLocalDelivery]=useState(false);
+ const [gatewayAccepted,setGatewayAccepted]=useState(false);
  const methods=useQuery({queryKey:['login-methods'],queryFn:fetchLoginMethods,staleTime:60000});
  const codeState=methods.data?.codeLogin[mode];
  const [sentTo,setSentTo]=useState('');const [retryAt,setRetryAt]=useState(0);const [now,setNow]=useState(Date.now());
  useEffect(()=>{const timer=setInterval(()=>setNow(Date.now()),1000);return()=>clearInterval(timer);},[]);
- const request=useMutation({mutationFn:()=>api<{sent:boolean;retryAfterSeconds:number;delivery?:string}>('/auth/code/request',undefined,{method:'POST',body:JSON.stringify({kind:mode,identifier})}),onSuccess:result=>{if(result.sent){setLocalDelivery(result.delivery==='LOCAL_DEVELOPMENT');setSentTo(mode+':'+identifier.trim());setRetryAt(Date.now()+result.retryAfterSeconds*1000);}}});
+ const request=useMutation({mutationFn:()=>api<{sent:boolean;retryAfterSeconds:number;delivery?:string}>('/auth/code/request',undefined,{method:'POST',body:JSON.stringify({kind:mode,identifier})}),onSuccess:result=>{if(result.sent){setLocalDelivery(result.delivery==='LOCAL_DEVELOPMENT');setGatewayAccepted(result.delivery==='GATEWAY_ACCEPTED');setSentTo(mode+':'+identifier.trim());setRetryAt(Date.now()+result.retryAfterSeconds*1000);}},onError:error=>{if(error instanceof ApiError&&error.retryAfterMs)setRetryAt(Date.now()+error.retryAfterMs);}});
  const login=useMutation({mutationFn:()=>api<SessionTokens & {firstLogin:boolean}>('/auth/code/verify',undefined,{method:'POST',body:JSON.stringify({kind:mode,identifier,code})}),onSuccess:async tokens=>{await setSession(tokens,{onboardingRequired:tokens.firstLogin});router.replace((tokens.firstLogin?'/onboarding':'/schedule') as never);}});
  const remaining=Math.max(0,Math.ceil((retryAt-now)/1000));
  const busy=request.isPending||login.isPending;
- const changeMode=(value:string)=>{if(busy)return;setMode(value as LoginMode);setIdentifier('');setCode('');setSentTo('');request.reset();login.reset();};
+ const changeMode=(value:string)=>{if(busy)return;setMode(value as LoginMode);setRetryAt(0);setGatewayAccepted(false);setLocalDelivery(false);setIdentifier('');setCode('');setSentTo('');request.reset();login.reset();};
  return <AuthPage title="欢迎使用懒人装甲" subtitle="登录后，继续你的目标与 AI 工作">
   <SegmentedControl value={mode} options={[{value:'email',label:'邮箱'},{value:'phone',label:'手机号'}]} onChange={changeMode}/>
   <Text style={styles.fieldLabel}>{mode==='phone'?'手机号码 · +86':'邮箱地址'}</Text>
   <TextInput editable={!busy} maxLength={mode==='phone'?14:320} style={styles.input} accessibilityLabel={mode==='phone'?'手机号码':'邮箱'} keyboardType={mode==='phone'?'phone-pad':'email-address'} autoCapitalize="none" autoComplete={mode==='phone'?'tel':'email'} placeholder={mode==='phone'?'中国大陆手机号':'邮箱地址'} value={identifier} onChangeText={value=>{setIdentifier(value);setCode('');setSentTo('');login.reset();request.reset();}}/>
   <Text style={styles.notice}>无需设置密码，使用一次性验证码即可登录。首次验证可创建账号。</Text>
-  <View style={{flexDirection:'row',gap:10,alignItems:'center'}}><TextInput editable={!busy} style={[styles.input,{flex:1}]} accessibilityLabel="验证码" keyboardType="number-pad" autoComplete="sms-otp" maxLength={6} placeholder="6 位验证码" value={code} onChangeText={setCode}/><Pressable accessibilityRole="button" disabled={busy||remaining>0||!identifier.trim()||!codeState||codeState==='UNAVAILABLE'} onPress={()=>request.mutate()} style={{padding:10}}><Text style={styles.strongLink}>{request.isPending?'发送中…':remaining>0?remaining+' 秒后重试':'获取验证码'}</Text></Pressable></View>
+  <View style={{flexDirection:'row',gap:10,alignItems:'center'}}><TextInput editable={!busy} style={[styles.input,{flex:1}]} accessibilityLabel="验证码" keyboardType="number-pad" autoComplete="sms-otp" maxLength={6} placeholder="6 位验证码" value={code} onChangeText={setCode}/><Pressable accessibilityRole="button" disabled={busy||remaining>0||!identifier.trim()||!codeState||codeState==='UNAVAILABLE'} onPress={()=>request.mutate()} style={{padding:10}}><Text style={styles.strongLink}>{request.isPending?'发送中…':remaining>0?authRetryLabel(remaining):'获取验证码'}</Text></Pressable></View>
   {codeState==='LOCAL_DEVELOPMENT'?<Text style={styles.notice}>当前验证码发送到本地后端控制台，不会收到{mode==='phone'?'短信':'邮件'}。也可使用邮箱密码登录。</Text>:null}
   {codeState==='UNAVAILABLE'?<Text style={styles.notice}>{mode==='phone'?'短信':'邮件'}验证码暂时不可用，请选择其他登录方式。</Text>:null}
   {methods.isError?<Text style={styles.error}>{authError(methods.error)}</Text>:null}
-  {sentTo===mode+':'+identifier.trim()?<Text style={styles.notice}>{localDelivery?'开发验证码已生成，请查看本地后端控制台。':'验证码已发送，请在 5 分钟内输入。'}</Text>:null}
+  {sentTo===mode+':'+identifier.trim()?<Text style={styles.notice}>{localDelivery?'开发验证码已生成，请查看本地后端控制台。':gatewayAccepted?'短信请求已受理，请留意短信。验证码 5 分钟内有效。':'验证码已发送，请在 5 分钟内输入。'}</Text>:null}
   {request.isError||login.isError?<Text style={styles.error}>{authError(request.error??login.error)}</Text>:null}
   <Pressable accessibilityRole="button" disabled={busy||!identifier.trim()||!/^\d{6}$/.test(code)} onPress={()=>login.mutate()} style={[styles.submit,(login.isPending||!/^\d{6}$/.test(code))&&styles.submitDisabled]}><Text style={styles.submitText}>{login.isPending?'验证中…':'验证并登录'}</Text></Pressable>
   {methods.data?.passwordLogin?<Link href={'/auth/password-login' as never} style={styles.textLink}>{methods.data.passwordIdentifiers?.includes('phone')?'使用密码登录':'使用邮箱密码登录'}</Link>:null}

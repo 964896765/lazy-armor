@@ -659,6 +659,13 @@
       "when": 1791849600000,
       "tag": "0093_user_password_credentials",
       "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1791936000000,
+      "tag": "0094_auth_sms_budgets",
+      "breakpoints": true
     }
   ]
 }

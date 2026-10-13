@@ -248,6 +248,33 @@ export const passwordCredentials = mysqlTable('password_credentials', {
   ...timestamps,
 }, table => [uniqueIndex('password_credentials_user_uq').on(table.userId)]);
 
+// Operational SMS budgets are durable and independent of users and Runtime approvals.
+export const authSmsQuotas = mysqlTable('auth_sms_quotas', {
+  id: uuidBinary('id').primaryKey(),
+  quotaNamespace: varchar('quota_namespace', { length: 160 }).notNull(),
+  bucket: varchar('bucket', { length: 16 }).notNull(),
+  kind: varchar('kind', { length: 16 }).notNull(),
+  subjectKey: char('subject_key', { length: 64 }).notNull(),
+  sendCount: int('send_count').notNull().default(0),
+  reservedFen: int('reserved_fen').notNull().default(0),
+  lastReservedAt: datetime('last_reserved_at', { mode: 'date', fsp: 6 }),
+  ...timestamps,
+}, table => [uniqueIndex('auth_sms_quotas_scope_uq').on(table.quotaNamespace, table.bucket, table.kind, table.subjectKey)]);
+
+export const authSmsAttempts = mysqlTable('auth_sms_attempts', {
+  id: uuidBinary('id').primaryKey(),
+  quotaNamespace: varchar('quota_namespace', { length: 160 }).notNull(),
+  bucket: varchar('bucket', { length: 16 }).notNull(),
+  phoneKey: char('phone_key', { length: 64 }).notNull(),
+  ipKey: char('ip_key', { length: 64 }).notNull(),
+  purpose: varchar('purpose', { length: 32 }).notNull(),
+  state: varchar('state', { length: 24 }).notNull(),
+  reservedFen: int('reserved_fen').notNull(),
+  acceptedCostFen: int('accepted_cost_fen'),
+  providerKey: char('provider_key', { length: 64 }),
+  ...timestamps,
+}, table => [index('auth_sms_attempts_namespace_idx').on(table.quotaNamespace, table.createdAt)]);
+
 export const authSessions = mysqlTable('auth_sessions', {
   id: uuidBinary('id').primaryKey(),
   userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
@@ -1900,6 +1927,8 @@ export const schema = {
   profiles,
   authIdentities,
   passwordCredentials,
+  authSmsQuotas,
+  authSmsAttempts,
   authSessions,
   passwordResetTokens,
   connectors,

@@ -64,6 +64,16 @@ const envSchema = z.object({
   AUTH_PASSWORD_CREDENTIAL_MODE: z.enum(['LEGACY', 'SHADOW', 'UNIFIED']).default('LEGACY'),
   AUTH_EMAIL_BIND_ENABLED: z.enum(['true', 'false']).default('false'),
   AUTH_PHONE_BIND_ENABLED: z.enum(['true', 'false']).default('false'),
+  SMS_LOGIN_SEND_ENABLED: z.enum(['true', 'false']).default('false'),
+  SMS_LOGIN_DELIVERY_ENDPOINT: z.string().trim().optional(),
+  LOGIN_CODE_DELIVERY_TOKEN: z.string().trim().optional(),
+  SMS_LOGIN_TEMPLATE_ID: z.string().trim().optional(),
+  SMS_LOGIN_QUOTA_SECRET: z.string().trim().optional(),
+  SMS_LOGIN_PHONE_DAILY_LIMIT: z.coerce.number().int().min(1).max(1000).default(5),
+  SMS_LOGIN_IP_DAILY_LIMIT: z.coerce.number().int().min(1).max(10000).default(20),
+  SMS_LOGIN_GLOBAL_DAILY_LIMIT: z.coerce.number().int().min(1).max(1000000).default(100),
+  SMS_LOGIN_MAX_UNIT_COST_FEN: z.coerce.number().int().min(1).max(10000).default(10),
+  SMS_LOGIN_DAILY_BUDGET_FEN: z.coerce.number().int().min(1).max(100000000).default(1000),
   AUTH_PASSWORD_RECOVERY_MODE: z.enum(['LEGACY', 'BOUND']).default('LEGACY'),
   AUTH_PASSWORD_RECOVERY_REQUEST_ENABLED: z.enum(['true', 'false']).default('true'),
   // Production credential provider selection
@@ -86,6 +96,15 @@ export type AppEnv = Omit<z.infer<typeof envSchema>, 'APP_ENV'> & { APP_ENV: Dep
 
 export const parseEnv = (input: NodeJS.ProcessEnv): AppEnv => {
   const parsed = envSchema.parse(input);
+  if (parsed.SMS_LOGIN_SEND_ENABLED === 'true') {
+    let endpoint: URL;
+    try { endpoint = new URL(parsed.SMS_LOGIN_DELIVERY_ENDPOINT ?? ''); }
+    catch { throw new Error('Enabled SMS delivery requires an HTTPS gateway'); }
+    if (endpoint.protocol !== 'https:' || endpoint.username || endpoint.password || endpoint.hash) throw new Error('SMS gateway requires HTTPS without embedded credentials or fragments');
+    if (!parsed.LOGIN_CODE_DELIVERY_TOKEN || parsed.LOGIN_CODE_DELIVERY_TOKEN.length < 32 || !parsed.SMS_LOGIN_QUOTA_SECRET || parsed.SMS_LOGIN_QUOTA_SECRET.length < 32) throw new Error('Enabled SMS delivery requires independent gateway and quota secrets of at least 32 characters');
+    if (!/^[A-Za-z0-9_-]{1,100}$/.test(parsed.SMS_LOGIN_TEMPLATE_ID ?? '')) throw new Error('Enabled SMS delivery requires an approved template ID');
+    if (parsed.SMS_LOGIN_DAILY_BUDGET_FEN < parsed.SMS_LOGIN_MAX_UNIT_COST_FEN) throw new Error('SMS daily budget must cover at least one maximum-price send');
+  }
   resolveGmailOAuthConfig(parsed);
   resolveGoogleCalendarOAuthConfig(parsed);
   resolveGitHubOAuthConfig(parsed);

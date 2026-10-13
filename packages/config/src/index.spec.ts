@@ -45,6 +45,19 @@ describe('deployment environment isolation', () => {
     expect(parseEnv({...deployedEnv('staging'),AUTH_PHONE_BIND_ENABLED:'true'}).AUTH_PHONE_BIND_ENABLED).toBe('true');
     expect(()=>parseEnv({...deployedEnv('staging'),AUTH_PHONE_BIND_ENABLED:'yes'})).toThrow();
   });
+  it('defaults real SMS off with conservative validated quotas',()=>{
+    const env=parseEnv(deployedEnv('staging'));
+    expect(env.SMS_LOGIN_SEND_ENABLED).toBe('false');
+    expect([env.SMS_LOGIN_PHONE_DAILY_LIMIT,env.SMS_LOGIN_IP_DAILY_LIMIT,env.SMS_LOGIN_GLOBAL_DAILY_LIMIT,env.SMS_LOGIN_MAX_UNIT_COST_FEN,env.SMS_LOGIN_DAILY_BUDGET_FEN]).toEqual([5,20,100,10,1000]);
+  });
+  it.each(['0','-1','1.5','not-a-number'])('rejects invalid SMS budget %s',value=>{
+    expect(()=>parseEnv({...deployedEnv('staging'),SMS_LOGIN_DAILY_BUDGET_FEN:value})).toThrow();
+  });
+  it('requires approved configuration and a stable independent quota secret for real SMS',()=>{
+    const valid={...deployedEnv('staging'),SMS_LOGIN_SEND_ENABLED:'true',SMS_LOGIN_DELIVERY_ENDPOINT:'https://sms.fixture.test',LOGIN_CODE_DELIVERY_TOKEN:'gateway-fixture-token-that-is-longer-than-32',SMS_LOGIN_TEMPLATE_ID:'fixture_login',SMS_LOGIN_QUOTA_SECRET:'quota-fixture-secret-that-is-longer-than-32'};
+    expect(parseEnv(valid).SMS_LOGIN_SEND_ENABLED).toBe('true');
+    for(const change of [{SMS_LOGIN_DELIVERY_ENDPOINT:'http://sms.fixture.test'},{SMS_LOGIN_DELIVERY_ENDPOINT:'https://user:secret@sms.fixture.test'},{SMS_LOGIN_QUOTA_SECRET:''},{LOGIN_CODE_DELIVERY_TOKEN:'short'},{SMS_LOGIN_TEMPLATE_ID:''},{SMS_LOGIN_DAILY_BUDGET_FEN:'1'}])expect(()=>parseEnv({...valid,...change})).toThrow();
+  });
   it.each(['staging', 'production'] as const)('accepts an isolated %s configuration', (appEnv) => {
     expect(() => assertProductionSafe(parseEnv(deployedEnv(appEnv)))).not.toThrow();
   });

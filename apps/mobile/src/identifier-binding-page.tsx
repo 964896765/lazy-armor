@@ -3,7 +3,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, Text, TextInput } from 'react-native';
 import { api, ApiError } from './api';
-import { authError } from './auth-error';
+import { authError, authRetryLabel } from './auth-error';
 import type { SecurityMethods } from './auth-methods';
 import { useAuthStore } from './auth-store';
 import { SegmentedControl } from './consumer-ui';
@@ -48,7 +48,7 @@ export function IdentifierBindingPage({ kind }: { kind: 'email' | 'phone' }) {
   const post = <T,>(path: string, body: unknown) => api<T>(`/auth/${kind}-binding/` + path, token, { method: 'POST', body: JSON.stringify(body) });
   const delivery = (result: Delivery) => {
     setRetryAt(Date.now() + result.retryAfterSeconds * 1000);
-    setNotice(result.delivery === 'LOCAL_DEVELOPMENT' ? '开发验证码已生成，请查看本地后端控制台。' : '验证码已发送，5 分钟内有效。');
+    setNotice(result.delivery === 'LOCAL_DEVELOPMENT' ? '开发验证码已生成，请查看本地后端控制台。' : result.delivery === 'GATEWAY_ACCEPTED' ? '短信请求已受理，请留意短信。验证码 5 分钟内有效。' : '验证码已发送，5 分钟内有效。');
   };
   const perform = async (work: (current: () => boolean) => Promise<void>) => {
     const captured = generation.current;
@@ -57,6 +57,7 @@ export function IdentifierBindingPage({ kind }: { kind: 'email' | 'phone' }) {
     try { await work(current); }
     catch (e) {
       if (current()) {
+        if(e instanceof ApiError && e.retryAfterMs)setRetryAt(Date.now()+e.retryAfterMs);
         if (e instanceof ApiError && (e.code === 'EMAIL_BIND_PROOF_EXPIRED' || e.code === 'PHONE_BIND_PROOF_EXPIRED' || e.status === 503)) restart();
         setError(authError(e));
       }
@@ -102,7 +103,7 @@ export function IdentifierBindingPage({ kind }: { kind: 'email' | 'phone' }) {
           {stage === 'current' ? <Text style={styles.notice}>验证码发送至已有登录方式：{sources.find(s => s.id === selected)?.masked}</Text> : null}
           {stage === 'target' ? <Text style={styles.notice}>{`请核对新${label}：${identifier.trim()}`}</Text> : null}
           <TextInput accessibilityLabel={stage === 'current' ? '当前账号验证码' : `新${label}验证码`} placeholder={stage === 'current' ? '当前账号的 6 位验证码' : `新${label}的 6 位验证码`} style={styles.input} value={code} onChangeText={setCode} editable={!busy} keyboardType="number-pad" maxLength={6}/>
-          {stage === 'target' ? <Pressable accessibilityRole="button" disabled={busy || remaining > 0} onPress={() => void requestTarget()}><Text style={styles.textLink}>{remaining > 0 ? remaining + ' 秒后重试' : `获取新${label}验证码`}</Text></Pressable> : null}
+          {stage === 'target' ? <Pressable accessibilityRole="button" disabled={busy || remaining > 0} onPress={() => void requestTarget()}><Text style={styles.textLink}>{remaining > 0 ? authRetryLabel(remaining) : `获取新${label}验证码`}</Text></Pressable> : null}
           <Pressable accessibilityRole="button" disabled={busy || !/^\d{6}$/.test(code)} style={[styles.submit, busy && styles.submitDisabled]} onPress={() => void (stage === 'current' ? confirmCurrent() : confirm())}><Text style={styles.submitText}>{busy ? '验证中…' : stage === 'current' ? '确认当前账号' : `验证并绑定${label}`}</Text></Pressable>
           <Pressable accessibilityRole="button" disabled={busy} onPress={restart}><Text style={styles.textLink}>重新开始绑定</Text></Pressable>
         </>}

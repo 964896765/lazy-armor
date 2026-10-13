@@ -6,6 +6,7 @@ export class ApiError extends Error {
     public readonly status: number,
     public readonly code: string,
     message: string,
+    public readonly retryAfterMs?: number,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -55,8 +56,9 @@ export async function api<T>(path: string, token?: string, init?: RequestInit): 
       headers: { 'content-type': 'application/json', 'cache-control': 'no-cache', ...(token ? { authorization: `Bearer ${token}` } : {}), ...init?.headers },
     });
     if (!response.ok) {
-      const body = await response.json().catch(() => null) as { code?: string; message?: string } | null;
-      throw new ApiError(response.status, body?.code ?? 'REQUEST_FAILED', body?.message ?? `请求失败（${response.status}）`);
+      const body = await response.json().catch(() => null) as { code?: string; message?: string; retryAfterMs?: number } | null;
+      const retryAfterMs=typeof body?.retryAfterMs==='number'&&Number.isFinite(body.retryAfterMs)&&body.retryAfterMs>0?Math.min(body.retryAfterMs,86400000):undefined;
+      throw new ApiError(response.status, body?.code ?? 'REQUEST_FAILED', body?.message ?? `请求失败（${response.status}）`,retryAfterMs);
     }
     if (response.status === 204) return undefined as T;
     return response.json() as Promise<T>;

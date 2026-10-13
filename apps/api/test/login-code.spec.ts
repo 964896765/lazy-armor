@@ -1,9 +1,9 @@
 import {LocalLoginCodeDeliveryProvider} from '../src/auth/local-login-code-delivery.provider';
 import { describe,it,expect,vi,afterEach } from 'vitest';
-const redis=vi.hoisted(()=>({set:vi.fn(),del:vi.fn(),eval:vi.fn(),quit:vi.fn(),status:'ready'}));
+const redis=vi.hoisted(()=>({set:vi.fn(),del:vi.fn(),eval:vi.fn(),quit:vi.fn(),status:'ready',on:vi.fn(),disconnect:vi.fn()}));
 vi.mock('ioredis',()=>({default:class{constructor(){return redis;}}}));
 import { LoginCodeService } from '../src/auth/login-code.service';
-function make(values:Record<string,string>={}){return new LoginCodeService({get:(key:string)=>values[key],getOrThrow:(key:string)=>values[key]??'private-test-secret'} as never,{consume:vi.fn().mockResolvedValue({allowed:true})} as never,new LocalLoginCodeDeliveryProvider({get:(key:string)=>values[key]} as never));}
+function make(values:Record<string,string>={}){return new LoginCodeService({get:(key:string)=>values[key],getOrThrow:(key:string)=>values[key]??'private-test-secret'} as never,{consume:vi.fn().mockResolvedValue({allowed:true})} as never,new LocalLoginCodeDeliveryProvider({get:(key:string)=>values[key]} as never),{available:()=>false} as never);}
 describe('passwordless login boundary',()=>{
  afterEach(()=>{vi.clearAllMocks();vi.unstubAllGlobals();});
  it('uses console-only random delivery in development without a configured endpoint',async()=>{const log=vi.spyOn(console,'info').mockImplementation(()=>{});const s=make({NODE_ENV:'development',APP_ENV:'development'});const response=await s.request({kind:'email',identifier:'a@example.com'},'ip');expect(response).toMatchObject({sent:true,delivery:'LOCAL_DEVELOPMENT'});expect(response).not.toHaveProperty('code');const record=JSON.parse(log.mock.calls[0][1]);expect(record.code).toMatch(/^\d{6}$/);expect(record.account).not.toBe('a@example.com');expect(redis.set.mock.calls[0][1]).not.toBe(record.code);log.mockRestore();});
@@ -18,7 +18,7 @@ describe('passwordless login boundary',()=>{
  });
  it('enforces the send frequency limit before issuing or logging a code',async()=>{
   const log=vi.spyOn(console,'info').mockImplementation(()=>{});
-  const s=new LoginCodeService({get:(key:string)=>key==='NODE_ENV'?'development':undefined,getOrThrow:()=> 'private-test-secret'} as never,{consume:vi.fn().mockResolvedValue({allowed:false})} as never,new LocalLoginCodeDeliveryProvider({get:(key:string)=>key==='NODE_ENV'?'development':undefined} as never));
+  const s=new LoginCodeService({get:(key:string)=>key==='NODE_ENV'?'development':undefined,getOrThrow:()=> 'private-test-secret'} as never,{consume:vi.fn().mockResolvedValue({allowed:false})} as never,new LocalLoginCodeDeliveryProvider({get:(key:string)=>key==='NODE_ENV'?'development':undefined} as never),{available:()=>false} as never);
   try{await expect(s.request({kind:'phone',identifier:'13800138000'},'ip')).rejects.toThrow('稍后');expect(redis.set).not.toHaveBeenCalled();expect(log).not.toHaveBeenCalled();}finally{log.mockRestore();}
  });
  it('uses the same expiring hashed storage for local phone codes',async()=>{

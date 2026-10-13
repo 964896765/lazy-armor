@@ -50,6 +50,12 @@ describe('API environment resolution', () => {
 });
 describe('request deadlines', () => {
  afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
+ it('retains and bounds the server retry deadline for authentication requests',async()=>{
+  vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:false,status:429,json:async()=>({code:'SMS_CODE_COOLDOWN',message:'Wait',retryAfterMs:12001})}));
+  await expect(api('/auth/code/request')).rejects.toMatchObject({code:'SMS_CODE_COOLDOWN',retryAfterMs:12001});
+  vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:false,status:429,json:async()=>({code:'SMS_CODE_DAILY_LIMIT',message:'Wait',retryAfterMs:999999999})}));
+  await expect(api('/auth/code/request')).rejects.toMatchObject({retryAfterMs:86400000});
+ });
  it('waits for a committed refresh rotation instead of abandoning its response after three seconds', async () => {
   vi.useFakeTimers(); let requestSignal: AbortSignal | undefined;
   vi.stubGlobal('fetch', vi.fn((_url, init) => { requestSignal = init.signal; return new Promise(resolve => setTimeout(() => resolve({ ok: true, status: 200, json: async () => ({ accessToken: 'new-access', refreshToken: 'new-refresh' }) }), 5000)); }));

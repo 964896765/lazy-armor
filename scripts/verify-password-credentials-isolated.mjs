@@ -3,8 +3,11 @@ import { execFileSync, spawn } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { createWriteStream, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { assertAuthWebFixture } from './lib/auth-web-fixture-preflight.mjs';
 
 const root = process.cwd();
+const suite=process.env.AUTH_V2_TEST_SUITE??'all';
+if(!['all','sms'].includes(suite))throw new Error('AUTH_V2_TEST_SUITE must be all or sms');
 if (![4,8].includes(process.argv.length) || process.argv[2] !== '--log') throw new Error('Use --log FRESH_PATH [--browser EXECUTABLE --screenshots FRESH_DIR]');
 const browser=process.argv.length===8?process.argv[5]:undefined;
 const screenshots=process.argv.length===8?path.resolve(root,process.argv[7]):undefined;
@@ -18,6 +21,7 @@ const prefix = 'auth_m2:' + randomUUID(), container = 'lazy-armor-v81-test-mysql
 const dbRequire = createRequire(path.join(root, 'packages/database/package.json'));
 const mysql = dbRequire('mysql2/promise');
 try {
+  if(browser){await assertAuthWebFixture(root,browser);console.log(JSON.stringify({phase:'EXPORTED_WEB_PREFLIGHT_PASSED',isolated:true}));}
   const inspection = JSON.parse(execFileSync('docker', ['inspect', container], { encoding: 'utf8', windowsHide: true }))[0];
   if (!inspection.State.Running || !inspection.NetworkSettings.Ports['3306/tcp']?.some(binding => binding.HostPort === '3311')) throw new Error('Isolated MySQL3311 required');
   const env = Object.fromEntries(inspection.Config.Env.map(value => { const at = value.indexOf('='); return [value.slice(0, at), value.slice(at + 1)]; }));
@@ -60,9 +64,9 @@ try {
 
   if(screenshots)mkdirSync(screenshots,{recursive:true});
   const log = createWriteStream(logFile, { flags: 'wx' });
-  console.log(JSON.stringify({ databaseName, isolated: true, phase: 'AUTH_M2_API_REGRESSION_STARTED' }));
+  console.log(JSON.stringify({ databaseName, isolated: true, phase: suite==='sms'?'AUTH_M3_SMS_REGRESSION_STARTED':'AUTH_M2_API_REGRESSION_STARTED' }));
   const child = spawn(process.execPath, [path.join(root, 'node_modules/vitest/vitest.mjs'), 'run',
-    'test/auth-password-credentials.integration.spec.ts', 'test/email-binding.integration.spec.ts', 'test/email-binding-startup.spec.ts', 'test/phone-binding.integration.spec.ts', 'test/phone-binding-startup.spec.ts', 'test/password-recovery.integration.spec.ts', 'test/password-recovery-token.spec.ts', 'test/auth-v2.integration.spec.ts', 'test/p0-final-security.spec.ts', 'test/login-code.spec.ts', 'test/password-reset-delivery.spec.ts', 'test/password-credential-startup.spec.ts', '--reporter=dot', '--hookTimeout=90000'], {
+    ...(suite==='sms'?['test/sms-code-delivery.integration.spec.ts','test/sms-code-startup.spec.ts','test/request-redis.integration.spec.ts','test/runtime-provider-common.integration.spec.ts']: ['test/auth-password-credentials.integration.spec.ts', 'test/email-binding.integration.spec.ts', 'test/email-binding-startup.spec.ts', 'test/phone-binding.integration.spec.ts', 'test/phone-binding-startup.spec.ts', 'test/sms-code-delivery.integration.spec.ts', 'test/sms-code-startup.spec.ts', 'test/request-redis.integration.spec.ts', 'test/runtime-provider-common.integration.spec.ts', 'test/password-recovery.integration.spec.ts', 'test/password-recovery-token.spec.ts', 'test/auth-v2.integration.spec.ts', 'test/p0-final-security.spec.ts', 'test/login-code.spec.ts', 'test/password-reset-delivery.spec.ts', 'test/password-credential-startup.spec.ts']), '--reporter=dot', '--hookTimeout=90000'], {
     cwd: path.join(root, 'apps/api'), windowsHide: true, env: { ...process.env, CI: 'true', NODE_ENV: 'test', APP_ENV: 'development', APP_ROLE: 'api',
       DATABASE_URL: url.href, TEST_DATABASE_URL: url.href, TEST_DATABASE_NAME: databaseName, REQUIRE_EXACT_TEST_TARGET: '1',
       REDIS_URL: 'redis://127.0.0.1:6391/15', REDIS_KEY_PREFIX: prefix, TEST_REDIS_KEY_PREFIX: prefix,
@@ -88,7 +92,7 @@ try {
     const source=await mysql.createConnection({uri:url.href,timezone:'Z'}),restoreUrl=new URL(url.href);restoreUrl.pathname='/'+restoredName;
     const restored=await mysql.createConnection({uri:restoreUrl.href,timezone:'Z'});
     try{
-      const tables=['users','profiles','user_memberships','login_identifiers','auth_identities','password_credentials','auth_sessions','password_reset_tokens','audit_logs'];
+      const tables=['users','profiles','user_memberships','login_identifiers','auth_identities','password_credentials','auth_sessions','password_reset_tokens','audit_logs','auth_sms_quotas','auth_sms_attempts'];
       let passwordUsers=0;
       for(const table of tables){
         const before=(await source.query('SELECT * FROM '+table+' ORDER BY id'))[0],after=(await restored.query('SELECT * FROM '+table+' ORDER BY id'))[0];
@@ -100,6 +104,6 @@ try {
       console.log(JSON.stringify({phase:'NONEMPTY_AUTH_BACKUP_RESTORE_PASSED',isolated:true,passwordUsers,tablesChecked:tables.length,backupPrivate:true}));
     }finally{await source.end();await restored.end();}
   }
-  console.log(JSON.stringify({ code, databaseName, logFile, scope: 'REAL_NEST_SQL_REDIS_AUTH_FIXTURES' }));
+  console.log(JSON.stringify({ code, databaseName, logFile, scope: suite==='sms'?'REAL_NEST_SQL_REDIS_SMS_FIXTURES':'REAL_NEST_SQL_REDIS_AUTH_FIXTURES' }));
   process.exitCode = code;
 } catch (error) { console.error(typeof error?.code === 'string' ? error.code : 'AUTH_M2_ISOLATED_ACCEPTANCE_FAILED'); process.exitCode = 1; }

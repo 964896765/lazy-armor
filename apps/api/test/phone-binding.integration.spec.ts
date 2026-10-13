@@ -14,7 +14,7 @@ import { AuditService } from '../src/audit/audit.service';
 
 describe.sequential('M3-01 safe new phone binding on real SQL and Redis', () => {
   let app: INestApplication, pool: Pool, service: AuthService, binding: PhoneBindingService, codes: LoginCodeService, redis: IORedis;
-  const keys = ['AUTH_PASSWORD_CREDENTIAL_MODE','AUTH_PHONE_BIND_ENABLED','AUTH_EMAIL_BIND_ENABLED','EMAIL_LOGIN_DELIVERY_ENDPOINT','SMS_LOGIN_DELIVERY_ENDPOINT','LOGIN_CODE_DELIVERY_TOKEN','PUBLIC_REGISTRATION','REDIS_KEY_PREFIX','TEST_REDIS_KEY_PREFIX'] as const;
+  const keys = ['SMS_LOGIN_SEND_ENABLED','SMS_LOGIN_TEMPLATE_ID','SMS_LOGIN_QUOTA_SECRET','AUTH_PASSWORD_CREDENTIAL_MODE','AUTH_PHONE_BIND_ENABLED','AUTH_EMAIL_BIND_ENABLED','EMAIL_LOGIN_DELIVERY_ENDPOINT','SMS_LOGIN_DELIVERY_ENDPOINT','LOGIN_CODE_DELIVERY_TOKEN','PUBLIC_REGISTRATION','REDIS_KEY_PREFIX','TEST_REDIS_KEY_PREFIX'] as const;
   const previous = Object.fromEntries(keys.map(key => [key, process.env[key]]));
   const deliveries = new Map<string,string>();
   const password = 'correct-horse-battery-staple';
@@ -26,14 +26,15 @@ describe.sequential('M3-01 safe new phone binding on real SQL and Redis', () => 
     process.env.AUTH_PASSWORD_CREDENTIAL_MODE = 'UNIFIED'; process.env.AUTH_PHONE_BIND_ENABLED = 'true'; process.env.PUBLIC_REGISTRATION = 'true';
     process.env.AUTH_EMAIL_BIND_ENABLED = 'true';
     process.env.EMAIL_LOGIN_DELIVERY_ENDPOINT = process.env.SMS_LOGIN_DELIVERY_ENDPOINT = 'https://binding-delivery.fixture.test';
-    process.env.LOGIN_CODE_DELIVERY_TOKEN = 'private-binding-fixture-token';
+    process.env.LOGIN_CODE_DELIVERY_TOKEN = 'private-binding-fixture-token-that-is-longer-than-32';
+    process.env.SMS_LOGIN_SEND_ENABLED='true';process.env.SMS_LOGIN_TEMPLATE_ID='fixture-login';process.env.SMS_LOGIN_QUOTA_SECRET='private-stable-sms-quota-fixture-key-xxxxxxxxxxxxxxxx';
     prefix = process.env.REDIS_KEY_PREFIX! + ':phone-binding-tests';
     process.env.REDIS_KEY_PREFIX = process.env.TEST_REDIS_KEY_PREFIX = prefix;
     vi.stubGlobal('fetch', vi.fn(async (url: string, options: RequestInit) => {
       if (String(url) !== process.env.EMAIL_LOGIN_DELIVERY_ENDPOINT) throw new Error('Unexpected outbound request');
       expect(options.redirect).toBe('error');
       const body = JSON.parse(String(options.body)); deliveries.set(body.purpose + ':' + body.recipient, body.code);
-      return {ok:true};
+      return {ok:true,json:async()=>({accepted:true,requestId:body.requestId,providerRequestId:'fixture-sms',costFen:3})};
     }));
     ({app,pool} = await bootP2App('phone-binding'));
     service = app.get(AuthService); binding = app.get(PhoneBindingService); codes = app.get(LoginCodeService); redis = new IORedis(process.env.REDIS_URL!);
@@ -43,6 +44,7 @@ describe.sequential('M3-01 safe new phone binding on real SQL and Redis', () => 
     // remain real; the boundary regression explicitly advances this clock.
     budgetClock = vi.spyOn(Date,'now').mockReturnValue(Date.now());
     // Reset only this suite's random, isolated budgets between independent cases.
+    await pool.execute('DELETE FROM auth_sms_attempts WHERE quota_namespace=?',[prefix]);await pool.execute('DELETE FROM auth_sms_quotas WHERE quota_namespace=?',[prefix]);
     const budgets = await redis.keys(prefix + ':ratelimit:*'); if (budgets.length) await redis.del(...budgets);
   });
   afterEach(() => budgetClock?.mockRestore());
@@ -71,7 +73,7 @@ describe.sequential('M3-01 safe new phone binding on real SQL and Redis', () => 
     return rows[0]?.userId;
   }
   async function grantKey(challenge: string) { return (binding as any).key(challenge) as string; }
-  async function releaseSendBudget() { const budgets = await redis.keys(prefix + ':ratelimit:*'); if (budgets.length) await redis.del(...budgets); }
+  async function releaseSendBudget() { await pool.execute("DELETE FROM auth_sms_quotas WHERE quota_namespace=? AND bucket='interval'",[prefix]); const budgets = await redis.keys(prefix + ':ratelimit:*'); if (budgets.length) await redis.del(...budgets); }
 
   it('password + new phone proofs bind to the original user, OTP/password both enter the same data', async () => {
     const s = await account(), g = await start(s), code = await targetCode(s,g);
@@ -370,7 +372,7 @@ describe.sequential('M3-01 safe new phone binding on real SQL and Redis', () => 
       await page.getByRole('button',{name:/添加登录手机号/}).click(); await page.getByLabel('新手机号',{exact:true}).fill(target); await page.getByLabel('当前密码',{exact:true}).fill(password);
       await page.screenshot({path:path.join(screenshots,'m3-phone-bind-current.png'),fullPage:true});
       await page.getByRole('button',{name:'验证当前账号',exact:true}).click();
-      await page.getByRole('button',{name:'获取新手机号验证码',exact:true}).click(); await page.getByText('验证码已发送，5 分钟内有效。',{exact:true}).waitFor();
+      await page.getByRole('button',{name:'获取新手机号验证码',exact:true}).click(); await page.getByText('短信请求已受理，请留意短信。验证码 5 分钟内有效。',{exact:true}).waitFor();
       await page.getByLabel('新手机号验证码',{exact:true}).fill(deliveries.get('phone-bind-target:'+target)!);
       await page.screenshot({path:path.join(screenshots,'m3-phone-bind-target.png'),fullPage:true});
       await page.getByRole('button',{name:'验证并绑定手机号',exact:true}).click(); await page.getByRole('button',{name:'返回账号与验证',exact:true}).waitFor();
@@ -398,7 +400,7 @@ describe.sequential('M3-01 safe new phone binding on real SQL and Redis', () => 
       await releaseSendBudget(); await page3.getByRole('button',{name:'发送当前账号验证码',exact:true}).click(); await page3.getByLabel('当前账号验证码',{exact:true}).waitFor();
       await page3.getByLabel('当前账号验证码',{exact:true}).fill(deliveries.get('phone-bind-current:'+otpUser.email)!);
       await page3.screenshot({path:path.join(screenshots,'m3-phone-bind-password-free-current.png'),fullPage:true});
-      await page3.getByRole('button',{name:'确认当前账号',exact:true}).click(); await page3.getByRole('button',{name:'获取新手机号验证码',exact:true}).click(); await page3.getByText('验证码已发送，5 分钟内有效。',{exact:true}).waitFor();
+      await page3.getByRole('button',{name:'确认当前账号',exact:true}).click(); await page3.getByRole('button',{name:'获取新手机号验证码',exact:true}).click(); await page3.getByText('短信请求已受理，请留意短信。验证码 5 分钟内有效。',{exact:true}).waitFor();
       mark('OTP_TARGET_SENT');
       await page3.getByLabel('新手机号验证码',{exact:true}).fill(deliveries.get('phone-bind-target:'+otpTarget)!); await page3.getByRole('button',{name:'验证并绑定手机号',exact:true}).click();
       await page3.getByRole('button',{name:'返回账号与验证',exact:true}).waitFor(); expect(await owner(otpTarget)).toBe(otpUser.userId);
@@ -410,7 +412,7 @@ describe.sequential('M3-01 safe new phone binding on real SQL and Redis', () => 
       const fourth = await browser.newContext(), page4 = await fourth.newPage(); await page4.route('http://127.0.0.1:3001/api/**',bridge);
       page4.setDefaultTimeout(15000);
       await releaseSendBudget(); await page4.goto(origin+'/auth/login'); await page4.getByRole('tab',{name:'手机号',exact:true}).click(); await page4.getByRole('textbox',{name:'手机号码',exact:true}).fill(otpTarget); await page4.getByRole('button',{name:'获取验证码',exact:true}).click();
-      await page4.getByText('验证码已发送，请在 5 分钟内输入。',{exact:true}).waitFor(); await page4.getByLabel('验证码',{exact:true}).fill(deliveries.get('login:'+otpTarget)!);
+      await page4.getByText('短信请求已受理，请留意短信。验证码 5 分钟内有效。',{exact:true}).waitFor(); await page4.getByLabel('验证码',{exact:true}).fill(deliveries.get('login:'+otpTarget)!);
       await page4.getByRole('button',{name:'验证并登录',exact:true}).click(); await page4.waitForURL('**/schedule'); expect(signedInUser).toBe(otpUser.userId);
       await closeContext(fourth);
       expect(bridgeFailures).toEqual([]);

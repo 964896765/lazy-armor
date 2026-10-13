@@ -14,6 +14,7 @@ import { authTransaction, type AuthTransaction } from './auth-transaction';
 import { LoginCodeService, type ChallengeScope } from './login-code.service';
 import { maskIdentifier, normalizeIdentifier } from './login-identifier';
 import { PasswordCredentialService } from './password-credential.service';
+import { connectRequestRedis, createRequestRedis } from '../infrastructure/request-redis';
 export interface StartIdentifierBinding { identifier: string; proof: 'password' | 'code'; password?: string; identifierId?: string }
 
 interface BindingState {
@@ -28,7 +29,8 @@ interface BindingState {
 }
 
 export abstract class IdentifierBindingService implements OnModuleInit, OnApplicationShutdown {
-  private readonly redis: IORedis;
+  private redis: IORedis;
+ private readonly redisUrl: string;
   constructor(
     private readonly kind: 'email' | 'phone',
     private readonly db: InjectedDatabase,
@@ -38,8 +40,7 @@ export abstract class IdentifierBindingService implements OnModuleInit, OnApplic
     private readonly limiter: RateLimiterService,
     private readonly audit: AuditService,
   ) {
-    this.redis = new IORedis(config.getOrThrow<string>('REDIS_URL'), { lazyConnect: true, maxRetriesPerRequest: 1, connectTimeout: 2000, retryStrategy: times => Math.min(times * 100, 1000) });
-    this.redis.on('error', () => {}); // The caller receives a sanitized, closed failure.
+    this.redisUrl=config.getOrThrow<string>('REDIS_URL');this.redis = createRequestRedis(this.redisUrl);
   }
   onModuleInit() {
     if (this.config.get<string>(this.flag()) === 'true' && !this.passwords.unified()) throw new Error(`${this.kind} binding requires UNIFIED password credentials`);
@@ -52,7 +53,7 @@ export abstract class IdentifierBindingService implements OnModuleInit, OnApplic
   }
   private async guarded<T>(work: () => Promise<T>): Promise<T> {
     try { return await work(); }
-    catch (error) { if (error instanceof HttpException) throw error; throw new HttpException('验证服务暂不可用，请稍后重新开始绑定。', 503); }
+    catch (error) { if (error instanceof HttpException) throw error; this.redis.disconnect();this.redis=createRequestRedis(this.redisUrl);throw new HttpException('验证服务暂不可用，请稍后重新开始绑定。', 503); }
   }
   private flag() { return this.kind === 'email' ? 'AUTH_EMAIL_BIND_ENABLED' : 'AUTH_PHONE_BIND_ENABLED'; }
   private label() { return this.kind === 'email' ? '邮箱' : '手机号'; }
@@ -95,6 +96,7 @@ export abstract class IdentifierBindingService implements OnModuleInit, OnApplic
   }
   private async load(user: AuthenticatedUser, challenge: string, stage: BindingState['stage']) {
     this.assertEnabled();
+    await connectRequestRedis(this.redis);
     const raw = await this.redis.get(this.key(challenge));
     if (!raw) throw this.invalid();
     const state = JSON.parse(raw) as BindingState;
@@ -135,6 +137,7 @@ export abstract class IdentifierBindingService implements OnModuleInit, OnApplic
       await this.assertFree(identifier);
       await this.validate(user, state);
       const challenge = randomBytes(32).toString('hex');
+      await connectRequestRedis(this.redis);
       await this.redis.set(this.key(challenge), JSON.stringify(state), 'EX', 600);
       if (state.source) {
         try {
@@ -184,5 +187,5 @@ export abstract class IdentifierBindingService implements OnModuleInit, OnApplic
       });
     });
   }
-  async onApplicationShutdown() { if (this.redis.status !== 'end') await this.redis.quit(); }
+  async onApplicationShutdown() { this.redis.disconnect(); }
 }

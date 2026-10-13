@@ -15,10 +15,10 @@ Beta 默认邮箱验证码，密码是已登录用户主动添加的备用方式
 | M0 只读审计 | 规范化邮箱/手机号，比较 auth_identities 与 login_identifiers；统计跨 User ID 冲突、非规范值、未验证旧邮箱 | 私有清单只包含聚合与加盐指纹，不导出密码/hash/token | 每个环境单独取快照；冲突需本人证明与人工核对 |
 | M1 Beta 基础（已实现） | 复用原表及唯一索引；事务统一身份解析，密码注册不虚构邮箱验证；不新增迁移 | 合并 OTP 登录/注册、当前账号验证邮箱、可选初始密码、真实安全状态；重置/改密原子撤销会话 | SQL/Redis 并发、事务失败回滚、账号冲突与客户端刷新回归；Web 实际交互 |
 | M2 凭据解耦（M2-01/02/03已实现，整体待续） | 0093用户级密码；bcrypt参数/version/source保留；原hash复制，不改User ID；绑定与恢复零新SQL | LEGACY默认兼容、SHADOW核对/事务双写、UNIFIED共享密码；新邮箱双证明添加，BOUND加密链接冻结渠道/凭据版本并原子恢复 | [M2-01](AUTH_V2_M2_PASSWORD_CREDENTIALS.md)、[M2-02](AUTH_V2_M2_EMAIL_BINDING.md)、[M2-03](AUTH_V2_M2_EMAIL_RECOVERY.md)；旧表停写/Argon2待实施，生产迁移与切换待验 |
-| M3 国内手机号（M3-01已实现，整体待续） | [手机号绑定](AUTH_V2_M3_PHONE_BINDING.md)复用phone唯一映射与邮箱共用证明流程，零新SQL，不改User ID | 当前密码/已有渠道OTP + 新号码OTP；会话/用途/目标/版本冻结、冲突拒绝与事务审计；真实安全中心和两步表单 | 正式短信、严格发送间隔/日费用/设备异常、换号与丢失号码恢复独立实施或验收 |
+| M3 国内手机号（M3-01/02已实现，整体待续） | [手机号绑定](AUTH_V2_M3_PHONE_BINDING.md)保持原User ID；[短信预算](AUTH_V2_M3_SMS_GUARDRAILS.md)0094独立持久额度/发送记录 | 当前账号/新号双证明；号码60秒预留间隔、号码/IP/通道日额度及最高费用预留、Gateway V2回执和故障时限；备用邮箱与页面同步 | 正式供应商/运营商送达、设备异常/人机验证、换号与丢失号码恢复分别待实施或验收 |
 | M4 Passkey（待实施） | passkey_credentials：user_id、credential_id 唯一、public_key、sign_count、transports、AAGUID、备份标志、created/last_used/revoked；不保存生物信息 | WebAuthn 注册与登录 options/verify；原 session 与审计；用户可管理多把凭据 | 固定可信 RP ID/Origin、HTTPS；Web→Android Credential Manager→iOS，分别验收 |
 
-M1当时零新SQL。后续M2-01在Schema中增加password_credentials和0093前向迁移，仅新隔离test库执行；Passkey等其他新表仍为设计。正式迁移、全量回填与切换仍必须有本环境的备份/恢复、失败注入及独立发布证据。
+M1当时零新SQL。M2-01增加password_credentials和0093；M3-02增加0094短信额度/发送记录。新迁移仅在独立test库执行，个人/生产尚未迁移；Passkey表仍为设计。正式迁移、全量回填与切换仍必须有本环境的备份/恢复、失败注入及独立发布证据。
 
 ## M1 当前接口与证明
 
@@ -56,7 +56,7 @@ LOCAL_DEVELOPMENT 仅允许开发环境并明确显示控制台发送，测试/�
 
 ## M3 手机号与账号恢复
 
-正式服务采用经签名/模板审核的短信供应商适配器，配置 secret 仅在服务端。先灰度真实中国大陆号码，记录送达延迟/失败率与日费用，限制号码/IP/设备/日额度并在异常时增加挑战或暂时阻断。日志和供应商回执脱敏。
+M3-02已经实现独立默认关闭的短信发送开关、0094持久日预算与号码60秒预留间隔、最高费用预留、Gateway V2固定模板/回执验证以及请求Redis/SQL/HTTP时限。午夜保留号码间隔，失败/未知不退款或自动补发；费用守卫不依赖Redis持久性。网关必须前置审核模板、报价与计费片数，受理不等于送达。真实大陆运营商灰度、供应商签名/模板、账单对账及设备异常/人机验证仍独立待验。
 
 M3-01已实现当前身份与新手机号双证明，邮箱/手机号共用流程与表单，旧邮箱证明仍可消费，绑定开启要求UNIFIED与已配置HTTPS短信网关。配置状态不证明实际短信送达，Beta登录仍邮箱优先。换号需验证旧渠道或强凭据并验证新号。旧渠道不可用时走独立恢复，不能把“收到新号短信”视为旧账号所有权。已归属其他 User ID 的号码不得自动绑定；号码回收问题需要恢复保护、通知与敏感操作延迟规则。
 
@@ -78,4 +78,4 @@ Web 先用成熟 WebAuthn 校验库；Android 配置网站与包/签名 Digital 
 
 验收分开记录：隔离自动回归、真实邮件/短信/设备、历史库修复、生产迁移、正式发布。现存 2 high/1 moderate 依赖和 0083 发布证据门继续开放。完整 Auth V2 不因 M1 完成而关闭。
 
-M1具体结果见[第四批验收](OPTIMIZATION_BATCH_04_AUTH.md)，密码凭据见[M2-01](AUTH_V2_M2_PASSWORD_CREDENTIALS.md)，新邮箱绑定见[M2-02](AUTH_V2_M2_EMAIL_BINDING.md)，统一邮箱恢复见[M2-03](AUTH_V2_M2_EMAIL_RECOVERY.md)，手机号双证明绑定及当前分析见[M3-01](AUTH_V2_M3_PHONE_BINDING.md)。下一认证切片M3-02推进正式短信防滥用与供应商契约，严格发送间隔/日额度/费用熔断先实施，真实运营商送达与换号/丢失恢复独立验收；完整Auth V2仍未关闭。
+M1具体结果见[第四批验收](OPTIMIZATION_BATCH_04_AUTH.md)，密码凭据见[M2-01](AUTH_V2_M2_PASSWORD_CREDENTIALS.md)，新邮箱绑定见[M2-02](AUTH_V2_M2_EMAIL_BINDING.md)，邮箱恢复见[M2-03](AUTH_V2_M2_EMAIL_RECOVERY.md)，手机号绑定见[M3-01](AUTH_V2_M3_PHONE_BINDING.md)，短信预算/故障恢复及当前分析见[M3-02](AUTH_V2_M3_SMS_GUARDRAILS.md)。下一认证切片M3-03安全换号，已有渠道/密码与新号码双证明、原渠道通知及会话策略；正式供应商、设备异常和丢失所有渠道恢复独立验收。完整Auth V2仍未关闭。

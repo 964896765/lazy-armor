@@ -14,7 +14,7 @@ import { AuditService } from '../src/audit/audit.service';
 
 describe.sequential('M2-02 safe new email binding on real SQL and Redis', () => {
   let app: INestApplication, pool: Pool, service: AuthService, binding: EmailBindingService, codes: LoginCodeService, redis: IORedis;
-  const keys = ['AUTH_PASSWORD_CREDENTIAL_MODE','AUTH_EMAIL_BIND_ENABLED','EMAIL_LOGIN_DELIVERY_ENDPOINT','SMS_LOGIN_DELIVERY_ENDPOINT','LOGIN_CODE_DELIVERY_TOKEN','PUBLIC_REGISTRATION','REDIS_KEY_PREFIX','TEST_REDIS_KEY_PREFIX'] as const;
+  const keys = ['SMS_LOGIN_SEND_ENABLED','SMS_LOGIN_TEMPLATE_ID','SMS_LOGIN_QUOTA_SECRET','AUTH_PASSWORD_CREDENTIAL_MODE','AUTH_EMAIL_BIND_ENABLED','EMAIL_LOGIN_DELIVERY_ENDPOINT','SMS_LOGIN_DELIVERY_ENDPOINT','LOGIN_CODE_DELIVERY_TOKEN','PUBLIC_REGISTRATION','REDIS_KEY_PREFIX','TEST_REDIS_KEY_PREFIX'] as const;
   const previous = Object.fromEntries(keys.map(key => [key, process.env[key]]));
   const deliveries = new Map<string,string>();
   const password = 'correct-horse-battery-staple';
@@ -24,14 +24,15 @@ describe.sequential('M2-02 safe new email binding on real SQL and Redis', () => 
   beforeAll(async () => {
     process.env.AUTH_PASSWORD_CREDENTIAL_MODE = 'UNIFIED'; process.env.AUTH_EMAIL_BIND_ENABLED = 'true'; process.env.PUBLIC_REGISTRATION = 'true';
     process.env.EMAIL_LOGIN_DELIVERY_ENDPOINT = process.env.SMS_LOGIN_DELIVERY_ENDPOINT = 'https://binding-delivery.fixture.test';
-    process.env.LOGIN_CODE_DELIVERY_TOKEN = 'private-binding-fixture-token';
+    process.env.LOGIN_CODE_DELIVERY_TOKEN = 'private-binding-fixture-token-that-is-longer-than-32';
+    process.env.SMS_LOGIN_SEND_ENABLED='true';process.env.SMS_LOGIN_TEMPLATE_ID='fixture-login';process.env.SMS_LOGIN_QUOTA_SECRET='private-stable-sms-quota-fixture-key-xxxxxxxxxxxxxxxx';
     prefix = process.env.REDIS_KEY_PREFIX! + ':email-binding-tests';
     process.env.REDIS_KEY_PREFIX = process.env.TEST_REDIS_KEY_PREFIX = prefix;
     vi.stubGlobal('fetch', vi.fn(async (url: string, options: RequestInit) => {
       if (String(url) !== process.env.EMAIL_LOGIN_DELIVERY_ENDPOINT) throw new Error('Unexpected outbound request');
       expect(options.redirect).toBe('error');
       const body = JSON.parse(String(options.body)); deliveries.set(body.purpose + ':' + body.recipient, body.code);
-      return {ok:true};
+      return {ok:true,json:async()=>({accepted:true,requestId:body.requestId,providerRequestId:'fixture-sms',costFen:3})};
     }));
     ({app,pool} = await bootP2App('email-binding'));
     service = app.get(AuthService); binding = app.get(EmailBindingService); codes = app.get(LoginCodeService); redis = new IORedis(process.env.REDIS_URL!);
@@ -41,6 +42,7 @@ describe.sequential('M2-02 safe new email binding on real SQL and Redis', () => 
     // arbitrary minute boundary. Redis TTLs and asynchronous timers stay real.
     budgetClock = vi.spyOn(Date,'now').mockReturnValue(Date.now());
     // Reset only this suite's random, isolated budgets between independent cases.
+    await pool.execute('DELETE FROM auth_sms_attempts WHERE quota_namespace=?',[prefix]);await pool.execute('DELETE FROM auth_sms_quotas WHERE quota_namespace=?',[prefix]);
     const budgets = await redis.keys(prefix + ':ratelimit:*'); if (budgets.length) await redis.del(...budgets);
   });
   afterEach(() => budgetClock?.mockRestore());
@@ -69,7 +71,7 @@ describe.sequential('M2-02 safe new email binding on real SQL and Redis', () => 
     return rows[0]?.userId;
   }
   async function grantKey(challenge: string) { return (binding as any).key(challenge) as string; }
-  async function releaseSendBudget() { const budgets = await redis.keys(prefix + ':ratelimit:*'); if (budgets.length) await redis.del(...budgets); }
+  async function releaseSendBudget() { await pool.execute("DELETE FROM auth_sms_quotas WHERE quota_namespace=? AND bucket='interval'",[prefix]); const budgets = await redis.keys(prefix + ':ratelimit:*'); if (budgets.length) await redis.del(...budgets); }
 
   it('password + new inbox proofs bind to the original user, OTP/password both enter the same data', async () => {
     const s = await account(), g = await start(s), code = await targetCode(s,g);
