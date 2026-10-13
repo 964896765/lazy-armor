@@ -1,12 +1,13 @@
 import type { INestApplication } from '@nestjs/common';
 import type { Pool, RowDataPacket } from 'mysql2/promise';
 import request from 'supertest';
-import { randomUUID } from 'node:crypto';
+import { createHmac, randomBytes, randomUUID } from 'node:crypto';
 import IORedis from 'ioredis';
-import { beforeAll, afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeAll, afterAll, beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { bootP2App, auth } from './p2-test-helpers';
 import { AuthService } from '../src/auth/auth.service';
 import { EmailBindingService } from '../src/auth/email-binding.service';
+import { PasswordCredentialService } from '../src/auth/password-credential.service';
 import { LoginCodeService } from '../src/auth/login-code.service';
 import { RateLimiterService } from '../src/infrastructure/rate-limiter.service';
 import { AuditService } from '../src/audit/audit.service';
@@ -19,6 +20,7 @@ describe.sequential('M2-02 safe new email binding on real SQL and Redis', () => 
   const password = 'correct-horse-battery-staple';
   const email = () => 'bind-' + randomUUID() + '@example.test';
   let prefix: string;
+  let budgetClock: {mockRestore:()=>void};
   beforeAll(async () => {
     process.env.AUTH_PASSWORD_CREDENTIAL_MODE = 'UNIFIED'; process.env.AUTH_EMAIL_BIND_ENABLED = 'true'; process.env.PUBLIC_REGISTRATION = 'true';
     process.env.EMAIL_LOGIN_DELIVERY_ENDPOINT = process.env.SMS_LOGIN_DELIVERY_ENDPOINT = 'https://binding-delivery.fixture.test';
@@ -35,9 +37,13 @@ describe.sequential('M2-02 safe new email binding on real SQL and Redis', () => 
     service = app.get(AuthService); binding = app.get(EmailBindingService); codes = app.get(LoginCodeService); redis = new IORedis(process.env.REDIS_URL!);
   });
   beforeEach(async () => {
+    // Fixed-window assertions must not depend on the machine crossing an
+    // arbitrary minute boundary. Redis TTLs and asynchronous timers stay real.
+    budgetClock = vi.spyOn(Date,'now').mockReturnValue(Date.now());
     // Reset only this suite's random, isolated budgets between independent cases.
     const budgets = await redis.keys(prefix + ':ratelimit:*'); if (budgets.length) await redis.del(...budgets);
   });
+  afterEach(() => budgetClock?.mockRestore());
   afterAll(async () => {
     vi.restoreAllMocks(); vi.unstubAllGlobals(); await redis?.quit(); await pool?.end(); await app?.close();
     for (const key of keys) { if (previous[key] === undefined) delete process.env[key]; else process.env[key] = previous[key]; }
@@ -165,8 +171,9 @@ describe.sequential('M2-02 safe new email binding on real SQL and Redis', () => 
   });
   it('wrong target OTP attempts exhaust a bounded budget', async () => {
     const s = await account(), g = await start(s);
-    for (let n=0;n<5;n++) await post(s.accessToken,'confirm',{challenge:g.challenge,code:'999999'}).expect(401);
-    await post(s.accessToken,'confirm',{challenge:g.challenge,code:'999999'}).expect(429);
+    const actual = await targetCode(s,g), wrong = actual === '999999' ? '888888' : '999999';
+    for (let n=0;n<5;n++) await post(s.accessToken,'confirm',{challenge:g.challenge,code:wrong}).expect(401);
+    await post(s.accessToken,'confirm',{challenge:g.challenge,code:actual}).expect(429);
   });
   it('wrong existing-channel codes have a bounded budget and cannot promote the grant', async () => {
     const s = await noPassword(), m = await methods(s.accessToken);
@@ -271,6 +278,18 @@ describe.sequential('M2-02 safe new email binding on real SQL and Redis', () => 
     expect(key).not.toContain(g.challenge); expect(raw).not.toContain(password); expect(raw).not.toContain('$2'); expect(raw).not.toContain(g.challenge);
     await targetCode(s,g); const m = await methods(s.accessToken);
     expect(JSON.stringify(m)).not.toMatch(/passwordHash|passwordEpoch|sourceLegacyIdentityId|credentialId/); expect(JSON.parse(raw)).not.toHaveProperty('code');
+  });
+
+  it('consumes a deployed M2 email grant and OTP without changing its stored format or namespace', async () => {
+    const s = await account(), user = await service.verifyToken(s.accessToken), target = email(), challenge = randomBytes(32).toString('hex');
+    // This is the persisted M2-02 wire contract, independent of the new engine.
+    const digest = (value:string) => createHmac('sha256',process.env.JWT_SECRET!).update('email-binding:'+value).digest('hex');
+    const passwordEpoch = digest(JSON.stringify(await app.get(PasswordCredentialService).observe(s.userId)));
+    const oldState = {userId:s.userId,sessionId:user.sessionId,email:target,passwordEpoch,stage:'target',expiresAt:Date.now()+600000};
+    await redis.set(prefix+':email-binding:'+digest(challenge),JSON.stringify(oldState),'EX',600);
+    await codes.request({kind:'email',identifier:target},'old-email-contract',{purpose:'email-bind-target',userId:s.userId,context:digest(JSON.stringify([challenge,user.sessionId,target,passwordEpoch,undefined]))});
+    await post(s.accessToken,'confirm',{challenge,code:deliveries.get('email-bind-target:'+target)}).expect(201);
+    expect(await owner(target)).toBe(s.userId);
   });
 
   it.skipIf(!process.env.AUTH_V2_BROWSER_EXECUTABLE)('real Chrome password and password-free binding preserve the original account on new-email login', async () => {

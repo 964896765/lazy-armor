@@ -40,6 +40,11 @@ describe('deployment environment isolation', () => {
     expect(parseEnv({...deployedEnv('staging'),AUTH_PASSWORD_RECOVERY_REQUEST_ENABLED:'false'}).AUTH_PASSWORD_RECOVERY_REQUEST_ENABLED).toBe('false');
     expect(()=>parseEnv({...deployedEnv('staging'),AUTH_PASSWORD_RECOVERY_REQUEST_ENABLED:'maybe'})).toThrow();
   });
+  it('keeps phone binding disabled by default and validates its independent rollout flag',()=>{
+    expect(parseEnv(deployedEnv('staging')).AUTH_PHONE_BIND_ENABLED).toBe('false');
+    expect(parseEnv({...deployedEnv('staging'),AUTH_PHONE_BIND_ENABLED:'true'}).AUTH_PHONE_BIND_ENABLED).toBe('true');
+    expect(()=>parseEnv({...deployedEnv('staging'),AUTH_PHONE_BIND_ENABLED:'yes'})).toThrow();
+  });
   it.each(['staging', 'production'] as const)('accepts an isolated %s configuration', (appEnv) => {
     expect(() => assertProductionSafe(parseEnv(deployedEnv(appEnv)))).not.toThrow();
   });

@@ -116,3 +116,14 @@ export class EmailBindingChallengeDto {
 export class ConfirmEmailBindingDto extends EmailBindingChallengeDto {
  @IsString() @Matches(/^\d{6}$/) code!: string;
 }
+
+export class StartPhoneBindingDto {
+ @IsString() @Length(11,32) phone!: string;
+ @IsIn(['password','code']) proof!: 'password'|'code';
+ @IsOptional() @IsString() @Length(1,128) password?: string;
+ @IsOptional() @IsUUID() identifierId?: string;
+}
+export class PhoneBindingChallengeDto extends EmailBindingChallengeDto {}
+export class ConfirmPhoneBindingDto extends PhoneBindingChallengeDto {
+ @IsString() @Matches(/^\d{6}$/) code!: string;
+}

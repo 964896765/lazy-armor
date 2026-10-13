@@ -1,5 +1,7 @@
 import { LoginCodeService } from './login-code.service';
 import { EmailBindingService } from './email-binding.service';
+import { PhoneBindingService } from './phone-binding.service';
+import { StartPhoneBindingDto, PhoneBindingChallengeDto, ConfirmPhoneBindingDto } from './dto';
 import { StartEmailBindingDto, EmailBindingChallengeDto, ConfirmEmailBindingDto } from './dto';
 import { RequestLoginCodeDto, VerifyLoginCodeDto, AccountEmailDto, VerifyAccountEmailRequestDto, VerifyAccountEmailDto, SetPasswordDto } from './dto';
 import { Body, Controller, Get, Headers, Ip, Post } from '@nestjs/common';
@@ -10,14 +12,19 @@ import { CurrentUser, type AuthenticatedUser } from '../common/auth-context';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly auth: AuthService,private readonly codes:LoginCodeService, private readonly emailBinding: EmailBindingService) {}
+  constructor(private readonly auth: AuthService,private readonly codes:LoginCodeService, private readonly emailBinding: EmailBindingService, private readonly phoneBinding: PhoneBindingService) {}
   @Public() @Get('methods') loginMethods() {
     return { ...this.auth.loginMethods(), codeLogin: { phone: this.codes.availability('phone'), email: this.codes.availability('email') } };
   }
   @Public() @Post(['code/request','code/send']) requestCode(@Body() input:RequestLoginCodeDto,@Ip() ip:string){return this.codes.request(input,ip);}
   @Public() @Post('code/verify') async verifyCode(@Body() input:VerifyLoginCodeDto,@Ip() ip:string,@Headers('user-agent') userAgent?:string){const identifier=await this.codes.verify(input,ip);return this.auth.loginVerified(input.kind,identifier,{ip,userAgent});}
 
-  @Get('security/methods') async securityMethods(@CurrentUser() user: AuthenticatedUser) { return { ...await this.auth.securityMethods(user.id), ...await this.emailBinding.capabilities(user) }; }
+  @Get('security/methods') async securityMethods(@CurrentUser() user: AuthenticatedUser) { return { ...await this.auth.securityMethods(user.id), ...await this.emailBinding.capabilities(user), ...await this.phoneBinding.capabilities(user) }; }
+
+  @Post('phone-binding/start') startPhoneBinding(@CurrentUser() user: AuthenticatedUser, @Body() input: StartPhoneBindingDto, @Ip() ip: string) { return this.phoneBinding.start(user, input, ip); }
+  @Post('phone-binding/current/confirm') confirmPhoneCurrent(@CurrentUser() user: AuthenticatedUser, @Body() input: ConfirmPhoneBindingDto, @Ip() ip: string) { return this.phoneBinding.confirmCurrent(user, input.challenge, input.code, ip); }
+  @Post('phone-binding/target/request') requestPhoneTarget(@CurrentUser() user: AuthenticatedUser, @Body() input: PhoneBindingChallengeDto, @Ip() ip: string) { return this.phoneBinding.requestTarget(user, input.challenge, ip); }
+  @Post('phone-binding/confirm') confirmPhoneBinding(@CurrentUser() user: AuthenticatedUser, @Body() input: ConfirmPhoneBindingDto, @Ip() ip: string) { return this.phoneBinding.confirm(user, input.challenge, input.code, ip); }
 
   @Post('email-binding/start') startEmailBinding(@CurrentUser() user: AuthenticatedUser, @Body() input: StartEmailBindingDto, @Ip() ip: string) { return this.emailBinding.start(user, input, ip); }
   @Post('email-binding/current/confirm') confirmBindingCurrent(@CurrentUser() user: AuthenticatedUser, @Body() input: ConfirmEmailBindingDto, @Ip() ip: string) { return this.emailBinding.confirmCurrent(user, input.challenge, input.code, ip); }

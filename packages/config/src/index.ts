@@ -63,6 +63,7 @@ const envSchema = z.object({
   PUBLIC_REGISTRATION: z.enum(['true', 'false']).optional(),
   AUTH_PASSWORD_CREDENTIAL_MODE: z.enum(['LEGACY', 'SHADOW', 'UNIFIED']).default('LEGACY'),
   AUTH_EMAIL_BIND_ENABLED: z.enum(['true', 'false']).default('false'),
+  AUTH_PHONE_BIND_ENABLED: z.enum(['true', 'false']).default('false'),
   AUTH_PASSWORD_RECOVERY_MODE: z.enum(['LEGACY', 'BOUND']).default('LEGACY'),
   AUTH_PASSWORD_RECOVERY_REQUEST_ENABLED: z.enum(['true', 'false']).default('true'),
   // Production credential provider selection

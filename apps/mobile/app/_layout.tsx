@@ -58,6 +58,7 @@ export default function RootLayout() {
           <Stack.Screen name="security-center" options={{ headerShown: false }} />
           <Stack.Screen name="security-credential" options={{ headerShown: false }} />
           <Stack.Screen name="security-bind-email" options={{ headerShown: false }} />
+          <Stack.Screen name="security-bind-phone" options={{ headerShown: false }} />
           <Stack.Screen name="data-management" options={{ headerShown: false }} />
           <Stack.Screen name="security-activity" options={{ headerShown: false }} />
           <Stack.Screen name="privacy-center" options={{ headerShown: false }} />

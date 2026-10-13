@@ -6,7 +6,7 @@ import { createHmac, randomInt } from 'node:crypto';
 import { RateLimiterService } from '../infrastructure/rate-limiter.service';
 import type { RequestLoginCodeDto, VerifyLoginCodeDto } from './dto';
 import { normalizeIdentifier } from './login-identifier';
-export type ChallengeScope = { purpose: 'email-bind' | 'password-set' | 'email-bind-current' | 'email-bind-target'; userId: string; context?: string };
+export type ChallengeScope = { purpose: 'email-bind' | 'password-set' | 'email-bind-current' | 'email-bind-target' | 'phone-bind-current' | 'phone-bind-target'; userId: string; context?: string };
 @Injectable()
 export class LoginCodeService implements OnApplicationShutdown {
  private readonly redis: IORedis;
@@ -43,7 +43,12 @@ export class LoginCodeService implements OnApplicationShutdown {
  async verify(input:VerifyLoginCodeDto,ip:string,scope?:ChallengeScope) {
   const identifier=this.normalize(input);const key=this.challengeKey(input.kind,identifier,scope);
   if(!(await this.limiter.consume('otp-verify:'+key,5,300)).allowed||!(await this.limiter.consume('otp-verify-ip:'+ip,30,300)).allowed) throw new HttpException('尝试次数过多，请稍后再试',429);
-  const accepted=await this.redis.eval("local v=redis.call('GET',KEYS[1]);if v and v==ARGV[1] then redis.call('DEL',KEYS[1]);return 1 end;return 0",1,key,this.digest(key+':'+input.code));
+  // Count against this stored code's remaining Redis TTL, independently of
+  // wall-clock windows. Deployed string OTPs remain readable; no raw code is
+  // added to a key. Different code digests have separate budgets; repeating
+  // the same code value cannot reset its existing attempt count.
+  const accepted=await this.redis.eval("local v=redis.call('GET',KEYS[1]);if not v then return 0 end;local k=KEYS[1]..':attempts:'..v;local n=redis.call('INCR',k);if n==1 then redis.call('PEXPIRE',k,math.max(redis.call('PTTL',KEYS[1]),1)) end;if n>5 then return -1 end;if v==ARGV[1] then redis.call('DEL',KEYS[1]);redis.call('DEL',k);return 1 end;return 0",1,key,this.digest(key+':'+input.code));
+  if(Number(accepted)===-1) throw new HttpException('尝试次数过多，请重新获取验证码',429);
   if(Number(accepted)!==1) throw new UnauthorizedException('验证码不正确或已过期');
   return identifier;
  }
