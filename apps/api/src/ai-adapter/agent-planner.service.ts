@@ -61,6 +61,8 @@ export interface AgentPlanProposal {
 }
 
 export interface PlannerResult {
+  /** Server compilation proof for a draft; never a grant to execute it. */
+  runtimeCompilation?: import('@lazy-armor/plan-schema').CompositionRuntimeCompilation;
   methodRefs?: import('@lazy-armor/plan-schema').SkillMethodRef[];
   pageRead?: import('@lazy-armor/plan-schema').GoalPageRead;
   /** Internal only: Consumer persists candidates separately, never in assistant JSON. */

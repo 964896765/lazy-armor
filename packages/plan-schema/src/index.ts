@@ -678,6 +678,7 @@ export * from './report-decision';
 export * from './skill-resource-graph';
 export * from './composition-authoring';
 export * from './composition-resources';
+export * from './composition-runtime';
 export * from './connection-capability';
 export * from './goal-resource-match';
 export * from './goal-page-read';
