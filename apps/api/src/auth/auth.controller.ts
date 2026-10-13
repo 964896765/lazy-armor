@@ -1,4 +1,6 @@
 import { LoginCodeService } from './login-code.service';
+import { EmailBindingService } from './email-binding.service';
+import { StartEmailBindingDto, EmailBindingChallengeDto, ConfirmEmailBindingDto } from './dto';
 import { RequestLoginCodeDto, VerifyLoginCodeDto, AccountEmailDto, VerifyAccountEmailRequestDto, VerifyAccountEmailDto, SetPasswordDto } from './dto';
 import { Body, Controller, Get, Headers, Ip, Post } from '@nestjs/common';
 import { Public } from '../common/auth-context';
@@ -8,14 +10,19 @@ import { CurrentUser, type AuthenticatedUser } from '../common/auth-context';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly auth: AuthService,private readonly codes:LoginCodeService) {}
+  constructor(private readonly auth: AuthService,private readonly codes:LoginCodeService, private readonly emailBinding: EmailBindingService) {}
   @Public() @Get('methods') loginMethods() {
     return { ...this.auth.loginMethods(), codeLogin: { phone: this.codes.availability('phone'), email: this.codes.availability('email') } };
   }
   @Public() @Post(['code/request','code/send']) requestCode(@Body() input:RequestLoginCodeDto,@Ip() ip:string){return this.codes.request(input,ip);}
   @Public() @Post('code/verify') async verifyCode(@Body() input:VerifyLoginCodeDto,@Ip() ip:string,@Headers('user-agent') userAgent?:string){const identifier=await this.codes.verify(input,ip);return this.auth.loginVerified(input.kind,identifier,{ip,userAgent});}
 
-  @Get('security/methods') securityMethods(@CurrentUser() user: AuthenticatedUser) { return this.auth.securityMethods(user.id); }
+  @Get('security/methods') async securityMethods(@CurrentUser() user: AuthenticatedUser) { return { ...await this.auth.securityMethods(user.id), ...await this.emailBinding.capabilities(user) }; }
+
+  @Post('email-binding/start') startEmailBinding(@CurrentUser() user: AuthenticatedUser, @Body() input: StartEmailBindingDto, @Ip() ip: string) { return this.emailBinding.start(user, input, ip); }
+  @Post('email-binding/current/confirm') confirmBindingCurrent(@CurrentUser() user: AuthenticatedUser, @Body() input: ConfirmEmailBindingDto, @Ip() ip: string) { return this.emailBinding.confirmCurrent(user, input.challenge, input.code, ip); }
+  @Post('email-binding/target/request') requestBindingTarget(@CurrentUser() user: AuthenticatedUser, @Body() input: EmailBindingChallengeDto, @Ip() ip: string) { return this.emailBinding.requestTarget(user, input.challenge, ip); }
+  @Post('email-binding/confirm') confirmEmailBinding(@CurrentUser() user: AuthenticatedUser, @Body() input: ConfirmEmailBindingDto, @Ip() ip: string) { return this.emailBinding.confirm(user, input.challenge, input.code, ip); }
 
   @Post('identifiers/bind/request') async requestEmailProof(@CurrentUser() user: AuthenticatedUser, @Body() input: VerifyAccountEmailRequestDto, @Ip() ip: string) {
     await this.auth.assertEmailVerification(user.id, input.email, input.password);

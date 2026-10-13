@@ -6,6 +6,8 @@ export interface AuthenticatedUser {
   id: string;
   status: 'active' | 'disabled';
   role: UserRole;
+  // Set only by server-side JWT/session validation, never by a request body.
+  sessionId?: string;
 }
 
 export const IS_PUBLIC = 'isPublic';

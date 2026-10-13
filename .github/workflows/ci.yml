@@ -93,6 +93,8 @@ jobs:
         run: pnpm --filter @lazy-armor/api test -- test/auth-v2.integration.spec.ts test/login-code.spec.ts test/password-reset-delivery.spec.ts --hookTimeout=90000
       - name: User password credential compatibility regression
         run: pnpm --filter @lazy-armor/api test -- test/auth-password-credentials.integration.spec.ts test/password-credential-startup.spec.ts --hookTimeout=90000
+      - name: Safe new email binding regression
+        run: pnpm --filter @lazy-armor/api test -- test/email-binding.integration.spec.ts test/email-binding-startup.spec.ts --hookTimeout=90000
       - name: V91 shared goal and delivery contract regression
         run: >-
           pnpm --filter @lazy-armor/plan-schema test --

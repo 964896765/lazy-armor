@@ -15,4 +15,5 @@ export interface SecurityMethods {
   canVerifyEmail: boolean;
   passkeysAvailable: boolean;
   passwordLoginKinds?: Array<'email'|'phone'>;
+  emailBinding?: { available: boolean; sources: Array<{id:string;kind:'email'|'phone';masked:string}> };
 }

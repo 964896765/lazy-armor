@@ -6,7 +6,7 @@ import { createHmac, randomInt } from 'node:crypto';
 import { RateLimiterService } from '../infrastructure/rate-limiter.service';
 import type { RequestLoginCodeDto, VerifyLoginCodeDto } from './dto';
 import { normalizeIdentifier } from './login-identifier';
-type ChallengeScope = { purpose: 'email-bind' | 'password-set'; userId: string };
+export type ChallengeScope = { purpose: 'email-bind' | 'password-set' | 'email-bind-current' | 'email-bind-target'; userId: string; context?: string };
 @Injectable()
 export class LoginCodeService implements OnApplicationShutdown {
  private readonly redis: IORedis;
@@ -18,7 +18,7 @@ export class LoginCodeService implements OnApplicationShutdown {
  }
  private digest(value:string) {return createHmac('sha256',this.config.getOrThrow<string>('JWT_SECRET')).update(value).digest('hex');}
  private key(kind:string,value:string) {return `${this.config.get<string>('REDIS_KEY_PREFIX')??'lazyarmor'}:login-code:${this.digest(kind+':'+value)}`;}
- private challengeKey(kind:string,value:string,scope?:ChallengeScope) {return scope ? `${this.key(kind,value)}:${this.digest(scope.purpose+':'+scope.userId)}` : this.key(kind,value);}
+ private challengeKey(kind:string,value:string,scope?:ChallengeScope) {return scope ? `${this.key(kind,value)}:${this.digest(scope.purpose+':'+scope.userId+(scope.context?':'+scope.context:''))}` : this.key(kind,value);}
  availability(kind: 'phone' | 'email'): 'LOCAL_DEVELOPMENT' | 'CONFIGURED' | 'UNAVAILABLE' {
   const endpoint=this.config.get<string>(kind==='phone'?'SMS_LOGIN_DELIVERY_ENDPOINT':'EMAIL_LOGIN_DELIVERY_ENDPOINT');
   if(this.localDelivery.available(endpoint)) return 'LOCAL_DEVELOPMENT';

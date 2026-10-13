@@ -20,6 +20,7 @@ Goal → Context / Planner → Temporary / USER_EVENT / Persistent Plan
 - [第四批：统一邮箱、密码安全与登录设计](./docs/current/OPTIMIZATION_BATCH_04_AUTH.md)
 - [Auth V2.0：中国大陆统一认证与迁移方案](./docs/current/AUTH_V2_IMPLEMENTATION_PLAN.md)
 - [Auth V2 M2-01：用户级密码兼容迁移与验收](./docs/current/AUTH_V2_M2_PASSWORD_CREDENTIALS.md)
+- [Auth V2 M2-02：新邮箱双证明绑定与当前分析](./docs/current/AUTH_V2_M2_EMAIL_BINDING.md)
 - [2026-10-12 全面检查分析](./docs/current/PROJECT_AUDIT_2026-10-12.md)
 - [V84–V90 持续开发总方案](./docs/current/V84_V90_ROADMAP.md)
 - [V84 当前任务与验收](./docs/current/V84_AGENT_CORE.md)

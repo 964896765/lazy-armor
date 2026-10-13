@@ -27,6 +27,11 @@ describe('deployment environment isolation', () => {
     expect(parseEnv({...deployedEnv('staging'),AUTH_PASSWORD_CREDENTIAL_MODE:'UNIFIED'}).AUTH_PASSWORD_CREDENTIAL_MODE).toBe('UNIFIED');
     expect(()=>parseEnv({...deployedEnv('staging'),AUTH_PASSWORD_CREDENTIAL_MODE:'off'})).toThrow();
   });
+  it('keeps new email binding disabled by default and validates the rollout flag',()=>{
+    expect(parseEnv(deployedEnv('staging')).AUTH_EMAIL_BIND_ENABLED).toBe('false');
+    expect(parseEnv({...deployedEnv('staging'),AUTH_EMAIL_BIND_ENABLED:'true'}).AUTH_EMAIL_BIND_ENABLED).toBe('true');
+    expect(()=>parseEnv({...deployedEnv('staging'),AUTH_EMAIL_BIND_ENABLED:'yes'})).toThrow();
+  });
   it.each(['staging', 'production'] as const)('accepts an isolated %s configuration', (appEnv) => {
     expect(() => assertProductionSafe(parseEnv(deployedEnv(appEnv)))).not.toThrow();
   });

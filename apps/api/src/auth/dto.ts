@@ -1,4 +1,4 @@
-import { IsIn, Matches, IsEmail, IsString, Length, MaxLength, MinLength, ValidateBy, ValidateIf, IsOptional } from 'class-validator';
+import { IsIn, IsUUID, Matches, IsEmail, IsString, Length, MaxLength, MinLength, ValidateBy, ValidateIf, IsOptional } from 'class-validator';
 import { Transform } from 'class-transformer';
 
 // bcrypt only covers the first 72 bytes. Retain legacy login compatibility,
@@ -102,4 +102,16 @@ export class VerifyAccountEmailDto extends VerifyAccountEmailRequestDto {
 export class SetPasswordDto extends AccountEmailDto {
  @IsString() @Matches(/^\d{6}$/) code!: string;
  @IsString() @Length(10,128) @BcryptPasswordLength() newPassword!: string;
+}
+
+export class StartEmailBindingDto extends AccountEmailDto {
+ @IsIn(['password','code']) proof!: 'password'|'code';
+ @IsOptional() @IsString() @Length(1,128) password?: string;
+ @IsOptional() @IsUUID() identifierId?: string;
+}
+export class EmailBindingChallengeDto {
+ @IsString() @Matches(/^[a-f0-9]{64}$/) challenge!: string;
+}
+export class ConfirmEmailBindingDto extends EmailBindingChallengeDto {
+ @IsString() @Matches(/^\d{6}$/) code!: string;
 }

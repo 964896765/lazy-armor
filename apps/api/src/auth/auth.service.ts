@@ -129,9 +129,9 @@ export class AuthService {
       const user = rows[0];
       if (!user || user.status !== 'active') throw new Error('inactive');
       const sessions = await this.db.select({ id: authSessions.id }).from(authSessions)
-        .where(and(eq(authSessions.id, payload.sid), eq(authSessions.userId, user.id), isNull(authSessions.revokedAt))).limit(1);
+        .where(and(eq(authSessions.id, payload.sid), eq(authSessions.userId, user.id), isNull(authSessions.revokedAt), gt(authSessions.expiresAt, new Date()))).limit(1);
       if (!sessions[0]) throw new Error('session revoked');
-      return { id: user.id, status: 'active', role: user.role as UserRole };
+      return { id: user.id, status: 'active', role: user.role as UserRole, sessionId: sessions[0].id };
     } catch {
       throw new UnauthorizedException('Invalid or expired access token');
     }
