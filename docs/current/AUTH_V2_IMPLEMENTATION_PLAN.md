@@ -1,6 +1,6 @@
 # 懒人装甲 Auth V2.0 · 统一认证与迁移执行方案
 
-基线：2026-10-13，codex/v83-persistent-runtime。目标市场：中国大陆为主。Beta邮箱基础、M2-01用户级密码兼容迁移与M2-02新邮箱双证明绑定切片已实现；手机号生产推广和Passkey尚未完成。
+基线：2026-10-13，codex/v83-persistent-runtime。目标市场：中国大陆为主。Beta邮箱基础、M2-01用户级密码兼容迁移、M2-02新邮箱双证明绑定及M2-03统一邮箱恢复切片已实现；手机号生产推广和Passkey尚未完成。
 
 ## 产品与账号原则
 
@@ -14,7 +14,7 @@ Beta 默认邮箱验证码，密码是已登录用户主动添加的备用方式
 | --- | --- | --- | --- |
 | M0 只读审计 | 规范化邮箱/手机号，比较 auth_identities 与 login_identifiers；统计跨 User ID 冲突、非规范值、未验证旧邮箱 | 私有清单只包含聚合与加盐指纹，不导出密码/hash/token | 每个环境单独取快照；冲突需本人证明与人工核对 |
 | M1 Beta 基础（已实现） | 复用原表及唯一索引；事务统一身份解析，密码注册不虚构邮箱验证；不新增迁移 | 合并 OTP 登录/注册、当前账号验证邮箱、可选初始密码、真实安全状态；重置/改密原子撤销会话 | SQL/Redis 并发、事务失败回滚、账号冲突与客户端刷新回归；Web 实际交互 |
-| M2 凭据解耦（M2-01/02已实现，整体待续） | 0093新增password_credentials，user_id唯一；bcrypt参数/version/source保留；原hash复制，不改User ID；M2-02零新SQL | LEGACY默认兼容、SHADOW核对/事务双写、UNIFIED已验证手机号/邮箱共享密码；新邮箱以当前账号/新邮箱双证明添加 | [M2-01](AUTH_V2_M2_PASSWORD_CREDENTIALS.md)、[M2-02](AUTH_V2_M2_EMAIL_BINDING.md)；别名恢复/旧表停写待实施，生产迁移与切换待验 |
+| M2 凭据解耦（M2-01/02/03已实现，整体待续） | 0093用户级密码；bcrypt参数/version/source保留；原hash复制，不改User ID；绑定与恢复零新SQL | LEGACY默认兼容、SHADOW核对/事务双写、UNIFIED共享密码；新邮箱双证明添加，BOUND加密链接冻结渠道/凭据版本并原子恢复 | [M2-01](AUTH_V2_M2_PASSWORD_CREDENTIALS.md)、[M2-02](AUTH_V2_M2_EMAIL_BINDING.md)、[M2-03](AUTH_V2_M2_EMAIL_RECOVERY.md)；旧表停写/Argon2待实施，生产迁移与切换待验 |
 | M3 国内手机号（待实施） | 复用 login_identifiers 的 phone 唯一映射；增加绑定/换号挑战和安全变更记录，禁止自动合并 | 已登录账号证明当前身份 + 验证新手机号；冲突停止；换号前通知旧渠道，撤销/复核敏感会话 | 正式短信、真实运营商送达与费用限制、设备异常规则、绑定/换号/丢失号码恢复旅程 |
 | M4 Passkey（待实施） | passkey_credentials：user_id、credential_id 唯一、public_key、sign_count、transports、AAGUID、备份标志、created/last_used/revoked；不保存生物信息 | WebAuthn 注册与登录 options/verify；原 session 与审计；用户可管理多把凭据 | 固定可信 RP ID/Origin、HTTPS；Web→Android Credential Manager→iOS，分别验收 |
 
@@ -27,7 +27,8 @@ M1当时零新SQL。后续M2-01在Schema中增加password_credentials和0093前�
 | POST /auth/code/request、/verify | 匿名，一次性验证码；原登录 Redis key 保留 | 新身份创建一个普通用户；已验证身份复用 User ID |
 | POST /auth/login | 原邮箱与密码，账号/IP 限流，事务内重查已比较的 hash | 原会话；密码已变化/身份冲突则不能签发 |
 | GET /auth/security/methods | 当前 Session | 脱敏标识及实际 verified/password 状态 |
-| POST /auth/email-binding/start、current/confirm、target/request、confirm | UNIFIED + 默认关闭的绑定开关；当前密码或已验证渠道 + 新邮箱OTP；绑定用户/Session/用途/目标/凭据版本 | 新登录邮箱进入原User ID，目标被占用拒绝；暂不扩展忘记密码的恢复收件地址 |
+| POST /auth/email-binding/start、current/confirm、target/request、confirm | UNIFIED + 默认关闭的绑定开关；当前密码或已验证渠道 + 新邮箱OTP；绑定用户/Session/用途/目标/凭据版本 | 新登录邮箱进入原User ID，目标被占用拒绝；密码恢复由独立BOUND路径处理 |
+| POST /auth/forgot-password、/reset-password（M2-03） | BOUND要求UNIFIED；已验证邮箱/渠道版本/用户级凭据指纹封进认证密文，SQL HMAC hash与旧读者隔离；申请/消费预算及同事务审计 | 别名和原已验证邮箱恢复同一账号密码；无密码不隐式设置；旧格式拒绝，停发开关保持BOUND校验 |
 | POST /auth/identifiers/bind/request、/confirm | 当前 Session + 原账号邮箱 + 当前密码 + email-bind 用途、用户绑定 OTP | 仅验证本人已有旧邮箱；不支持绑定任意新邮箱或合并账号 |
 | POST /auth/password/set/request、/set | 当前 Session + 本账号已验证邮箱 + password-set 用途、用户绑定 OTP | 在同一 User ID 添加首个可选密码；已有密码必须走改密 |
 | POST /auth/change-password | 当前 Session + 旧密码 | 密码更新、重置 token 失效、所有 Session 撤销及审计同事务 |
@@ -76,4 +77,4 @@ Web 先用成熟 WebAuthn 校验库；Android 配置网站与包/签名 Digital 
 
 验收分开记录：隔离自动回归、真实邮件/短信/设备、历史库修复、生产迁移、正式发布。现存 2 high/1 moderate 依赖和 0083 发布证据门继续开放。完整 Auth V2 不因 M1 完成而关闭。
 
-M1具体结果见[第四批验收](OPTIMIZATION_BATCH_04_AUTH.md)，密码凭据切片及611项回归/非空恢复见[M2-01记录](AUTH_V2_M2_PASSWORD_CREDENTIALS.md)，新邮箱绑定与本批验收见[M2-02记录](AUTH_V2_M2_EMAIL_BINDING.md)。下一认证切片为统一已验证邮箱恢复、凭据版本及旧链接失效约束，随后推进正式短信/换号；完整Auth V2仍未关闭。
+M1具体结果见[第四批验收](OPTIMIZATION_BATCH_04_AUTH.md)，密码凭据见[M2-01](AUTH_V2_M2_PASSWORD_CREDENTIALS.md)，新邮箱绑定见[M2-02](AUTH_V2_M2_EMAIL_BINDING.md)，统一邮箱恢复及本批验收见[M2-03](AUTH_V2_M2_EMAIL_RECOVERY.md)。下一认证切片推进M3手机号双证明绑定，正式短信、换号/丢失号码恢复和供应商送达单独验收；完整Auth V2仍未关闭。

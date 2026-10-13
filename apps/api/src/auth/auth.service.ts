@@ -16,6 +16,7 @@ import { RateLimiterService } from '../infrastructure/rate-limiter.service';
 import type { AuthenticatedUser, UserRole } from '../common/auth-context';
 import type { ChangePasswordDto, LoginDto, RegisterDto, ResetPasswordDto } from './dto';
 import { PasswordResetDeliveryService } from './password-reset-delivery.service';
+import { PasswordRecoveryService } from './password-recovery.service';
 
 const LOGIN_UNIFORM_ERROR = 'Invalid email or password';
 let dummyPasswordHashPromise: Promise<string> | undefined;
@@ -55,6 +56,7 @@ export class AuthService {
     private readonly resetDelivery: PasswordResetDeliveryService,
     private readonly identities: IdentityResolverService,
     private readonly passwords: PasswordCredentialService,
+    private readonly recovery: PasswordRecoveryService,
   ) {
     this.accessTtlSeconds = this.config.get<number>('ACCESS_TOKEN_TTL_SECONDS') ?? 900;
     this.refreshTtlSeconds = this.config.get<number>('REFRESH_TOKEN_TTL_SECONDS') ?? 2_592_000;
@@ -68,7 +70,7 @@ export class AuthService {
   }
 
   loginMethods() {
-    return { passwordLogin: true, passwordRegistration: this.registrationAllowed(), passwordIdentifiers: this.passwords.unified() ? ['email','phone'] : ['email'] };
+    return { passwordLogin: true, passwordRegistration: this.registrationAllowed(), passwordIdentifiers: this.passwords.unified() ? ['email','phone'] : ['email'], passwordRecovery: this.recovery.capabilities() };
   }
 
   async register(input: RegisterDto) {
@@ -187,11 +189,12 @@ export class AuthService {
     const verified = await this.db.select().from(loginIdentifiers).where(eq(loginIdentifiers.userId, userId));
     const legacy = await this.db.select().from(authIdentities).where(eq(authIdentities.userId, userId));
     const password = await this.passwords.observe(userId);
+    const recoverable = password ? await this.recovery.recoverableEmails(userId) : new Set<string>();
     const identifiers = verified.filter(item => item.kind === 'phone' || item.kind === 'email').map(item => ({
-      kind: item.kind, masked: maskIdentifier(item.kind as 'phone' | 'email', item.identifier), verified: true,
+      kind: item.kind, masked: maskIdentifier(item.kind as 'phone' | 'email', item.identifier), verified: true, recoveryEnabled: item.kind==='email' && recoverable.has(item.identifier),
     }));
     for (const item of legacy) if (!verified.some(v => v.kind === 'email' && v.identifier === item.email)) {
-      identifiers.push({ kind: 'email', masked: maskIdentifier('email', item.email), verified: Boolean(item.emailVerifiedAt) });
+      identifiers.push({ kind: 'email', masked: maskIdentifier('email', item.email), verified: Boolean(item.emailVerifiedAt), recoveryEnabled: recoverable.has(item.email) });
     }
     return { identifiers, passwordConfigured: Boolean(password),
       canSetPassword: !password && verified.some(item => item.kind === 'email'),
@@ -227,6 +230,8 @@ export class AuthService {
   }
 
   async forgotPassword(email: string, context: RequestContext = {}) {
+    if(!this.recovery.requestsEnabled()) return {requested:true};
+    if(this.recovery.bound()) return this.recovery.request(email,context.ip??'unknown');
     const normalized = normalizeIdentifier('email', email);
     const ip = context.ip ?? 'unknown';
     const [accountLimit, ipLimit] = await Promise.all([
@@ -267,7 +272,13 @@ export class AuthService {
     return { requested: true };
   }
 
-  async resetPassword(input: ResetPasswordDto) {
+  async resetPassword(input: ResetPasswordDto, context: RequestContext = {}) {
+    if(this.recovery.bound()) {
+      if(!input.token.startsWith('v2.')) throw new UnauthorizedException({code:'PASSWORD_RECOVERY_EXPIRED',message:'恢复链接已失效，请重新申请。'});
+      return this.recovery.reset(input,context.ip??'unknown');
+    }
+    // Never downgrade a channel-bound bearer into legacy user-only validation.
+    if(input.token.startsWith('v2.')) throw new UnauthorizedException({code:'PASSWORD_RECOVERY_EXPIRED',message:'恢复链接已失效，请重新申请。'});
     const tokenHash = hashToken(input.token);
     const tokenRow = (await this.db.select().from(passwordResetTokens).where(eq(passwordResetTokens.tokenHash, tokenHash)).limit(1))[0];
     if (!tokenRow || tokenRow.usedAt || tokenRow.expiresAt <= new Date()) throw new UnauthorizedException('Invalid or expired reset token');

@@ -19,6 +19,12 @@ export interface PasswordResetDeliveryInput {
 export class PasswordResetDeliveryService {
   constructor(private readonly config: ConfigService) {}
 
+  available(): boolean {
+    const endpoint = this.config.get<string>('PASSWORD_RESET_DELIVERY_ENDPOINT');
+    try { return Boolean(endpoint && new URL(endpoint).protocol === 'https:' && this.config.get<string>('PASSWORD_RESET_DELIVERY_TOKEN')); }
+    catch { return false; }
+  }
+
   async deliver(input: PasswordResetDeliveryInput): Promise<PasswordResetDeliveryStatus> {
     const endpoint = this.config.get<string>('PASSWORD_RESET_DELIVERY_ENDPOINT');
     const token = this.config.get<string>('PASSWORD_RESET_DELIVERY_TOKEN');

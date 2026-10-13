@@ -81,7 +81,7 @@ export class AuthController {
 
   @Public()
   @Post('reset-password')
-  resetPassword(@Body() input: ResetPasswordDto) {
-    return this.auth.resetPassword(input);
+  resetPassword(@Body() input: ResetPasswordDto, @Ip() ip: string) {
+    return this.auth.resetPassword(input, {ip});
   }
 }

@@ -14,7 +14,7 @@ export default function SecurityCenterPage() {
   const methods=useQuery({queryKey:['security-methods',token],queryFn:()=>api<SecurityMethods>('/auth/security/methods',token),enabled:Boolean(token)});
   const data=methods.data;
   const sections=data?[
-    ...data.identifiers.map((item,index)=>({key:'identity-'+index,title:(item.kind==='email'?'邮箱':'手机号')+' · '+item.masked,detail:item.verified?'可用验证码登录当前账号':'请先验证邮箱，再使用验证码登录',icon:'person-circle-outline' as const,status:item.verified?'已验证':'待验证',route:!item.verified&&data.canVerifyEmail?'/security-credential?purpose=verify-email':undefined})),
+    ...data.identifiers.map((item,index)=>({key:'identity-'+index,title:(item.kind==='email'?'邮箱':'手机号')+' · '+item.masked,detail:item.verified?(item.recoveryEnabled?'可用验证码登录，也可恢复当前账号密码':'可用验证码登录当前账号'):'请先验证邮箱，再使用验证码登录',icon:'person-circle-outline' as const,status:item.verified?'已验证':'待验证',route:!item.verified&&data.canVerifyEmail?'/security-credential?purpose=verify-email':undefined})),
     {key:'password',title:'登录密码',detail:data.passwordConfigured?(data.passwordLoginKinds?.includes('phone')?'当前账号的登录方式共用此密码':'已设置，可作为备用登录方式'):data.canSetPassword?'可选设置，也可继续使用验证码':'请先验证邮箱后设置密码',icon:'key-outline' as const,status:data.passwordConfigured?'已设置':'未设置',route:data.passwordConfigured?'/change-password':data.canSetPassword?'/security-credential?purpose=set-password':undefined},
     ...(data.emailBinding?.available?[{key:'bind-email',title:'添加登录邮箱',detail:'先验证当前账号，再验证新邮箱。新邮箱将登录此账号。',icon:'mail-outline' as const,status:'添加',route:'/security-bind-email'}]:[]),
   ]:[];

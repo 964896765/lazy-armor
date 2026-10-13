@@ -4,12 +4,13 @@ export interface LoginMethods {
   passwordLogin: boolean;
   passwordRegistration: boolean;
   passwordIdentifiers?: Array<'email'|'phone'>;
+  passwordRecovery?: {available:boolean;emailAliases:boolean};
   codeLogin: Record<'phone' | 'email', 'LOCAL_DEVELOPMENT' | 'CONFIGURED' | 'UNAVAILABLE'>;
 }
 export const fetchLoginMethods = () => api<LoginMethods>('/auth/methods');
 
 export interface SecurityMethods {
-  identifiers: Array<{kind:'email'|'phone'; masked:string; verified:boolean}>;
+  identifiers: Array<{kind:'email'|'phone'; masked:string; verified:boolean; recoveryEnabled?:boolean}>;
   passwordConfigured: boolean;
   canSetPassword: boolean;
   canVerifyEmail: boolean;

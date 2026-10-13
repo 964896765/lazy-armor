@@ -62,13 +62,13 @@ try {
   const log = createWriteStream(logFile, { flags: 'wx' });
   console.log(JSON.stringify({ databaseName, isolated: true, phase: 'AUTH_M2_API_REGRESSION_STARTED' }));
   const child = spawn(process.execPath, [path.join(root, 'node_modules/vitest/vitest.mjs'), 'run',
-    'test/auth-password-credentials.integration.spec.ts', 'test/email-binding.integration.spec.ts', 'test/email-binding-startup.spec.ts', 'test/auth-v2.integration.spec.ts', 'test/p0-final-security.spec.ts', 'test/login-code.spec.ts', 'test/password-reset-delivery.spec.ts', 'test/password-credential-startup.spec.ts', '--reporter=dot', '--hookTimeout=90000'], {
+    'test/auth-password-credentials.integration.spec.ts', 'test/email-binding.integration.spec.ts', 'test/email-binding-startup.spec.ts', 'test/password-recovery.integration.spec.ts', 'test/password-recovery-token.spec.ts', 'test/auth-v2.integration.spec.ts', 'test/p0-final-security.spec.ts', 'test/login-code.spec.ts', 'test/password-reset-delivery.spec.ts', 'test/password-credential-startup.spec.ts', '--reporter=dot', '--hookTimeout=90000'], {
     cwd: path.join(root, 'apps/api'), windowsHide: true, env: { ...process.env, CI: 'true', NODE_ENV: 'test', APP_ENV: 'development', APP_ROLE: 'api',
       DATABASE_URL: url.href, TEST_DATABASE_URL: url.href, TEST_DATABASE_NAME: databaseName, REQUIRE_EXACT_TEST_TARGET: '1',
       REDIS_URL: 'redis://127.0.0.1:6391/15', REDIS_KEY_PREFIX: prefix, TEST_REDIS_KEY_PREFIX: prefix,
       JWT_SECRET: 'test-jwt-secret-that-is-longer-than-thirty-two-characters', CREDENTIAL_MASTER_KEY: Buffer.alloc(32, 5).toString('base64'),
       CREDENTIAL_STORE_PATH: path.join(root, 'artifacts', databaseName + '-credentials'),
-      DEEPSEEK_SERVER_DEV_ENABLED: '0', AGENT_MODEL_API_KEY: '', AUTH_PASSWORD_CREDENTIAL_MODE:'LEGACY',
+      DEEPSEEK_SERVER_DEV_ENABLED: '0', AGENT_MODEL_API_KEY: '', AUTH_PASSWORD_CREDENTIAL_MODE:'LEGACY', AUTH_PASSWORD_RECOVERY_MODE:'LEGACY',
       MEMORY_REAL_MODEL_ACCEPTANCE: '0', PAGE_READ_REAL_MODEL_ACCEPTANCE: '0', PUBLIC_JSON_REAL_READ: '0', V90_REAL_ACCEPTANCE: '0',
       V91_REAL_REPORT_ACCEPTANCE: '0', V93_METHOD_PROCESS_ACCEPTANCE: '0', AUTH_V2_BROWSER_EXECUTABLE:browser??'', AUTH_V2_SCREENSHOT_DIR:screenshots??'' },
   });

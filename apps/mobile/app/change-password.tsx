@@ -1,7 +1,7 @@
 import { useMutation } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { api } from '../src/api';
 import { useAuthStore } from '../src/auth-store';
 import { ActionButton, colors, radius, spacing, typography } from '../src/design';
@@ -27,6 +27,7 @@ export default function ChangePasswordPage() {
       {change.isError ? <Text style={styles.error}>密码修改失败，请确认当前密码是否正确。</Text> : null}
       {change.isSuccess ? <Text style={styles.success}>密码已修改。</Text> : null}
       <View style={styles.action}><ActionButton label={change.isPending ? '保存中…' : '保存新密码'} disabled={!valid || change.isPending} onPress={() => change.mutate()} /></View>
+      <Pressable accessibilityRole="button" disabled={change.isPending} onPress={() => router.push('/auth/forgot-password' as never)} style={styles.action}><Text style={{...typography.bodyStrong,color:colors.primary}}>使用邮箱恢复密码</Text><Text style={{...typography.caption,color:colors.textSecondary,marginTop:spacing.xs}}>忘记当前密码时，可用已验证邮箱申请恢复链接。</Text></Pressable>
     </View></RuntimeSection>}
   </RuntimeDetailScreen>;
 }

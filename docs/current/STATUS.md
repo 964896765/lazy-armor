@@ -1,5 +1,7 @@
 # 当前状态 — 2026-10-13
 
+2026-10-13 [Auth V2 M2-03](AUTH_V2_M2_EMAIL_RECOVERY.md)：BOUND模式以已验证邮箱恢复同一用户级密码，加密链接冻结渠道/凭据版本，SQL HMAC hash阻止旧读者降级；旧格式拒绝、跨别名签发预算、消费预算/单次claim与审计原子化，停发开关保留BOUND校验。安全中心、找回/重置与已登录恢复入口同步。最终联合161、Mobile441、Config66、Database31、守卫2共701项；真实Chrome闭环、八包类型/构建、Android/Hermes与97用户密码/9表恢复通过。本批零新SQL、个人/生产未写入，默认LEGACY兼容；下一认证切片M3手机号双证明绑定，正式短信/换号及真实环境独立待验。整体M2/Auth V2、旧表停写/Argon2、Passkey、Web安全持久会话与原发布门保持开放，下文为历史记录。
+
 2026-10-13 [Auth V2 M2-02](AUTH_V2_M2_EMAIL_BINDING.md)：当前密码或已验证渠道OTP + 新邮箱OTP双证明绑定，冻结账号/Session/用途/目标/密码状态，新增邮箱进入原User ID；占用邮箱不合并，标识/审计同事务。安全中心与两步页面同步，SQL过期会话拒绝访问；默认绑定开关关闭，要求UNIFIED。最终联合109、Mobile441、Config65、Database31、守卫2共648项；密码及无密码两条真实Chrome旅程、八包类型/构建与Android/Hermes导出通过。隔离52个用户密码/9表非空恢复摘要一致。本批零新SQL、无个人库写入、生产启用或新APK；下一认证切片是已验证邮箱恢复与旧链接失效。整体M2/Auth V2、短信/Passkey及原发布门保持开放，下文保留历史状态。
 
 2026-10-13 [Auth V2 M2-01](AUTH_V2_M2_PASSWORD_CREDENTIALS.md)：0093新增用户级密码表，LEGACY默认兼容、SHADOW核对/事务双写、UNIFIED已验证标识共享密码；版本/归属签发重查与成功审计原子化。CLI隔离回填首次2/重跑0，20个用户密码凭据及9表非空restore摘要一致；真实Chrome手机号密码进入原User ID。联合73、Mobile441、Config64、Database31、守卫2共611项；八包类型/构建8/8、Android JS导出通过。个人库仅只读审计，0093/回填/模式切换未执行；完整M2、任意新邮箱绑定/短信/Passkey、生产与原发布门仍待。

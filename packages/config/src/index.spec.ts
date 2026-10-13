@@ -32,6 +32,14 @@ describe('deployment environment isolation', () => {
     expect(parseEnv({...deployedEnv('staging'),AUTH_EMAIL_BIND_ENABLED:'true'}).AUTH_EMAIL_BIND_ENABLED).toBe('true');
     expect(()=>parseEnv({...deployedEnv('staging'),AUTH_EMAIL_BIND_ENABLED:'yes'})).toThrow();
   });
+  it('keeps password recovery compatibility by default and validates the bound rollout',()=>{
+    expect(parseEnv(deployedEnv('staging')).AUTH_PASSWORD_RECOVERY_MODE).toBe('LEGACY');
+    expect(parseEnv({...deployedEnv('staging'),AUTH_PASSWORD_RECOVERY_MODE:'BOUND'}).AUTH_PASSWORD_RECOVERY_MODE).toBe('BOUND');
+    expect(()=>parseEnv({...deployedEnv('staging'),AUTH_PASSWORD_RECOVERY_MODE:'unsafe'})).toThrow();
+    expect(parseEnv(deployedEnv('staging')).AUTH_PASSWORD_RECOVERY_REQUEST_ENABLED).toBe('true');
+    expect(parseEnv({...deployedEnv('staging'),AUTH_PASSWORD_RECOVERY_REQUEST_ENABLED:'false'}).AUTH_PASSWORD_RECOVERY_REQUEST_ENABLED).toBe('false');
+    expect(()=>parseEnv({...deployedEnv('staging'),AUTH_PASSWORD_RECOVERY_REQUEST_ENABLED:'maybe'})).toThrow();
+  });
   it.each(['staging', 'production'] as const)('accepts an isolated %s configuration', (appEnv) => {
     expect(() => assertProductionSafe(parseEnv(deployedEnv(appEnv)))).not.toThrow();
   });

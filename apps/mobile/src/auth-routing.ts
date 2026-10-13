@@ -13,7 +13,7 @@ export function resolveAuthDestination({ hydrated, token, onboardingRequired, se
   if (!hydrated) return null;
   // A recovery link must remain usable even when a native session was restored.
   // Only the server's single-use recovery token grants the password change.
-  if (inAuth && authPage === 'reset-password') return null;
+  if (inAuth && (authPage === 'reset-password' || authPage === 'forgot-password')) return null;
   if (!token && !inAuth) return '/auth/welcome';
   if (token && onboardingRequired && !inOnboarding && !inOAuthCallback) return '/onboarding';
   if (token && !onboardingRequired && (inAuth || inOnboarding)) return '/';

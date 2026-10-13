@@ -73,6 +73,7 @@ export class ForgotPasswordDto {
 export class ResetPasswordDto {
   @IsString()
   @MinLength(32)
+  @MaxLength(1024)
   token!: string;
 
   @IsString()

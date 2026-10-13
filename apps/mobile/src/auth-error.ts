@@ -3,6 +3,7 @@ import { ConsumerPresentationMapper } from './consumer-presentation';
 
 export function authError(error: unknown): string {
   if (error instanceof ApiError) {
+    if (error.code === 'PASSWORD_RECOVERY_EXPIRED') return '恢复链接已失效。链接过期、重新申请或账号安全信息变化后，请重新申请。';
     if (error.code === 'EMAIL_BIND_PROOF_EXPIRED') return '账号验证已失效。会话更新、密码变更或验证过期后，请重新开始绑定。';
     if (error.code === 'EMAIL_BIND_OCCUPIED') return '该邮箱已有关联账号，请使用其他邮箱。账号不会自动合并。';
     if (error.code === 'EMAIL_PROOF_REQUIRED') return '此邮箱已有密码账号。请使用原密码登录，在账号与验证中验证邮箱后，即可使用验证码登录。';
