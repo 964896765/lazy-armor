@@ -89,6 +89,8 @@ jobs:
         run: pnpm --filter @lazy-armor/api... build
       - name: Focused mobile regression
         run: pnpm --filter @lazy-armor/mobile test
+      - name: Unified identity and atomic password reset regression
+        run: pnpm --filter @lazy-armor/api test -- test/auth-v2.integration.spec.ts test/login-code.spec.ts test/password-reset-delivery.spec.ts --hookTimeout=90000
       - name: V91 shared goal and delivery contract regression
         run: >-
           pnpm --filter @lazy-armor/plan-schema test --

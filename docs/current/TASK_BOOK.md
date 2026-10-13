@@ -1,5 +1,7 @@
 # 当前任务书 — V84–V90
 
+2026-10-13 当前批次：[Auth V2 Beta 统一邮箱与登录设计](OPTIMIZATION_BATCH_04_AUTH.md)。FIX-06 原子重置、FIX-07 新写入/本人邮箱确认、FIX-08 刷新影响草稿切片已实施，历史/正式环境迁移与剩余发布门独立待验。具体接口、分阶段迁移、短信/换号、Passkey 和回滚条件见 [Auth V2 方案](AUTH_V2_IMPLEMENTATION_PLAN.md)；下一认证切片是用户级密码凭据兼容迁移和安全绑定协议。
+
 2026-10-13优化整改见[方案V1.1](PROJECT_OPTIMIZATION_PLAN_V1_1.md)、[首批验收](OPTIMIZATION_S0_BATCH_01.md)、[第二批Admin验收](OPTIMIZATION_S0_BATCH_02_ADMIN_AUTH.md)与[第三批依赖处置](OPTIMIZATION_S0_BATCH_03_DEPENDENCIES.md)：FIX-03/FIX-17/FIX-01/FIX-02按冻结范围CLOSED；FIX-04可补丁5项完成，521项回归通过，剩余2 high/1 moderate令整体IN_PROGRESS/high发布门失败。下一独立切片FIX-06密码重置原子性，FIX-04余项继续跟踪；保留原Runtime、五导航，S0-A/正式发布/非空恢复不提前关闭；下文V84–V90为原任务历史。
 
 2026-10-10 最新真机续接：[V90-BETA-02 环境恢复与手机准备](V90_DEVICE_RESUME.md)完成开发库备份/唯一 additive 0090/旧 ledger 保留、原 API/Worker ready、开发转发和最终 APK 安装字节核对。只读 schema 前检与实际 JS 配置 guard 工具专项 9/9，前者拒绝非指定本地 development 目标、后者在手机空环境核对原 resolver；原迁移记录和生产 API 配置门保留。第一包白屏失败保留，修正后 2532b28a 真机正常显示协议页。12 个独立源码不变，构建按当前字节使用，不纳入本次提交；检查后按已有授权推送。本人已解锁、暂无账密，下一步经正常注册/登录继续五页、Memory/方法/资源及原 Goal 核实。观察许可、实际第三方/Goal Runtime/七天与 0083 发布证据仍 REAL_PENDING，不提前关闭。

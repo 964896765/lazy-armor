@@ -70,3 +70,9 @@ export async function deviceBoundApi<T>(path: string, token: string | null, init
 }
 
 export function clearTrustedDeviceSession() { activeSession = null; }
+
+// Called only after successful refresh of the same authenticated account.
+// Server-side device and session revocation is still checked on every request.
+export function rotateTrustedDeviceSessionToken(previous: string | undefined, next: string) {
+  if (previous && activeSession?.token === previous) activeSession = { ...activeSession, token: next };
+}

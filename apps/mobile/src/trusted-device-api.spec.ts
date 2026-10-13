@@ -16,7 +16,7 @@ vi.mock('./device-app-bridge', () => ({
   createTrustedDeviceRequestEnvelope: mocks.createTrustedDeviceRequestEnvelope,
 }));
 
-import { clearTrustedDeviceSession, deviceBoundApi, ensureTrustedDevice } from './trusted-device-api';
+import { clearTrustedDeviceSession, deviceBoundApi, ensureTrustedDevice, rotateTrustedDeviceSessionToken } from './trusted-device-api';
 
 describe('trusted device session cache isolation', () => {
   beforeEach(() => {
@@ -44,6 +44,22 @@ describe('trusted device session cache isolation', () => {
     await ensureTrustedDevice('token-a', { force: true });
     expect(mocks.api).toHaveBeenCalledTimes(4);
     expect(mocks.signTrustedDeviceChallenge).toHaveBeenCalledTimes(2);
+  });
+
+  it('preserves an existing proof only through an explicit matching token rotation',async()=>{
+    const device=await ensureTrustedDevice('old');
+    rotateTrustedDeviceSessionToken('old','new');
+    expect((await ensureTrustedDevice('new')).deviceSession.id).toBe(device.deviceSession.id);
+    expect(mocks.api).toHaveBeenCalledTimes(2);
+    clearTrustedDeviceSession();
+    await ensureTrustedDevice('other-account');
+    expect(mocks.api).toHaveBeenCalledTimes(4);
+  });
+  it('does not transfer a proof from an unrelated account token',async()=>{
+    await ensureTrustedDevice('owner');
+    rotateTrustedDeviceSessionToken('unrelated','new');
+    await ensureTrustedDevice('new');
+    expect(mocks.api).toHaveBeenCalledTimes(4);
   });
 
   it('signs a bodyless GET with an empty-object payload and no request body', async () => {

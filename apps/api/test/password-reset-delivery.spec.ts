@@ -37,6 +37,7 @@ describe('PasswordResetDeliveryService', () => {
 
     expect(fetchMock).toHaveBeenCalledWith('https://notify.lazyarmor.example/v1/messages', expect.objectContaining({
       method: 'POST',
+      redirect: 'error',
       headers: expect.objectContaining({ authorization: `Bearer ${'s'.repeat(48)}` }),
     }));
     const request = fetchMock.mock.calls[0]?.[1] as RequestInit;
@@ -61,5 +62,11 @@ describe('PasswordResetDeliveryService', () => {
       token: 'a'.repeat(64),
       expiresAt: new Date('2026-09-04T00:00:00.000Z'),
     })).resolves.toBe('failed');
+  });
+  it('rejects insecure recovery delivery before publishing a bearer or reset link',async()=>{
+    const fetchMock=vi.fn();vi.stubGlobal('fetch',fetchMock);
+    const service=new PasswordResetDeliveryService({get:(key:string)=>key==='PASSWORD_RESET_DELIVERY_ENDPOINT'?'http://unsafe.example.test':'private-fixture-token'} as never);
+    expect(await service.deliver({email:'fixture@example.test',token:'a'.repeat(64),expiresAt:new Date()})).toBe('unavailable');
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

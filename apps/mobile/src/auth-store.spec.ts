@@ -10,9 +10,10 @@ const mocks = vi.hoisted(() => ({
   persistOnboardingRequired: vi.fn(),
   persistTokens: vi.fn(),
   clearTrustedDeviceSession: vi.fn(),
+  rotateTrustedDeviceSessionToken: vi.fn(),
 }));
 
-vi.mock('./trusted-device-api', () => ({ clearTrustedDeviceSession: mocks.clearTrustedDeviceSession }));
+vi.mock('./trusted-device-api', () => ({ clearTrustedDeviceSession: mocks.clearTrustedDeviceSession, rotateTrustedDeviceSessionToken: mocks.rotateTrustedDeviceSessionToken }));
 
 vi.mock('./secure-token-store', () => ({
   clearTokens: mocks.clearTokens,
@@ -40,7 +41,7 @@ describe('native session restart and rotation', () => {
   beforeEach(() => {
     vi.resetAllMocks();
     mocks.loadOnboardingRequired.mockResolvedValue(false);
-    useAuthStore.setState({ token: undefined, refreshToken: undefined, hydrated: false, onboardingRequired: false });
+    useAuthStore.setState({ token: undefined, refreshToken: undefined, userId: undefined, sessionScope: 0, hydrated: false, onboardingRequired: false });
   });
 
   it('rotates persisted tokens after an application restart', async () => {
@@ -137,5 +138,45 @@ describe('native session restart and rotation', () => {
     await useAuthStore.getState().completeOnboarding();
     expect(mocks.persistOnboardingRequired).toHaveBeenCalledWith(false);
     expect(useAuthStore.getState().onboardingRequired).toBe(false);
+  });
+
+  it('preserves the account workspace and trusted device across transparent rotation', async () => {
+    await useAuthStore.getState().setSession({accessToken:'a',refreshToken:'r',userId:'owner'});
+    const scope=useAuthStore.getState().sessionScope;
+    mocks.clearTrustedDeviceSession.mockClear();
+    mocks.api.mockResolvedValue({accessToken:'b',refreshToken:'s',userId:'owner'});
+    expect(await useAuthStore.getState().refreshSession()).toBe(true);
+    expect(useAuthStore.getState().sessionScope).toBe(scope);
+    expect(mocks.clearTrustedDeviceSession).not.toHaveBeenCalled();
+    expect(mocks.rotateTrustedDeviceSessionToken).toHaveBeenCalledWith('a','b');
+    await useAuthStore.getState().setSession({accessToken:'c',refreshToken:'t',userId:'other'});
+    expect(useAuthStore.getState().sessionScope).toBeGreaterThan(scope);
+  });
+
+  it('revokes a late refresh without resurrecting the logged-out account',async()=>{
+    let finish!: (value:unknown)=>void;
+    useAuthStore.setState({token:'a',refreshToken:'r',hydrated:true});
+    mocks.api.mockImplementation((path:string)=>path==='/auth/refresh'?new Promise(resolve=>{finish=resolve;}):Promise.resolve({revoked:true}));
+    const refreshing=useAuthStore.getState().refreshSession();
+    await useAuthStore.getState().clear();
+    finish({accessToken:'b',refreshToken:'s'});
+    expect(await refreshing).toBe(false);
+    expect(useAuthStore.getState().token).toBeUndefined();
+    expect(mocks.api).toHaveBeenCalledWith('/auth/logout',undefined,expect.objectContaining({body:JSON.stringify({refreshToken:'s'})}));
+  });
+
+  it('serializes storage when account switch overlaps refresh persistence',async()=>{
+    let finish!: ()=>void;
+    useAuthStore.setState({token:'a',refreshToken:'r',userId:'first',hydrated:true});
+    mocks.api.mockResolvedValue({accessToken:'b',refreshToken:'s',userId:'first'});
+    mocks.persistTokens.mockImplementationOnce(()=>new Promise<void>(resolve=>{finish=resolve;}));
+    const refreshing=useAuthStore.getState().refreshSession();
+    await vi.waitFor(()=>expect(mocks.persistTokens).toHaveBeenCalledOnce());
+    const switching=useAuthStore.getState().setSession({accessToken:'new',refreshToken:'new-r',userId:'second'});
+    finish();
+    await switching;
+    expect(await refreshing).toBe(false);
+    expect(useAuthStore.getState()).toMatchObject({token:'new',refreshToken:'new-r',userId:'second'});
+    expect(mocks.persistTokens).toHaveBeenLastCalledWith({accessToken:'new',refreshToken:'new-r',userId:'second'});
   });
 });

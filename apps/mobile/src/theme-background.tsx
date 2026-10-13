@@ -6,5 +6,5 @@ export function ThemeBackground({ children }: PropsWithChildren) {
 }
 
 const styles = StyleSheet.create({
-  background: { flex: 1, backgroundColor: '#B8D9F6' },
+  background: { flex: 1, width: '100%', minWidth: 0, minHeight: 0, overflow: 'hidden', backgroundColor: '#B8D9F6' },
 });

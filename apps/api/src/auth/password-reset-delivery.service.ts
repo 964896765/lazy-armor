@@ -23,11 +23,13 @@ export class PasswordResetDeliveryService {
     const endpoint = this.config.get<string>('PASSWORD_RESET_DELIVERY_ENDPOINT');
     const token = this.config.get<string>('PASSWORD_RESET_DELIVERY_TOKEN');
     if (!endpoint || !token) return 'unavailable';
+    try { if (new URL(endpoint).protocol !== 'https:') return 'unavailable'; } catch { return 'unavailable'; }
 
     const resetUrl = `lazyarmor://auth/reset-password?token=${encodeURIComponent(input.token)}`;
     try {
       const response = await fetch(endpoint, {
         method: 'POST',
+        redirect: 'error',
         headers: {
           authorization: `Bearer ${token}`,
           'content-type': 'application/json',

@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Stack } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo } from 'react';
 import { StatusBar } from 'react-native';
 import { AuthGate } from '../src/auth-gate';
 import { useAuthStore } from '../src/auth-store';
@@ -10,12 +10,14 @@ import { useDeviceTaskRunnerLifecycle } from '../src/device-task-lifecycle-hook'
 import { ThemeBackground } from '../src/theme-background';
 
 export default function RootLayout() {
-  const [client] = useState(() => new QueryClient({
+  const sessionScope = useAuthStore(state => state.sessionScope);
+  const client = useMemo(() => new QueryClient({
     defaultOptions: {
       queries: { retry: 0, staleTime: 10_000, refetchOnWindowFocus: false },
       mutations: { retry: 0 },
     },
-  }));
+  }), [sessionScope]);
+  useEffect(() => () => { void client.cancelQueries(); client.clear(); }, [client]);
   const hydrate = useAuthStore((state) => state.hydrate);
   useAuthSessionRefresh();
   useDeviceTaskRunnerLifecycle();
@@ -24,7 +26,7 @@ export default function RootLayout() {
   }, [hydrate]);
 
   return (
-    <QueryClientProvider client={client}>
+    <QueryClientProvider key={sessionScope} client={client}>
       <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
       <ThemeBackground><AuthGate>
         <Stack screenOptions={{ contentStyle: { backgroundColor: 'transparent' }, headerStyle: { backgroundColor: 'rgba(255,255,255,0.92)' }, headerShadowVisible: false, headerTintColor: colors.primary, headerTitleStyle: { color: colors.text, ...typography.navigationTitle } }}>
@@ -54,6 +56,7 @@ export default function RootLayout() {
           <Stack.Screen name="notification-settings" options={{ headerShown: false }} />
           <Stack.Screen name="automation-safety" options={{ headerShown: false }} />
           <Stack.Screen name="security-center" options={{ headerShown: false }} />
+          <Stack.Screen name="security-credential" options={{ headerShown: false }} />
           <Stack.Screen name="data-management" options={{ headerShown: false }} />
           <Stack.Screen name="security-activity" options={{ headerShown: false }} />
           <Stack.Screen name="privacy-center" options={{ headerShown: false }} />

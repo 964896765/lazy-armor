@@ -1,5 +1,5 @@
 import { SegmentedControl } from '../../src/consumer-ui';
-import { ConsumerPresentationMapper as presentation } from '../../src/consumer-presentation';
+import { authError } from '../../src/auth-error';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { Link, router } from 'expo-router';
@@ -15,7 +15,7 @@ type LoginMode = 'phone' | 'email';
 
 export default function LoginPage() {
  const setSession=useAuthStore(s=>s.setSession);
- const [mode,setMode]=useState<LoginMode>('phone');const [identifier,setIdentifier]=useState('');const [code,setCode]=useState('');
+ const [mode,setMode]=useState<LoginMode>('email');const [identifier,setIdentifier]=useState('');const [code,setCode]=useState('');
  const [localDelivery,setLocalDelivery]=useState(false);
  const methods=useQuery({queryKey:['login-methods'],queryFn:fetchLoginMethods,staleTime:60000});
  const codeState=methods.data?.codeLogin[mode];
@@ -24,19 +24,22 @@ export default function LoginPage() {
  const request=useMutation({mutationFn:()=>api<{sent:boolean;retryAfterSeconds:number;delivery?:string}>('/auth/code/request',undefined,{method:'POST',body:JSON.stringify({kind:mode,identifier})}),onSuccess:result=>{if(result.sent){setLocalDelivery(result.delivery==='LOCAL_DEVELOPMENT');setSentTo(mode+':'+identifier.trim());setRetryAt(Date.now()+result.retryAfterSeconds*1000);}}});
  const login=useMutation({mutationFn:()=>api<SessionTokens & {firstLogin:boolean}>('/auth/code/verify',undefined,{method:'POST',body:JSON.stringify({kind:mode,identifier,code})}),onSuccess:async tokens=>{await setSession(tokens,{onboardingRequired:tokens.firstLogin});router.replace((tokens.firstLogin?'/onboarding':'/schedule') as never);}});
  const remaining=Math.max(0,Math.ceil((retryAt-now)/1000));
- const changeMode=(value:string)=>{setMode(value as LoginMode);setIdentifier('');setCode('');setSentTo('');request.reset();login.reset();};
- return <AuthPage title="验证码登录" subtitle="首次验证成功将自动创建账号">
-  <SegmentedControl value={mode} options={[{value:'phone',label:'手机号'},{value:'email',label:'邮箱'}]} onChange={changeMode}/>
-  <TextInput style={styles.input} accessibilityLabel={mode==='phone'?'手机号码':'邮箱'} keyboardType={mode==='phone'?'phone-pad':'email-address'} autoCapitalize="none" autoComplete={mode==='phone'?'tel':'email'} placeholder={mode==='phone'?'中国大陆手机号':'邮箱地址'} value={identifier} onChangeText={setIdentifier}/>
-  <View style={{flexDirection:'row',gap:10,alignItems:'center'}}><TextInput style={[styles.input,{flex:1}]} accessibilityLabel="验证码" keyboardType="number-pad" autoComplete="sms-otp" maxLength={6} placeholder="6 位验证码" value={code} onChangeText={setCode}/><Pressable accessibilityRole="button" disabled={request.isPending||remaining>0||!identifier.trim()||!codeState||codeState==='UNAVAILABLE'} onPress={()=>request.mutate()} style={{padding:10}}><Text style={styles.strongLink}>{request.isPending?'发送中…':remaining>0?remaining+' 秒后重试':'获取验证码'}</Text></Pressable></View>
+ const busy=request.isPending||login.isPending;
+ const changeMode=(value:string)=>{if(busy)return;setMode(value as LoginMode);setIdentifier('');setCode('');setSentTo('');request.reset();login.reset();};
+ return <AuthPage title="欢迎使用懒人装甲" subtitle="登录后，继续你的目标与 AI 工作">
+  <SegmentedControl value={mode} options={[{value:'email',label:'邮箱'},{value:'phone',label:'手机号'}]} onChange={changeMode}/>
+  <Text style={styles.fieldLabel}>{mode==='phone'?'手机号码 · +86':'邮箱地址'}</Text>
+  <TextInput editable={!busy} maxLength={mode==='phone'?14:320} style={styles.input} accessibilityLabel={mode==='phone'?'手机号码':'邮箱'} keyboardType={mode==='phone'?'phone-pad':'email-address'} autoCapitalize="none" autoComplete={mode==='phone'?'tel':'email'} placeholder={mode==='phone'?'中国大陆手机号':'邮箱地址'} value={identifier} onChangeText={value=>{setIdentifier(value);setCode('');setSentTo('');login.reset();request.reset();}}/>
+  <Text style={styles.notice}>无需设置密码，使用一次性验证码即可登录。首次验证可创建账号。</Text>
+  <View style={{flexDirection:'row',gap:10,alignItems:'center'}}><TextInput editable={!busy} style={[styles.input,{flex:1}]} accessibilityLabel="验证码" keyboardType="number-pad" autoComplete="sms-otp" maxLength={6} placeholder="6 位验证码" value={code} onChangeText={setCode}/><Pressable accessibilityRole="button" disabled={busy||remaining>0||!identifier.trim()||!codeState||codeState==='UNAVAILABLE'} onPress={()=>request.mutate()} style={{padding:10}}><Text style={styles.strongLink}>{request.isPending?'发送中…':remaining>0?remaining+' 秒后重试':'获取验证码'}</Text></Pressable></View>
   {codeState==='LOCAL_DEVELOPMENT'?<Text style={styles.notice}>当前验证码发送到本地后端控制台，不会收到{mode==='phone'?'短信':'邮件'}。也可使用邮箱密码登录。</Text>:null}
   {codeState==='UNAVAILABLE'?<Text style={styles.notice}>{mode==='phone'?'短信':'邮件'}验证码暂时不可用，请选择其他登录方式。</Text>:null}
-  {methods.isError?<Text style={styles.error}>{presentation.error(methods.error)}</Text>:null}
+  {methods.isError?<Text style={styles.error}>{authError(methods.error)}</Text>:null}
   {sentTo===mode+':'+identifier.trim()?<Text style={styles.notice}>{localDelivery?'开发验证码已生成，请查看本地后端控制台。':'验证码已发送，请在 5 分钟内输入。'}</Text>:null}
-  {request.isError||login.isError?<Text style={styles.error}>{presentation.error(request.error??login.error)}</Text>:null}
-  <Pressable accessibilityRole="button" disabled={login.isPending||!identifier.trim()||!/^\d{6}$/.test(code)} onPress={()=>login.mutate()} style={[styles.submit,(login.isPending||!/^\d{6}$/.test(code))&&styles.submitDisabled]}><Text style={styles.submitText}>{login.isPending?'验证中…':'验证并登录'}</Text></Pressable>
+  {request.isError||login.isError?<Text style={styles.error}>{authError(request.error??login.error)}</Text>:null}
+  <Pressable accessibilityRole="button" disabled={busy||!identifier.trim()||!/^\d{6}$/.test(code)} onPress={()=>login.mutate()} style={[styles.submit,(login.isPending||!/^\d{6}$/.test(code))&&styles.submitDisabled]}><Text style={styles.submitText}>{login.isPending?'验证中…':'验证并登录'}</Text></Pressable>
   {methods.data?.passwordLogin?<Link href={'/auth/password-login' as never} style={styles.textLink}>使用邮箱密码登录</Link>:null}
-  {methods.data?.passwordRegistration?<Link href={'/auth/register' as never} style={styles.textLink}>注册邮箱账号</Link>:null}
+  <Link href={'/auth/welcome' as never} style={styles.textLink}>查看用户协议与隐私说明</Link>
  </AuthPage>;
 }
 
@@ -50,7 +53,7 @@ export function AuthPage({ title, subtitle, children, backHref = '/auth/welcome'
 }
 
 export const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: 'transparent' }, flex: { flex: 1 }, content: { flexGrow: 1, paddingHorizontal: 30, paddingTop: 12, paddingBottom: 34 }, back: { width: 48, height: 48, marginLeft: -8, alignItems: 'center', justifyContent: 'center' }, mark: { flexDirection: 'row', justifyContent: 'center', gap: 10, marginTop: 88 }, dot: { width: 18, height: 18, borderRadius: 9, backgroundColor: 'rgba(255,255,255,0.92)' }, title: { marginTop: 42, color: '#202A36', fontSize: 30, lineHeight: 40, fontWeight: '700', textAlign: 'center' }, subtitle: { marginTop: 8, color: '#687584', fontSize: 15, lineHeight: 22, textAlign: 'center' }, form: { gap: 12, marginTop: 34 },
+  safeArea: { flex: 1, backgroundColor: 'transparent' }, flex: { flex: 1 }, content: { flexGrow: 1, width: '100%', maxWidth: 520, alignSelf: 'center', paddingHorizontal: 26, paddingTop: 12, paddingBottom: 34 }, back: { width: 48, height: 48, marginLeft: -8, alignItems: 'center', justifyContent: 'center' }, mark: { flexDirection: 'row', justifyContent: 'center', gap: 10, marginTop: 32 }, dot: { width: 18, height: 18, borderRadius: 9, backgroundColor: 'rgba(255,255,255,0.92)' }, title: { marginTop: 26, color: '#202A36', fontSize: 30, lineHeight: 40, fontWeight: '700', textAlign: 'center' }, subtitle: { marginTop: 8, color: '#687584', fontSize: 15, lineHeight: 22, textAlign: 'center' }, form: { gap: 12, marginTop: 34 },
   modeTabs: { flexDirection: 'row', alignSelf: 'center', padding: 3, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.55)' }, modeTab: { minWidth: 86, minHeight: 40, alignItems: 'center', justifyContent: 'center', borderRadius: 11 }, modeTabActive: { backgroundColor: 'rgba(255,255,255,0.95)' }, modeText: { color: '#687584', fontSize: 15 }, modeTextActive: { color: '#202A36', fontWeight: '700' },
   phoneField: { minHeight: 60, flexDirection: 'row', alignItems: 'center', marginTop: 8, paddingHorizontal: 18, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.9)' }, countryCode: { color: '#29323D', fontSize: 20, fontWeight: '600' }, verticalRule: { width: StyleSheet.hairlineWidth, height: 31, marginHorizontal: 16, backgroundColor: '#C8D0D9' }, phoneInput: { flex: 1, color: '#202A36', fontSize: 18 }, input: { minHeight: 58, color: '#202A36', fontSize: 16, borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.95)', backgroundColor: 'rgba(255,255,255,0.9)', borderRadius: 17, paddingHorizontal: 18 }, fieldLabel: { color: '#26313D', fontSize: 15, fontWeight: '700', marginTop: 4 },
   notice: { color: '#6A7582', fontSize: 14, lineHeight: 21, textAlign: 'center', marginTop: 4 }, error: { color: '#B83B45', fontSize: 14, lineHeight: 20 }, submit: { minHeight: 54, alignItems: 'center', justifyContent: 'center', marginTop: 10, borderRadius: 16, backgroundColor: '#25282E' }, submitDisabled: { backgroundColor: 'rgba(121,132,145,0.35)' }, submitText: { color: '#FFFFFF', fontSize: 17, fontWeight: '700' }, submitDisabledText: { color: 'rgba(255,255,255,0.76)', fontSize: 17, fontWeight: '700' }, textLink: { color: '#277EAF', fontSize: 15, fontWeight: '600', textAlign: 'center', marginTop: 8 }, footer: { flexDirection: 'row', justifyContent: 'center', gap: 5, marginTop: 15 }, footerText: { color: '#687584', fontSize: 14 }, strongLink: { color: '#277EAF', fontSize: 14, fontWeight: '700' },

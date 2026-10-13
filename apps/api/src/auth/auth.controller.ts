@@ -1,5 +1,5 @@
 import { LoginCodeService } from './login-code.service';
-import { RequestLoginCodeDto, VerifyLoginCodeDto } from './dto';
+import { RequestLoginCodeDto, VerifyLoginCodeDto, AccountEmailDto, VerifyAccountEmailRequestDto, VerifyAccountEmailDto, SetPasswordDto } from './dto';
 import { Body, Controller, Get, Headers, Ip, Post } from '@nestjs/common';
 import { Public } from '../common/auth-context';
 import { AuthService } from './auth.service';
@@ -14,6 +14,27 @@ export class AuthController {
   }
   @Public() @Post(['code/request','code/send']) requestCode(@Body() input:RequestLoginCodeDto,@Ip() ip:string){return this.codes.request(input,ip);}
   @Public() @Post('code/verify') async verifyCode(@Body() input:VerifyLoginCodeDto,@Ip() ip:string,@Headers('user-agent') userAgent?:string){const identifier=await this.codes.verify(input,ip);return this.auth.loginVerified(input.kind,identifier,{ip,userAgent});}
+
+  @Get('security/methods') securityMethods(@CurrentUser() user: AuthenticatedUser) { return this.auth.securityMethods(user.id); }
+
+  @Post('identifiers/bind/request') async requestEmailProof(@CurrentUser() user: AuthenticatedUser, @Body() input: VerifyAccountEmailRequestDto, @Ip() ip: string) {
+    await this.auth.assertEmailVerification(user.id, input.email, input.password);
+    return this.codes.request({kind:'email',identifier:input.email}, ip, {purpose:'email-bind',userId:user.id});
+  }
+  @Post('identifiers/bind/confirm') async confirmEmailProof(@CurrentUser() user: AuthenticatedUser, @Body() input: VerifyAccountEmailDto, @Ip() ip: string) {
+    const proof = await this.auth.assertEmailVerification(user.id, input.email, input.password);
+    await this.codes.verify({kind:'email',identifier:input.email,code:input.code}, ip, {purpose:'email-bind',userId:user.id});
+    return this.auth.verifyLegacyEmail(user.id, input.email, proof.passwordHash);
+  }
+  @Post('password/set/request') async requestPasswordProof(@CurrentUser() user: AuthenticatedUser, @Body() input: AccountEmailDto, @Ip() ip: string) {
+    await this.auth.assertInitialPassword(user.id,input.email);
+    return this.codes.request({kind:'email',identifier:input.email}, ip, {purpose:'password-set',userId:user.id});
+  }
+  @Post('password/set') async setPassword(@CurrentUser() user: AuthenticatedUser, @Body() input: SetPasswordDto, @Ip() ip: string) {
+    await this.auth.assertInitialPassword(user.id,input.email);
+    await this.codes.verify({kind:'email',identifier:input.email,code:input.code}, ip, {purpose:'password-set',userId:user.id});
+    return this.auth.setInitialPassword(user.id,input.email,input.newPassword);
+  }
 
 
   @Public()

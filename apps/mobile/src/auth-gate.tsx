@@ -11,7 +11,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const token = useAuthStore((state) => state.token);
   const hydrated = useAuthStore((state) => state.hydrated);
   const onboardingRequired = useAuthStore((state) => state.onboardingRequired);
-  const destination = resolveAuthDestination({ hydrated, token, onboardingRequired, segment: segments[0] });
+  const destination = resolveAuthDestination({ hydrated, token, onboardingRequired, segment: segments[0], authPage: segments[1] });
 
   useEffect(() => {
     if (destination) router.replace(destination as never);

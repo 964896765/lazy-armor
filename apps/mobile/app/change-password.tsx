@@ -1,4 +1,5 @@
 import { useMutation } from '@tanstack/react-query';
+import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { StyleSheet, Text, TextInput, View } from 'react-native';
 import { api } from '../src/api';
@@ -14,10 +15,10 @@ export default function ChangePasswordPage() {
   const valid = useMemo(() => oldPassword.length > 0 && newPassword.length >= 10 && newPassword === confirmPassword, [confirmPassword, newPassword, oldPassword]);
   const change = useMutation({
     mutationFn: () => api('/auth/change-password', token, { method: 'POST', body: JSON.stringify({ oldPassword, newPassword }) }),
-    onSuccess: () => { setOldPassword(''); setNewPassword(''); setConfirmPassword(''); },
+    onSuccess: async () => { await useAuthStore.getState().clear(); router.replace('/auth/password-login' as never); },
   });
 
-  return <RuntimeDetailScreen title="修改密码" subtitle="修改后其他已登录设备会退出，需要重新验证。">
+  return <RuntimeDetailScreen title="修改密码" subtitle="修改后所有登录会话（包括本设备）会退出，请使用新密码重新登录。">
     {!token ? <LoginRequired /> : <RuntimeSection title="登录密码"><View style={styles.card}>
       <Text style={styles.label}>当前密码</Text><TextInput accessibilityLabel="当前密码" secureTextEntry value={oldPassword} onChangeText={setOldPassword} style={styles.input} />
       <Text style={styles.label}>新密码</Text><TextInput accessibilityLabel="新密码" secureTextEntry value={newPassword} onChangeText={setNewPassword} placeholder="至少 10 位" placeholderTextColor={colors.textMuted} style={styles.input} />

@@ -22,4 +22,8 @@ describe('resolveAuthDestination', () => {
     expect(resolveAuthDestination({ hydrated: true, token: 'access', onboardingRequired: false, segment: 'onboarding' })).toBe('/');
     expect(resolveAuthDestination({ hydrated: true, token: 'access', onboardingRequired: false, segment: '(tabs)' })).toBeNull();
   });
+  it.each([true,false])('permits a recovery deep link with a restored session (onboarding=%s)',onboardingRequired=>{
+    expect(resolveAuthDestination({hydrated:true,token:'restored',onboardingRequired,segment:'auth',authPage:'reset-password'})).toBeNull();
+    expect(resolveAuthDestination({hydrated:true,token:'restored',onboardingRequired,segment:'auth',authPage:'login'})).toBe(onboardingRequired?'/onboarding':'/');
+  });
 });

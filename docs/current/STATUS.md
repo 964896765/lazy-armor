@@ -1,5 +1,7 @@
 # 当前状态 — 2026-10-13
 
+2026-10-13 [第四批 Auth V2 Beta](OPTIMIZATION_BATCH_04_AUTH.md)：统一邮箱两条建号路径、本人旧邮箱验证与可选首个密码，原 User ID/业务数据保持；重置/改密与全会话撤销/审计原子化，阻止旧证明和邮件发送竞态。登录页默认邮箱 OTP，密码为辅；安全中心读真实验证状态，恢复深链与表单补齐。刷新保留草稿和可信设备，存储/账号作用域隔离。实现细节、最终验收及未过发布门见本批记录；手机号正式服务、任意新邮箱绑定、凭据解耦、Passkey/真实供应商/本人真机仍待，不关闭整体 Auth V2 或发布。
+
 2026-10-13 [S0第三批依赖处置](OPTIMIZATION_S0_BATCH_03_DEPENDENCIES.md)：FIX-04可补丁5项已清除（proxy-addr/sharp/shell-quote/compression/source-map-js），审计从2 critical/5 high/1 moderate降为0 critical/2 high/1 moderate。剩余node-forge/braces/sprintf-js无已发布安全版本，原high门exit1，FIX-04整体IN_PROGRESS，S0-A/发布不关闭。冻结复装及锁hash保持、全仓typecheck/build各8/8无缓存、521项回归、真实隔离API和Android JS导出通过；仅新Test MySQL3311库/Redis6391前缀，无个人或生产变更。下一独立切片FIX-06密码重置原子性；未补APK/真机/生产Linux或远端CI Green。
 
 2026-10-13 [S0第二批Admin鉴权](OPTIMIZATION_S0_BATCH_02_ADMIN_AUTH.md)：FIX-02页面访客范围CLOSED。复用原JWT/SQL会话与两种管理员角色，先验身份后读7项，禁用/降权/撤销即时重查，停用共享ADMIN_ACCESS_TOKEN；登录/退出、HttpOnly/Strict和Origin检查通过。最终50项单元+18项真实API/Next/Chrome回归通过，API/Admin类型与构建通过，原7项审计保留。仅新Test MySQL3311库/独立Redis6391前缀，无个人数据或生产变更。下一切片FIX-04依赖；正式0083、非空恢复、其他身份/队列/交互问题及公开HTTPS部署验证仍待完成。
