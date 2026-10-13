@@ -1,4 +1,4 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, Header } from '@nestjs/common';
 import { Roles, type AuthenticatedUser } from '../common/auth-context';
 import { AuditService } from '../audit/audit.service';
 import { DiagnosticsService } from '../diagnostics/diagnostics.service';
@@ -17,6 +17,13 @@ export class AdminController {
     private readonly operations: AdminOperationsService,
     private readonly alerts: OperationalAlertsService,
   ) {}
+
+  @Get('session')
+  @Roles('super_admin', 'operations_readonly')
+  @Header('Cache-Control', 'no-store')
+  viewSession(@CurrentUser() user: AuthenticatedUser) {
+    return { id: user.id, status: user.status, role: user.role };
+  }
 
   @Get('diagnostics')
   @Roles('super_admin', 'operations_readonly')

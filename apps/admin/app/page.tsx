@@ -1,4 +1,7 @@
 import { loadOperationsDashboard, type EndpointResult } from './operations-data';
+import { adminConfig } from './admin-auth';
+import { cookies } from 'next/headers';
+import { redirect } from 'next/navigation';
 
 export const dynamic = 'force-dynamic';
 
@@ -56,7 +59,20 @@ function EndpointError({ result }: { result: EndpointResult<unknown> }) {
 }
 
 export default async function OperationsDashboard(): Promise<React.ReactElement> {
-  const snapshot = await loadOperationsDashboard();
+  const config = adminConfig();
+  const cookieStore = await cookies();
+  const result = await loadOperationsDashboard(config ? cookieStore.get(config.accessCookie)?.value : undefined);
+  if (!config || result.state === 'unavailable' || result.state === 'forbidden') {
+    return <main className="auth-shell"><section className="auth-card">
+      <h1>{result.state === 'forbidden' ? '没有访问权限' : '认证服务暂不可用'}</h1>
+      <p>{result.state === 'forbidden' ? '此账号当前没有管理员角色。' : '暂时无法验证管理员身份，请稍后重试。'}</p>
+      <form action="/auth/logout" method="post"><button type="submit">退出当前会话</button></form>
+      <a href="/login">返回登录页</a>
+    </section></main>;
+  }
+  if (result.state === 'unauthenticated') redirect('/login');
+  if (result.state !== 'ready') redirect('/login');
+  const { snapshot, user } = result;
   const overview = data<Overview>(snapshot.overview);
   const diagnostics = data<Diagnostics>(snapshot.diagnostics);
   const workers = data<Workers>(snapshot.workers);
@@ -82,10 +98,8 @@ export default async function OperationsDashboard(): Promise<React.ReactElement>
       <section className="content">
         <header>
           <div><p>统一底层运行态</p><h1>Operations Dashboard</h1></div>
-          <div className="header-status"><Status value={overview?.status ?? alerts?.overallStatus} /><small>{overview?.generatedAt ? new Date(overview.generatedAt).toLocaleString('zh-CN') : '尚未取得快照'}</small></div>
+          <div className="header-status"><Status value={overview?.status ?? alerts?.overallStatus} /><small>{overview?.generatedAt ? new Date(overview.generatedAt).toLocaleString('zh-CN') : '尚未取得快照'}</small><small>{user.role === 'super_admin' ? '管理员' : '运维只读账号'}</small><form action="/auth/logout" method="post"><button type="submit">退出登录</button></form></div>
         </header>
-
-        {!snapshot.configured && <div className="notice">尚未配置服务端 ADMIN_ACCESS_TOKEN。Dashboard 保持只读、fail closed，不会发出未认证诊断请求。</div>}
 
         <article id="system">
           <div className="section-title"><div><span className="eyebrow">System</span><h2>基础依赖</h2></div><Status value={overview?.status} /></div>

@@ -41,5 +41,15 @@ h2 { font-size: 19px; margin: 4px 0 0; }
 .table-row { display: grid; grid-template-columns: minmax(150px, 1fr) 160px 180px; align-items: center; gap: 16px; padding: 12px 4px; border-top: 1px solid #edf0ee; }
 .table-head { border-top: 0; color: #7a8780; font-size: 12px; }
 footer { color: #7a8780; font-size: 12px; text-align: center; padding: 10px 0 26px; }
+.auth-shell { display: grid; grid-template-columns: 1fr; place-items: center; padding: 24px; }
+.auth-card { width: min(100%, 460px); background: #fff; border: 1px solid #dfe5e1; border-radius: 16px; padding: 32px; }
+.auth-card p { line-height: 1.6; color: #687870; }
+.auth-card a { display: inline-block; margin-top: 18px; color: #17643a; }
+.login-form { display: grid; gap: 10px; margin-top: 24px; }
+.login-form label { font-size: 14px; }
+.login-form input { width: 100%; padding: 12px; border: 1px solid #bac8c0; border-radius: 8px; font: inherit; }
+button { cursor: pointer; background: #15382b; color: #fff; border: 0; border-radius: 8px; padding: 11px 18px; font: inherit; }
+button:focus-visible, input:focus-visible { outline: 3px solid #5f9f80; outline-offset: 3px; }
+.login-form button { margin-top: 10px; }
 @media (max-width: 900px) { .two-column { grid-template-columns: 1fr; } }
 @media (max-width: 720px) { main { grid-template-columns: 1fr; } aside { display: none; } .content { padding: 24px 16px; } header { align-items: flex-start; } .table-row { grid-template-columns: 1fr; gap: 8px; } .table-head { display: none; } }

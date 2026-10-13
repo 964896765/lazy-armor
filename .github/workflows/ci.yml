@@ -69,6 +69,8 @@ jobs:
         run: pnpm data:truth
       - name: Backup and restore target safety regression
         run: pnpm --filter @lazy-armor/database test
+      - name: Admin visitor authentication regression
+        run: pnpm --filter @lazy-armor/admin test
       - name: Production dependency audit
         run: pnpm audit:dependencies
       - name: Prepare CI database
@@ -114,6 +116,8 @@ jobs:
           test/public-web-report.integration.spec.ts test/report-budget.spec.ts test/report-final-review-budget.spec.ts
       - name: Focused API security, device trust and truth regression
         run: pnpm --filter @lazy-armor/api test -- test/rc1-safe-logging.spec.ts test/password-reset-delivery.spec.ts test/app-role.spec.ts test/prepare-app-role.spec.ts test/p5-migration-breakpoints.spec.ts test/p5-trusted-devices.spec.ts test/p5-device-app-catalog.spec.ts test/p5-mobile-notification-receipts.spec.ts test/p5-truth-store.spec.ts test/p5-truth-store-source-resolver.spec.ts
+      - name: Admin original session and role integration regression
+        run: pnpm --filter @lazy-armor/api test -- test/admin-session.integration.spec.ts
       - name: Focused P4/P5 regression
         run: pnpm --filter @lazy-armor/api test -- test/p4-consumer-journeys.integration.spec.ts test/p5-membership-entitlement.integration.spec.ts test/p5-usage-metering.integration.spec.ts test/p5-subscription-billing-sandbox.integration.spec.ts test/p5-template-lifecycle.integration.spec.ts test/p5-connector-contract.spec.ts test/p5-cost-foundation.integration.spec.ts test/p5-scale-foundation.integration.spec.ts test/p5-scale-multi-worker.integration.spec.ts
       - name: Upload MySQL 8.4 migration evidence

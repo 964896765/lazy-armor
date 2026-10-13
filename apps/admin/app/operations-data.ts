@@ -1,7 +1,8 @@
+import { adminConfig, backendRequest, verifyAdminSession, type AdminEnvironment, type AdminUser } from './admin-auth';
+
 export type EndpointResult<T> = { data: T | null; error: string | null };
 
 export type OperationsDashboardSnapshot = {
-  configured: boolean;
   overview: EndpointResult<unknown>;
   workers: EndpointResult<unknown>;
   outbox: EndpointResult<unknown>;
@@ -21,58 +22,41 @@ const endpoints = {
   diagnostics: '/api/admin/diagnostics',
 } as const;
 
+export type DashboardResult = { state: 'ready'; user: AdminUser; snapshot: OperationsDashboardSnapshot }
+  | { state: 'unauthenticated' | 'forbidden' | 'unavailable' };
+
 export async function loadOperationsDashboard(
+  accessToken: string | undefined,
   fetcher: typeof fetch = fetch,
-  environment: Readonly<Record<string, string | undefined>> = process.env,
-): Promise<OperationsDashboardSnapshot> {
-  const accessToken = environment.ADMIN_ACCESS_TOKEN?.trim();
-  const baseUrl = parseBaseUrl(environment.ADMIN_API_URL ?? 'http://127.0.0.1:3001');
-  if (!accessToken) return unavailableSnapshot('ADMIN_ACCESS_TOKEN 未配置');
-  if (!baseUrl) return unavailableSnapshot('ADMIN_API_URL 无效');
+  environment: AdminEnvironment = process.env,
+): Promise<DashboardResult> {
+  const config = adminConfig(environment);
+  const session = await verifyAdminSession(accessToken, config, fetcher);
+  if (session.state !== 'authenticated') return session;
+  if (!config || !accessToken) return { state: 'unavailable' };
 
   const entries = await Promise.all(Object.entries(endpoints).map(async ([key, path]) => {
-    const result = await fetchEndpoint(fetcher, new URL(path, baseUrl), accessToken);
+    const result = await fetchEndpoint(fetcher, config, path, accessToken);
     return [key, result] as const;
   }));
 
-  return { configured: true, ...Object.fromEntries(entries) } as OperationsDashboardSnapshot;
+  // A role/session can change after verification. Never return a partial sensitive
+  // snapshot if any protected read observes loss of authority.
+  if (entries.some(([, result]) => result.status === 401)) return { state: 'unauthenticated' };
+  if (entries.some(([, result]) => result.status === 403)) return { state: 'forbidden' };
+  const snapshot = Object.fromEntries(entries.map(([key, { data, error }]) => [key, { data, error }])) as OperationsDashboardSnapshot;
+  return { state: 'ready', user: session.user, snapshot };
 }
 
-async function fetchEndpoint(fetcher: typeof fetch, url: URL, accessToken: string): Promise<EndpointResult<unknown>> {
+async function fetchEndpoint(fetcher: typeof fetch, config: NonNullable<ReturnType<typeof adminConfig>>, path: string, accessToken: string): Promise<EndpointResult<unknown> & { status?: number }> {
   try {
-    const response = await fetcher(url, {
-      cache: 'no-store',
+    const response = await backendRequest(config, path, {
       headers: { authorization: `Bearer ${accessToken}`, accept: 'application/json' },
-      signal: AbortSignal.timeout(5_000),
-    });
-    if (!response.ok) return { data: null, error: `HTTP ${response.status}` };
+    }, fetcher);
+    if (!response.ok) return { data: null, error: `HTTP ${response.status}`, status: response.status };
     return { data: await response.json(), error: null };
   } catch (error) {
     const message = error instanceof Error && error.name === 'TimeoutError' ? '请求超时' : 'API 不可达';
     return { data: null, error: message };
   }
-}
-
-function parseBaseUrl(input: string) {
-  try {
-    const url = new URL(input);
-    if (!['http:', 'https:'].includes(url.protocol)) return null;
-    return url;
-  } catch {
-    return null;
-  }
-}
-
-function unavailableSnapshot(error: string): OperationsDashboardSnapshot {
-  const unavailable = () => ({ data: null, error });
-  return {
-    configured: false,
-    overview: unavailable(),
-    workers: unavailable(),
-    outbox: unavailable(),
-    executions: unavailable(),
-    connectors: unavailable(),
-    alerts: unavailable(),
-    diagnostics: unavailable(),
-  };
 }
