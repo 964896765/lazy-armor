@@ -15,6 +15,7 @@ Goal → Context / Planner → Temporary / USER_EVENT / Persistent Plan
 
 - [Personal Life OS 总方案 V2](./docs/current/PERSONAL_LIFE_OS_MASTER_PLAN_V2.md)
 - [全面优化执行方案 V1.1](./docs/current/PROJECT_OPTIMIZATION_PLAN_V1_1.md)
+- [S0 第二批：Admin 鉴权验收与当前分析](./docs/current/OPTIMIZATION_S0_BATCH_02_ADMIN_AUTH.md)
 - [2026-10-12 全面检查分析](./docs/current/PROJECT_AUDIT_2026-10-12.md)
 - [V84–V90 持续开发总方案](./docs/current/V84_V90_ROADMAP.md)
 - [V84 当前任务与验收](./docs/current/V84_AGENT_CORE.md)
@@ -46,6 +47,8 @@ pnpm docker:up
 pnpm db:migrate
 pnpm dev
 ```
+
+Admin 使用已有管理员账号登录，运行时设置确切 ADMIN_PUBLIC_ORIGIN；本机与公开HTTPS配置见 [Admin运行说明](./apps/admin/README.md)。
 
 常用验证：
 

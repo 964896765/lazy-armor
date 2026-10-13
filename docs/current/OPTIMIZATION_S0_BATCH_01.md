@@ -44,4 +44,4 @@ Connector明确核对content_provider/file_provider/gmail/google_calendar/intern
 
 FIX-13的V91–V93非空GoalBrief/Authoring/学习/方法结果/预算恢复仍PLANNED，本轮既有fixture成功不能关闭它。0083正式发布证据、依赖、Admin、身份、队列与交互问题继续按原账本推进，S0整体不提前关闭。
 
-零新SQL迁移、执行/授权入口和生产部署。回滚可单独撤回对应源码提交，不涉及个人数据或原迁移文件。下一切片：FIX-02 Admin访客鉴权。
+零新SQL迁移、执行/授权入口和生产部署。回滚可单独撤回对应源码提交，不涉及个人数据或原迁移文件。当时下一切片FIX-02已在[第二批Admin验收](OPTIMIZATION_S0_BATCH_02_ADMIN_AUTH.md)按范围完成。

@@ -1,5 +1,7 @@
 # 当前状态 — 2026-10-13
 
+2026-10-13 [S0第二批Admin鉴权](OPTIMIZATION_S0_BATCH_02_ADMIN_AUTH.md)：FIX-02页面访客范围CLOSED。复用原JWT/SQL会话与两种管理员角色，先验身份后读7项，禁用/降权/撤销即时重查，停用共享ADMIN_ACCESS_TOKEN；登录/退出、HttpOnly/Strict和Origin检查通过。最终50项单元+18项真实API/Next/Chrome回归通过，API/Admin类型与构建通过，原7项审计保留。仅新Test MySQL3311库/独立Redis6391前缀，无个人数据或生产变更。下一切片FIX-04依赖；正式0083、非空恢复、其他身份/队列/交互问题及公开HTTPS部署验证仍待完成。
+
 2026-10-13 [S0首批整改](OPTIMIZATION_S0_BATCH_01.md)：FIX-03/FIX-17/FIX-01按冻结范围CLOSED。全仓typecheck/build各8/8，最终Database31/31、Connector7/7、共享312/312；Test MySQL3311新库实际dump/restore通过，原母库标记hash/表数保持，危险CLI在连接前拒绝。Fast Gate接入安全单测。零新迁移/执行入口/个人库变更/生产部署，新增状态非空恢复、0083正式发布及其他安全问题仍待完成。下文4项类型错误和Connector失败为已修复历史时点。
 
 2026-10-13 [全面检查分析](PROJECT_AUDIT_2026-10-12.md)：当前 API 有4项类型错误，纯本地API回归503通过/1失败，其他产品与合同套件819项和脚本16项通过。生产依赖审计2 critical/5 high/1 moderate，0083正式发布证据门未过；备份隔离、Admin访客鉴权、邮箱身份、token刷新与Web确认等问题详见报告。当前本地三角色端点与Docker引擎不可达，本轮SQL/Redis集成验收未完成。旧APK清理范围已审阅，但两次删除命令均被自动审批以blocked by policy拒绝，未删除文件。源码按现有codex分支作用户授权的GitHub开发检查点同步，未生产发布。下文历史ready/类型通过均为各自检查时点，不覆盖本次工作区状态。
