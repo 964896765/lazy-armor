@@ -71,6 +71,16 @@ const envSchema = z.object({
   AUTH_SECURITY_NOTICE_PHONE_TEMPLATE: z.string().trim().optional(),
   AUTH_SECURITY_NOTICE_EMAIL_TEMPLATE: z.string().trim().optional(),
   SMS_LOGIN_SEND_ENABLED: z.enum(['true', 'false']).default('false'),
+  AUTH_SMS_ABUSE_GUARD_ENABLED: z.enum(['true','false']).default('false'),
+  AUTH_SMS_ABUSE_SECRET: z.string().trim().optional(),
+  AUTH_SMS_CLIENT_SEND_LIMIT: z.coerce.number().int().min(1).max(1000).default(5),
+  AUTH_SMS_CLIENT_PHONE_LIMIT: z.coerce.number().int().min(1).max(100).default(3),
+  AUTH_SMS_IP_PHONE_LIMIT: z.coerce.number().int().min(1).max(1000).default(5),
+  AUTH_SMS_CLIENT_IP_LIMIT: z.coerce.number().int().min(1).max(100).default(2),
+  AUTH_SMS_CLIENT_AGENT_LIMIT: z.coerce.number().int().min(1).max(100).default(2),
+  AUTH_SMS_RISK_DAILY_REQUEST_LIMIT: z.coerce.number().int().min(1).max(100000).default(500),
+  AUTH_SMS_RISK_RETENTION_DAYS: z.coerce.number().int().min(1).max(30).default(7),
+  AUTH_SMS_RISK_CLEANUP_ENABLED: z.enum(['true','false']).default('false'),
   SMS_LOGIN_DELIVERY_ENDPOINT: z.string().trim().optional(),
   LOGIN_CODE_DELIVERY_TOKEN: z.string().trim().optional(),
   SMS_LOGIN_TEMPLATE_ID: z.string().trim().optional(),
@@ -102,6 +112,10 @@ export type AppEnv = Omit<z.infer<typeof envSchema>, 'APP_ENV'> & { APP_ENV: Dep
 
 export const parseEnv = (input: NodeJS.ProcessEnv): AppEnv => {
   const parsed = envSchema.parse(input);
+  if (parsed.AUTH_SMS_ABUSE_GUARD_ENABLED === 'true') {
+    const secret=parsed.AUTH_SMS_ABUSE_SECRET;
+    if(!secret||secret.length<32||/replace-with|inject-|placeholder/i.test(secret)||[parsed.JWT_SECRET,parsed.SMS_LOGIN_QUOTA_SECRET,parsed.LOGIN_CODE_DELIVERY_TOKEN].includes(secret)) throw new Error('SMS abuse protection requires a stable independent secret of at least 32 characters');
+  }
   if (parsed.AUTH_SECURITY_NOTICE_SEND_ENABLED === 'true' || parsed.AUTH_PHONE_CHANGE_ENABLED === 'true') {
     const endpoint = new URL(parsed.AUTH_SECURITY_NOTICE_ENDPOINT ?? '');
     if (endpoint.protocol !== 'https:' || endpoint.username || endpoint.password || endpoint.hash) throw new Error('Security notice gateway requires HTTPS without embedded credentials or fragments');

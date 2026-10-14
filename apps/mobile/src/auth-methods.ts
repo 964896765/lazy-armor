@@ -3,6 +3,7 @@ import { api } from './api';
 export interface LoginMethods {
   passwordLogin: boolean;
   passwordRegistration: boolean;
+  smsRequestProtection?: {enabled:boolean;clientMarkerRequired:boolean;retentionDays:number};
   passwordIdentifiers?: Array<'email'|'phone'>;
   passwordRecovery?: {available:boolean;emailAliases:boolean};
   codeLogin: Record<'phone' | 'email', 'LOCAL_DEVELOPMENT' | 'CONFIGURED' | 'UNAVAILABLE'>;

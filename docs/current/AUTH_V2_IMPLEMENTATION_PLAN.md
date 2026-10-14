@@ -1,6 +1,6 @@
 # 懒人装甲 Auth V2.0 · 统一认证与迁移执行方案
 
-基线：2026-10-13，更新2026-10-14，codex/v83-persistent-runtime。目标市场：中国大陆为主。Beta邮箱基础、M2-01用户级密码兼容迁移、M2-02新邮箱双证明绑定、M2-03统一邮箱恢复及M3-01/02/03手机号绑定、预算和安全换号切片已实现；手机号生产推广和Passkey尚未完成。
+基线：2026-10-13，更新2026-10-14，codex/v83-persistent-runtime。目标市场：中国大陆为主。Beta邮箱基础、M2-01用户级密码兼容迁移、M2-02新邮箱双证明绑定、M2-03统一邮箱恢复及M3-01/02/03/04手机号绑定、预算、安全换号和异常请求限制切片已实现；手机号生产推广、真实人机验证和Passkey尚未完成。
 
 ## 产品与账号原则
 
@@ -15,7 +15,7 @@ Beta 默认邮箱验证码，密码是已登录用户主动添加的备用方式
 | M0 只读审计 | 规范化邮箱/手机号，比较 auth_identities 与 login_identifiers；统计跨 User ID 冲突、非规范值、未验证旧邮箱 | 私有清单只包含聚合与加盐指纹，不导出密码/hash/token | 每个环境单独取快照；冲突需本人证明与人工核对 |
 | M1 Beta 基础（已实现） | 复用原表及唯一索引；事务统一身份解析，密码注册不虚构邮箱验证；不新增迁移 | 合并 OTP 登录/注册、当前账号验证邮箱、可选初始密码、真实安全状态；重置/改密原子撤销会话 | SQL/Redis 并发、事务失败回滚、账号冲突与客户端刷新回归；Web 实际交互 |
 | M2 凭据解耦（M2-01/02/03已实现，整体待续） | 0093用户级密码；bcrypt参数/version/source保留；原hash复制，不改User ID；绑定与恢复零新SQL | LEGACY默认兼容、SHADOW核对/事务双写、UNIFIED共享密码；新邮箱双证明添加，BOUND加密链接冻结渠道/凭据版本并原子恢复 | [M2-01](AUTH_V2_M2_PASSWORD_CREDENTIALS.md)、[M2-02](AUTH_V2_M2_EMAIL_BINDING.md)、[M2-03](AUTH_V2_M2_EMAIL_RECOVERY.md)；旧表停写/Argon2待实施，生产迁移与切换待验 |
-| M3 国内手机号（M3-01/02/03已实现，整体待续） | [手机号绑定](AUTH_V2_M3_PHONE_BINDING.md)保持原User ID；[短信预算](AUTH_V2_M3_SMS_GUARDRAILS.md)0094；[安全换号](AUTH_V2_M3_PHONE_CHANGE.md)0095停用列与通知表 | 当前账号/新号双证明；持久额度与费用预留；换号停用原号码、撤销全部会话/恢复链接并排队旧渠道通知；登录页面同步 | 正式供应商/运营商送达、通知受理/账单、设备异常/人机验证、旧号重新分配与丢失全部渠道恢复仍待实施或验收 |
+| M3 国内手机号（M3-01/02/03/04服务端切片已实现，整体待续） | [手机号绑定](AUTH_V2_M3_PHONE_BINDING.md)、[短信预算](AUTH_V2_M3_SMS_GUARDRAILS.md)0094、[安全换号](AUTH_V2_M3_PHONE_CHANGE.md)0095、[异常请求与留存](AUTH_V2_M3_SMS_ABUSE.md)0096 | 双证明保持原UID；旧号停用/全会话撤销与通知；客户端/IP异常在费用预留前限制，隐私留存和登录页面同步 | 正式供应商/送达/账单、设备/NAT误拦截、人机验证、旧号重新分配与丢失全部渠道恢复仍待实施或验收 |
 | M4 Passkey（待实施） | passkey_credentials：user_id、credential_id 唯一、public_key、sign_count、transports、AAGUID、备份标志、created/last_used/revoked；不保存生物信息 | WebAuthn 注册与登录 options/verify；原 session 与审计；用户可管理多把凭据 | 固定可信 RP ID/Origin、HTTPS；Web→Android Credential Manager→iOS，分别验收 |
 
 M1当时零新SQL。M2-01增加password_credentials和0093；M3-02增加0094短信额度/发送记录；[M3-03安全换号](AUTH_V2_M3_PHONE_CHANGE.md)增加0095停用号码列及持久安全通知。新版认证即使入口关闭也要求0095先扩展，已换号环境不得回退到忽略停用列的旧代码。新迁移仅在独立test库执行，个人/生产尚未迁移；Passkey表仍为设计。正式迁移、全量回填与切换仍必须有本环境的备份/恢复、失败注入及独立发布证据。
@@ -56,6 +56,8 @@ LOCAL_DEVELOPMENT 仅允许开发环境并明确显示控制台发送，测试/�
 
 ## M3 手机号与账号恢复
 
+[M3-04短信防滥用](AUTH_V2_M3_SMS_ABUSE.md)新增0096持久请求主体/事件，客户端、服务器IP、不同号码及请求环境变化共享十分钟窗口，SQL自然日日入场限制及原费用预算共同控制；随机标记只作异常线索，不作为账号或可信设备证明。保护默认关闭，具备独立密钥与清理开关；关停短信保留邮箱/已有OTP，登录页与隐私说明同步。真实人机服务、设备/NAT误拦截、正式供应商及号码恢复仍独立验收。
+
 M3-03复用双证明引擎，冻结要停用的旧号码映射、当前User ID/Session、密码/证明源版本与新号码；最终事务停用旧号、绑定新号、撤销全部登录会话/恢复链接、排队旧渠道安全通知并审计。匿名OTP签发前重查映射，阻止换号后旧请求补发会话。安全中心、双步表单和换号后的重新登录引导同步；通知受理与真实送达分开。原号码唯一归属记录保留，禁止自动回收或跨账号转移；全部渠道丢失恢复及号码重新分配仍为独立流程。
 
 M3-02已经实现独立默认关闭的短信发送开关、0094持久日预算与号码60秒预留间隔、最高费用预留、Gateway V2固定模板/回执验证以及请求Redis/SQL/HTTP时限。午夜保留号码间隔，失败/未知不退款或自动补发；费用守卫不依赖Redis持久性。网关必须前置审核模板、报价与计费片数，受理不等于送达。真实大陆运营商灰度、供应商签名/模板、账单对账及设备异常/人机验证仍独立待验。
@@ -80,4 +82,4 @@ Web 先用成熟 WebAuthn 校验库；Android 配置网站与包/签名 Digital 
 
 验收分开记录：隔离自动回归、真实邮件/短信/设备、历史库修复、生产迁移、正式发布。现存 2 high/1 moderate 依赖和 0083 发布证据门继续开放。完整 Auth V2 不因 M1 完成而关闭。
 
-M1具体结果见[第四批验收](OPTIMIZATION_BATCH_04_AUTH.md)，密码凭据见[M2-01](AUTH_V2_M2_PASSWORD_CREDENTIALS.md)，新邮箱绑定见[M2-02](AUTH_V2_M2_EMAIL_BINDING.md)，邮箱恢复见[M2-03](AUTH_V2_M2_EMAIL_RECOVERY.md)，手机号绑定见[M3-01](AUTH_V2_M3_PHONE_BINDING.md)，短信预算/故障恢复见[M3-02](AUTH_V2_M3_SMS_GUARDRAILS.md)，安全换号/旧渠道通知与当前分析见[M3-03](AUTH_V2_M3_PHONE_CHANGE.md)。下一认证切片M3-04短信异常与防滥用；正式供应商、旧号码重新分配、丢失所有渠道恢复和Passkey分别验收。完整Auth V2仍未关闭。
+M1具体结果见[第四批验收](OPTIMIZATION_BATCH_04_AUTH.md)，密码凭据见[M2-01](AUTH_V2_M2_PASSWORD_CREDENTIALS.md)，新邮箱绑定见[M2-02](AUTH_V2_M2_EMAIL_BINDING.md)，邮箱恢复见[M2-03](AUTH_V2_M2_EMAIL_RECOVERY.md)，手机号绑定见[M3-01](AUTH_V2_M3_PHONE_BINDING.md)，短信预算/故障恢复见[M3-02](AUTH_V2_M3_SMS_GUARDRAILS.md)，安全换号/旧渠道通知见[M3-03](AUTH_V2_M3_PHONE_CHANGE.md)，异常请求与留存见[M3-04](AUTH_V2_M3_SMS_ABUSE.md)。下一认证开发切片M4-01 Web Passkey基础；正式供应商、人机服务、设备误拦截、旧号码重新分配和丢失所有渠道恢复分别准备与验收。完整Auth V2仍未关闭。

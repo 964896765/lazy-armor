@@ -673,6 +673,13 @@
       "when": 1792022400000,
       "tag": "0095_phone_change_security",
       "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
+      "when": 1792108800000,
+      "tag": "0096_sms_request_risk",
+      "breakpoints": true
     }
   ]
 }

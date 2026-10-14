@@ -101,6 +101,8 @@ jobs:
         run: pnpm --filter @lazy-armor/api test -- test/phone-change.integration.spec.ts --hookTimeout=90000
       - name: Durable SMS budgets and bounded request Redis regression
         run: pnpm --filter @lazy-armor/api test -- test/sms-code-delivery.integration.spec.ts test/sms-code-startup.spec.ts test/request-redis.integration.spec.ts test/runtime-provider-common.integration.spec.ts --hookTimeout=90000
+      - name: Durable SMS request anomaly regression
+        run: pnpm --filter @lazy-armor/api test -- test/sms-abuse.integration.spec.ts test/sms-abuse-startup.spec.ts --hookTimeout=90000
       - name: Verified email password recovery regression
         run: pnpm --filter @lazy-armor/api test -- test/password-recovery.integration.spec.ts test/password-recovery-token.spec.ts --hookTimeout=90000
       - name: V91 shared goal and delivery contract regression

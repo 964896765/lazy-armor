@@ -3,6 +3,7 @@ import { EmailBindingService } from './email-binding.service';
 import { PhoneBindingService } from './phone-binding.service';
 import { PhoneChangeService } from './phone-change.service';
 import { StartPhoneChangeDto } from './dto';
+import { SmsAbuseService } from './sms-abuse.service';
 import { StartPhoneBindingDto, PhoneBindingChallengeDto, ConfirmPhoneBindingDto } from './dto';
 import { StartEmailBindingDto, EmailBindingChallengeDto, ConfirmEmailBindingDto } from './dto';
 import { RequestLoginCodeDto, VerifyLoginCodeDto, AccountEmailDto, VerifyAccountEmailRequestDto, VerifyAccountEmailDto, SetPasswordDto } from './dto';
@@ -14,9 +15,9 @@ import { CurrentUser, type AuthenticatedUser } from '../common/auth-context';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly auth: AuthService,private readonly codes:LoginCodeService, private readonly emailBinding: EmailBindingService, private readonly phoneBinding: PhoneBindingService, private readonly phoneChange: PhoneChangeService) {}
+  constructor(private readonly auth: AuthService,private readonly codes:LoginCodeService, private readonly emailBinding: EmailBindingService, private readonly phoneBinding: PhoneBindingService, private readonly phoneChange: PhoneChangeService,private readonly abuse:SmsAbuseService) {}
   @Public() @Get('methods') loginMethods() {
-    return { ...this.auth.loginMethods(), codeLogin: { phone: this.codes.availability('phone'), email: this.codes.availability('email') } };
+    return { ...this.auth.loginMethods(), ...this.abuse.capabilities(), codeLogin: { phone: this.codes.availability('phone'), email: this.codes.availability('email') } };
   }
   @Public() @Post(['code/request','code/send']) requestCode(@Body() input:RequestLoginCodeDto,@Ip() ip:string){return this.codes.request(input,ip);}
   @Public() @Post('code/verify') async verifyCode(@Body() input:VerifyLoginCodeDto,@Ip() ip:string,@Headers('user-agent') userAgent?:string){const identifier=await this.codes.verify(input,ip);return this.auth.loginVerified(input.kind,identifier,{ip,userAgent});}

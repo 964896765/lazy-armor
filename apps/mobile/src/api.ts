@@ -1,3 +1,4 @@
+import { authClientMarker } from './auth-client-marker';
 const API_URL = resolveApiUrl();
 type MobileAppEnv = 'development' | 'staging' | 'production';
 
@@ -41,7 +42,7 @@ export function resolveAppEnv(): MobileAppEnv {
 
 export async function api<T>(path: string, token?: string, init?: RequestInit): Promise<T> {
   const controller = new AbortController();
-  const timeoutMs = path.startsWith('/auth/') ? 12000 : /\/conversations\/[^/]+\/messages$/.test(path) || path.startsWith('/ai-service/test') ? 65000 : path.startsWith('/artifacts') || /\/conversations\/[^/]+\/confirm-action$/.test(path) ? 25000 : path.startsWith('/service-media') ? 20000 : path.startsWith('/connections') || /\/conversations\/[^/]+\/run-once$/.test(path) ? 15000 : 3000;
+  const timeoutMs = path.startsWith('/auth/') ? 16000 : /\/conversations\/[^/]+\/messages$/.test(path) || path.startsWith('/ai-service/test') ? 65000 : path.startsWith('/artifacts') || /\/conversations\/[^/]+\/confirm-action$/.test(path) ? 25000 : path.startsWith('/service-media') ? 20000 : path.startsWith('/connections') || /\/conversations\/[^/]+\/run-once$/.test(path) ? 15000 : 3000;
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   const abortFromCaller = () => controller.abort();
   if(init?.signal?.aborted)controller.abort();
@@ -53,7 +54,7 @@ export async function api<T>(path: string, token?: string, init?: RequestInit): 
       // body and cannot satisfy this typed transport contract.
       cache: 'no-store',
       signal: controller.signal,
-      headers: { 'content-type': 'application/json', 'cache-control': 'no-cache', ...(token ? { authorization: `Bearer ${token}` } : {}), ...init?.headers },
+      headers: { 'content-type': 'application/json', 'cache-control': 'no-cache', ...(path.startsWith('/auth/')?{'x-auth-client-id':await authClientMarker()}:{}), ...(token ? { authorization: `Bearer ${token}` } : {}), ...init?.headers },
     });
     if (!response.ok) {
       const body = await response.json().catch(() => null) as { code?: string; message?: string; retryAfterMs?: number } | null;

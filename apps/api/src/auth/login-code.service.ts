@@ -8,12 +8,13 @@ import type { RequestLoginCodeDto, VerifyLoginCodeDto } from './dto';
 import { normalizeIdentifier } from './login-identifier';
 import { SmsCodeDeliveryService } from './sms-code-delivery.service';
 import { connectRequestRedis, createRequestRedis } from '../infrastructure/request-redis';
+import { SmsAbuseService } from './sms-abuse.service';
 export type ChallengeScope = { purpose: 'email-bind' | 'password-set' | 'email-bind-current' | 'email-bind-target' | 'phone-bind-current' | 'phone-bind-target' | 'phone-change-current' | 'phone-change-target'; userId: string; context?: string };
 @Injectable()
 export class LoginCodeService implements OnApplicationShutdown {
  private redis: IORedis;
  private readonly redisUrl: string;
- constructor(private readonly config:ConfigService,private readonly limiter:RateLimiterService,private readonly localDelivery:LocalLoginCodeDeliveryProvider,private readonly sms:SmsCodeDeliveryService) {
+ constructor(private readonly config:ConfigService,private readonly limiter:RateLimiterService,private readonly localDelivery:LocalLoginCodeDeliveryProvider,private readonly sms:SmsCodeDeliveryService,private readonly abuse:SmsAbuseService) {
   this.redisUrl=config.getOrThrow<string>('REDIS_URL');this.redis=createRequestRedis(this.redisUrl);
  }
  normalize(input:RequestLoginCodeDto) {
@@ -25,7 +26,7 @@ export class LoginCodeService implements OnApplicationShutdown {
  availability(kind: 'phone' | 'email'): 'LOCAL_DEVELOPMENT' | 'CONFIGURED' | 'UNAVAILABLE' {
   const endpoint=this.config.get<string>(kind==='phone'?'SMS_LOGIN_DELIVERY_ENDPOINT':'EMAIL_LOGIN_DELIVERY_ENDPOINT');
   if(this.localDelivery.available(endpoint)) return 'LOCAL_DEVELOPMENT';
-  if(kind==='phone') return this.sms.available()?'CONFIGURED':'UNAVAILABLE';
+  if(kind==='phone') return this.sms.available()&&(this.config.get<string>('AUTH_SMS_ABUSE_GUARD_ENABLED')!=='true'||this.abuse?.available())?'CONFIGURED':'UNAVAILABLE';
   try { if(endpoint && new URL(endpoint).protocol==='https:' && this.config.get<string>('LOGIN_CODE_DELIVERY_TOKEN')) return 'CONFIGURED'; } catch {}
   return 'UNAVAILABLE';
  }
@@ -42,6 +43,7 @@ export class LoginCodeService implements OnApplicationShutdown {
   const endpoint=this.config.get<string>(input.kind==='phone'?'SMS_LOGIN_DELIVERY_ENDPOINT':'EMAIL_LOGIN_DELIVERY_ENDPOINT');
   const token=this.config.get<string>('LOGIN_CODE_DELIVERY_TOKEN');
   const local=availability==='LOCAL_DEVELOPMENT';
+  if(input.kind==='phone'&&!local&&this.config.get<string>('AUTH_SMS_ABUSE_GUARD_ENABLED')==='true')await this.abuse.check(identifier,ip,scope?.purpose??'login');
   const code=String(randomInt(0,1000000)).padStart(6,'0');
   if(input.kind==='phone'&&!local) {
    const started=performance.now();

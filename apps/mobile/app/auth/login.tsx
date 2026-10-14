@@ -37,6 +37,7 @@ export default function LoginPage() {
   <View style={{flexDirection:'row',gap:10,alignItems:'center'}}><TextInput editable={!busy} style={[styles.input,{flex:1}]} accessibilityLabel="验证码" keyboardType="number-pad" autoComplete="sms-otp" maxLength={6} placeholder="6 位验证码" value={code} onChangeText={setCode}/><Pressable accessibilityRole="button" disabled={busy||remaining>0||!identifier.trim()||!codeState||codeState==='UNAVAILABLE'} onPress={()=>request.mutate()} style={{padding:10}}><Text style={styles.strongLink}>{request.isPending?'发送中…':remaining>0?authRetryLabel(remaining):'获取验证码'}</Text></Pressable></View>
   {codeState==='LOCAL_DEVELOPMENT'?<Text style={styles.notice}>当前验证码发送到本地后端控制台，不会收到{mode==='phone'?'短信':'邮件'}。也可使用邮箱密码登录。</Text>:null}
   {codeState==='UNAVAILABLE'?<Text style={styles.notice}>{mode==='phone'?'短信':'邮件'}验证码暂时不可用，请选择其他登录方式。</Text>:null}
+  {mode==='phone'&&methods.data?.smsRequestProtection?.enabled?<Text style={styles.notice}>短时间内多次请求短信可能需要等待，也可使用已绑定邮箱或密码登录。短信防护使用随机客户端标记、网络来源和浏览器信息，服务端记录按 {methods.data.smsRequestProtection.retentionDays} 天策略清理。</Text>:null}
   {methods.isError?<Text style={styles.error}>{authError(methods.error)}</Text>:null}
   {sentTo===mode+':'+identifier.trim()?<Text style={styles.notice}>{localDelivery?'开发验证码已生成，请查看本地后端控制台。':gatewayAccepted?'短信请求已受理，请留意短信。验证码 5 分钟内有效。':'验证码已发送，请在 5 分钟内输入。'}</Text>:null}
   {request.isError||login.isError?<Text style={styles.error}>{authError(request.error??login.error)}</Text>:null}

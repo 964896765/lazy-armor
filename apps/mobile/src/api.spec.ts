@@ -49,6 +49,9 @@ describe('API environment resolution', () => {
   });
 });
 describe('request deadlines', () => {
+ it('attaches a stable SMS caller hint only to authentication routes',async()=>{
+  const fetch=vi.fn().mockResolvedValue({ok:true,status:200,json:async()=>({})});vi.stubGlobal('fetch',fetch);await api('/auth/methods');await api('/auth/code/request');await api('/timeline');const first=fetch.mock.calls[0][1].headers['x-auth-client-id'];expect(first).toMatch(/^[-A-Za-z0-9_]{8,128}$/);expect(fetch.mock.calls[1][1].headers['x-auth-client-id']).toBe(first);expect(fetch.mock.calls[2][1].headers).not.toHaveProperty('x-auth-client-id');
+ });
  afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
  it('retains and bounds the server retry deadline for authentication requests',async()=>{
   vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:false,status:429,json:async()=>({code:'SMS_CODE_COOLDOWN',message:'Wait',retryAfterMs:12001})}));

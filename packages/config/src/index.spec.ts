@@ -21,6 +21,13 @@ function deployedEnv(appEnv: 'staging' | 'production') {
 }
 
 describe('deployment environment isolation', () => {
+  it('keeps SMS anomaly detection and cleanup opt-in with a seven-day retention policy',()=>{const env=parseEnv(deployedEnv('staging'));expect(env.AUTH_SMS_ABUSE_GUARD_ENABLED).toBe('false');expect(env.AUTH_SMS_RISK_CLEANUP_ENABLED).toBe('false');expect(env.AUTH_SMS_RISK_RETENTION_DAYS).toBe(7);});
+  const abuseEnv=()=>({...deployedEnv('staging'),AUTH_SMS_ABUSE_GUARD_ENABLED:'true',AUTH_SMS_ABUSE_SECRET:'independent-abuse-secret-xxxxxxxxxxxxxxxxxxxx',SMS_LOGIN_SEND_ENABLED:'true',SMS_LOGIN_DELIVERY_ENDPOINT:'https://notify.example.test/code',LOGIN_CODE_DELIVERY_TOKEN:'independent-gateway-token-xxxxxxxxxxxxxxxxxxx',SMS_LOGIN_TEMPLATE_ID:'approved-login',SMS_LOGIN_QUOTA_SECRET:'independent-quota-secret-xxxxxxxxxxxxxxxxxxxx'});
+  it('accepts complete durable SMS request protection',()=>{expect(parseEnv(abuseEnv()).AUTH_SMS_ABUSE_GUARD_ENABLED).toBe('true');});
+  it.each(['JWT_SECRET','LOGIN_CODE_DELIVERY_TOKEN','SMS_LOGIN_QUOTA_SECRET'] as const)('rejects reuse of %s as the anomaly pseudonym secret',key=>{const env=abuseEnv();expect(()=>parseEnv({...env,AUTH_SMS_ABUSE_SECRET:env[key]})).toThrow('independent');});
+  it.each(['','short','replace-with-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'])('rejects incomplete protection secret %s',secret=>{expect(()=>parseEnv({...abuseEnv(),AUTH_SMS_ABUSE_SECRET:secret})).toThrow();});
+  it('preserves protection/cleanup while independently stopping SMS delivery',()=>{expect(parseEnv({...abuseEnv(),SMS_LOGIN_SEND_ENABLED:'false'}).AUTH_SMS_ABUSE_GUARD_ENABLED).toBe('true');expect(parseEnv({...deployedEnv('staging'),AUTH_SMS_RISK_CLEANUP_ENABLED:'true'}).SMS_LOGIN_SEND_ENABLED).toBe('false');});
+  it('rejects unsafe zero budgets or excessive retention',()=>{expect(()=>parseEnv({...abuseEnv(),AUTH_SMS_CLIENT_SEND_LIMIT:'0'})).toThrow();expect(()=>parseEnv({...abuseEnv(),AUTH_SMS_RISK_RETENTION_DAYS:'31'})).toThrow();});
   it('keeps phone replacement and external security notices disabled until separately accepted',()=>{
     const env=parseEnv(deployedEnv('staging'));expect(env.AUTH_PHONE_CHANGE_ENABLED).toBe('false');expect(env.AUTH_SECURITY_NOTICE_SEND_ENABLED).toBe('false');
   });

@@ -272,6 +272,21 @@ export const authSmsQuotas = mysqlTable('auth_sms_quotas', {
   ...timestamps,
 }, table => [uniqueIndex('auth_sms_quotas_scope_uq').on(table.quotaNamespace, table.bucket, table.kind, table.subjectKey)]);
 
+export const authSmsRiskSubjects = mysqlTable('auth_sms_risk_subjects', {
+ id:uuidBinary('id').primaryKey(), quotaNamespace:varchar('quota_namespace',{length:160}).notNull(),
+ kind:varchar('kind',{length:16}).notNull(), subjectKey:char('subject_key',{length:64}).notNull(),
+ windowStartedAt:datetime('window_started_at',{mode:'date',fsp:6}).notNull(), requestCount:int('request_count').notNull().default(0),
+ fingerprintsJson:json('fingerprints_json').$type<{phones:string[];ips:string[];agents:string[]}>(),
+ blockedUntil:datetime('blocked_until',{mode:'date',fsp:6}), ...timestamps,
+}, table=>[uniqueIndex('auth_sms_risk_subjects_scope_uq').on(table.quotaNamespace,table.kind,table.subjectKey),index('auth_sms_risk_subjects_retention_idx').on(table.quotaNamespace,table.updatedAt)]);
+
+export const authSmsRiskEvents = mysqlTable('auth_sms_risk_events', {
+ id:uuidBinary('id').primaryKey(), quotaNamespace:varchar('quota_namespace',{length:160}).notNull(),
+ clientKey:char('client_key',{length:64}).notNull(),ipKey:char('ip_key',{length:64}).notNull(),phoneKey:char('phone_key',{length:64}).notNull(),
+ purpose:varchar('purpose',{length:32}).notNull(),decision:varchar('decision',{length:16}).notNull(),reason:varchar('reason',{length:32}).notNull(),
+ createdAt:datetime('created_at',{mode:'date',fsp:6}).notNull(),
+}, table=>[index('auth_sms_risk_events_retention_idx').on(table.quotaNamespace,table.createdAt)]);
+
 export const authSmsAttempts = mysqlTable('auth_sms_attempts', {
   id: uuidBinary('id').primaryKey(),
   quotaNamespace: varchar('quota_namespace', { length: 160 }).notNull(),
@@ -1939,6 +1954,8 @@ export const schema = {
   authIdentities,
   passwordCredentials,
   authSmsQuotas,
+  authSmsRiskSubjects,
+  authSmsRiskEvents,
   authSmsAttempts,
   authSecurityNotices,
   authSessions,

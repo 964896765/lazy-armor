@@ -3,6 +3,9 @@ import { ConsumerPresentationMapper } from './consumer-presentation';
 
 export function authError(error: unknown): string {
   if (error instanceof ApiError) {
+    if (error.code === 'SMS_RISK_BLOCKED') return '短信请求较多，请稍后重试，或使用邮箱、密码登录。';
+    if (error.code === 'SMS_RISK_SERVICE_UNAVAILABLE') return '短信验证暂时不可用，请使用邮箱或密码。';
+    if (error.code === 'SMS_CLIENT_CONTEXT_REQUIRED') return '请更新客户端后重试，也可使用邮箱或密码。';
     if (error.code === 'LOGIN_IDENTIFIER_DISABLED') return '此登录方式已停用，请使用当前手机号或已绑定邮箱。';
     if (error.code === 'PHONE_CHANGE_PROOF_EXPIRED') return '换号验证已失效，请重新验证当前账号和新号码。';
     if (error.code === 'SMS_CODE_COOLDOWN') return `请在 ${Math.max(1,Math.ceil((error.retryAfterMs??60000)/1000))} 秒后再获取短信验证码。`;

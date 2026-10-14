@@ -22,7 +22,7 @@ export default function WelcomePage() {
       <Text style={styles.brand}>懒人装甲 · 让重要的事自动向前</Text>
     </View>
     <Modal visible={Boolean(policy)} transparent animationType="fade" onRequestClose={() => setPolicy(null)}>
-      <View style={styles.modalBackdrop}><View style={styles.policyPanel}><Text style={styles.policyTitle}>{policy}</Text><Text style={styles.policyCopy}>{policy === '用户协议' ? '你可以自主选择使用哪些功能，并随时停止使用。涉及账号、连接、授权和外部操作时，应用会明确说明并等待你的确认。' : '应用只在你明确授权后读取所选来源。敏感凭据安全存储；你可以在设置中查看、撤回连接和管理数据。'}</Text><Pressable accessibilityRole="button" onPress={() => setPolicy(null)} style={styles.policyButton}><Text style={styles.policyButtonText}>我知道了</Text></Pressable></View></View>
+      <View style={styles.modalBackdrop}><View style={styles.policyPanel}><Text style={styles.policyTitle}>{policy}</Text><Text style={styles.policyCopy}>{policy === '用户协议' ? '你可以自主选择使用哪些功能，并随时停止使用。涉及账号、连接、授权和外部操作时，应用会明确说明并等待你的确认。' : '应用只在你明确授权后读取所选来源。敏感凭据安全存储；你可以在设置中查看、撤回连接和管理数据。短信防护开启时，会使用随机客户端标记、网络来源和浏览器信息限制异常请求；服务端记录按登录页公示的期限清理。'}</Text><Pressable accessibilityRole="button" onPress={() => setPolicy(null)} style={styles.policyButton}><Text style={styles.policyButtonText}>我知道了</Text></Pressable></View></View>
     </Modal>
   </SafeAreaView>;
 }
