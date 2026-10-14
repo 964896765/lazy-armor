@@ -15,15 +15,16 @@ import { LoginCodeService, type ChallengeScope } from './login-code.service';
 import { maskIdentifier, normalizeIdentifier } from './login-identifier';
 import { PasswordCredentialService } from './password-credential.service';
 import { connectRequestRedis, createRequestRedis } from '../infrastructure/request-redis';
-export interface StartIdentifierBinding { identifier: string; proof: 'password' | 'code'; password?: string; identifierId?: string }
+export interface StartIdentifierBinding { identifier: string; proof: 'password' | 'code'; password?: string; identifierId?: string; oldIdentifierId?: string }
 
-interface BindingState {
+export interface BindingState {
   userId: string;
   sessionId: string;
   email?: string; // Preserve deployed email challenges.
   phone?: string;
   passwordEpoch: string;
   source?: { id: string; epoch: string };
+  replacing?: { id: string; epoch: string };
   stage: 'current' | 'target';
   expiresAt: number;
 }
@@ -33,44 +34,49 @@ export abstract class IdentifierBindingService implements OnModuleInit, OnApplic
  private readonly redisUrl: string;
   constructor(
     private readonly kind: 'email' | 'phone',
-    private readonly db: InjectedDatabase,
-    private readonly config: ConfigService,
+    protected readonly db: InjectedDatabase,
+    protected readonly config: ConfigService,
     private readonly passwords: PasswordCredentialService,
     private readonly codes: LoginCodeService,
     private readonly limiter: RateLimiterService,
-    private readonly audit: AuditService,
+    protected readonly audit: AuditService,
+    private readonly operation: 'bind' | 'change' = 'bind',
   ) {
     this.redisUrl=config.getOrThrow<string>('REDIS_URL');this.redis = createRequestRedis(this.redisUrl);
   }
   onModuleInit() {
     if (this.config.get<string>(this.flag()) === 'true' && !this.passwords.unified()) throw new Error(`${this.kind} binding requires UNIFIED password credentials`);
   }
-  private enabled() { return this.config.get<string>(this.flag()) === 'true' && this.passwords.unified() && (this.kind === 'phone' ? this.codes.availability('phone') === 'CONFIGURED' : this.codes.availability('email') !== 'UNAVAILABLE'); }
-  private digest(value: string) { return createHmac('sha256', this.config.getOrThrow<string>('JWT_SECRET')).update(this.kind + '-binding:' + value).digest('hex'); }
-  private key(challenge: string) { return `${this.config.get<string>('REDIS_KEY_PREFIX') ?? 'lazyarmor'}:${this.kind}-binding:${this.digest(challenge)}`; }
+  protected additionalReady() { return true; }
+  private enabled() { return this.config.get<string>(this.flag()) === 'true' && this.passwords.unified() && this.additionalReady() && (this.kind === 'phone' ? this.codes.availability('phone') === 'CONFIGURED' : this.codes.availability('email') !== 'UNAVAILABLE'); }
+  private namespace() { return this.kind + (this.operation === 'change' ? '-change' : '-binding'); }
+  private digest(value: string) { return createHmac('sha256', this.config.getOrThrow<string>('JWT_SECRET')).update(this.namespace() + ':' + value).digest('hex'); }
+  private key(challenge: string) { return `${this.config.get<string>('REDIS_KEY_PREFIX') ?? 'lazyarmor'}:${this.namespace()}:${this.digest(challenge)}`; }
   private scope(challenge: string, state: BindingState, purpose: ChallengeScope['purpose']): ChallengeScope {
-    return { purpose, userId: state.userId, context: this.digest(JSON.stringify([challenge, state.sessionId, this.target(state), state.passwordEpoch, state.source])) };
+    const context = [challenge, state.sessionId, this.target(state), state.passwordEpoch, state.source];
+    if (state.replacing) context.push(state.replacing);
+    return { purpose, userId: state.userId, context: this.digest(JSON.stringify(context)) };
   }
   private async guarded<T>(work: () => Promise<T>): Promise<T> {
     try { return await work(); }
-    catch (error) { if (error instanceof HttpException) throw error; this.redis.disconnect();this.redis=createRequestRedis(this.redisUrl);throw new HttpException('验证服务暂不可用，请稍后重新开始绑定。', 503); }
+    catch (error) { if (error instanceof HttpException) throw error; this.redis.disconnect();this.redis=createRequestRedis(this.redisUrl);throw new HttpException(`验证服务暂不可用，请稍后重新开始${this.operation === 'change' ? '换号' : '绑定'}。`, 503); }
   }
-  private flag() { return this.kind === 'email' ? 'AUTH_EMAIL_BIND_ENABLED' : 'AUTH_PHONE_BIND_ENABLED'; }
+  private flag() { return this.operation === 'change' ? 'AUTH_PHONE_CHANGE_ENABLED' : this.kind === 'email' ? 'AUTH_EMAIL_BIND_ENABLED' : 'AUTH_PHONE_BIND_ENABLED'; }
   private label() { return this.kind === 'email' ? '邮箱' : '手机号'; }
-  private invalid() { return new UnauthorizedException({ code: this.kind.toUpperCase() + '_BIND_PROOF_EXPIRED', message: '验证已失效，请重新验证当前账号后再绑定。' }); }
+  protected invalid() { return new UnauthorizedException({ code: this.kind.toUpperCase() + (this.operation === 'change' ? '_CHANGE' : '_BIND') + '_PROOF_EXPIRED', message: '验证已失效，请重新验证当前账号。' }); }
   private occupied() { return new ConflictException({ code: this.kind.toUpperCase() + '_BIND_OCCUPIED', message: `该${this.label()}已有关联账号，请使用其他${this.label()}。账号不会自动合并。` }); }
-  private target(state: BindingState): string { const value = state[this.kind]; if (!value) throw this.invalid(); return value; }
-  private purpose(stage: 'current' | 'target'): ChallengeScope['purpose'] { return `${this.kind}-bind-${stage}`; }
-  private assertEnabled() { if (!this.enabled()) throw new ForbiddenException(`新增${this.label()}绑定暂未开放`); }
+  protected target(state: BindingState): string { const value = state[this.kind]; if (!value) throw this.invalid(); return value; }
+  private purpose(stage: 'current' | 'target'): ChallengeScope['purpose'] { return `${this.kind}-${this.operation}-${stage}` as ChallengeScope['purpose']; }
+  private assertEnabled() { if (!this.enabled()) throw new ForbiddenException(this.operation === 'change' ? '手机号更换暂未开放' : `新增${this.label()}绑定暂未开放`); }
   private async passwordEpoch(userId: string, reader: Pick<InjectedDatabase, 'select'> = this.db, lock = false) {
     // Redis holds only a keyed fingerprint, never a password/hash or a code.
     return this.digest(JSON.stringify(await this.passwords.observe(userId, reader, lock) ?? { userId, password: 'none' }));
   }
   private sourceEpoch(row: typeof loginIdentifiers.$inferSelect) { return this.digest(JSON.stringify([row.id, row.userId, row.kind, row.identifier, row.verifiedAt])); }
-  private async source(userId: string, id: string, reader: Pick<InjectedDatabase, 'select'> = this.db, lock = false) {
+  protected async source(userId: string, id: string, reader: Pick<InjectedDatabase, 'select'> = this.db, lock = false) {
     const query = reader.select().from(loginIdentifiers).where(and(eq(loginIdentifiers.id, id), eq(loginIdentifiers.userId, userId))).limit(1);
     const row = (await (lock ? query.for('update') : query))[0];
-    if (!row || !row.verifiedAt || !['email', 'phone'].includes(row.kind)) throw this.invalid();
+    if (!row || !row.verifiedAt || row.disabledAt || !['email', 'phone'].includes(row.kind)) throw this.invalid();
     // A historical conflicting legacy owner cannot serve as current-account proof.
     if (row.kind === 'email') {
       const legacyQuery = reader.select().from(authIdentities).where(eq(authIdentities.email, row.identifier)).limit(1);
@@ -93,6 +99,11 @@ export abstract class IdentifierBindingService implements OnModuleInit, OnApplic
     await this.assertSession(user, reader, Boolean(tx));
     if (await this.passwordEpoch(user.id, reader, Boolean(tx)) !== state.passwordEpoch) throw this.invalid();
     if (state.source && this.sourceEpoch(await this.source(user.id, state.source.id, reader, Boolean(tx))) !== state.source.epoch) throw this.invalid();
+    if (this.operation === 'change') {
+      if (!state.replacing) throw this.invalid();
+      const old = await this.source(user.id,state.replacing.id,reader,Boolean(tx));
+      if (old.kind !== 'phone' || this.sourceEpoch(old) !== state.replacing.epoch) throw this.invalid();
+    }
   }
   private async load(user: AuthenticatedUser, challenge: string, stage: BindingState['stage']) {
     this.assertEnabled();
@@ -117,7 +128,7 @@ export abstract class IdentifierBindingService implements OnModuleInit, OnApplic
   protected async bindingCapabilities(user: AuthenticatedUser) {
     const enabled = this.enabled();
     const sources = enabled ? await this.db.select().from(loginIdentifiers).where(eq(loginIdentifiers.userId, user.id)) : [];
-    return { available: enabled, sources: sources.filter(row => ['email', 'phone'].includes(row.kind) && row.verifiedAt && this.codes.availability(row.kind as 'email' | 'phone') !== 'UNAVAILABLE').map(row => ({ id: row.id, kind: row.kind, masked: maskIdentifier(row.kind as 'email' | 'phone', row.identifier) })) };
+    return { available: enabled, sources: sources.filter(row => !row.disabledAt && ['email', 'phone'].includes(row.kind) && row.verifiedAt && this.codes.availability(row.kind as 'email' | 'phone') !== 'UNAVAILABLE').map(row => ({ id: row.id, kind: row.kind, masked: maskIdentifier(row.kind as 'email' | 'phone', row.identifier) })) };
   }
   protected async startBinding(user: AuthenticatedUser, input: StartIdentifierBinding, ip: string) {
     return this.guarded(async () => {
@@ -128,6 +139,12 @@ export abstract class IdentifierBindingService implements OnModuleInit, OnApplic
       const identifier = normalizeIdentifier(this.kind, input.identifier);
       const observed = await this.passwords.observe(user.id);
       const state: BindingState = { userId: user.id, sessionId: user.sessionId!, [this.kind]: identifier, passwordEpoch: this.digest(JSON.stringify(observed ?? { userId: user.id, password: 'none' })), stage: input.proof === 'password' ? 'target' : 'current', expiresAt: Date.now() + 600_000 };
+      if (this.operation === 'change') {
+        if (!input.oldIdentifierId) throw this.invalid();
+        const old = await this.source(user.id,input.oldIdentifierId);
+        if (old.kind !== 'phone' || old.identifier === identifier) throw this.invalid();
+        state.replacing = {id:old.id,epoch:this.sourceEpoch(old)};
+      }
       if (input.proof === 'password') {
         if (!observed || !await compare(input.password!, observed.passwordHash)) throw new UnauthorizedException('当前账号密码验证失败');
       } else {
@@ -180,12 +197,15 @@ export abstract class IdentifierBindingService implements OnModuleInit, OnApplic
         // Same missing-key/index lock order as anonymous OTP/password registration.
         await this.assertFree(this.target(state), tx);
         await this.validate(user, state, tx);
-        const now = new Date();
-        await tx.insert(loginIdentifiers).values({ id: newId(), userId: user.id, kind: this.kind, identifier: this.target(state), verifiedAt: now, createdAt: now, updatedAt: now });
-        await this.audit.append({ actorType: 'user', actorUserId: user.id, userId: user.id, action: this.kind === 'email' ? 'LOGIN_EMAIL_BOUND' : 'LOGIN_PHONE_BOUND', resourceType: 'auth', resourceId: user.id, source: 'api', result: 'success', changeSummary: `Added a verified ${this.kind} to the original account with current-account and new-channel proofs` }, tx);
-        return { bound: true };
+        return this.finalize(tx,user,state);
       });
     });
+  }
+  protected async finalize(tx: AuthTransaction, user: AuthenticatedUser, state: BindingState): Promise<{bound?:boolean;changed?:boolean;reauthenticate?:boolean;notification?:string}> {
+    const now = new Date();
+    await tx.insert(loginIdentifiers).values({ id: newId(), userId: user.id, kind: this.kind, identifier: this.target(state), verifiedAt: now, createdAt: now, updatedAt: now });
+    await this.audit.append({ actorType: 'user', actorUserId: user.id, userId: user.id, action: this.kind === 'email' ? 'LOGIN_EMAIL_BOUND' : 'LOGIN_PHONE_BOUND', resourceType: 'auth', resourceId: user.id, source: 'api', result: 'success', changeSummary: `Added a verified ${this.kind} to the original account with current-account and new-channel proofs` }, tx);
+    return {bound:true};
   }
   async onApplicationShutdown() { this.redis.disconnect(); }
 }

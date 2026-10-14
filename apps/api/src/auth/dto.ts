@@ -124,6 +124,9 @@ export class StartPhoneBindingDto {
  @IsOptional() @IsUUID() identifierId?: string;
 }
 export class PhoneBindingChallengeDto extends EmailBindingChallengeDto {}
+export class StartPhoneChangeDto extends StartPhoneBindingDto {
+ @IsUUID() oldIdentifierId!: string;
+}
 export class ConfirmPhoneBindingDto extends PhoneBindingChallengeDto {
  @IsString() @Matches(/^\d{6}$/) code!: string;
 }

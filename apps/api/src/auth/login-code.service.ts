@@ -8,7 +8,7 @@ import type { RequestLoginCodeDto, VerifyLoginCodeDto } from './dto';
 import { normalizeIdentifier } from './login-identifier';
 import { SmsCodeDeliveryService } from './sms-code-delivery.service';
 import { connectRequestRedis, createRequestRedis } from '../infrastructure/request-redis';
-export type ChallengeScope = { purpose: 'email-bind' | 'password-set' | 'email-bind-current' | 'email-bind-target' | 'phone-bind-current' | 'phone-bind-target'; userId: string; context?: string };
+export type ChallengeScope = { purpose: 'email-bind' | 'password-set' | 'email-bind-current' | 'email-bind-target' | 'phone-bind-current' | 'phone-bind-target' | 'phone-change-current' | 'phone-change-target'; userId: string; context?: string };
 @Injectable()
 export class LoginCodeService implements OnApplicationShutdown {
  private redis: IORedis;

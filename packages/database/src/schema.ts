@@ -249,6 +249,17 @@ export const passwordCredentials = mysqlTable('password_credentials', {
 }, table => [uniqueIndex('password_credentials_user_uq').on(table.userId)]);
 
 // Operational SMS budgets are durable and independent of users and Runtime approvals.
+// Security messages are independent of automation/marketing and never store OTPs.
+export const authSecurityNotices = mysqlTable('auth_security_notices', {
+ id: uuidBinary('id').primaryKey(), userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
+ eventId: uuidBinary('event_id').notNull(), channel: varchar('channel', { length: 10 }).notNull(),
+ recipientCipher: text('recipient_cipher').notNull(), masked: varchar('masked', { length: 320 }).notNull(),
+ state: varchar('state', { length: 24 }).notNull().default('PENDING'), attempts: int('attempts').notNull().default(0),
+ nextAttemptAt: datetime('next_attempt_at', { mode: 'date', fsp: 6 }).notNull(),
+ claimedAt: datetime('claimed_at', { mode: 'date', fsp: 6 }), providerKey: char('provider_key', { length: 64 }),
+ ...timestamps,
+}, table => [index('auth_security_notices_pending_idx').on(table.state, table.nextAttemptAt), index('auth_security_notices_user_idx').on(table.userId, table.createdAt)]);
+
 export const authSmsQuotas = mysqlTable('auth_sms_quotas', {
   id: uuidBinary('id').primaryKey(),
   quotaNamespace: varchar('quota_namespace', { length: 160 }).notNull(),
@@ -1929,6 +1940,7 @@ export const schema = {
   passwordCredentials,
   authSmsQuotas,
   authSmsAttempts,
+  authSecurityNotices,
   authSessions,
   passwordResetTokens,
   connectors,
@@ -2011,7 +2023,8 @@ export const schema = {
 export const loginIdentifiers = mysqlTable('login_identifiers', {
  id: uuidBinary('id').primaryKey(), userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
  kind: varchar('kind', { length: 10 }).notNull(), identifier: varchar('identifier', { length: 320 }).notNull(),
- verifiedAt: datetime('verified_at', { mode: 'date', fsp: 6 }).notNull(), ...timestamps,
+ verifiedAt: datetime('verified_at', { mode: 'date', fsp: 6 }).notNull(),
+ disabledAt: datetime('disabled_at', { mode: 'date', fsp: 6 }), ...timestamps,
 }, table => [uniqueIndex('login_identifiers_kind_value_uq').on(table.kind, table.identifier)]);
 
 export const acquisitionRounds = mysqlTable('acquisition_rounds',{

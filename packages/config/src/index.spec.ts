@@ -21,6 +21,15 @@ function deployedEnv(appEnv: 'staging' | 'production') {
 }
 
 describe('deployment environment isolation', () => {
+  it('keeps phone replacement and external security notices disabled until separately accepted',()=>{
+    const env=parseEnv(deployedEnv('staging'));expect(env.AUTH_PHONE_CHANGE_ENABLED).toBe('false');expect(env.AUTH_SECURITY_NOTICE_SEND_ENABLED).toBe('false');
+  });
+  const phoneChangeEnv=()=>({...deployedEnv('staging'),AUTH_PHONE_CHANGE_ENABLED:'true',AUTH_PASSWORD_CREDENTIAL_MODE:'UNIFIED',AUTH_SECURITY_NOTICE_SEND_ENABLED:'true',AUTH_SECURITY_NOTICE_ENDPOINT:'https://notify.example.test/security',AUTH_SECURITY_NOTICE_TOKEN:'independent-notice-token-xxxxxxxxxxxxxxxxxxxx',AUTH_SECURITY_NOTICE_PHONE_TEMPLATE:'approved-phone-change',AUTH_SECURITY_NOTICE_EMAIL_TEMPLATE:'approved-email-change',SMS_LOGIN_SEND_ENABLED:'true',SMS_LOGIN_DELIVERY_ENDPOINT:'https://notify.example.test/code',LOGIN_CODE_DELIVERY_TOKEN:'independent-code-token-xxxxxxxxxxxxxxxxxxxxxx',SMS_LOGIN_TEMPLATE_ID:'approved-login',SMS_LOGIN_QUOTA_SECRET:'independent-quota-secret-xxxxxxxxxxxxxxxxxxx'});
+  it('accepts a complete unified phone replacement rollout',()=>{expect(parseEnv(phoneChangeEnv()).AUTH_PHONE_CHANGE_ENABLED).toBe('true');});
+  it.each(['AUTH_PASSWORD_CREDENTIAL_MODE','AUTH_SECURITY_NOTICE_SEND_ENABLED','SMS_LOGIN_SEND_ENABLED','AUTH_SECURITY_NOTICE_PHONE_TEMPLATE','AUTH_SECURITY_NOTICE_EMAIL_TEMPLATE','AUTH_SECURITY_NOTICE_TOKEN'] as const)('refuses incomplete phone replacement configuration: %s',key=>{
+    const env=phoneChangeEnv();env[key]=key==='AUTH_PASSWORD_CREDENTIAL_MODE'?'LEGACY':key.endsWith('_ENABLED')?'false':'';expect(()=>parseEnv(env)).toThrow();
+  });
+  it.each(['http://notify.example.test','https://secret@notify.example.test','https://notify.example.test/#fragment'])('refuses unsafe security notice endpoint %s',endpoint=>{expect(()=>parseEnv({...phoneChangeEnv(),AUTH_SECURITY_NOTICE_ENDPOINT:endpoint})).toThrow();});
   it('keeps password migration opt-in and rejects unknown rollout modes',()=>{
     expect(parseEnv(deployedEnv('staging')).AUTH_PASSWORD_CREDENTIAL_MODE).toBe('LEGACY');
     expect(parseEnv({...deployedEnv('staging'),AUTH_PASSWORD_CREDENTIAL_MODE:'SHADOW'}).AUTH_PASSWORD_CREDENTIAL_MODE).toBe('SHADOW');

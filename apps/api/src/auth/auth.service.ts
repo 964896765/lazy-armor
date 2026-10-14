@@ -85,7 +85,7 @@ export class AuthService {
     return { ...await this.issueTokens(resolved.userId, {
       ip: context.ip, userAgent: context.userAgent, authMethod: kind === 'phone' ? 'PHONE_OTP' : 'EMAIL_OTP',
       authenticatedAt: new Date().toISOString(),
-    }), firstLogin: resolved.firstLogin };
+    }, {kind,identifier:normalizeIdentifier(kind,identifier),mapping:resolved.mapping}), firstLogin: resolved.firstLogin };
   }
 
   async login(input: LoginDto, context: RequestContext): Promise<TokenPair> {
@@ -186,7 +186,7 @@ export class AuthService {
   }
 
   async securityMethods(userId: string) {
-    const verified = await this.db.select().from(loginIdentifiers).where(eq(loginIdentifiers.userId, userId));
+    const verified = await this.db.select().from(loginIdentifiers).where(and(eq(loginIdentifiers.userId, userId),isNull(loginIdentifiers.disabledAt)));
     const legacy = await this.db.select().from(authIdentities).where(eq(authIdentities.userId, userId));
     const password = await this.passwords.observe(userId);
     const recoverable = password ? await this.recovery.recoverableEmails(userId) : new Set<string>();
@@ -304,7 +304,7 @@ export class AuthService {
     return { reset: true };
   }
 
-  private async issueTokens(userId: string, clientMeta: Record<string, unknown> | null, proof?: { kind:'email'|'phone'; identifier:string; snapshot:PasswordProof }): Promise<TokenPair> {
+  private async issueTokens(userId: string, clientMeta: Record<string, unknown> | null, proof?: { kind:'email'|'phone'; identifier:string; snapshot?:PasswordProof; mapping?:{id:string;verifiedAt:number} }): Promise<TokenPair> {
     const refreshToken = randomBytes(32).toString('hex');
     const sessionId = newId();
     const now = new Date();
@@ -312,10 +312,11 @@ export class AuthService {
       const user = (await tx.select().from(users).where(eq(users.id, userId)).limit(1).for('update'))[0];
       if (user?.status !== 'active') throw new UnauthorizedException('账号暂不可用');
       if (proof) {
-        if(proof.snapshot.userId!==userId)throw new UnauthorizedException(LOGIN_UNIFORM_ERROR);
+        if(proof.snapshot && proof.snapshot.userId!==userId)throw new UnauthorizedException(LOGIN_UNIFORM_ERROR);
         const owner=await this.identities.passwordOwner(proof.kind,proof.identifier,tx,true);
         if(owner?.userId!==userId)throw new UnauthorizedException(LOGIN_UNIFORM_ERROR);
-        await this.passwords.assertCurrent(tx,proof.snapshot);
+        if (proof.snapshot) await this.passwords.assertCurrent(tx,proof.snapshot);
+        if (proof.mapping && (!owner.known || owner.known.id !== proof.mapping.id || owner.known.verifiedAt.getTime() !== proof.mapping.verifiedAt || owner.known.disabledAt)) throw new UnauthorizedException('登录方式已更新，请重新登录');
       }
       await tx.insert(authSessions).values({
         id: sessionId, userId, refreshTokenHash: hashToken(refreshToken), familyId: newId(),

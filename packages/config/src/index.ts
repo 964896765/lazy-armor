@@ -64,6 +64,12 @@ const envSchema = z.object({
   AUTH_PASSWORD_CREDENTIAL_MODE: z.enum(['LEGACY', 'SHADOW', 'UNIFIED']).default('LEGACY'),
   AUTH_EMAIL_BIND_ENABLED: z.enum(['true', 'false']).default('false'),
   AUTH_PHONE_BIND_ENABLED: z.enum(['true', 'false']).default('false'),
+  AUTH_PHONE_CHANGE_ENABLED: z.enum(['true', 'false']).default('false'),
+  AUTH_SECURITY_NOTICE_SEND_ENABLED: z.enum(['true', 'false']).default('false'),
+  AUTH_SECURITY_NOTICE_ENDPOINT: z.string().trim().optional(),
+  AUTH_SECURITY_NOTICE_TOKEN: z.string().trim().optional(),
+  AUTH_SECURITY_NOTICE_PHONE_TEMPLATE: z.string().trim().optional(),
+  AUTH_SECURITY_NOTICE_EMAIL_TEMPLATE: z.string().trim().optional(),
   SMS_LOGIN_SEND_ENABLED: z.enum(['true', 'false']).default('false'),
   SMS_LOGIN_DELIVERY_ENDPOINT: z.string().trim().optional(),
   LOGIN_CODE_DELIVERY_TOKEN: z.string().trim().optional(),
@@ -96,6 +102,15 @@ export type AppEnv = Omit<z.infer<typeof envSchema>, 'APP_ENV'> & { APP_ENV: Dep
 
 export const parseEnv = (input: NodeJS.ProcessEnv): AppEnv => {
   const parsed = envSchema.parse(input);
+  if (parsed.AUTH_SECURITY_NOTICE_SEND_ENABLED === 'true' || parsed.AUTH_PHONE_CHANGE_ENABLED === 'true') {
+    const endpoint = new URL(parsed.AUTH_SECURITY_NOTICE_ENDPOINT ?? '');
+    if (endpoint.protocol !== 'https:' || endpoint.username || endpoint.password || endpoint.hash) throw new Error('Security notice gateway requires HTTPS without embedded credentials or fragments');
+    if (!parsed.AUTH_SECURITY_NOTICE_TOKEN || parsed.AUTH_SECURITY_NOTICE_TOKEN.length < 32 ||
+      !/^[A-Za-z0-9_-]{1,100}$/.test(parsed.AUTH_SECURITY_NOTICE_PHONE_TEMPLATE ?? '') ||
+      !/^[A-Za-z0-9_-]{1,100}$/.test(parsed.AUTH_SECURITY_NOTICE_EMAIL_TEMPLATE ?? '')) throw new Error('Security notices require an independent gateway token and approved phone/email templates');
+    if (parsed.SMS_LOGIN_SEND_ENABLED !== 'true') throw new Error('Security notices require durable SMS budget configuration');
+  }
+  if (parsed.AUTH_PHONE_CHANGE_ENABLED === 'true' && (parsed.AUTH_PASSWORD_CREDENTIAL_MODE !== 'UNIFIED' || parsed.AUTH_SECURITY_NOTICE_SEND_ENABLED !== 'true')) throw new Error('Phone change requires UNIFIED credentials and enabled security notices');
   if (parsed.SMS_LOGIN_SEND_ENABLED === 'true') {
     let endpoint: URL;
     try { endpoint = new URL(parsed.SMS_LOGIN_DELIVERY_ENDPOINT ?? ''); }

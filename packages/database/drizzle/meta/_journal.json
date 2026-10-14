@@ -666,6 +666,13 @@
       "when": 1791936000000,
       "tag": "0094_auth_sms_budgets",
       "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "7",
+      "when": 1792022400000,
+      "tag": "0095_phone_change_security",
+      "breakpoints": true
     }
   ]
 }

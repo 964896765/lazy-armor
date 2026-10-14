@@ -24,6 +24,7 @@ Goal → Context / Planner → Temporary / USER_EVENT / Persistent Plan
 - [Auth V2 M2-03：已验证邮箱统一密码恢复与验收](./docs/current/AUTH_V2_M2_EMAIL_RECOVERY.md)
 - [Auth V2 M3-01：手机号安全绑定与当前分析](./docs/current/AUTH_V2_M3_PHONE_BINDING.md)
 - [Auth V2 M3-02：短信预算、网关契约与故障恢复](./docs/current/AUTH_V2_M3_SMS_GUARDRAILS.md)
+- [Auth V2 M3-03：安全换号、旧渠道通知与当前分析](./docs/current/AUTH_V2_M3_PHONE_CHANGE.md)
 - [2026-10-12 全面检查分析](./docs/current/PROJECT_AUDIT_2026-10-12.md)
 - [V84–V90 持续开发总方案](./docs/current/V84_V90_ROADMAP.md)
 - [V84 当前任务与验收](./docs/current/V84_AGENT_CORE.md)

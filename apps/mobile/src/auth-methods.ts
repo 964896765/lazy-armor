@@ -18,4 +18,6 @@ export interface SecurityMethods {
   passwordLoginKinds?: Array<'email'|'phone'>;
   emailBinding?: { available: boolean; sources: Array<{id:string;kind:'email'|'phone';masked:string}> };
   phoneBinding?: { available: boolean; sources: Array<{id:string;kind:'email'|'phone';masked:string}> };
+  phoneChange?: { available: boolean; sources: Array<{id:string;kind:'email'|'phone';masked:string}>; phones:Array<{id:string;masked:string}> };
+  securityNotices?: Array<{channel:string;masked:string;state:string;createdAt:string}>;
 }

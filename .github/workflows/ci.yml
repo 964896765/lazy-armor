@@ -97,6 +97,8 @@ jobs:
         run: pnpm --filter @lazy-armor/api test -- test/email-binding.integration.spec.ts test/email-binding-startup.spec.ts --hookTimeout=90000
       - name: Safe new phone binding regression
         run: pnpm --filter @lazy-armor/api test -- test/phone-binding.integration.spec.ts test/phone-binding-startup.spec.ts --hookTimeout=90000
+      - name: Safe phone replacement and durable security notices regression
+        run: pnpm --filter @lazy-armor/api test -- test/phone-change.integration.spec.ts --hookTimeout=90000
       - name: Durable SMS budgets and bounded request Redis regression
         run: pnpm --filter @lazy-armor/api test -- test/sms-code-delivery.integration.spec.ts test/sms-code-startup.spec.ts test/request-redis.integration.spec.ts test/runtime-provider-common.integration.spec.ts --hookTimeout=90000
       - name: Verified email password recovery regression

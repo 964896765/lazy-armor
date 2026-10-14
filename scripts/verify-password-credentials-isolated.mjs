@@ -7,7 +7,7 @@ import { assertAuthWebFixture } from './lib/auth-web-fixture-preflight.mjs';
 
 const root = process.cwd();
 const suite=process.env.AUTH_V2_TEST_SUITE??'all';
-if(!['all','sms'].includes(suite))throw new Error('AUTH_V2_TEST_SUITE must be all or sms');
+if(!['all','sms','phone-change'].includes(suite))throw new Error('AUTH_V2_TEST_SUITE must be all, sms or phone-change');
 if (![4,8].includes(process.argv.length) || process.argv[2] !== '--log') throw new Error('Use --log FRESH_PATH [--browser EXECUTABLE --screenshots FRESH_DIR]');
 const browser=process.argv.length===8?process.argv[5]:undefined;
 const screenshots=process.argv.length===8?path.resolve(root,process.argv[7]):undefined;
@@ -15,6 +15,10 @@ if (browser && (process.argv[4]!=='--browser'||process.argv[6]!=='--screenshots'
 if (screenshots && existsSync(screenshots)) throw new Error('Fresh screenshot directory required');
 const logFile = path.resolve(root, process.argv[3]);
 if (existsSync(logFile)) throw new Error('Fresh log required');
+const summaryFile=logFile+'.summary.json';
+if(existsSync(summaryFile))throw new Error('Fresh summary required');
+const acceptance={schemaVersion:1,suite,phase:'STARTED',isolated:true,databaseName:'',code:null,tablesChecked:0,passwordUsers:0,rowCounts:{}};
+const saveSummary=()=>writeFileSync(summaryFile,JSON.stringify({...acceptance,updatedAt:new Date().toISOString()},null,2)+'\n');
 
 const databaseName = 'lazy_armor_auth_m2_' + randomUUID().replaceAll('-', '').slice(0, 16) + '_test';
 const prefix = 'auth_m2:' + randomUUID(), container = 'lazy-armor-v81-test-mysql-20261005';
@@ -34,6 +38,7 @@ try {
   const { db, pool } = createDatabase(url.href);
   try { await migrate(db, { migrationsFolder: path.join(root, 'packages/database/drizzle') }); } finally { await pool.end(); }
   mkdirSync(path.dirname(logFile), { recursive: true });
+  acceptance.databaseName=databaseName;saveSummary();
   // Reviewable CLI backfill on ordinary users in this fresh isolated database.
   const seed=await mysql.createConnection({uri:url.href,timezone:'Z'});
   const fixtureIds=[randomUUID(),randomUUID()];
@@ -64,9 +69,9 @@ try {
 
   if(screenshots)mkdirSync(screenshots,{recursive:true});
   const log = createWriteStream(logFile, { flags: 'wx' });
-  console.log(JSON.stringify({ databaseName, isolated: true, phase: suite==='sms'?'AUTH_M3_SMS_REGRESSION_STARTED':'AUTH_M2_API_REGRESSION_STARTED' }));
+  console.log(JSON.stringify({ databaseName, isolated: true, phase: suite==='sms'?'AUTH_M3_SMS_REGRESSION_STARTED':suite==='phone-change'?'AUTH_M3_PHONE_CHANGE_REGRESSION_STARTED':'AUTH_V2_API_REGRESSION_STARTED' }));
   const child = spawn(process.execPath, [path.join(root, 'node_modules/vitest/vitest.mjs'), 'run',
-    ...(suite==='sms'?['test/sms-code-delivery.integration.spec.ts','test/sms-code-startup.spec.ts','test/request-redis.integration.spec.ts','test/runtime-provider-common.integration.spec.ts']: ['test/auth-password-credentials.integration.spec.ts', 'test/email-binding.integration.spec.ts', 'test/email-binding-startup.spec.ts', 'test/phone-binding.integration.spec.ts', 'test/phone-binding-startup.spec.ts', 'test/sms-code-delivery.integration.spec.ts', 'test/sms-code-startup.spec.ts', 'test/request-redis.integration.spec.ts', 'test/runtime-provider-common.integration.spec.ts', 'test/password-recovery.integration.spec.ts', 'test/password-recovery-token.spec.ts', 'test/auth-v2.integration.spec.ts', 'test/p0-final-security.spec.ts', 'test/login-code.spec.ts', 'test/password-reset-delivery.spec.ts', 'test/password-credential-startup.spec.ts']), '--reporter=dot', '--hookTimeout=90000'], {
+    ...(suite==='phone-change'?['test/phone-change.integration.spec.ts']:suite==='sms'?['test/sms-code-delivery.integration.spec.ts','test/sms-code-startup.spec.ts','test/request-redis.integration.spec.ts','test/runtime-provider-common.integration.spec.ts']: ['test/phone-change.integration.spec.ts','test/auth-password-credentials.integration.spec.ts', 'test/email-binding.integration.spec.ts', 'test/email-binding-startup.spec.ts', 'test/phone-binding.integration.spec.ts', 'test/phone-binding-startup.spec.ts', 'test/sms-code-delivery.integration.spec.ts', 'test/sms-code-startup.spec.ts', 'test/request-redis.integration.spec.ts', 'test/runtime-provider-common.integration.spec.ts', 'test/password-recovery.integration.spec.ts', 'test/password-recovery-token.spec.ts', 'test/auth-v2.integration.spec.ts', 'test/p0-final-security.spec.ts', 'test/login-code.spec.ts', 'test/password-reset-delivery.spec.ts', 'test/password-credential-startup.spec.ts']), '--reporter=dot', '--hookTimeout=90000'], {
     cwd: path.join(root, 'apps/api'), windowsHide: true, env: { ...process.env, CI: 'true', NODE_ENV: 'test', APP_ENV: 'development', APP_ROLE: 'api',
       DATABASE_URL: url.href, TEST_DATABASE_URL: url.href, TEST_DATABASE_NAME: databaseName, REQUIRE_EXACT_TEST_TARGET: '1',
       REDIS_URL: 'redis://127.0.0.1:6391/15', REDIS_KEY_PREFIX: prefix, TEST_REDIS_KEY_PREFIX: prefix,
@@ -79,6 +84,7 @@ try {
   child.stdout.pipe(log, { end: false }); child.stderr.pipe(log, { end: false });
   const code = await new Promise(resolve => { child.once('error', () => resolve(1)); child.once('close', value => resolve(value ?? 1)); });
   await new Promise((resolve, reject) => { log.once('error', reject); log.end(resolve); });
+  acceptance.code=code;acceptance.phase=code===0?'TESTS_PASSED_RESTORE_PENDING':'TESTS_FAILED';saveSummary();
   if(code===0){
     // Full fixture dump/restore with nonempty auth credentials, versions and sessions.
     const restoredName=databaseName.replace(/_test$/,'_restored_test');
@@ -92,18 +98,21 @@ try {
     const source=await mysql.createConnection({uri:url.href,timezone:'Z'}),restoreUrl=new URL(url.href);restoreUrl.pathname='/'+restoredName;
     const restored=await mysql.createConnection({uri:restoreUrl.href,timezone:'Z'});
     try{
-      const tables=['users','profiles','user_memberships','login_identifiers','auth_identities','password_credentials','auth_sessions','password_reset_tokens','audit_logs','auth_sms_quotas','auth_sms_attempts'];
+      const tables=['users','profiles','user_memberships','login_identifiers','auth_identities','password_credentials','auth_sessions','password_reset_tokens','audit_logs','auth_sms_quotas','auth_sms_attempts','auth_security_notices'];
       let passwordUsers=0;
       for(const table of tables){
         const before=(await source.query('SELECT * FROM '+table+' ORDER BY id'))[0],after=(await restored.query('SELECT * FROM '+table+' ORDER BY id'))[0];
         const digest=rows=>createHash('sha256').update(JSON.stringify(rows)).digest('hex');
         if(digest(before)!==digest(after))throw new Error('AUTH_RESTORE_STATE_MISMATCH');
+        acceptance.rowCounts[table]=before.length;
         if(table==='password_credentials')passwordUsers=before.length;
       }
       if(passwordUsers<2)throw new Error('Nonempty password credential recovery required');
+      if(suite!=='sms'&&(!acceptance.rowCounts.auth_security_notices||(await source.query('SELECT id FROM login_identifiers WHERE disabled_at IS NOT NULL LIMIT 1'))[0].length===0))throw new Error('Nonempty phone retirement and notification recovery required');
+      acceptance.passwordUsers=passwordUsers;acceptance.tablesChecked=tables.length;acceptance.phase='PASSED';saveSummary();
       console.log(JSON.stringify({phase:'NONEMPTY_AUTH_BACKUP_RESTORE_PASSED',isolated:true,passwordUsers,tablesChecked:tables.length,backupPrivate:true}));
     }finally{await source.end();await restored.end();}
   }
   console.log(JSON.stringify({ code, databaseName, logFile, scope: suite==='sms'?'REAL_NEST_SQL_REDIS_SMS_FIXTURES':'REAL_NEST_SQL_REDIS_AUTH_FIXTURES' }));
   process.exitCode = code;
-} catch (error) { console.error(typeof error?.code === 'string' ? error.code : 'AUTH_M2_ISOLATED_ACCEPTANCE_FAILED'); process.exitCode = 1; }
+} catch (error) { if(acceptance.databaseName){acceptance.phase='FAILED';acceptance.code=1;saveSummary();}console.error(typeof error?.code === 'string' ? error.code : 'AUTH_V2_ISOLATED_ACCEPTANCE_FAILED'); process.exitCode = 1; }

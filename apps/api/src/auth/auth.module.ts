@@ -14,6 +14,8 @@ import { IdentityResolverService } from './identity-resolver.service';
 import { PasswordCredentialService } from './password-credential.service';
 import { EmailBindingService } from './email-binding.service';
 import { PhoneBindingService } from './phone-binding.service';
+import { PhoneChangeService } from './phone-change.service';
+import { SecurityNoticeService } from './security-notice.service';
 import { PasswordRecoveryService } from './password-recovery.service';
 
 @Module({
@@ -22,7 +24,7 @@ import { PasswordRecoveryService } from './password-recovery.service';
     useFactory: (config: ConfigService) => ({ secret: config.getOrThrow<string>('JWT_SECRET'), signOptions: { expiresIn: '1h' } }),
   })],
   controllers: [AuthController],
-  providers: [LocalLoginCodeDeliveryProvider, SmsCodeDeliveryService, LoginCodeService, PasswordCredentialService, IdentityResolverService, AuthService, EmailBindingService, PhoneBindingService, PasswordResetDeliveryService, PasswordRecoveryService, { provide: APP_GUARD, useClass: AuthGuard }],
+  providers: [LocalLoginCodeDeliveryProvider, SmsCodeDeliveryService, LoginCodeService, PasswordCredentialService, IdentityResolverService, AuthService, EmailBindingService, PhoneBindingService, SecurityNoticeService, PhoneChangeService, PasswordResetDeliveryService, PasswordRecoveryService, { provide: APP_GUARD, useClass: AuthGuard }],
   exports: [AuthService],
 })
 export class AuthModule {}

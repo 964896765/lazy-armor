@@ -2,7 +2,7 @@ import { SegmentedControl } from '../../src/consumer-ui';
 import { authError, authRetryLabel } from '../../src/auth-error';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
-import { Link, router } from 'expo-router';
+import { Link, router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -14,6 +14,7 @@ import type { SessionTokens } from '../../src/secure-token-store';
 type LoginMode = 'phone' | 'email';
 
 export default function LoginPage() {
+ const {reason}=useLocalSearchParams<{reason?:string}>();
  const setSession=useAuthStore(s=>s.setSession);
  const [mode,setMode]=useState<LoginMode>('email');const [identifier,setIdentifier]=useState('');const [code,setCode]=useState('');
  const [localDelivery,setLocalDelivery]=useState(false);
@@ -28,6 +29,7 @@ export default function LoginPage() {
  const busy=request.isPending||login.isPending;
  const changeMode=(value:string)=>{if(busy)return;setMode(value as LoginMode);setRetryAt(0);setGatewayAccepted(false);setLocalDelivery(false);setIdentifier('');setCode('');setSentTo('');request.reset();login.reset();};
  return <AuthPage title="欢迎使用懒人装甲" subtitle="登录后，继续你的目标与 AI 工作">
+  {reason==='phone-changed'?<Text style={styles.success}>手机号已更换，所有设备已退出。请用新号码或已绑定邮箱登录原账号。安全通知已排队，发送状态可在账号与验证中查看。</Text>:null}
   <SegmentedControl value={mode} options={[{value:'email',label:'邮箱'},{value:'phone',label:'手机号'}]} onChange={changeMode}/>
   <Text style={styles.fieldLabel}>{mode==='phone'?'手机号码 · +86':'邮箱地址'}</Text>
   <TextInput editable={!busy} maxLength={mode==='phone'?14:320} style={styles.input} accessibilityLabel={mode==='phone'?'手机号码':'邮箱'} keyboardType={mode==='phone'?'phone-pad':'email-address'} autoCapitalize="none" autoComplete={mode==='phone'?'tel':'email'} placeholder={mode==='phone'?'中国大陆手机号':'邮箱地址'} value={identifier} onChangeText={value=>{setIdentifier(value);setCode('');setSentTo('');login.reset();request.reset();}}/>

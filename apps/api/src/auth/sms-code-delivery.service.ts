@@ -9,7 +9,7 @@ import { authTransaction, type AuthTransaction } from './auth-transaction';
 import { normalizeIdentifier } from './login-identifier';
 
 const unavailable = () => new HttpException({code:'LOGIN_CODE_SERVICE_UNAVAILABLE',message:'验证服务暂不可用，请稍后重试。'},503);
-const purposes = ['login','email-bind-current','phone-bind-current','phone-bind-target'];
+const purposes = ['login','email-bind-current','phone-bind-current','phone-bind-target','phone-change-current','phone-change-target','security-phone-changed'];
 class DayChanged extends Error {}
 export interface SmsReservation { id:string; bucket:string; reservedFen:number }
 
@@ -95,12 +95,13 @@ export class SmsCodeDeliveryService implements OnModuleInit {
       }
     });
   }
-  private async mark(id:string,state:string,acceptedCostFen?:number,providerId?:string) {
+  async mark(id:string,state:string,acceptedCostFen?:number,providerId?:string) {
     await this.bounded(async()=>{
       await this.db.update(authSmsAttempts).set({state,acceptedCostFen,providerKey:providerId?this.digest('provider',providerId):undefined,updatedAt:new Date()}).where(and(eq(authSmsAttempts.id,id),eq(authSmsAttempts.quotaNamespace,this.namespace),eq(authSmsAttempts.state,'RESERVED')));
     },1000);
   }
   async deliver(phone:string,ip:string,code:string,purpose:string) {
+    if (purpose === 'security-phone-changed') throw new HttpException('安全通知须使用独立模板网关',400);
     const reservation=await this.reserve(phone,ip,purpose);
     // Never refund attempted/unknown delivery and never retry a gateway POST.
     const gateway=this.gateway();

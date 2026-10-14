@@ -1,4 +1,4 @@
-import { ConflictException, HttpException, Inject, Injectable, UnauthorizedException } from '@nestjs/common';
+import { ConflictException, HttpException, Inject, Injectable, UnauthorizedException, type OnModuleInit } from '@nestjs/common';
 import { authIdentities, loginIdentifiers, profiles, userMemberships, users } from '@lazy-armor/database';
 import { newId } from '@lazy-armor/shared';
 import { and, eq } from 'drizzle-orm';
@@ -12,8 +12,12 @@ import { PasswordCredentialService } from './password-credential.service';
 function conflict() { return new ConflictException({ code: 'IDENTITY_CONFLICT', message: '该标识的历史账号记录需要核对，请联系支持处理。' }); }
 
 @Injectable()
-export class IdentityResolverService {
+export class IdentityResolverService implements OnModuleInit {
   constructor(@Inject(DATABASE) private readonly db: InjectedDatabase, private readonly audit: AuditService, private readonly passwords: PasswordCredentialService) {}
+  async onModuleInit() {
+    try { await this.db.select({disabledAt:loginIdentifiers.disabledAt}).from(loginIdentifiers).limit(1); }
+    catch { throw new Error('Authentication requires the 0095 phone retirement column before deployment'); }
+  }
 
   // Consistent unique-index locking, including missing-key gaps at explicit RR,
   // serializes legacy password creation with verified identifier creation.
@@ -34,6 +38,7 @@ export class IdentityResolverService {
     const identifier=normalizeIdentifier(kind,value);
     const query=reader.select().from(loginIdentifiers).where(and(eq(loginIdentifiers.kind,kind),eq(loginIdentifiers.identifier,identifier))).limit(1);
     const known=(await (lock?query.for('update'):query))[0];
+    if (known?.disabledAt) return undefined;
     const legacyQuery=reader.select().from(authIdentities).where(eq(authIdentities.email,identifier)).limit(1);
     const legacy=kind==='email'?(await (lock?legacyQuery.for('update'):legacyQuery))[0]:undefined;
     if(known&&legacy&&known.userId!==legacy.userId) return undefined;
@@ -67,6 +72,7 @@ export class IdentityResolverService {
     const identifier = normalizeIdentifier(kind, value);
     return authTransaction(this.db, async tx => {
       const { known, legacy } = await this.mappings(tx, kind, identifier);
+      if (known?.disabledAt) throw new UnauthorizedException({code:'LOGIN_IDENTIFIER_DISABLED',message:'此登录方式已停用，请使用当前手机号或已绑定邮箱。'});
       if (legacy && !legacy.emailVerifiedAt && !known) {
         throw new ConflictException({ code: 'EMAIL_PROOF_REQUIRED', message: '请先用原密码进入账号，再验证邮箱；忘记密码可通过安全恢复流程处理。' });
       }
@@ -74,9 +80,10 @@ export class IdentityResolverService {
       const userId = known?.userId ?? legacy?.userId ?? await this.createUser(tx, kind === 'phone' ? '手机用户' : '邮箱用户', now);
       const user = (await tx.select({ status: users.status }).from(users).where(eq(users.id, userId)).limit(1))[0];
       if (user?.status !== 'active') throw new UnauthorizedException('账号暂不可用');
-      if (!known) await tx.insert(loginIdentifiers).values({ id: newId(), userId, kind, identifier, verifiedAt: now, createdAt: now, updatedAt: now });
+      const identifierId = known?.id ?? newId();
+      if (!known) await tx.insert(loginIdentifiers).values({ id: identifierId, userId, kind, identifier, verifiedAt: now, createdAt: now, updatedAt: now });
       await this.audit.append({ actorType: 'user', actorUserId: userId, userId, action: 'LOGIN_CODE_VERIFIED', resourceType: 'auth', resourceId: userId, source: 'api', result: 'success', changeSummary: 'Verified passwordless login' }, tx);
-      return { userId, firstLogin };
+      return { userId, firstLogin, mapping: {id:identifierId,verifiedAt:(known?.verifiedAt ?? now).getTime()} };
     });
   }
 
