@@ -1,7 +1,8 @@
 import { ConflictException, ForbiddenException, HttpException, Inject, Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import { loginIdentifiers, authIdentities, authSessions, passwordResetTokens, users } from '@lazy-armor/database';
+import { loginIdentifiers, authIdentities, authSessions, passkeyCredentials, passwordResetTokens, users } from '@lazy-armor/database';
+import type { PasskeyLoginProof } from './passkey-proof';
 import { newId } from '@lazy-armor/shared';
 import { compare, hash } from 'bcryptjs';
 import { createHash, randomBytes } from 'node:crypto';
@@ -304,13 +305,25 @@ export class AuthService {
     return { reset: true };
   }
 
-  private async issueTokens(userId: string, clientMeta: Record<string, unknown> | null, proof?: { kind:'email'|'phone'; identifier:string; snapshot?:PasswordProof; mapping?:{id:string;verifiedAt:number} }): Promise<TokenPair> {
+  async loginPasskey(proof: PasskeyLoginProof, context: RequestContext): Promise<TokenPair> {
+    return this.issueTokens(proof.observed.userId, { ip: context.ip, userAgent: context.userAgent, authMethod: 'PASSKEY', authenticatedAt: new Date().toISOString(), passkeyId: proof.observed.id }, undefined, proof);
+  }
+
+  private async issueTokens(userId: string, clientMeta: Record<string, unknown> | null, proof?: { kind:'email'|'phone'; identifier:string; snapshot?:PasswordProof; mapping?:{id:string;verifiedAt:number} }, passkey?: PasskeyLoginProof): Promise<TokenPair> {
     const refreshToken = randomBytes(32).toString('hex');
     const sessionId = newId();
     const now = new Date();
     await authTransaction(this.db, async tx => {
       const user = (await tx.select().from(users).where(eq(users.id, userId)).limit(1).for('update'))[0];
       if (user?.status !== 'active') throw new UnauthorizedException('账号暂不可用');
+      if (passkey) {
+        const observed = passkey.observed;
+        const current = (await tx.select().from(passkeyCredentials).where(eq(passkeyCredentials.id, observed.id)).limit(1).for('update'))[0];
+        if (passkey.expiresAt <= Date.now()) throw new UnauthorizedException('通行密钥验证已过期，请重新登录');
+        if (!current || current.revokedAt || current.userId !== userId || current.credentialId !== observed.credentialId || current.publicKey !== observed.publicKey || current.rpId !== observed.rpId || current.version !== observed.version || current.signCount !== observed.signCount || current.deviceType !== observed.deviceType) throw new UnauthorizedException('通行密钥已更新，请重新登录');
+        if (!Number.isSafeInteger(passkey.newCounter) || passkey.newCounter < 0 || passkey.newCounter > 0xffffffff || ((current.signCount > 0 || passkey.newCounter > 0) && passkey.newCounter <= current.signCount)) throw new UnauthorizedException('通行密钥验证失败');
+        await tx.update(passkeyCredentials).set({ signCount: passkey.newCounter, backedUp: passkey.backedUp, lastUsedAt: now, version: current.version + 1 }).where(eq(passkeyCredentials.id, current.id));
+      }
       if (proof) {
         if(proof.snapshot && proof.snapshot.userId!==userId)throw new UnauthorizedException(LOGIN_UNIFORM_ERROR);
         const owner=await this.identities.passwordOwner(proof.kind,proof.identifier,tx,true);
@@ -324,6 +337,7 @@ export class AuthService {
         lastUsedAt: null, revokedAt: null, revokeReason: null,
       });
       if(clientMeta?.authMethod==='PASSWORD')await this.audit.append({actorType:'user',actorUserId:userId,userId,action:'LOGIN_SUCCESS',resourceType:'auth',resourceId:userId,source:'api',result:'success',changeSummary:'Authenticated password session created'},tx);
+      if(passkey)await this.audit.append({actorType:'user',actorUserId:userId,userId,action:'PASSKEY_LOGIN_SUCCESS',resourceType:'passkey',resourceId:passkey.observed.id,source:'api',result:'success',changeSummary:'User-verified Passkey authenticated the original account'},tx);
     });
     return this.issueAccessAndRefresh(sessionId, refreshToken, userId);
   }

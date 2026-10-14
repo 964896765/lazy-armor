@@ -680,6 +680,13 @@
       "when": 1792108800000,
       "tag": "0096_sms_request_risk",
       "breakpoints": true
+    },
+    {
+      "idx": 97,
+      "version": "7",
+      "when": 1792195200000,
+      "tag": "0097_passkey_credentials",
+      "breakpoints": true
     }
   ]
 }

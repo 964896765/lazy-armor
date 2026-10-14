@@ -13,6 +13,7 @@ Goal → Context / Planner → Temporary / USER_EVENT / Persistent Plan
 
 ## 当前文档
 
+- [Auth V2 M4-01：Web Passkey、统一会话与本批分析](./docs/current/AUTH_V2_M4_WEB_PASSKEY.md)
 - [Personal Life OS 总方案 V2](./docs/current/PERSONAL_LIFE_OS_MASTER_PLAN_V2.md)
 - [全面优化执行方案 V1.1](./docs/current/PROJECT_OPTIMIZATION_PLAN_V1_1.md)
 - [S0 第二批：Admin 鉴权验收与当前分析](./docs/current/OPTIMIZATION_S0_BATCH_02_ADMIN_AUTH.md)

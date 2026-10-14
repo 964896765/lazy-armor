@@ -1,0 +1,7 @@
+import {describe,expect,it,vi} from 'vitest';
+import {PasskeyService} from '../src/auth/passkey.service';
+function make(enabled=false,missing=false){const values:Record<string,string>={NODE_ENV:'test',APP_ENV:'development',AUTH_PASSKEY_ENABLED:enabled?'true':'false',AUTH_PASSKEY_RP_ID:'localhost',AUTH_PASSKEY_ORIGINS:'http://localhost:3000'};const select=vi.fn(()=>({from:()=>({limit:()=>missing?Promise.reject(new Error('private SQL URI')):Promise.resolve([])})}));const service=new PasskeyService({select} as never,{get:(key:string)=>values[key],getOrThrow:()=> 'redis://127.0.0.1:6391/15'} as never,{} as never,{} as never,{} as never,{} as never,{} as never,{} as never);return {service,select};}
+describe('Passkey staged rollout',()=>{
+  it('does not require 0097 when disabled and leaves existing login available',async()=>{const {service,select}=make(false,true);await service.onModuleInit();expect(select).not.toHaveBeenCalled();expect(await service.capabilities()).toEqual({passkeyLogin:{available:false,origins:[]}});await expect(service.loginOptions('fixture')).rejects.toMatchObject({status:403});await service.onApplicationShutdown();});
+  it('requires new table when enabled and hides SQL connection details',async()=>{const {service}=make(true,true);await expect(service.onModuleInit()).rejects.toMatchObject({response:{code:'PASSKEY_SERVICE_UNAVAILABLE'}});expect((await service.capabilities()).passkeyLogin?.available).toBe(false);await service.onApplicationShutdown();});
+});

@@ -1,12 +1,12 @@
 # 懒人装甲 Auth V2.0 · 统一认证与迁移执行方案
 
-基线：2026-10-13，更新2026-10-14，codex/v83-persistent-runtime。目标市场：中国大陆为主。Beta邮箱基础、M2-01用户级密码兼容迁移、M2-02新邮箱双证明绑定、M2-03统一邮箱恢复及M3-01/02/03/04手机号绑定、预算、安全换号和异常请求限制切片已实现；手机号生产推广、真实人机验证和Passkey尚未完成。
+基线：2026-10-13，更新2026-10-14，codex/v83-persistent-runtime。目标市场：中国大陆为主。Beta邮箱基础、M2-01用户级密码兼容迁移、M2-02新邮箱双证明绑定、M2-03统一邮箱恢复及M3-01/02/03/04手机号绑定、预算、安全换号和异常请求限制切片已实现；M4-01 Web Passkey已接入原账号/Session，验证记录见独立实施文档；手机号生产推广、真实人机验证、Passkey原生及生产验收尚未完成。
 
 ## 产品与账号原则
 
 一个不可变的 users.id 管理所有 Goal、Memory、Plan、Resource、History、订阅与设备。手机号、邮箱、密码、Passkey 仅是凭据。保持原 User ID 与原 Runtime 风险/审批/核验权威；登录成功不授予付款、群发、删除等执行权限。
 
-Beta 默认邮箱验证码，密码是已登录用户主动添加的备用方式。旧密码注册页面转入验证码入口，旧 API 保留兼容。中国大陆手机号入口保留真实发送可用性；短信供应商、限流、绑定/换号及验收完成后才切为手机号优先。Passkey 只显示后续规划，不提供假按钮。
+Beta 默认邮箱验证码，密码是已登录用户主动添加的备用方式。旧密码注册页面转入验证码入口，旧 API 保留兼容。中国大陆手机号入口保留真实发送可用性；短信供应商、限流、绑定/换号及验收完成后才切为手机号优先。Passkey在已配置可信Origin且支持的Web环境显示真实登录/管理入口，Android/iOS原生后续接入。
 
 ## 实施与迁移阶段
 
@@ -16,9 +16,9 @@ Beta 默认邮箱验证码，密码是已登录用户主动添加的备用方式
 | M1 Beta 基础（已实现） | 复用原表及唯一索引；事务统一身份解析，密码注册不虚构邮箱验证；不新增迁移 | 合并 OTP 登录/注册、当前账号验证邮箱、可选初始密码、真实安全状态；重置/改密原子撤销会话 | SQL/Redis 并发、事务失败回滚、账号冲突与客户端刷新回归；Web 实际交互 |
 | M2 凭据解耦（M2-01/02/03已实现，整体待续） | 0093用户级密码；bcrypt参数/version/source保留；原hash复制，不改User ID；绑定与恢复零新SQL | LEGACY默认兼容、SHADOW核对/事务双写、UNIFIED共享密码；新邮箱双证明添加，BOUND加密链接冻结渠道/凭据版本并原子恢复 | [M2-01](AUTH_V2_M2_PASSWORD_CREDENTIALS.md)、[M2-02](AUTH_V2_M2_EMAIL_BINDING.md)、[M2-03](AUTH_V2_M2_EMAIL_RECOVERY.md)；旧表停写/Argon2待实施，生产迁移与切换待验 |
 | M3 国内手机号（M3-01/02/03/04服务端切片已实现，整体待续） | [手机号绑定](AUTH_V2_M3_PHONE_BINDING.md)、[短信预算](AUTH_V2_M3_SMS_GUARDRAILS.md)0094、[安全换号](AUTH_V2_M3_PHONE_CHANGE.md)0095、[异常请求与留存](AUTH_V2_M3_SMS_ABUSE.md)0096 | 双证明保持原UID；旧号停用/全会话撤销与通知；客户端/IP异常在费用预留前限制，隐私留存和登录页面同步 | 正式供应商/送达/账单、设备/NAT误拦截、人机验证、旧号重新分配与丢失全部渠道恢复仍待实施或验收 |
-| M4 Passkey（待实施） | passkey_credentials：user_id、credential_id 唯一、public_key、sign_count、transports、AAGUID、备份标志、created/last_used/revoked；不保存生物信息 | WebAuthn 注册与登录 options/verify；原 session 与审计；用户可管理多把凭据 | 固定可信 RP ID/Origin、HTTPS；Web→Android Credential Manager→iOS，分别验收 |
+| M4 Passkey（M4-01 Web切片已实现，整体待续） | [Web Passkey](AUTH_V2_M4_WEB_PASSKEY.md)0097；credential ID哈希唯一、公钥、版本/计数、备份与撤销状态，保持原user_id | 当前密码/渠道OTP再确认→Web注册；凭据归属选择UID→原Session事务重查；多凭据与移除/全Session撤销 | 默认关闭、固定HTTPS/RP/Origin；Web真实设备/生产、Android/iOS、Passkey再认证与丢失全部渠道恢复仍待 |
 
-M1当时零新SQL。M2-01增加password_credentials和0093；M3-02增加0094短信额度/发送记录；[M3-03安全换号](AUTH_V2_M3_PHONE_CHANGE.md)增加0095停用号码列及持久安全通知。新版认证即使入口关闭也要求0095先扩展，已换号环境不得回退到忽略停用列的旧代码。新迁移仅在独立test库执行，个人/生产尚未迁移；Passkey表仍为设计。正式迁移、全量回填与切换仍必须有本环境的备份/恢复、失败注入及独立发布证据。
+M1当时零新SQL。M2-01增加password_credentials和0093；M3-02增加0094短信额度/发送记录；[M3-03安全换号](AUTH_V2_M3_PHONE_CHANGE.md)增加0095停用号码列及持久安全通知。新版认证即使入口关闭也要求0095先扩展，已换号环境不得回退到忽略停用列的旧代码。新迁移仅在独立test库执行，个人/生产尚未迁移；M4-01已增加0097 Passkey表，仍只在隔离test库扩展。正式迁移、全量回填与切换仍必须有本环境的备份/恢复、失败注入及独立发布证据。
 
 ## M1 当前接口与证明
 
@@ -68,6 +68,8 @@ M3-01已实现当前身份与新手机号双证明，邮箱/手机号共用流�
 
 ## M4 Passkey 与独立操作授权
 
+[M4-01 Web实现](AUTH_V2_M4_WEB_PASSKEY.md)复用当前账号证明逻辑，五分钟用途/Session/版本隔离，WebAuthn强制UV、一次消费、支持同步零计数；验签后在原Session事务重查凭据归属/公钥/版本/撤销并写审计。多密钥管理和移除重新确认，保留恢复方式，撤销所有会话。默认关闭，不收集指纹或面容原始信息。
+
 服务端生成短期随机 challenge，绑定注册/登录用途；注册还绑定当前用户、当前会话及近期强身份确认。严格检查 challenge、RP ID、Origin、type、签名、userVerification 与凭据归属，挑战仅能消费一次；不能相信客户端传来的 userId。
 
 Web 先用成熟 WebAuthn 校验库；Android 配置网站与包/签名 Digital Asset Links，iOS 配置 Associated Domains。支持同步 Passkey 的备份标志与合法零计数，不能简单把 sign_count==0 判为攻击。新凭据注册、删除最后恢复方式或敏感安全变更需要近期强确认与审计。
@@ -82,4 +84,4 @@ Web 先用成熟 WebAuthn 校验库；Android 配置网站与包/签名 Digital 
 
 验收分开记录：隔离自动回归、真实邮件/短信/设备、历史库修复、生产迁移、正式发布。现存 2 high/1 moderate 依赖和 0083 发布证据门继续开放。完整 Auth V2 不因 M1 完成而关闭。
 
-M1具体结果见[第四批验收](OPTIMIZATION_BATCH_04_AUTH.md)，密码凭据见[M2-01](AUTH_V2_M2_PASSWORD_CREDENTIALS.md)，新邮箱绑定见[M2-02](AUTH_V2_M2_EMAIL_BINDING.md)，邮箱恢复见[M2-03](AUTH_V2_M2_EMAIL_RECOVERY.md)，手机号绑定见[M3-01](AUTH_V2_M3_PHONE_BINDING.md)，短信预算/故障恢复见[M3-02](AUTH_V2_M3_SMS_GUARDRAILS.md)，安全换号/旧渠道通知见[M3-03](AUTH_V2_M3_PHONE_CHANGE.md)，异常请求与留存见[M3-04](AUTH_V2_M3_SMS_ABUSE.md)。下一认证开发切片M4-01 Web Passkey基础；正式供应商、人机服务、设备误拦截、旧号码重新分配和丢失所有渠道恢复分别准备与验收。完整Auth V2仍未关闭。
+M1具体结果见[第四批验收](OPTIMIZATION_BATCH_04_AUTH.md)，密码凭据见[M2-01](AUTH_V2_M2_PASSWORD_CREDENTIALS.md)，新邮箱绑定见[M2-02](AUTH_V2_M2_EMAIL_BINDING.md)，邮箱恢复见[M2-03](AUTH_V2_M2_EMAIL_RECOVERY.md)，手机号绑定见[M3-01](AUTH_V2_M3_PHONE_BINDING.md)，短信预算/故障恢复见[M3-02](AUTH_V2_M3_SMS_GUARDRAILS.md)，安全换号/旧渠道通知见[M3-03](AUTH_V2_M3_PHONE_CHANGE.md)，异常请求与留存见[M3-04](AUTH_V2_M3_SMS_ABUSE.md)。Web Passkey基础见[M4-01](AUTH_V2_M4_WEB_PASSKEY.md)，下一切片M4-02近期再认证与Web恢复/正式域名准备；正式供应商、人机服务、设备误拦截、旧号码重新分配和丢失所有渠道恢复分别准备与验收。完整Auth V2仍未关闭。

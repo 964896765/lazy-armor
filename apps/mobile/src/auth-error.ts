@@ -3,6 +3,8 @@ import { ConsumerPresentationMapper } from './consumer-presentation';
 
 export function authError(error: unknown): string {
   if (error instanceof ApiError) {
+    if (error.code === 'PASSKEY_VERIFICATION_FAILED') return '通行密钥验证已失效，请重新开始，或使用已绑定的验证码、密码登录。';
+    if (error.code === 'PASSKEY_SERVICE_UNAVAILABLE') return '通行密钥服务暂不可用，请使用已绑定的验证码或密码。';
     if (error.code === 'SMS_RISK_BLOCKED') return '短信请求较多，请稍后重试，或使用邮箱、密码登录。';
     if (error.code === 'SMS_RISK_SERVICE_UNAVAILABLE') return '短信验证暂时不可用，请使用邮箱或密码。';
     if (error.code === 'SMS_CLIENT_CONTEXT_REQUIRED') return '请更新客户端后重试，也可使用邮箱或密码。';

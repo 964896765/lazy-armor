@@ -7,7 +7,7 @@ import { assertAuthWebFixture } from './lib/auth-web-fixture-preflight.mjs';
 
 const root = process.cwd();
 const suite=process.env.AUTH_V2_TEST_SUITE??'all';
-if(!['all','sms','phone-change','sms-abuse'].includes(suite))throw new Error('AUTH_V2_TEST_SUITE must be all, sms, phone-change or sms-abuse');
+if(!['all','sms','phone-change','sms-abuse','passkey'].includes(suite))throw new Error('AUTH_V2_TEST_SUITE must be all, sms, phone-change, sms-abuse or passkey');
 if (![4,8].includes(process.argv.length) || process.argv[2] !== '--log') throw new Error('Use --log FRESH_PATH [--browser EXECUTABLE --screenshots FRESH_DIR]');
 const browser=process.argv.length===8?process.argv[5]:undefined;
 const screenshots=process.argv.length===8?path.resolve(root,process.argv[7]):undefined;
@@ -71,13 +71,13 @@ try {
   const log = createWriteStream(logFile, { flags: 'wx' });
   console.log(JSON.stringify({ databaseName, isolated: true, phase: suite==='sms'?'AUTH_M3_SMS_REGRESSION_STARTED':suite==='phone-change'?'AUTH_M3_PHONE_CHANGE_REGRESSION_STARTED':'AUTH_V2_API_REGRESSION_STARTED' }));
   const child = spawn(process.execPath, [path.join(root, 'node_modules/vitest/vitest.mjs'), 'run',
-    ...(suite==='sms-abuse'?['test/sms-abuse.integration.spec.ts','test/sms-abuse-startup.spec.ts']:suite==='phone-change'?['test/phone-change.integration.spec.ts']:suite==='sms'?['test/sms-code-delivery.integration.spec.ts','test/sms-code-startup.spec.ts','test/request-redis.integration.spec.ts','test/runtime-provider-common.integration.spec.ts']: ['test/sms-abuse.integration.spec.ts','test/sms-abuse-startup.spec.ts','test/phone-change.integration.spec.ts','test/auth-password-credentials.integration.spec.ts', 'test/email-binding.integration.spec.ts', 'test/email-binding-startup.spec.ts', 'test/phone-binding.integration.spec.ts', 'test/phone-binding-startup.spec.ts', 'test/sms-code-delivery.integration.spec.ts', 'test/sms-code-startup.spec.ts', 'test/request-redis.integration.spec.ts', 'test/runtime-provider-common.integration.spec.ts', 'test/password-recovery.integration.spec.ts', 'test/password-recovery-token.spec.ts', 'test/auth-v2.integration.spec.ts', 'test/p0-final-security.spec.ts', 'test/login-code.spec.ts', 'test/password-reset-delivery.spec.ts', 'test/password-credential-startup.spec.ts']), '--reporter=dot', '--hookTimeout=90000'], {
+    ...(suite==='passkey'?['test/passkey.integration.spec.ts','test/passkey-startup.spec.ts']:suite==='sms-abuse'?['test/sms-abuse.integration.spec.ts','test/sms-abuse-startup.spec.ts']:suite==='phone-change'?['test/phone-change.integration.spec.ts']:suite==='sms'?['test/sms-code-delivery.integration.spec.ts','test/sms-code-startup.spec.ts','test/request-redis.integration.spec.ts','test/runtime-provider-common.integration.spec.ts']: ['test/passkey.integration.spec.ts','test/passkey-startup.spec.ts','test/sms-abuse.integration.spec.ts','test/sms-abuse-startup.spec.ts','test/phone-change.integration.spec.ts','test/auth-password-credentials.integration.spec.ts', 'test/email-binding.integration.spec.ts', 'test/email-binding-startup.spec.ts', 'test/phone-binding.integration.spec.ts', 'test/phone-binding-startup.spec.ts', 'test/sms-code-delivery.integration.spec.ts', 'test/sms-code-startup.spec.ts', 'test/request-redis.integration.spec.ts', 'test/runtime-provider-common.integration.spec.ts', 'test/password-recovery.integration.spec.ts', 'test/password-recovery-token.spec.ts', 'test/auth-v2.integration.spec.ts', 'test/p0-final-security.spec.ts', 'test/login-code.spec.ts', 'test/password-reset-delivery.spec.ts', 'test/password-credential-startup.spec.ts']), '--reporter=dot', '--hookTimeout=90000'], {
     cwd: path.join(root, 'apps/api'), windowsHide: true, env: { ...process.env, CI: 'true', NODE_ENV: 'test', APP_ENV: 'development', APP_ROLE: 'api',
       DATABASE_URL: url.href, TEST_DATABASE_URL: url.href, TEST_DATABASE_NAME: databaseName, REQUIRE_EXACT_TEST_TARGET: '1',
       REDIS_URL: 'redis://127.0.0.1:6391/15', REDIS_KEY_PREFIX: prefix, TEST_REDIS_KEY_PREFIX: prefix,
       JWT_SECRET: 'test-jwt-secret-that-is-longer-than-thirty-two-characters', CREDENTIAL_MASTER_KEY: Buffer.alloc(32, 5).toString('base64'),
       CREDENTIAL_STORE_PATH: path.join(root, 'artifacts', databaseName + '-credentials'),
-      DEEPSEEK_SERVER_DEV_ENABLED: '0', AGENT_MODEL_API_KEY: '', AUTH_PASSWORD_CREDENTIAL_MODE:'LEGACY', AUTH_PASSWORD_RECOVERY_MODE:'LEGACY', AUTH_SMS_ABUSE_GUARD_ENABLED:'false',AUTH_SMS_RISK_CLEANUP_ENABLED:'false',
+      DEEPSEEK_SERVER_DEV_ENABLED: '0', AGENT_MODEL_API_KEY: '', AUTH_PASSWORD_CREDENTIAL_MODE:'LEGACY', AUTH_PASSWORD_RECOVERY_MODE:'LEGACY', AUTH_SMS_ABUSE_GUARD_ENABLED:'false',AUTH_SMS_RISK_CLEANUP_ENABLED:'false', AUTH_PASSKEY_ENABLED:'false',
       MEMORY_REAL_MODEL_ACCEPTANCE: '0', PAGE_READ_REAL_MODEL_ACCEPTANCE: '0', PUBLIC_JSON_REAL_READ: '0', V90_REAL_ACCEPTANCE: '0',
       V91_REAL_REPORT_ACCEPTANCE: '0', V93_METHOD_PROCESS_ACCEPTANCE: '0', AUTH_V2_BROWSER_EXECUTABLE:browser??'', AUTH_V2_SCREENSHOT_DIR:screenshots??'' },
   });
@@ -98,7 +98,7 @@ try {
     const source=await mysql.createConnection({uri:url.href,timezone:'Z'}),restoreUrl=new URL(url.href);restoreUrl.pathname='/'+restoredName;
     const restored=await mysql.createConnection({uri:restoreUrl.href,timezone:'Z'});
     try{
-      const tables=['users','profiles','user_memberships','login_identifiers','auth_identities','password_credentials','auth_sessions','password_reset_tokens','audit_logs','auth_sms_quotas','auth_sms_attempts','auth_security_notices','auth_sms_risk_subjects','auth_sms_risk_events'];
+      const tables=['users','profiles','user_memberships','login_identifiers','auth_identities','password_credentials','auth_sessions','password_reset_tokens','audit_logs','auth_sms_quotas','auth_sms_attempts','auth_security_notices','auth_sms_risk_subjects','auth_sms_risk_events','passkey_credentials'];
       let passwordUsers=0;
       for(const table of tables){
         const before=(await source.query('SELECT * FROM '+table+' ORDER BY id'))[0],after=(await restored.query('SELECT * FROM '+table+' ORDER BY id'))[0];
@@ -110,6 +110,7 @@ try {
       if(passwordUsers<2)throw new Error('Nonempty password credential recovery required');
       if(['all','phone-change'].includes(suite)&&(!acceptance.rowCounts.auth_security_notices||(await source.query('SELECT id FROM login_identifiers WHERE disabled_at IS NOT NULL LIMIT 1'))[0].length===0))throw new Error('Nonempty phone retirement and notification recovery required');
       if(['all','sms-abuse'].includes(suite)&&(!acceptance.rowCounts.auth_sms_risk_subjects||!acceptance.rowCounts.auth_sms_risk_events))throw new Error('Nonempty SMS risk recovery required');
+      if(['all','passkey'].includes(suite)&&!acceptance.rowCounts.passkey_credentials)throw new Error('Nonempty Passkey recovery required');
       acceptance.passwordUsers=passwordUsers;acceptance.tablesChecked=tables.length;acceptance.phase='PASSED';saveSummary();
       console.log(JSON.stringify({phase:'NONEMPTY_AUTH_BACKUP_RESTORE_PASSED',isolated:true,passwordUsers,tablesChecked:tables.length,backupPrivate:true}));
     }finally{await source.end();await restored.end();}

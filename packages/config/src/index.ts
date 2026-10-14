@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import { isIP } from 'node:net';
+import { parsePasskeyConfig } from './passkey';
+export { parsePasskeyConfig } from './passkey';
 
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -61,6 +63,9 @@ const envSchema = z.object({
   PASSWORD_RESET_DELIVERY_ENDPOINT: z.string().url().optional(),
   PASSWORD_RESET_DELIVERY_TOKEN: z.string().min(32).optional(),
   PUBLIC_REGISTRATION: z.enum(['true', 'false']).optional(),
+  AUTH_PASSKEY_ENABLED: z.enum(['true', 'false']).default('false'),
+  AUTH_PASSKEY_RP_ID: z.string().optional(),
+  AUTH_PASSKEY_ORIGINS: z.string().optional(),
   AUTH_PASSWORD_CREDENTIAL_MODE: z.enum(['LEGACY', 'SHADOW', 'UNIFIED']).default('LEGACY'),
   AUTH_EMAIL_BIND_ENABLED: z.enum(['true', 'false']).default('false'),
   AUTH_PHONE_BIND_ENABLED: z.enum(['true', 'false']).default('false'),
@@ -112,6 +117,7 @@ export type AppEnv = Omit<z.infer<typeof envSchema>, 'APP_ENV'> & { APP_ENV: Dep
 
 export const parseEnv = (input: NodeJS.ProcessEnv): AppEnv => {
   const parsed = envSchema.parse(input);
+  parsePasskeyConfig(parsed);
   if (parsed.AUTH_SMS_ABUSE_GUARD_ENABLED === 'true') {
     const secret=parsed.AUTH_SMS_ABUSE_SECRET;
     if(!secret||secret.length<32||/replace-with|inject-|placeholder/i.test(secret)||[parsed.JWT_SECRET,parsed.SMS_LOGIN_QUOTA_SECRET,parsed.LOGIN_CODE_DELIVERY_TOKEN].includes(secret)) throw new Error('SMS abuse protection requires a stable independent secret of at least 32 characters');

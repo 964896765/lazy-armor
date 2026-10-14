@@ -56,6 +56,7 @@ export default function RootLayout() {
           <Stack.Screen name="notification-settings" options={{ headerShown: false }} />
           <Stack.Screen name="automation-safety" options={{ headerShown: false }} />
           <Stack.Screen name="security-center" options={{ headerShown: false }} />
+          <Stack.Screen name="security-passkeys" options={{ headerShown: false }} />
           <Stack.Screen name="security-credential" options={{ headerShown: false }} />
           <Stack.Screen name="security-bind-email" options={{ headerShown: false }} />
           <Stack.Screen name="security-bind-phone" options={{ headerShown: false }} />

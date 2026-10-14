@@ -3,19 +3,21 @@ import { authError, authRetryLabel } from '../../src/auth-error';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { Link, router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api, ApiError } from '../../src/api';
 import { useAuthStore } from '../../src/auth-store';
 import { fetchLoginMethods } from '../../src/auth-methods';
 import type { SessionTokens } from '../../src/secure-token-store';
+import { loginWithPasskey, passkeyAvailable, passkeyError } from '../../src/passkey-browser';
 
 type LoginMode = 'phone' | 'email';
 
 export default function LoginPage() {
  const {reason}=useLocalSearchParams<{reason?:string}>();
  const setSession=useAuthStore(s=>s.setSession);
+ const lifetime=useRef(0);useEffect(()=>()=>{lifetime.current++;},[]);
  const [mode,setMode]=useState<LoginMode>('email');const [identifier,setIdentifier]=useState('');const [code,setCode]=useState('');
  const [localDelivery,setLocalDelivery]=useState(false);
  const [gatewayAccepted,setGatewayAccepted]=useState(false);
@@ -25,11 +27,13 @@ export default function LoginPage() {
  useEffect(()=>{const timer=setInterval(()=>setNow(Date.now()),1000);return()=>clearInterval(timer);},[]);
  const request=useMutation({mutationFn:()=>api<{sent:boolean;retryAfterSeconds:number;delivery?:string}>('/auth/code/request',undefined,{method:'POST',body:JSON.stringify({kind:mode,identifier})}),onSuccess:result=>{if(result.sent){setLocalDelivery(result.delivery==='LOCAL_DEVELOPMENT');setGatewayAccepted(result.delivery==='GATEWAY_ACCEPTED');setSentTo(mode+':'+identifier.trim());setRetryAt(Date.now()+result.retryAfterSeconds*1000);}},onError:error=>{if(error instanceof ApiError&&error.retryAfterMs)setRetryAt(Date.now()+error.retryAfterMs);}});
  const login=useMutation({mutationFn:()=>api<SessionTokens & {firstLogin:boolean}>('/auth/code/verify',undefined,{method:'POST',body:JSON.stringify({kind:mode,identifier,code})}),onSuccess:async tokens=>{await setSession(tokens,{onboardingRequired:tokens.firstLogin});router.replace((tokens.firstLogin?'/onboarding':'/schedule') as never);}});
+ const passkey=useMutation({mutationFn:()=>{const generation=lifetime.current,scope=useAuthStore.getState().sessionScope;return loginWithPasskey(()=>lifetime.current===generation&&useAuthStore.getState().sessionScope===scope);},onSuccess:async tokens=>{await setSession(tokens);router.replace('/schedule' as never);}});
  const remaining=Math.max(0,Math.ceil((retryAt-now)/1000));
- const busy=request.isPending||login.isPending;
+ const busy=request.isPending||login.isPending||passkey.isPending;
  const changeMode=(value:string)=>{if(busy)return;setMode(value as LoginMode);setRetryAt(0);setGatewayAccepted(false);setLocalDelivery(false);setIdentifier('');setCode('');setSentTo('');request.reset();login.reset();};
  return <AuthPage title="欢迎使用懒人装甲" subtitle="登录后，继续你的目标与 AI 工作">
   {reason==='phone-changed'?<Text style={styles.success}>手机号已更换，所有设备已退出。请用新号码或已绑定邮箱登录原账号。安全通知已排队，发送状态可在账号与验证中查看。</Text>:null}
+  {reason==='passkey-revoked'?<Text style={styles.success}>通行密钥已移除，所有设备已退出。请使用已绑定的其他方式登录原账号。</Text>:null}
   <SegmentedControl value={mode} options={[{value:'email',label:'邮箱'},{value:'phone',label:'手机号'}]} onChange={changeMode}/>
   <Text style={styles.fieldLabel}>{mode==='phone'?'手机号码 · +86':'邮箱地址'}</Text>
   <TextInput editable={!busy} maxLength={mode==='phone'?14:320} style={styles.input} accessibilityLabel={mode==='phone'?'手机号码':'邮箱'} keyboardType={mode==='phone'?'phone-pad':'email-address'} autoCapitalize="none" autoComplete={mode==='phone'?'tel':'email'} placeholder={mode==='phone'?'中国大陆手机号':'邮箱地址'} value={identifier} onChangeText={value=>{setIdentifier(value);setCode('');setSentTo('');login.reset();request.reset();}}/>
@@ -43,6 +47,8 @@ export default function LoginPage() {
   {request.isError||login.isError?<Text style={styles.error}>{authError(request.error??login.error)}</Text>:null}
   <Pressable accessibilityRole="button" disabled={busy||!identifier.trim()||!/^\d{6}$/.test(code)} onPress={()=>login.mutate()} style={[styles.submit,(login.isPending||!/^\d{6}$/.test(code))&&styles.submitDisabled]}><Text style={styles.submitText}>{login.isPending?'验证中…':'验证并登录'}</Text></Pressable>
   {methods.data?.passwordLogin?<Link href={'/auth/password-login' as never} style={styles.textLink}>{methods.data.passwordIdentifiers?.includes('phone')?'使用密码登录':'使用邮箱密码登录'}</Link>:null}
+  {passkeyAvailable(methods.data?.passkeyLogin)?<Pressable accessibilityRole="button" disabled={busy} onPress={()=>passkey.mutate()}><Text style={styles.textLink}>{passkey.isPending?'等待设备验证…':'使用通行密钥登录'}</Text></Pressable>:null}
+  {passkey.isError?<Text style={styles.error}>{passkeyError(passkey.error)??authError(passkey.error)}</Text>:null}
   <Link href={'/auth/welcome' as never} style={styles.textLink}>查看用户协议与隐私说明</Link>
  </AuthPage>;
 }

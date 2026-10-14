@@ -1,8 +1,9 @@
 import { ConflictException, ForbiddenException, HttpException, UnauthorizedException, type OnApplicationShutdown, type OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { authIdentities, authSessions, loginIdentifiers, users } from '@lazy-armor/database';
+import { authIdentities, loginIdentifiers } from '@lazy-armor/database';
+import { CurrentAccountProofService } from './current-account-proof';
 import { newId } from '@lazy-armor/shared';
-import { and, eq, gt, isNull } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { compare } from 'bcryptjs';
 import { createHmac, randomBytes } from 'node:crypto';
 import IORedis from 'ioredis';
@@ -31,6 +32,7 @@ export interface BindingState {
 
 export abstract class IdentifierBindingService implements OnModuleInit, OnApplicationShutdown {
   private redis: IORedis;
+  private readonly currentProof: CurrentAccountProofService;
  private readonly redisUrl: string;
   constructor(
     private readonly kind: 'email' | 'phone',
@@ -43,6 +45,7 @@ export abstract class IdentifierBindingService implements OnModuleInit, OnApplic
     private readonly operation: 'bind' | 'change' = 'bind',
   ) {
     this.redisUrl=config.getOrThrow<string>('REDIS_URL');this.redis = createRequestRedis(this.redisUrl);
+    this.currentProof = new CurrentAccountProofService(passwords);
   }
   onModuleInit() {
     if (this.config.get<string>(this.flag()) === 'true' && !this.passwords.unified()) throw new Error(`${this.kind} binding requires UNIFIED password credentials`);
@@ -70,28 +73,16 @@ export abstract class IdentifierBindingService implements OnModuleInit, OnApplic
   private assertEnabled() { if (!this.enabled()) throw new ForbiddenException(this.operation === 'change' ? '手机号更换暂未开放' : `新增${this.label()}绑定暂未开放`); }
   private async passwordEpoch(userId: string, reader: Pick<InjectedDatabase, 'select'> = this.db, lock = false) {
     // Redis holds only a keyed fingerprint, never a password/hash or a code.
-    return this.digest(JSON.stringify(await this.passwords.observe(userId, reader, lock) ?? { userId, password: 'none' }));
+    return this.currentProof.passwordEpoch(userId, reader, value => this.digest(value), lock);
   }
-  private sourceEpoch(row: typeof loginIdentifiers.$inferSelect) { return this.digest(JSON.stringify([row.id, row.userId, row.kind, row.identifier, row.verifiedAt])); }
+  private sourceEpoch(row: typeof loginIdentifiers.$inferSelect) { return this.currentProof.sourceEpoch(row, value => this.digest(value)); }
   protected async source(userId: string, id: string, reader: Pick<InjectedDatabase, 'select'> = this.db, lock = false) {
-    const query = reader.select().from(loginIdentifiers).where(and(eq(loginIdentifiers.id, id), eq(loginIdentifiers.userId, userId))).limit(1);
-    const row = (await (lock ? query.for('update') : query))[0];
-    if (!row || !row.verifiedAt || row.disabledAt || !['email', 'phone'].includes(row.kind)) throw this.invalid();
-    // A historical conflicting legacy owner cannot serve as current-account proof.
-    if (row.kind === 'email') {
-      const legacyQuery = reader.select().from(authIdentities).where(eq(authIdentities.email, row.identifier)).limit(1);
-      const legacy = (await (lock ? legacyQuery.for('update') : legacyQuery))[0];
-      if (legacy && legacy.userId !== userId) throw this.invalid();
-    }
-    return row;
+    try { return await this.currentProof.source(userId, id, reader, lock); }
+    catch (error) { if (error instanceof UnauthorizedException) throw this.invalid(); throw error; }
   }
   private async assertSession(user: AuthenticatedUser, reader: Pick<InjectedDatabase, 'select'> = this.db, lock = false) {
-    if (!user.sessionId) throw this.invalid();
-    const userQuery = reader.select({ status: users.status }).from(users).where(eq(users.id, user.id)).limit(1);
-    const active = (await (lock ? userQuery.for('update') : userQuery))[0];
-    const sessionQuery = reader.select({ id: authSessions.id }).from(authSessions).where(and(eq(authSessions.id, user.sessionId), eq(authSessions.userId, user.id), isNull(authSessions.revokedAt), gt(authSessions.expiresAt, new Date()))).limit(1);
-    const session = (await (lock ? sessionQuery.for('update') : sessionQuery))[0];
-    if (active?.status !== 'active' || !session) throw this.invalid();
+    try { await this.currentProof.assertSession(user, reader, lock); }
+    catch (error) { if (error instanceof UnauthorizedException) throw this.invalid(); throw error; }
   }
   private async validate(user: AuthenticatedUser, state: BindingState, tx?: AuthTransaction) {
     if (state.userId !== user.id || state.sessionId !== user.sessionId || state.expiresAt <= Date.now()) throw this.invalid();
@@ -104,6 +95,7 @@ export abstract class IdentifierBindingService implements OnModuleInit, OnApplic
       const old = await this.source(user.id,state.replacing.id,reader,Boolean(tx));
       if (old.kind !== 'phone' || this.sourceEpoch(old) !== state.replacing.epoch) throw this.invalid();
     }
+    if (state.expiresAt <= Date.now()) throw this.invalid();
   }
   private async load(user: AuthenticatedUser, challenge: string, stage: BindingState['stage']) {
     this.assertEnabled();

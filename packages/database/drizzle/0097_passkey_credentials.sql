@@ -1,0 +1,21 @@
+CREATE TABLE passkey_credentials (
+  id BINARY(16) PRIMARY KEY,
+  user_id BINARY(16) NOT NULL,
+  credential_id TEXT NOT NULL,
+  credential_id_hash CHAR(64) NOT NULL,
+  public_key TEXT NOT NULL,
+  sign_count BIGINT UNSIGNED NOT NULL,
+  version INT NOT NULL DEFAULT 1,
+  rp_id VARCHAR(253) NOT NULL,
+  label VARCHAR(60) NOT NULL,
+  transports_json JSON NOT NULL,
+  aaguid CHAR(36) NOT NULL,
+  device_type VARCHAR(20) NOT NULL,
+  backed_up BOOLEAN NOT NULL,
+  created_at DATETIME(6) NOT NULL,
+  last_used_at DATETIME(6) NULL,
+  revoked_at DATETIME(6) NULL,
+  CONSTRAINT passkey_credentials_user_fk FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT,
+  UNIQUE KEY passkey_credentials_hash_uq (credential_id_hash),
+  KEY passkey_credentials_user_idx (user_id, revoked_at)
+);

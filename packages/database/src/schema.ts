@@ -301,6 +301,25 @@ export const authSmsAttempts = mysqlTable('auth_sms_attempts', {
   ...timestamps,
 }, table => [index('auth_sms_attempts_namespace_idx').on(table.quotaNamespace, table.createdAt)]);
 
+export const passkeyCredentials = mysqlTable('passkey_credentials', {
+  id: uuidBinary('id').primaryKey(),
+  userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  credentialId: text('credential_id').notNull(),
+  credentialIdHash: char('credential_id_hash', { length: 64 }).notNull(),
+  publicKey: text('public_key').notNull(),
+  signCount: bigint('sign_count', { mode: 'number', unsigned: true }).notNull(),
+  version: int('version').notNull().default(1),
+  rpId: varchar('rp_id', { length: 253 }).notNull(),
+  label: varchar('label', { length: 60 }).notNull(),
+  transportsJson: json('transports_json').$type<string[]>().notNull(),
+  aaguid: char('aaguid', { length: 36 }).notNull(),
+  deviceType: varchar('device_type', { length: 20 }).notNull(),
+  backedUp: boolean('backed_up').notNull(),
+  createdAt: datetime('created_at', { mode: 'date', fsp: 6 }).notNull(),
+  lastUsedAt: datetime('last_used_at', { mode: 'date', fsp: 6 }),
+  revokedAt: datetime('revoked_at', { mode: 'date', fsp: 6 }),
+}, table => [uniqueIndex('passkey_credentials_hash_uq').on(table.credentialIdHash), index('passkey_credentials_user_idx').on(table.userId, table.revokedAt)]);
+
 export const authSessions = mysqlTable('auth_sessions', {
   id: uuidBinary('id').primaryKey(),
   userId: uuidBinary('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
@@ -1953,6 +1972,7 @@ export const schema = {
   profiles,
   authIdentities,
   passwordCredentials,
+  passkeyCredentials,
   authSmsQuotas,
   authSmsRiskSubjects,
   authSmsRiskEvents,

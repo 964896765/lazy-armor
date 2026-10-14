@@ -12,17 +12,28 @@ import { Public } from '../common/auth-context';
 import { AuthService } from './auth.service';
 import { ChangePasswordDto, ForgotPasswordDto, LoginDto, LogoutDto, RefreshDto, RegisterDto, ResetPasswordDto } from './dto';
 import { CurrentUser, type AuthenticatedUser } from '../common/auth-context';
+import { PasskeyService } from './passkey.service';
+import { StartPasskeyDto, RegisterPasskeyDto, LoginPasskeyDto } from './passkey.dto';
+import { PasskeyLoginOptionsDto } from './passkey-options.dto';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly auth: AuthService,private readonly codes:LoginCodeService, private readonly emailBinding: EmailBindingService, private readonly phoneBinding: PhoneBindingService, private readonly phoneChange: PhoneChangeService,private readonly abuse:SmsAbuseService) {}
-  @Public() @Get('methods') loginMethods() {
-    return { ...this.auth.loginMethods(), ...this.abuse.capabilities(), codeLogin: { phone: this.codes.availability('phone'), email: this.codes.availability('email') } };
+  constructor(private readonly auth: AuthService,private readonly codes:LoginCodeService, private readonly emailBinding: EmailBindingService, private readonly phoneBinding: PhoneBindingService, private readonly phoneChange: PhoneChangeService,private readonly abuse:SmsAbuseService,private readonly passkeys:PasskeyService) {}
+  @Public() @Get('methods') async loginMethods() {
+    return { ...this.auth.loginMethods(), ...this.abuse.capabilities(), ...await this.passkeys.capabilities(), codeLogin: { phone: this.codes.availability('phone'), email: this.codes.availability('email') } };
   }
   @Public() @Post(['code/request','code/send']) requestCode(@Body() input:RequestLoginCodeDto,@Ip() ip:string){return this.codes.request(input,ip);}
   @Public() @Post('code/verify') async verifyCode(@Body() input:VerifyLoginCodeDto,@Ip() ip:string,@Headers('user-agent') userAgent?:string){const identifier=await this.codes.verify(input,ip);return this.auth.loginVerified(input.kind,identifier,{ip,userAgent});}
 
-  @Get('security/methods') async securityMethods(@CurrentUser() user: AuthenticatedUser) { return { ...await this.auth.securityMethods(user.id), ...await this.emailBinding.capabilities(user), ...await this.phoneBinding.capabilities(user), ...await this.phoneChange.capabilities(user) }; }
+  @Get('security/methods') async securityMethods(@CurrentUser() user: AuthenticatedUser) { return { ...await this.auth.securityMethods(user.id), ...await this.emailBinding.capabilities(user), ...await this.phoneBinding.capabilities(user), ...await this.phoneChange.capabilities(user), ...await this.passkeys.capabilities(user) }; }
+
+  @Public() @Post('passkeys/login/options') passkeyLoginOptions(@Ip() ip:string,@Body() _input:PasskeyLoginOptionsDto) { return this.passkeys.loginOptions(ip); }
+  @Public() @Post('passkeys/login/verify') passkeyLogin(@Body() input:LoginPasskeyDto,@Ip() ip:string,@Headers('user-agent') userAgent?:string) { return this.passkeys.login(input,{ip,userAgent}); }
+  @Post('passkeys/start') startPasskey(@CurrentUser() user:AuthenticatedUser,@Body() input:StartPasskeyDto,@Ip() ip:string) { return this.passkeys.start(user,input,ip); }
+  @Post('passkeys/current/confirm') passkeyCurrent(@CurrentUser() user:AuthenticatedUser,@Body() input:ConfirmEmailBindingDto,@Ip() ip:string) { return this.passkeys.confirmCurrent(user,input.challenge,input.code,ip); }
+  @Post('passkeys/register/options') passkeyOptions(@CurrentUser() user:AuthenticatedUser,@Body() input:EmailBindingChallengeDto) { return this.passkeys.registrationOptions(user,input.challenge); }
+  @Post('passkeys/register/verify') registerPasskey(@CurrentUser() user:AuthenticatedUser,@Body() input:RegisterPasskeyDto) { return this.passkeys.register(user,input); }
+  @Post('passkeys/revoke/confirm') revokePasskey(@CurrentUser() user:AuthenticatedUser,@Body() input:EmailBindingChallengeDto) { return this.passkeys.revoke(user,input.challenge); }
 
   @Post('phone-change/start') startPhoneChange(@CurrentUser() user: AuthenticatedUser, @Body() input: StartPhoneChangeDto, @Ip() ip: string) { return this.phoneChange.start(user,input,ip); }
   @Post('phone-change/current/confirm') confirmPhoneChangeCurrent(@CurrentUser() user: AuthenticatedUser, @Body() input: ConfirmPhoneBindingDto, @Ip() ip: string) { return this.phoneChange.confirmCurrent(user,input.challenge,input.code,ip); }

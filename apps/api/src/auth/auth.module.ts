@@ -19,6 +19,8 @@ import { SecurityNoticeService } from './security-notice.service';
 import { PasswordRecoveryService } from './password-recovery.service';
 import { SmsAbuseService } from './sms-abuse.service';
 import { SmsRequestContextMiddleware } from './sms-request-context';
+import { PasskeyService } from './passkey.service';
+import { CurrentAccountProofService } from './current-account-proof';
 
 @Module({
   imports: [AuditModule, JwtModule.registerAsync({
@@ -26,7 +28,7 @@ import { SmsRequestContextMiddleware } from './sms-request-context';
     useFactory: (config: ConfigService) => ({ secret: config.getOrThrow<string>('JWT_SECRET'), signOptions: { expiresIn: '1h' } }),
   })],
   controllers: [AuthController],
-  providers: [LocalLoginCodeDeliveryProvider, SmsCodeDeliveryService, SmsAbuseService, LoginCodeService, PasswordCredentialService, IdentityResolverService, AuthService, EmailBindingService, PhoneBindingService, SecurityNoticeService, PhoneChangeService, PasswordResetDeliveryService, PasswordRecoveryService, { provide: APP_GUARD, useClass: AuthGuard }],
+  providers: [LocalLoginCodeDeliveryProvider, SmsCodeDeliveryService, SmsAbuseService, LoginCodeService, PasswordCredentialService, CurrentAccountProofService, PasskeyService, IdentityResolverService, AuthService, EmailBindingService, PhoneBindingService, SecurityNoticeService, PhoneChangeService, PasswordResetDeliveryService, PasswordRecoveryService, { provide: APP_GUARD, useClass: AuthGuard }],
   exports: [AuthService],
 })
 export class AuthModule implements NestModule {

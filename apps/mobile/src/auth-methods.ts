@@ -1,6 +1,7 @@
 import { api } from './api';
 
 export interface LoginMethods {
+  passkeyLogin?: {available:boolean;origins:string[]};
   passwordLogin: boolean;
   passwordRegistration: boolean;
   smsRequestProtection?: {enabled:boolean;clientMarkerRequired:boolean;retentionDays:number};
@@ -16,6 +17,7 @@ export interface SecurityMethods {
   canSetPassword: boolean;
   canVerifyEmail: boolean;
   passkeysAvailable: boolean;
+  passkeys?: {available:boolean;origins:string[];sources:Array<{id:string;kind:'email'|'phone';masked:string}>;credentials:Array<{id:string;label:string;createdAt:string;lastUsedAt:string|null;backedUp:boolean}>};
   passwordLoginKinds?: Array<'email'|'phone'>;
   emailBinding?: { available: boolean; sources: Array<{id:string;kind:'email'|'phone';masked:string}> };
   phoneBinding?: { available: boolean; sources: Array<{id:string;kind:'email'|'phone';masked:string}> };
